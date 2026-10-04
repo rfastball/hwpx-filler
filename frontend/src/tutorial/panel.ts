@@ -1,8 +1,10 @@
 /* Eight task lessons. The host owns lesson state; this surface owns only geometry and controls. */
 import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { icon } from "../screens/icons.ts";
+import { GLIDE_WINDOW, measureTarget, parity, placeCoach, sameTarget, spotFrame, visibleElement, watchLayout, watchMissedPress } from "./spotlight.ts";
+import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
 export type Lesson = {
   id: string; title: string; description: string; recommended: boolean;
@@ -77,17 +79,6 @@ export function anchorSelector(key: string | null): string | null {
   return key ? ANCHORS[key] ?? null : null;
 }
 
-function visibleElement(doc: ParentNode, selector: string | null): HTMLElement | null {
-  if (!selector) return null;
-  for (const preferred of selector.split(",")) {
-    for (const candidate of doc.querySelectorAll<HTMLElement>(preferred.trim())) {
-      const rect = candidate.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && !candidate.closest("[hidden], [inert], .hidden")) return candidate;
-    }
-  }
-  return null;
-}
-
 const noHost = () => null;
 
 /** Finale result action. On another screen the card is dismissed only after navigation succeeds — a cancelled leave
@@ -125,28 +116,6 @@ export function featuredAction(item: Lesson, snapshot: TutorialSnapshot): string
   return lessonAction(item, snapshot);
 }
 
-type Geometry = { x: number; y: number; width: number; height: number; side: TutorialBeat["placement"] };
-export function placeCoach(target: DOMRect, viewport: { width: number; height: number }, preferred: TutorialBeat["placement"], coachHeight = 162): Geometry {
-  const gap = 18, pad = 12, coachW = Math.min(320, viewport.width - 2 * pad), coachH = coachHeight;
-  const space = { top: target.top, bottom: viewport.height - target.bottom, left: target.left, right: viewport.width - target.right };
-  const fit = (side: Exclude<TutorialBeat["placement"], "center">) => space[side] >= (side === "top" || side === "bottom" ? coachH : coachW) + gap;
-  let side = preferred;
-  if (side !== "center" && !fit(side)) {
-    const ordered: Array<Exclude<TutorialBeat["placement"], "center">> = ["bottom", "top", "right", "left"];
-    ordered.sort((a, b) => space[b] - space[a]);
-    side = ordered[0];
-  }
-  const centerX = target.left + target.width / 2;
-  const centerY = target.top + target.height / 2;
-  const rawX = side === "right" ? target.right + gap : side === "left" ? target.left - coachW - gap : centerX - coachW / 2;
-  const rawY = side === "bottom" ? target.bottom + gap : side === "top" ? target.top - coachH - gap : centerY - coachH / 2;
-  return {
-    x: Math.max(pad, Math.min(rawX, viewport.width - coachW - pad)),
-    y: Math.max(pad, Math.min(rawY, viewport.height - coachH - pad)),
-    width: coachW, height: coachH, side,
-  };
-}
-
 function readSnapshot(value: unknown): TutorialSnapshot | null {
   if (!value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "tutorial-lessons/v1") return null;
   return value as TutorialSnapshot;
@@ -157,6 +126,117 @@ function Ring(props: { fraction: number }): ReactNode {
   return h("svg", { className: "tutorial-ring", viewBox: "0 0 24 24", "aria-hidden": true },
     h("circle", { className: "tutorial-ring-bg", cx: 12, cy: 12, r: 10 }),
     h("circle", { className: "tutorial-ring-fg", cx: 12, cy: 12, r: 10, strokeDasharray: 63, strokeDashoffset: offset }));
+}
+
+const viewportOf = (doc: Document) => {
+  const view = doc.defaultView ?? window;
+  return { width: view.innerWidth, height: view.innerHeight };
+};
+
+/** Height of the element with `id`, followed while it resizes; `fallback` until measured. `deps` name what recreates it. */
+function useElementHeight(doc: Document, id: string, fallback: number, deps: readonly unknown[]): number {
+  const [height, setHeight] = useState(fallback);
+  useLayoutEffect(() => {
+    const element = doc.getElementById(id);
+    if (!element) return undefined;
+    const observer = new ResizeObserver(() => setHeight(element.getBoundingClientRect().height));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [doc, id, ...deps]);
+  return height;
+}
+
+/** Counts changes of `value`; `at` stamps the latest change so a glide is told apart from a plain re-measure. */
+function useChangeCount(value: string): { count: number; at: number } {
+  const [seen, setSeen] = useState({ value, count: 0, at: 0 });
+  if (seen.value === value) return seen;
+  const next = { value, count: seen.count + 1, at: Date.now() };
+  setSeen(next);
+  return next;
+}
+
+/** Presses that miss the ring, counted per beat (a new beat starts from zero). Observed, never intercepted. */
+function useMissedPresses(doc: Document, frame: SpotFrame | null, key: string): number {
+  const [missed, setMissed] = useState({ key, count: 0 });
+  const box = frame ? `${frame.x},${frame.y},${frame.width},${frame.height}` : "";
+  useEffect(() => {
+    if (!frame) return undefined;
+    return watchMissedPress(doc, frame, () => setMissed((before) => ({ key, count: before.key === key ? before.count + 1 : 1 })));
+  }, [doc, box, key]);
+  return missed.key === key ? missed.count : 0;
+}
+
+type SpotProps = { target: Target; motionKey: string; missed: number; ring: boolean };
+
+/** Snug ring around the real control with the page dimmed around it. It glides between anchors, pulses once on
+ *  arrival or on a missed press, and never takes pointer events. `ring` drops the scrim where a dialog already dims. */
+export function TutorialSpot(props: SpotProps): ReactNode {
+  const change = useChangeCount(props.motionKey);
+  const frame = spotFrame(props.target);
+  const gliding = change.count > 0 && Date.now() - change.at < GLIDE_WINDOW;
+  const afterGlide = change.count > 0 && props.missed === 0;
+  return h("div", { className: "tutorial-spot", "aria-hidden": true, "data-dim": props.ring ? "ring" : "scrim",
+    "data-glide": gliding ? "" : undefined, "data-swap": parity(change.count),
+    style: { transform: `translate(${frame.x}px, ${frame.y}px)`, width: frame.width, height: frame.height, borderRadius: frame.radius } },
+  h("i", { key: `${props.motionKey}:${props.missed}`, className: "tutorial-spot-pulse",
+    style: afterGlide ? { animationDelay: "var(--tutorial-glide)" } : undefined }));
+}
+
+type CoachProps = {
+  beat: TutorialBeat; copy: TutorialSnapshot["copy"]; step: string; placement: CoachPlacement | null; inline: boolean;
+  lost: boolean; overlayBusy: boolean; pending: boolean; swap: number; missed: number; exit: ReactNode;
+  act(action: string, payload?: Record<string, unknown>): void; recover(): void;
+};
+
+const primaryPayload = (primary: GuideAction) => primary.screen ? { screen: primary.screen } : {};
+
+function CoachFoot(props: CoachProps): ReactNode {
+  const { beat, copy, pending } = props;
+  const button = (id: string | undefined, label: string, onClick: () => void) =>
+    h("button", { id, className: "btn primary sm", type: "button", disabled: pending, onClick }, label);
+  const guide = beat.primary && !props.overlayBusy ? beat.primary : null;
+  return h("div", { className: "tutorial-coach-foot" },
+    guide ? button("tutorialPrimary", guide.label, () => props.act(guide.action, primaryPayload(guide))) : null,
+    !beat.primary && props.lost && !props.overlayBusy ? button("tutorialReturn", copy.return, props.recover) : null,
+    beat.mode === "explain" && beat.can_next ? button(undefined, copy.next, () => props.act("next")) : null,
+    props.inline ? props.exit : null);
+}
+
+/** Coach card. Its arrow points at the anchor from the chosen side; it fades in on each beat (`swap`) and shakes
+ *  on a missed press (`missed`). Inside a dialog it is an inline section of that dialog instead. */
+export function TutorialCoach(props: CoachProps): ReactNode {
+  const { beat, placement, inline } = props;
+  const style = !inline && placement ? { left: placement.x, top: placement.y, width: placement.width } : undefined;
+  return h("section", { id: "tutorialCoach", className: inline ? "tutorial-coach tutorial-coach-inline" : "tutorial-coach", style,
+    role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
+    "data-side": inline ? "inline" : placement?.side ?? "center", "data-swap": parity(props.swap),
+    "data-nudge": props.missed ? parity(props.missed) : undefined },
+  placement?.arrow ? h("i", { className: "tutorial-coach-arrow", style: placement.arrow, "aria-hidden": true }) : null,
+  h("div", { className: "tutorial-coach-scroll" },
+    h("header", { className: "tutorial-coach-heading" }, h("h2", { id: "tutorialBeatTitle" }, beat.title),
+      h("span", { className: "tutorial-step" }, props.step)),
+    h("p", { id: "tutorialBeatBody", "aria-live": "polite" }, beat.body),
+    h(CoachFoot, props)));
+}
+
+type GuideProps = Omit<CoachProps, "placement" | "inline" | "lost" | "swap" | "missed"> & {
+  found: Target | null; dialogHost: Element | null; doc: Document;
+  portal: (children: ReactNode, container: Element) => ReactNode;
+};
+
+/** Spotlight and coach for the live beat. In a relevant dialog both join that dialog's focus boundary and the ring
+ *  keeps no scrim (the dialog already dims the page); elsewhere the scrim dims everything but the anchor. */
+function TutorialGuide(props: GuideProps): ReactNode {
+  const { beat, found, dialogHost, doc } = props;
+  const swap = useChangeCount(beat.id).count;
+  const coachHeight = useElementHeight(doc, "tutorialCoach", 162, [beat.id, found]);
+  const frame = found ? spotFrame(found) : null;
+  const missed = useMissedPresses(doc, beat.mode === "action" ? frame : null, beat.id);
+  const placement = found && !dialogHost ? placeCoach(found.rect, viewportOf(doc), beat.placement, coachHeight) : null;
+  const coach = h(TutorialCoach, { ...props, placement, inline: !!dialogHost, lost: !found && !!beat.target, swap, missed });
+  const spot = found ? h(TutorialSpot, { target: found, motionKey: `${beat.id}|${beat.target}`, missed, ring: !!dialogHost }) : null;
+  if (dialogHost) return props.portal(h(Fragment, null, coach, spot), dialogHost);
+  return h("div", { className: "tutorial-guide", "data-mode": beat.mode }, spot, coach);
 }
 
 type LessonControls = {
@@ -232,9 +312,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const overlayHost = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.currentHost ?? noHost, ports.overlay.currentHost ?? noHost);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [rect, setRect] = useState<DOMRect | null>(null);
-  const [coachHeight, setCoachHeight] = useState(162);
-  const [resultHeight, setResultHeight] = useState(330);
+  const [found, setFound] = useState<Target | null>(null);
   const [resultDismissed, setResultDismissed] = useState(false);
 
   useEffect(() => { void ports.loadInitial().catch((error) => ports.alarm(String(error))); }, [ports]);
@@ -268,44 +346,15 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beat.target
     : result && result.screen === screen ? result.target : null;
   useLayoutEffect(() => {
-    if (!target) { setRect(null); return; }
-    let frame = 0;
+    if (!target) { setFound(null); return undefined; }
     const measure = () => {
-      const element = visibleElement(dialogHost ?? ports.doc, anchorSelector(target));
-      const next = element?.getBoundingClientRect() ?? null;
-      const shown = next && next.right > 0 && next.bottom > 0 && next.left < window.innerWidth && next.top < window.innerHeight ? next : null;
-      setRect((before) => before?.x === shown?.x && before?.y === shown?.y && before?.width === shown?.width && before?.height === shown?.height ? before : shown);
+      const next = measureTarget(dialogHost ?? ports.doc, anchorSelector(target), viewportOf(ports.doc));
+      setFound((before) => sameTarget(before, next) ? before : next);
     };
-    const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
     measure();
-    const observer = new MutationObserver((mutations) => {
-      if (mutations.some((change) => !(change.target as Element).closest?.("#tutorialPanelRoot, #tutorialCoach"))) update();
-    });
-    observer.observe(ports.doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "class", "style", "inert"] });
-    ports.doc.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      cancelAnimationFrame(frame); observer.disconnect();
-      ports.doc.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
+    return watchLayout(ports.doc, measure);
   }, [target, ports.doc, screen, open, dialogHost]);
-
-  useLayoutEffect(() => {
-    const coach = ports.doc.getElementById("tutorialCoach");
-    if (!coach) return;
-    const observer = new ResizeObserver(() => setCoachHeight(coach.getBoundingClientRect().height));
-    observer.observe(coach);
-    return () => observer.disconnect();
-  }, [beat?.id, rect, ports.doc]);
-
-  useLayoutEffect(() => {
-    const card = ports.doc.getElementById("tutorialFinale");
-    if (!card) return;
-    const observer = new ResizeObserver(() => setResultHeight(card.getBoundingClientRect().height));
-    observer.observe(card);
-    return () => observer.disconnect();
-  }, [result?.title, rect, ports.doc]);
+  const resultHeight = useElementHeight(ports.doc, "tutorialFinale", 330, [result?.title, found]);
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
   const nextLesson = snapshot?.scenarios.find((item) => item.id === result?.next_scenario_id);
@@ -314,13 +363,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const fraction = stages.length ? stageDone / stages.length : selected?.step_count ? selected.checkpoint / selected.step_count : 0;
   const shown = Boolean(beat && canGuide);
   const resultShown = Boolean(result && !resultDismissed);
-  const position = rect && beat ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, beat.placement, coachHeight) : null;
-  const resultPosition = rect && result ? placeCoach(rect, { width: window.innerWidth, height: window.innerHeight }, "right", resultHeight) : null;
-  const spotStyle: CSSProperties | undefined = rect ? {
-    left: Math.max(0, rect.left - 6), top: Math.max(0, rect.top - 6),
-    width: rect.width + 12, height: rect.height + 12,
-  } : undefined;
-  const coachStyle: CSSProperties | undefined = position ? { left: position.x, top: position.y, width: position.width } : undefined;
+  const resultPosition = found && result ? placeCoach(found.rect, viewportOf(ports.doc), "right", resultHeight) : null;
 
   const recover = async () => {
     const element = visibleElement(dialogHost ?? ports.doc, anchorSelector(beat?.target ?? null));
@@ -366,21 +409,6 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
         key: stage.id, className: stage.status, title: stage.title,
       }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), exitButton("tutorialExit"));
 
-  const coach = shown && beat ? h("section", { id: "tutorialCoach", className: `tutorial-coach${dialogHost ? " tutorial-coach-inline" : ""}`,
-    style: dialogHost ? undefined : coachStyle, role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
-    "data-side": dialogHost ? "inline" : position?.side ?? "center" },
-    h("header", { className: "tutorial-coach-heading" }, h("h2", { id: "tutorialBeatTitle" }, beat.title),
-      h("span", { className: "tutorial-step" }, selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "")),
-    h("p", { id: "tutorialBeatBody", "aria-live": "polite" }, beat.body),
-    h("div", { className: "tutorial-coach-foot" },
-      beat.primary && !overlayBusy ? h("button", { id: "tutorialPrimary", className: "btn primary sm", type: "button", disabled: pending,
-        onClick: () => void act(beat.primary!.action, beat.primary!.screen ? { screen: beat.primary!.screen } : {}) }, beat.primary.label) : null,
-      !beat.primary && !rect && beat.target && !overlayBusy ? h("button", { id: "tutorialReturn", className: "btn primary sm", type: "button", disabled: pending,
-        onClick: () => void recover() }, snapshot!.copy.return) : null,
-      beat.mode === "explain" && beat.can_next ? h("button", { className: "btn primary sm", type: "button", disabled: pending,
-        onClick: () => void act("next") }, snapshot!.copy.next) : null,
-      dialogHost ? exitButton("tutorialDialogExit") : null)) : null;
-
   return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
     (ports.portal ?? createPortal)(hud, entry),
     open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
@@ -422,7 +450,8 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
           onClick: () => void chooseLesson(nextLesson) }, result.next_scenario_label ?? nextLesson.title) : null,
         h("button", { type: "button", className: nextLesson ? "btn sm" : "btn primary sm", onClick: () => { setResultDismissed(true); setOpen(true); } }, snapshot!.copy.choose_scenario),
         exitButton())) : null,
-    dialogHost && coach ? (ports.portal ?? createPortal)(coach, dialogHost)
-      : coach ? h("div", { className: "tutorial-guide", "data-mode": beat!.mode },
-        rect ? h("div", { className: "tutorial-spot", style: spotStyle, "aria-hidden": true }) : null, coach) : null);
+    shown && beat ? h(TutorialGuide, { beat, copy: snapshot!.copy, found, dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
+      step: selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "",
+      overlayBusy, pending, exit: exitButton("tutorialDialogExit"),
+      act: (action, payload) => void act(action, payload), recover: () => void recover() }) : null);
 }

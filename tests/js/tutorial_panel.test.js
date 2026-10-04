@@ -10,7 +10,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TutorialLessons, TutorialPanel, anchorSelector, featuredAction, featuredLesson, lessonAction, placeCoach, runResultAction } from "../../frontend/src/tutorial/panel.ts";
+import { readFileSync } from "node:fs";
+import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, anchorSelector, featuredAction, featuredLesson, lessonAction, runResultAction } from "../../frontend/src/tutorial/panel.ts";
+import { placeCoach, pressMissesTarget, spotFrame, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
 const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "prepare", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
@@ -281,4 +283,96 @@ test("finale result action dismisses the card only after navigation succeeds; on
   const failed = trace(new Error("dispatch failed"));
   await assert.rejects(runResultAction("job", "library", failed.steps));
   assert.deepEqual(failed.calls, ["navigate"]);
+});
+
+const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+const pickBeat = { id: "b", title: "고르기", body: "누르세요.", mode: "action", screen: "job", target: "data-picker", placement: "right", can_next: false };
+const coachHtml = (overrides) => renderToStaticMarkup(createElement(TutorialCoach, { beat: pickBeat, copy, step: "", placement: null,
+  inline: false, lost: false, overlayBusy: false, pending: false, swap: 0, missed: 0, exit: null, act: () => {}, recover: () => {}, ...overrides }));
+
+test("spotlight hugs the control: small pad and the control's own radius grown by the same pad", () => {
+  assert.deepEqual(spotFrame({ rect: box(100, 50, 120, 40), radius: 6 }), { x: 96, y: 46, width: 128, height: 48, radius: 10 });
+  assert.equal(spotFrame({ rect: box(100, 50, 120, 40), radius: 0 }).radius, 4, "square control keeps a barely rounded ring");
+  assert.equal(spotFrame({ rect: box(100, 50, 120, 40), radius: 999 }).radius, 24, "pill control stays a pill, never rounder");
+  const html = renderToStaticMarkup(createElement(TutorialSpot, { target: { rect: box(100, 50, 120, 40), radius: 6 }, motionKey: "b1|data-picker", missed: 0, ring: false }));
+  assert.match(html, /class="tutorial-spot" aria-hidden="true" data-dim="scrim"/);
+  assert.match(html, /style="transform:translate\(96px, 46px\);width:128px;height:48px;border-radius:10px"/);
+  assert.match(html, /class="tutorial-spot-pulse"/);
+  assert.doesNotMatch(html, /data-glide|animation-delay/, "first appearance neither glides nor waits for a glide");
+  const ring = renderToStaticMarkup(createElement(TutorialSpot, { target: { rect: box(10, 10, 40, 20), radius: 0 }, motionKey: "k", missed: 0, ring: true }));
+  assert.match(ring, /data-dim="ring"/, "a dialog already dims the page; the spot adds only its ring");
+});
+
+test("coach takes the preferred side when it fits and its arrow points at the target's center", () => {
+  const target = box(400, 200, 100, 40);
+  const below = placeCoach(target, { width: 900, height: 700 }, "bottom", 160);
+  assert.equal(below.side, "bottom");
+  assert.equal(below.y, 258);
+  assert.deepEqual(below.arrow, { left: 450 - below.x - 6 });
+  const beside = placeCoach(target, { width: 900, height: 700 }, "right", 160);
+  assert.equal(beside.side, "right");
+  assert.equal(beside.x, 518);
+  assert.deepEqual(beside.arrow, { top: 220 - beside.y - 6 });
+  const edge = placeCoach(box(860, 20, 30, 30), { width: 900, height: 700 }, "bottom", 160);
+  assert.deepEqual(edge.arrow, { left: edge.width - 28 }, "arrow clamps inside the card's rounded corner");
+  const covered = placeCoach(box(0, 0, 900, 700), { width: 900, height: 700 }, "bottom", 160);
+  assert.equal(covered.arrow, null, "a card clamped onto its target points nowhere rather than at the wrong place");
+  const html = coachHtml({ step: "1 / 3", placement: beside });
+  assert.match(html, new RegExp(`style="left:518px;top:${beside.y}px;width:320px".*data-side="right" data-swap="a"`));
+  assert.match(html, new RegExp(`<i class="tutorial-coach-arrow" style="top:${beside.arrow.top}px" aria-hidden="true">`));
+  assert.doesNotMatch(html, /data-nudge/);
+  const inline = coachHtml({ inline: true, overlayBusy: true, swap: 1 });
+  assert.match(inline, /class="tutorial-coach tutorial-coach-inline"[^>]*data-side="inline" data-swap="b"/);
+  assert.doesNotMatch(inline, /tutorial-coach-arrow|style=/);
+});
+
+test("a press outside the ring nudges the coach without intercepting the press", () => {
+  const frame = spotFrame({ rect: box(100, 50, 120, 40), radius: 6 });
+  assert.equal(pressMissesTarget({ x: 150, y: 60 }, frame, false), false);
+  assert.equal(pressMissesTarget({ x: 97, y: 47 }, frame, false), false, "the pad belongs to the target");
+  assert.equal(pressMissesTarget({ x: 20, y: 300 }, frame, false), true);
+  assert.equal(pressMissesTarget({ x: 20, y: 300 }, frame, true), false, "the coach, HUD and panel are never a miss");
+  assert.equal(pressMissesTarget({ x: 20, y: 300 }, null, false), false);
+  const listeners = [];
+  const doc = { addEventListener: (type, fn, capture) => listeners.push({ type, fn, capture }),
+    removeEventListener: (type, fn) => listeners.splice(listeners.findIndex((entry) => entry.fn === fn), 1) };
+  let misses = 0;
+  const stop = watchMissedPress(doc, frame, () => { misses += 1; });
+  assert.deepEqual(listeners.map(({ type, capture }) => [type, capture]), [["pointerdown", true]]);
+  const press = (x, y, extra = {}) => {
+    let stopped = false;
+    const halt = () => { stopped = true; };
+    listeners[0].fn({ button: 0, clientX: x, clientY: y, target: { closest: () => null }, preventDefault: halt, stopPropagation: halt, ...extra });
+    return stopped;
+  };
+  assert.equal(press(20, 300), false, "the product still receives the press");
+  press(150, 60);
+  press(20, 300, { button: 2 });
+  press(20, 300, { target: { closest: (selector) => selector.includes("#tutorialCoach") ? {} : null } });
+  assert.equal(misses, 1);
+  const html = coachHtml({ missed: 1 });
+  assert.match(html, /data-nudge="b"/);
+  assert.match(coachHtml({ missed: 2 }), /data-nudge="a"/, "each further miss restarts the shake");
+  assert.doesNotMatch(html, /role="alert"|aria-live="assertive"/, "no new announcement copy is invented for a nudge");
+  stop();
+  assert.equal(listeners.length, 0);
+});
+
+test("reduced motion keeps the guide opacity-only: no glide, pulse or shake", () => {
+  const css = readFileSync(new URL("../../frontend/css/tutorial.css", import.meta.url), "utf8");
+  const start = css.indexOf("@media(prefers-reduced-motion:reduce){");
+  assert.ok(start > 0);
+  const reduced = css.slice(start, css.indexOf("\n}", start));
+  assert.match(reduced, /\.tutorial-spot,\.tutorial-spot\[data-glide\][^{]*\{transition:none\}/);
+  assert.match(reduced, /\.tutorial-spot-pulse\{animation:none\}/);
+  assert.match(reduced, /\.tutorial-coach\[data-nudge="a"\]\{animation-name:tutorialBlinkA\}/);
+  assert.match(reduced, /\.tutorial-coach\[data-swap="a"\]\{animation-name:tutorialFadeA\}/);
+  for (const name of ["tutorialBlinkA", "tutorialBlinkB", "tutorialFadeA", "tutorialFadeB"]) {
+    const frames = css.match(new RegExp(`@keyframes ${name}\\{(.*)\\}`))[1];
+    assert.doesNotMatch(frames, /translate|transform|outline|scale/, `${name} animates opacity only`);
+  }
+  const spot = css.match(/\.tutorial-spot\{[^}]*\}/)[0];
+  assert.match(spot, /pointer-events:none/, "the scrim never takes the click");
+  assert.match(spot, /var\(--a-scrim\)/);
+  assert.doesNotMatch(spot, /outline-offset|transition/, "no detached outline; glide only between anchors");
 });
