@@ -120,13 +120,17 @@ function ColumnPanel(props: {
     h("div", { className: "cp-sec" }, h("span", { className: "cp-cap" }, "값 선택(같은 열 안은 OR)"),
       h("div", { className: "cp-vals" },
         h("label", null, h("input", { type: "checkbox", "data-val-all": true, defaultChecked: allOn,
-          onChange: (event: Obj) => { void controller.zone("filter_col_values", { column, values: event.currentTarget.checked ? null : [] }); } }), h("b", null, "(전체)")),
+          onChange: (event: Obj) => {
+            // 값 칸(비제어)을 「(전체)」에 맞춰 세운다 — 켜진 채 남으면 다음 누름이 고른 값을 끄는 쪽으로 뒤집힌다.
+            event.currentTarget.closest(".cp-vals").querySelectorAll("input[data-val]")
+              .forEach((box: HTMLInputElement) => (box.checked = event.currentTarget.checked));
+            void controller.zone("filter_col_values", { column, values: event.currentTarget.checked ? null : [] });
+          } }), h("b", null, "(전체)")),
         ...values.map((value: string) => h("label", { key: value },
           h("input", { type: "checkbox", "data-val": value, "data-busy-lock": true,
             defaultChecked: allOn || checked?.includes(value),
             onChange: (event: Obj) => {
-              const root = event.currentTarget.closest(".cp-vals") as HTMLElement;
-              const boxes = [...root.querySelectorAll<HTMLInputElement>("input[data-val]")];
+              const boxes = [...(event.currentTarget.closest(".cp-vals") as HTMLElement).querySelectorAll<HTMLInputElement>("input[data-val]")];
               const on = boxes.filter((box) => box.checked).map((box) => box.dataset.val || "");
               void controller.zone("filter_col_values", { column, values: on.length === boxes.length ? null : on });
             } }), value === "" ? "(빈값)" : value)))),

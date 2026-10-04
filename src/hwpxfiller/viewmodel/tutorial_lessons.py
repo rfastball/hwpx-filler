@@ -1,8 +1,10 @@
-"""Eight short onboarding lessons and their persistent guidance position.
+"""Nine short onboarding lessons and their persistent guidance position.
 
-Only explicit explanation steps use ``next``. Action steps advance from a
-verified product event supplied by the tutorial controller. The old T0–T17
-checklist is intentionally not a source of completion for this curriculum.
+One beat is one boxed control and one user action (#1127). Explanation beats use ``next``.
+Action beats advance from a verified product event supplied by the tutorial controller, or —
+for a press that runs no product command (opening a dock, checking a sheet, a top-nav move) —
+from the web's report that the beat's own boxed control was pressed (:data:`UI_PRESS_EVENTS`).
+The old T0–T17 checklist is intentionally not a source of completion for this curriculum.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ class Beat:
     event: str | None = None
     placement: str = "right"
     entry_screen: str | None = None
+    #: Parameter of the anchor key (file, field, column, job or slot name; ``pool:<sheet>``).
+    arg: str = ""
 
     @property
     def mode(self) -> str:
@@ -34,74 +38,320 @@ class Lesson:
     beats: tuple[Beat, ...]
 
 
+#: Events a beat completes by the press of its own boxed control: the press opens client-only
+#: UI and runs no product command, so no product observation can witness it (#1127 decision 1).
+UI_PRESS_EVENTS = frozenset({
+    "create_form_opened", "trial_dock_opened", "sheet_checked", "slice_closed", "screen_entered_job",
+    "binding_menu_opened",
+})
+
+#: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
+CURRICULUM = 2
+
+_NEW_JOB = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
+_TO_BINDING = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
+_PICK_JOB = "'문서 작업' 목록에는 저장한 작업이 모여 있습니다. '{name}'을 누르세요."
+_USE_JOB = "'문서 만들기에서 사용'은 이 작업과 연결된 데이터를 문서 만들기 화면에 엽니다. 누르세요."
+_MEMO_FILTER = "열 이름 옆 '▾'는 그 열의 값으로 행을 거르는 필터입니다. '메모' 열의 '▾'를 누르세요."
+_VISIBLE_ROWS = "'보이는 행 모두 선택' 칸은 필터로 남은 행만 한꺼번에 고릅니다. 누르세요."
+_ALL_ROWS = "표 머리의 '전체 선택' 칸은 표의 행을 한꺼번에 고릅니다. 눌러서 {what}을 고르세요."
+_OPEN_WORKBENCH = "'검토·복사 시작'은 고른 행의 채운 문장을 한 건씩 보여 주는 작업대를 엽니다. 누르세요."
+_SAVE_OPEN = "'저장하고 문서 만들기로'는 작업을 저장하고 문서 만들기 화면에서 바로 엽니다. 누르세요."
+_TRIAL_OPEN = "'결과 시험'은 시험값을 넣은 결과 문서를 보여 줍니다. 누르세요."
+_SAVE_TEMPLATE = "'저장'은 바꾼 서식을 파일에 씁니다. 누르세요."
+_OPTIONS_HELP = "'포함할 내용'은 문서마다 넣을 문단을 고르는 자리입니다. "
+_METHOD = "'낙찰자 결정방법'에서 '고시 미만'을 고르세요."
+_TXT = "낙찰자 선정 및 계약체결 안내.txt"
+_VALUE_MID = "포함할 내용: 중·소기업 / 고시 미만"
+
+
+def _new_job() -> Beat:
+    return Beat("new_job", "새 작업 열기", _NEW_JOB, "library", "new-job", "new_job_opened")
+
+
+def _to_binding() -> Beat:
+    return Beat("to_binding", "연결 확인 단계로", _TO_BINDING, "editor", "editor-next", "editor_section_binding")
+
+
+def _pick_job(name: str) -> Beat:
+    return Beat("pick_job", "저장한 작업 고르기", _PICK_JOB.format(name=name), "library", "library-row",
+                "library_job_selected", arg=name)
+
+
+def _use_job() -> Beat:
+    return Beat("use_job", "문서 만들기에서 열기", _USE_JOB, "library", "library-use", "job_opened")
+
+
+def _memo_filter() -> Beat:
+    return Beat("memo_filter", "메모 열 필터 열기", _MEMO_FILTER, "job", "column-filter", "memo_filter_opened",
+                arg="메모")
+
+
+def _all_rows(what: str) -> Beat:
+    return Beat("rows", "행 모두 고르기", _ALL_ROWS.format(what=what), "job", "row-selection", "rows_selected")
+
+
+def _open_workbench(event: str = "txt_workbench_opened") -> Beat:
+    return Beat("workbench", "검토·복사 시작", _OPEN_WORKBENCH, "job", "open-workbench", event)
+
+
+def _create(beat_id: str, title: str, body: str, command: str) -> Beat:
+    return Beat(beat_id, title, body, "authoring", "create-command", "create_form_opened", arg=command)
+
+
+def _trial_open() -> Beat:
+    return Beat("trial_open", "결과 시험 열기", _TRIAL_OPEN, "authoring", "trial-toggle", "trial_dock_opened")
+
+
 LESSONS: tuple[Lesson, ...] = (
-    Lesson("first_hwpx", "첫 HWPX 문서", "공고서 작업을 만들고 3건을 생성합니다.", (
-        Beat("intro", "첫 문서", "연습용 공고서와 공고 데이터로 첫 문서를 만드세요.", None, None),
-        Beat("template", "서식 고르기", "문서 작업에서 새 작업을 열고 연습용 '물품 구매입찰 공고' 서식을 고르세요.", "editor", "template-list", "template_selected", entry_screen="library"),
-        Beat("data", "공고 시트 고르기", "공고목록.xlsx의 '공고' 시트를 연결하세요.", "editor", "data-picker", "notice_data_selected"),
-        Beat("mapping", "두 연결 확인", "'낙찰자결정방법'은 '낙찰방법', '담당자 전화번호'는 '담당자전화'로 연결된 제안을 직접 확인하세요.", "editor", "mapping", "notice_mapping_confirmed"),
-        Beat("pattern", "파일 이름 규칙", "파일 이름 규칙을 구매입찰공고-{{입찰공고번호}}로 정하세요.", "editor", "filename-pattern", "notice_pattern_set"),
-        Beat("save", "작업 저장", "확인한 연결과 파일 이름 규칙으로 작업을 저장하세요.", "editor", "save-job", "notice_job_saved"),
-        Beat("open", "작업 열기", "저장한 공고서 작업을 문서 만들기에서 여세요.", "job", "job-list", "notice_job_opened"),
-        Beat("filter", "메모로 3행 찾기", "메모 열에서 '소기업·소상공인'인 행만 찾으세요.", "job", "row-filter", "notice_first_filtered"),
-        Beat("rows", "3행 선택", "검색된 3행을 선택하세요.", "job", "row-selection", "notice_first_rows"),
-        Beat("options", "두 항목 고르기", "입찰참가자격은 '소기업·소상공인', 낙찰자 결정방법은 '고시 미만'을 고르세요.", "job", "content-options", "notice_first_options"),
-        Beat("generate", "문서 만들기", "선택한 3행의 문서 만들기를 실행하세요.", "job", "generate", "notice_first_generated"),
-        Beat("result", "결과 확인", "결과 3건과 파일 이름을 확인하고 한 문서의 내용을 여세요.", "job", "results", "notice_result_opened"),
+    Lesson("first_hwpx", "엑셀로 공고서 만들기",
+           "공고서 서식과 엑셀 공고 목록을 연결해 작업을 저장하고, 고른 3행으로 공고서 3건을 만듭니다.", (
+        Beat("intro", "시작", "공고서 서식과 공고목록 엑셀로 공고서 3건을 만듭니다. '다음'을 누르세요.", None, None,
+             entry_screen="library"),
+        _new_job(),
+        Beat("template", "공고서 템플릿 고르기",
+             "왼쪽 '템플릿' 목록은 문서의 틀이 되는 파일입니다. '물품 구매입찰 공고.hwpx'를 누르세요.",
+             "editor", "template-row", "template_selected", arg="물품 구매입찰 공고.hwpx"),
+        Beat("data", "공고 데이터 고르기",
+             "오른쪽 '데이터' 목록은 문서에 채울 엑셀 시트입니다. '공고목록.xlsx'의 '공고' 시트를 누르세요.",
+             "editor", "data-row", "notice_data_selected", arg="pool:공고"),
+        _to_binding(),
+        Beat("confirm_method", "낙찰자결정방법 연결 확인",
+             "'제안'은 이름이 달라 앱이 짐작한 연결입니다. '낙찰자결정방법'에 제안된 '낙찰방법' 열이 맞으니 '제안'을 눌러 확인하세요.",
+             "editor", "map-confirm", "notice_row_confirmed", arg="낙찰자결정방법"),
+        Beat("confirm_phone", "담당자 전화번호 연결 확인",
+             "'담당자 전화번호'에는 '담당자전화' 열이 제안됐습니다. '제안'을 눌러 확인하세요.",
+             "editor", "map-confirm", "notice_mapping_confirmed", arg="담당자 전화번호"),
+        Beat("to_filename", "이름·저장 단계로",
+             "'다음 ▶'은 작업 이름과 문서 파일 이름을 정하는 단계로 넘어갑니다. 누르세요.",
+             "editor", "editor-next", "editor_section_filename"),
+        Beat("pattern", "문서 파일 이름 정하기",
+             "'문서 파일 이름'은 만들 파일마다 붙는 이름 규칙입니다. 칸을 구매입찰공고-{{입찰공고번호}}로 바꾸고 Tab 키를 누르세요.",
+             "editor", "filename-pattern", "notice_pattern_set"),
+        Beat("save", "저장하고 열기", _SAVE_OPEN, "editor", "save-and-open", "notice_job_saved"),
+        _memo_filter(),
+        Beat("filter", "소상공인 행만 남기기",
+             "'부분일치 검색'에 적은 글자가 든 행만 표에 남습니다. 소상공인을 적으세요.",
+             "job", "column-text", "notice_first_filtered"),
+        Beat("rows", "보이는 3행 고르기", _VISIBLE_ROWS, "job", "row-selection", "notice_first_rows"),
+        Beat("qualification", "입찰참가자격 고르기",
+             _OPTIONS_HELP + "'입찰참가자격'에서 '소기업·소상공인'을 고르세요.",
+             "job", "slot-options", "slot_option_chosen", arg="입찰참가자격"),
+        Beat("method", "낙찰자 결정방법 고르기", _METHOD, "job", "slot-options", "notice_first_options",
+             arg="낙찰자 결정방법"),
+        Beat("generate", "문서 만들기", "'문서 만들기'는 고른 행마다 HWPX 파일을 하나씩 만듭니다. 누르세요.",
+             "job", "generate", "notice_first_generated"),
+        Beat("result", "만든 문서 열어 보기",
+             "'만든 문서'에는 이번에 만든 파일이 이름과 함께 놓입니다. 첫 문서의 '내용 보기'를 누르세요.",
+             "job", "result-open", "notice_result_opened"),
     )),
-    Lesson("repeat_hwpx", "저장한 작업 다시 쓰기", "다른 행과 내용을 골라 같은 작업을 다시 실행합니다.", (
-        Beat("open", "저장한 작업 열기", "문서 작업에서 준비된 공고서 작업을 문서 만들기로 여세요.", "job", "job-list", "notice_job_opened", entry_screen="library"),
-        Beat("clear", "이전 선택 비우기", "앞서 고른 행을 해제해 새 묶음과 섞이지 않게 하세요.", "job", "row-selection", "rows_cleared"),
-        Beat("filter", "다른 메모 조건", "메모에서 '중·소기업' 묶음인 R26BK99000004-000부터 006-000까지 찾으세요.", "job", "row-filter", "notice_second_filtered"),
-        Beat("rows", "다른 행 고르기", "이번 묶음의 3행만 선택하세요.", "job", "row-selection", "notice_second_rows"),
-        Beat("options", "포함할 내용 바꾸기", "입찰참가자격은 '중·소기업', 낙찰자 결정방법은 '고시 미만'을 고르세요.", "job", "content-options", "notice_second_options"),
-        Beat("generate", "다시 만들기", "새 행의 입찰공고번호가 파일 이름에 들어가는지 확인하고 문서를 만드세요.", "job", "generate", "notice_second_generated"),
+    Lesson("repeat_hwpx", "저장한 작업으로 다시 만들기",
+           "저장해 둔 공고서 작업을 열어 다른 3행과 다른 포함할 내용으로 공고서를 다시 만듭니다.", (
+        _pick_job("공고서 작업"),
+        _use_job(),
+        _memo_filter(),
+        Beat("values_off", "값 선택 모두 해제",
+             "'값 선택'은 체크한 값이 든 행만 표에 남깁니다. '(전체)'를 눌러 체크를 모두 지우세요.",
+             "job", "column-all", "memo_values_cleared"),
+        Beat("filter", "중·소기업 행만 남기기", f"'{_VALUE_MID}'에 체크하세요.",
+             "job", "column-value", "notice_second_filtered", arg=_VALUE_MID),
+        Beat("rows", "보이는 3행 고르기", _VISIBLE_ROWS, "job", "row-selection", "notice_second_rows"),
+        Beat("qualification", "입찰참가자격 바꾸기",
+             _OPTIONS_HELP + "'입찰참가자격'에서 '중·소기업'을 고르세요.",
+             "job", "slot-options", "slot_option_chosen", arg="입찰참가자격"),
+        Beat("method", "낙찰자 결정방법 고르기", _METHOD, "job", "slot-options", "notice_second_options",
+             arg="낙찰자 결정방법"),
+        Beat("names", "만들 파일 이름 확인",
+             "'생성 예정 문서'는 만들 파일의 이름을 미리 보여 줍니다. 이름마다 R26BK99000004-000 같은 입찰공고번호가 들어갔는지 확인하고 '다음'을 누르세요.",
+             "job", "delivery-plan"),
+        Beat("generate", "다시 만들기", "'문서 만들기'는 고른 3행으로 공고서 3건을 만듭니다. 누르세요.",
+             "job", "generate", "notice_second_generated"),
     )),
-    Lesson("contract_txt", "계약 TXT 검토·복사", "계약 데이터 2건을 확인하고 각각 복사합니다.", (
-        Beat("template", "계약 시트", "문서 작업에서 새 작업을 열고 계약 안내 TXT와 공고목록.xlsx의 '계약' 시트를 고르세요.", "editor", "template-list", "contract_inputs_selected", entry_screen="library"),
-        Beat("mapping", "대표계약업체 연결", "'대표계약업체'에 '계약상대자' 열을 직접 연결하세요.", "editor", "mapping", "contract_mapping_set"),
-        Beat("currency", "계약보증금 원 표시", "'계약보증금' 표시형을 금액 '원'으로 고르세요.", "editor", "mapping", "contract_currency_set"),
-        Beat("save", "TXT 작업 저장", "연결을 확인하고 TXT 작업을 저장하세요.", "editor", "save-job", "contract_job_saved"),
-        Beat("open", "두 행 검토", "저장한 계약 작업을 문서 만들기로 열고 두 행을 선택해 검토·복사 작업대로 들어가세요. 서로 다른 두 행을 확인하세요.", "workbench", "txt-review", "contract_two_reviewed", entry_screen="library"),
-        Beat("copy", "각각 복사", "각 행의 채운 문장을 따로 복사하세요. 앱은 외부 붙여넣기를 확인하지 않습니다.", "workbench", "txt-copy", "contract_two_copied"),
+    Lesson("contract_txt", "안내문 문장 복사하기",
+           "계약 데이터로 채운 안내 문장을 행마다 확인하고, 기안에 붙여 넣을 수 있게 복사합니다.", (
+        _new_job(),
+        Beat("template", "계약 안내 템플릿 고르기",
+             f"TXT 템플릿은 파일을 만들지 않고 채운 문장을 복사해 쓰는 서식입니다. '{_TXT}'를 누르세요.",
+             "editor", "template-row", "contract_template_selected", arg=_TXT),
+        Beat("data", "계약 데이터 고르기",
+             "'계약' 시트에는 계약 건마다 업체와 금액이 한 행씩 있습니다. '공고목록.xlsx'의 '계약' 시트를 누르세요.",
+             "editor", "data-row", "contract_inputs_selected", arg="pool:계약"),
+        _to_binding(),
+        Beat("firm_source", "대표계약업체 열 고르기",
+             "'데이터 열'은 이 필드에 채울 엑셀 열입니다. '대표계약업체'에는 같은 이름의 열이 없으니 '계약상대자'를 고르세요.",
+             "editor", "map-source", "contract_source_chosen", arg="대표계약업체"),
+        Beat("firm_confirm", "대표계약업체 연결 확인",
+             "직접 고른 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요.",
+             "editor", "map-confirm", "contract_mapping_set", arg="대표계약업체"),
+        Beat("currency", "계약보증금 표시형",
+             "'표시형'은 값을 문장에 적는 모양입니다. '계약보증금'의 표시형에서 '금액' 아래 '원'을 고르세요.",
+             "editor", "map-format", "contract_currency_set", arg="계약보증금"),
+        Beat("currency_confirm", "계약보증금 연결 확인",
+             "표시형을 바꾼 연결도 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요.",
+             "editor", "map-confirm", "contract_amount_confirmed", arg="계약보증금"),
+        Beat("to_filename", "이름·저장 단계로", "'다음 ▶'은 작업 이름을 정하는 단계로 넘어갑니다. 누르세요.",
+             "editor", "editor-next", "editor_section_filename"),
+        Beat("save", "저장하고 열기", _SAVE_OPEN, "editor", "save-and-open", "contract_job_saved"),
+        _all_rows("계약 6행"),
+        _open_workbench(),
+        Beat("copy_first", "첫 문장 복사", "가운데 글은 이 행의 데이터로 채운 문장입니다. '복사'를 누르세요.",
+             "workbench", "wb-copy", "first_row_copied"),
+        Beat("next_row", "다음 행으로", "'다음'은 다음 계약 행의 문장으로 넘어갑니다. 누르세요.",
+             "workbench", "wb-next", "contract_two_reviewed"),
+        Beat("copy_second", "두 번째 문장 복사", "이 행의 문장도 '복사'를 누르세요.",
+             "workbench", "wb-copy", "contract_two_copied"),
     )),
-    Lesson("purchase_txt", "구매추진 TXT 가공", "군품명의 첫 조각과 날짜·금액 표시를 확인합니다.", (
-        Beat("inputs", "공고 시트", "문서 작업에서 새 작업을 열고 구매추진 안내 TXT와 '공고' 시트를 고르세요.", "editor", "template-list", "purchase_inputs_selected", entry_screen="library"),
-        Beat("slice", "군품명 가공", "'군품명'을 쉼표로 나눈 첫 조각으로 가공하세요. 예제의 '드릴,전동식,휴대용'은 '드릴'이 됩니다.", "editor", "mapping", "purchase_slice_set"),
-        Beat("format", "날짜와 금액 표시", "날짜와 금액의 표시형을 미리보기로 확인하세요.", "editor", "mapping", "purchase_formats_checked"),
-        Beat("save", "작업 저장", "구매추진 TXT 작업을 저장하세요.", "editor", "save-job", "purchase_job_saved"),
-        Beat("preview", "여러 행 미리보기", "저장한 구매추진 작업을 문서 만들기로 열고 두 행을 선택해 검토·복사 작업대로 들어가세요. 서로 다른 행의 문장을 확인하세요.", "workbench", "txt-review", "purchase_two_reviewed", entry_screen="library"),
-        Beat("copy", "TXT 복사", "필요한 행의 TXT를 복사하세요.", "workbench", "txt-copy", "purchase_copied"),
+    Lesson("purchase_txt", "데이터 값 다듬기",
+           "엑셀 칸 값의 일부만 쓰도록 가공하고, 날짜·금액이 문장에 적히는 모양을 확인합니다.", (
+        Beat("slice_open", "군품명 가공 열기", "'가공'은 칸 값의 일부만 문장에 쓰게 합니다. '군품명' 행의 '+ 가공'을 누르세요.",
+             "editor", "map-slice", "slice_popover_opened", arg="군품명"),
+        Beat("slice_pick", "쓸 부분 끌어 고르기",
+             "'예시 값'에서 쓸 부분을 끌어 고르면 방식이 맞춰집니다. '드릴'만 끌어 고르세요.",
+             "editor", "slice-sample", "purchase_slice_set"),
+        Beat("slice_done", "가공 완료", "'완료'는 고른 가공으로 편집 칸을 닫습니다. 누르세요.",
+             "editor", "slice-done", "slice_closed"),
+        Beat("slice_confirm", "군품명 연결 확인",
+             "가공을 바꾼 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요.",
+             "editor", "map-confirm", "purchase_slice_confirmed", arg="군품명"),
+        Beat("format", "다른 행 미리보기",
+             "'미리보기'는 데이터 한 행으로 채운 값입니다. '▶'를 눌러 다음 행의 날짜와 금액이 적히는 모양을 확인하세요.",
+             "editor", "preview-next", "purchase_formats_checked"),
+        Beat("save", "저장하고 열기",
+             "'저장하고 문서 만들기로'는 바꾼 가공을 저장하고 문서 만들기 화면에서 엽니다. 누르세요.",
+             "editor", "save-and-open", "purchase_job_saved"),
+        _all_rows("공고 12행"),
+        _open_workbench(),
+        Beat("copy", "가공한 문장 복사", "가운데 문장의 군품명 자리에 가공한 값이 들어갔는지 확인하고 '복사'를 누르세요.",
+             "workbench", "wb-copy", "purchase_copied"),
     )),
-    Lesson("replace_data", "다른 데이터 연결", "연습 데이터 사본을 작업에 다시 연결합니다.", (
-        Beat("connect", "새 데이터 연결", "연습 사본을 데이터 선택 목록에 연결하세요.", "editor", "data-picker", "derived_data_selected"),
-        Beat("rebind", "작업에 다시 연결", "문서 작업에서 준비된 연습 작업의 편집기를 열고 새 데이터 사본의 공고 시트를 연결하세요. 연결을 다시 제안하고 두 제안을 확인한 뒤 저장하세요.", "editor", "mapping", "derived_job_rebound", entry_screen="library"),
-        Beat("reopen", "저장하고 다시 열기", "작업을 저장하고 다시 열어 새 경로와 시트가 유지되는지 확인하세요.", "job", "job-list", "derived_reopened"),
+    Lesson("replace_data", "작업의 데이터 파일 바꾸기",
+           "저장한 작업이 새로 받은 엑셀 파일을 쓰도록 데이터를 바꾸고, 연결을 다시 확인해 저장합니다.", (
+        _pick_job("공고서 작업"),
+        Beat("edit_job", "작업 편집 열기", "'작업 편집'은 저장한 작업의 템플릿·데이터·연결을 고치는 화면을 엽니다. 누르세요.",
+             "library", "library-edit", "editor_job_opened"),
+        Beat("to_template", "고르기 단계 열기", "'고르기'는 이 작업의 템플릿과 데이터를 바꾸는 단계입니다. 누르세요.",
+             "editor", "editor-tab", "editor_section_template", arg="template"),
+        Beat("browse", "새 파일 찾기", "'파일 찾아보기…'는 등록하지 않은 엑셀 파일을 데이터로 고릅니다. 누르세요.",
+             "editor", "data-browse", "data_browse_started"),
+        Beat("reset", "연결 초기화 확인",
+             "데이터를 바꾸면 확인한 연결이 모두 미확정으로 돌아갑니다. '미확정으로 되돌리기'를 누르고, 열리는 창에서 '공고목록(새 판).xlsx'를 여세요.",
+             "editor", "dialog-confirm", "data_file_picked"),
+        Beat("sheet", "공고 시트 체크", "'가져올 시트 선택'에서 쓸 시트를 고릅니다. '공고'에 체크하세요.",
+             "editor", "sheet-check", "sheet_checked", arg="공고"),
+        Beat("import", "시트 가져오기", "'선택한 1개 시트 가져오기'를 누르세요.",
+             "editor", "sheet-import", "derived_data_selected"),
+        Beat("to_binding", "연결 확인 단계 열기", "'연결 확인'에서 새 파일의 열과 필드 연결을 다시 확인합니다. 누르세요.",
+             "editor", "editor-tab", "editor_section_binding", arg="binding"),
+        Beat("menu", "연결 메뉴 열기", "'⋯'에는 연결 표 전체에 쓰는 명령이 있습니다. 누르세요.",
+             "editor", "binding-more", "binding_menu_opened"),
+        Beat("resuggest", "자동 제안 다시 받기",
+             "'자동 제안 다시 받기'는 새 파일의 열 이름으로 모든 연결을 다시 제안합니다. 누르세요.",
+             "editor", "menu-item", "resuggest_asked", arg="resuggest-all"),
+        Beat("resuggest_confirm", "다시 받기", "'다시 받기'를 누르세요.", "editor", "dialog-confirm", "rows_resuggested"),
+        Beat("confirm_all", "제안 모두 확인", "표 위 '모두 확인' 단추는 제안된 연결을 한 번에 확인합니다. 누르세요.",
+             "editor", "confirm-all", "rebind_rows_confirmed"),
+        Beat("save", "저장하고 열기",
+             "'저장하고 문서 만들기로'는 바뀐 데이터로 작업을 저장하고 문서 만들기에서 엽니다. 누르세요.",
+             "editor", "save-and-open", "derived_reopened"),
     )),
-    Lesson("blank_values", "빈 값 살펴보기", "빈 값 표식을 확인하고 직접 입력으로 고칩니다.", (
-        Beat("observe", "빈 값 표식 확인", "문서 작업에서 준비된 계약 연습 작업을 열고 빈 값이 있는 행을 검토·복사 작업대로 보내세요. 카드의 〈빈 값〉 표시를 확인하세요.", "workbench", "txt-review", "blank_observed", entry_screen="library"),
-        Beat("repair", "직접 입력으로 고치기", "그 행의 필요한 값을 직접 입력해 다시 확인하세요.", "workbench", "txt-review", "blank_repaired"),
-        Beat("compare", "의도적인 비움 비교", "직접 입력으로 고친 '계약보증금'과 의도적으로 비워 둔 '단위'를 비교하세요.", "workbench", "txt-review"),
+    Lesson("blank_values", "빈 칸 확인하기",
+           "데이터에 비어 있는 칸이 문장에 어떻게 표시되는지 보고, 일부러 비워 둔 항목과 비교합니다.", (
+        _pick_job("계약 안내 작업(빈 칸)"),
+        _use_job(),
+        _all_rows("계약 6행"),
+        _open_workbench("blank_observed"),
+        Beat("blank", "〈빈 값〉 표식",
+             "〈빈 값〉은 데이터 칸이 비어 있는 자리입니다. 이 행은 '계약보증금' 칸이 비어 있습니다. '다음'을 누르세요.",
+             "workbench", "wb-blank", arg="계약보증금"),
+        Beat("declared", "비움 확정",
+             "'비움 확정'은 일부러 비워 둔 항목입니다. 〈빈 값〉과 달리 복사 전 확인에서 빠집니다. '다음'을 누르세요.",
+             "workbench", "wb-declared", arg="단위"),
     )),
-    Lesson("field_trial", "내 필드와 결과 시험", "TXT에 필드를 만들고 시험값으로 확인합니다.", (
-        Beat("open", "연습 TXT 열기", "템플릿 작업대의 파일 열기로 계약 안내 TXT 연습 사본을 여세요.", "authoring", "authoring-canvas", "field_practice_opened", entry_screen="authoring"),
-        Beat("field", "10일을 필드로", "본문의 '10일'을 골라 '재배정기한' 필드로 만드세요.", "authoring", "authoring-canvas", "practice_field_created"),
-        Beat("input", "시험값 넣기", "결과 시험에 필드값을 넣으세요.", "authoring", "trial", "field_trial_input"),
-        Beat("trial", "결과 시험", "시험을 실행해 현재 구성의 결과를 확인하세요.", "authoring", "trial", "field_trial_passed"),
-        Beat("save", "사용 준비로 저장", "구조 오류가 없는 '사용 준비' 상태로 저장하세요.", "authoring", "save-template", "field_practice_saved"),
+    Lesson("field_trial", "내 서식에 필드 만들기",
+           "안내문의 문구를 데이터가 들어갈 필드로 바꾸고, 시험값으로 결과를 확인한 뒤 저장합니다.", (
+        Beat("range", "바꿀 문구 고르기",
+             "본문에서 끌어 고른 문구가 필드로 바뀔 자리입니다. 3번 문단의 '10일'을 끌어 고르세요.",
+             "authoring", "authoring-canvas", "field_range_selected", entry_screen="authoring"),
+        _create("create", "필드로 만들기", "'필드로 만들기'는 고른 문구를 데이터가 들어갈 자리로 바꿉니다. 누르세요.",
+                "create_field"),
+        Beat("name", "필드 이름 적기", "'필드 이름'은 데이터 열과 연결할 이름입니다. 재배정기한을 적고 Enter 키를 누르세요.",
+             "authoring", "property-name", "practice_field_created"),
+        _trial_open(),
+        Beat("fill", "빈 시험 칸 채우기",
+             "'필드 이름 사용'은 비어 있는 시험 칸을 필드 이름으로 채우고 결과를 다시 만듭니다. 누르세요.",
+             "authoring", "trial-fill-names", "field_trial_passed"),
+        Beat("save", "서식 저장", _SAVE_TEMPLATE, "authoring", "save-template", "field_practice_saved"),
     )),
-    Lesson("option_apply", "항목·선택과 변경 적용", "두 갈래를 시험하고 저장한 변경을 작업에 적용합니다.", (
-        Beat("open", "연습 TXT와 작업", "템플릿 작업대의 파일 열기로 준비된 작업에 연결된 계약 안내 TXT 연습 사본을 여세요.", "authoring", "authoring-canvas", "option_practice_opened", entry_screen="authoring"),
-        Beat("item", "안내 항목 만들기", "3번 문단을 '예산 재배정 안내' 항목으로 묶으세요.", "authoring", "authoring-canvas", "practice_item_created"),
-        Beat("options", "포함·생략 선택 만들기", "'안내 포함'은 문단을, '안내 생략'은 빈 줄을 담게 만드세요.", "authoring", "authoring-canvas", "practice_options_created"),
-        Beat("trials", "두 갈래 시험", "두 선택을 각각 시험하고 현재 결과를 확인하세요.", "authoring", "trial", "practice_both_trials_passed"),
-        Beat("save", "서식 저장", "구조 오류 없이 템플릿을 저장하세요.", "authoring", "save-template", "option_practice_saved"),
-        Beat("apply", "변경사항 확인·적용", "연결된 작업의 변경사항을 확인하고 적용하세요.", "authoring", "apply-change", "option_change_applied"),
-        Beat("review", "내용 다시 확인", "문서 만들기에서 '안내 포함'을 고르고 검토·복사 작업대에서 예산 재배정 문단을 확인하세요.", "job", "content-options", "option_result_reviewed"),
+    Lesson("option_apply", "넣거나 뺄 문단 만들기",
+           "문단을 문서마다 넣거나 뺄 수 있는 항목으로 만들고, 두 선택을 시험한 뒤 서식을 저장합니다.", (
+        Beat("item_range", "문단 고르기",
+             "항목은 문서마다 넣거나 뺄 수 있는 문단 묶음입니다. 3번 문단 첫 글자부터 그 아래 두 번째 빈 줄까지 끌어 고르세요.",
+             "authoring", "authoring-canvas", "item_range_selected", entry_screen="authoring"),
+        _create("item_create", "항목으로 만들기", "'항목으로 만들기'는 고른 줄을 하나의 항목으로 묶습니다. 누르세요.",
+                "create_slot"),
+        Beat("item_name", "항목 이름 적기",
+             "'표시 이름'은 문서 만들기에서 보일 항목 이름입니다. 예산재배정을 적고 Enter 키를 누르세요.",
+             "authoring", "property-name", "practice_item_created"),
+        Beat("include_range", "넣을 문단 고르기",
+             "선택은 항목 안에서 문서마다 고를 수 있는 내용입니다. 항목 안의 3번 문단을 끌어 고르세요.",
+             "authoring", "authoring-canvas", "include_range_selected"),
+        _create("include_create", "선택으로 만들기", "'선택으로 만들기'는 고른 줄을 이 항목의 선택 하나로 만듭니다. 누르세요.",
+                "create_option"),
+        Beat("include_name", "'안내포함' 이름", "'표시 이름'에 안내포함을 적고 Enter 키를 두 번 누르세요.",
+             "authoring", "property-name", "option_created"),
+        Beat("omit_range", "빈 줄 고르기", "항목 안의 빈 줄을 누르세요. 문단을 뺄 때 이 줄이 대신 들어갑니다.",
+             "authoring", "authoring-canvas", "omit_range_selected"),
+        _create("omit_create", "선택으로 만들기", "'선택으로 만들기'를 누르세요.", "create_option"),
+        Beat("omit_name", "'안내생략' 이름", "'표시 이름'에 안내생략을 적고 Enter 키를 두 번 누르세요.",
+             "authoring", "property-name", "practice_options_created"),
+        _trial_open(),
+        Beat("fill", "빈 시험 칸 채우기", "'필드 이름 사용'은 비어 있는 시험 칸을 필드 이름으로 채웁니다. 누르세요.",
+             "authoring", "trial-fill-names", "trial_names_filled"),
+        Beat("trial_include", "'안내포함' 시험", "'예산재배정'에서 '안내포함'을 고르세요. 결과가 다시 만들어집니다.",
+             "authoring", "trial-slot", "option_trial_passed", arg="예산재배정"),
+        Beat("trial_omit", "'안내생략' 시험", "이번에는 '안내생략'을 고르세요.",
+             "authoring", "trial-slot", "practice_both_trials_passed", arg="예산재배정"),
+        Beat("save", "서식 저장", _SAVE_TEMPLATE, "authoring", "save-template", "option_practice_saved"),
+    )),
+    Lesson("change_apply", "바뀐 서식을 작업에 적용하기",
+           "항목을 더한 서식을 저장한 작업에 적용하고, 문서 만들기에서 그 항목을 골라 채운 문장을 확인합니다.", (
+        Beat("impact", "변경 영향 열기",
+             "'변경 영향·작업 적용'은 이 서식을 쓰는 저장한 작업에 바뀐 점을 반영하는 패널입니다. 누르세요.",
+             "authoring", "impact-tab", "impact_tab_opened", entry_screen="authoring"),
+        Beat("check", "적용 영향 확인", "'적용 영향 확인'은 작업에 생길 변화를 먼저 보여 줍니다. 누르세요.",
+             "authoring", "apply-check", "prepare_apply_ready"),
+        Beat("apply", "기존 작업에 적용", "'기존 작업에 적용'을 누르면 '계약 안내 작업'이 바뀐 서식을 씁니다. 누르세요.",
+             "authoring", "apply-confirm", "option_change_applied"),
+        Beat("to_job", "문서 만들기로 이동", "상단 '문서 만들기'는 데이터를 골라 작업을 실행하는 자리입니다. 누르세요.",
+             "authoring", "nav-job", "screen_entered_job"),
+        Beat("include", "'안내포함' 고르기", "'포함할 내용'의 '예산재배정'에서 '안내포함'을 고르세요.",
+             "job", "slot-options", "slot_option_chosen", arg="예산재배정"),
+        _all_rows("계약 6행"),
+        _open_workbench("option_result_reviewed"),
     )),
 )
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
+_ROUND_KEYS = ("reviewed_rows", "copied_rows", "trial_options", "generated", "applied")
+
+
+def _restored_records(stored: dict, curriculum_current: bool) -> dict[str, dict]:
+    """Stored records of known lessons; an older curriculum keeps completion but restarts position."""
+    records: dict[str, dict] = {}
+    for lesson in LESSONS:
+        entry = stored.get(lesson.id)
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("checkpoint")
+        if type(index) is not int or not 0 <= index <= len(lesson.beats):
+            continue
+        context = entry.get("context") if isinstance(entry.get("context"), dict) else {}
+        records[lesson.id] = {
+            "checkpoint": index if curriculum_current else 0,
+            "completed": entry.get("completed") is True,
+            "context": context if curriculum_current else {},
+        }
+    return records
 
 
 class LessonProgress:
@@ -115,26 +365,14 @@ class LessonProgress:
         self.selected = selected if isinstance(selected, str) and selected in BY_ID else None
         stored = raw.get("records") if isinstance(raw.get("records"), dict) else {}
         assert isinstance(stored, dict)
-        self.records: dict[str, dict] = {}
-        for lesson in LESSONS:
-            entry = stored.get(lesson.id)
-            if not isinstance(entry, dict):
-                continue
-            index = entry.get("checkpoint")
-            if type(index) is not int or not 0 <= index <= len(lesson.beats):
-                continue
-            context = entry.get("context") if isinstance(entry.get("context"), dict) else {}
-            self.records[lesson.id] = {
-                "checkpoint": index,
-                "completed": entry.get("completed") is True,
-                "context": context,
-            }
+        self.records: dict[str, dict] = _restored_records(stored, raw.get("curriculum") == CURRICULUM)
         self.active = False  # restarting the app never opens the coach automatically
         self.result: dict | None = None
 
     def progress(self) -> dict:
         return {
             "version": 1,
+            "curriculum": CURRICULUM,
             "invite_seen": self.invite_seen,
             "selected": self.selected,
             "records": self.records,
@@ -163,7 +401,7 @@ class LessonProgress:
         # Guidance position is independent of evidence and the user's work.
         record = self.record(lesson_id)
         record["checkpoint"] = 0
-        for key in ("reviewed_rows", "copied_rows", "trial_options", "generated", "applied"):
+        for key in _ROUND_KEYS:
             record["context"].pop(key, None)
         self.selected = lesson_id
         self.active = True
@@ -175,6 +413,17 @@ class LessonProgress:
         lesson = BY_ID[self.selected]
         index = self.record(self.selected)["checkpoint"]
         return lesson.beats[index] if index < len(lesson.beats) else None
+
+    def rewind(self, beat_id: str) -> bool:
+        """Return to an earlier beat whose established fact no longer holds (never forward)."""
+        if not self.selected:
+            return False
+        entry = self.record(self.selected)
+        index = next(i for i, item in enumerate(BY_ID[self.selected].beats) if item.id == beat_id)
+        if index >= entry["checkpoint"]:
+            return False
+        entry["checkpoint"] = index
+        return True
 
     def _advance(self) -> bool:
         if not self.selected:
@@ -234,17 +483,7 @@ class LessonProgress:
                 }
                 for lesson in LESSONS
             ],
-            "beat": None if beat is None else {
-                "id": beat.id,
-                "title": beat.title,
-                "body": beat.body,
-                "mode": beat.mode,
-                "screen": beat.screen,
-                "entry_screen": beat.entry_screen,
-                "target": beat.target,
-                "placement": beat.placement,
-                "can_next": beat.event is None,
-            },
+            "beat": None if beat is None else _beat_view(beat),
             "recovery": None,
             "resources": {"ready": False, "summary": ""},
             "show_result": self.result is not None,
@@ -260,3 +499,19 @@ class LessonProgress:
                 "practice": "연습 중", "exit": "연습 종료", "return": "현재 단계로 돌아가기",
             },
         }
+
+
+def _beat_view(beat: Beat) -> dict:
+    return {
+        "id": beat.id,
+        "title": beat.title,
+        "body": beat.body,
+        "mode": beat.mode,
+        "screen": beat.screen,
+        "entry_screen": beat.entry_screen,
+        "target": beat.target,
+        "arg": beat.arg,
+        "press": beat.event in UI_PRESS_EVENTS,
+        "placement": beat.placement,
+        "can_next": beat.event is None,
+    }

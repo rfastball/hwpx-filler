@@ -99,9 +99,8 @@ def test_authoring_native_file_handoffs_accept_only_selected_or_live_paths(tmp_p
     monkeypatch.setattr(app_mod, "_file_dialog", lambda _filters, **kw: options.append(kw) or None)
     tutorial = frontend.controllers["tutorial"]
     tutorial.dispatch("select", {"scenario_id": "field_trial"})
-    assert frontend.open_authoring_document("", True) is None
-    assert options[-1]["initial_path"] == tutorial._asset("낙찰자 선정 및 계약체결 안내.txt")
-    tutorial.dispatch("pause", {})
+    # The authoring lessons start with the practice TXT already open (#1127): no beat asks
+    # for a template from the native picker, so it gets no suggested file.
     assert frontend.open_authoring_document("", True) is None
     assert options[-1] == {}
 
@@ -359,15 +358,18 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].edit.data_path == ""
     assert "initial_path" not in options[-1]
     tutorial = frontend.controllers["tutorial"]
-    tutorial.dispatch("select", {"scenario_id": "first_hwpx"})
-    tutorial.dispatch("next", {})
-    frontend.dispatch("editor", "use_library_template", {"path": tutorial._asset("물품 구매입찰 공고.hwpx")})
+    tutorial.dispatch("select", {"scenario_id": "replace_data"})
+    # Only the beat that asks for the new data file suggests it (#1127).
+    from hwpxfiller.viewmodel.tutorial_lessons import BY_ID
+    tutorial.progress.record("replace_data")["checkpoint"] = [
+        beat.event for beat in BY_ID["replace_data"].beats].index("data_file_picked")
+    derived = tutorial._context()["derived_data_path"]
     # The hint reaches the native seam but choosing a different workbook remains valid.
     result = frontend.pick_data_file("editor")
     assert result["path"] == str(MULTI_SHEET)
-    assert options[-1]["initial_path"] == tutorial._asset("공고목록.xlsx")
+    assert options[-1]["initial_path"] == derived
     assert frontend.pick_pool_data_file() == str(MULTI_SHEET)
-    assert options[-1]["initial_path"] == tutorial._asset("공고목록.xlsx")
+    assert options[-1]["initial_path"] == derived
     tutorial.dispatch("pause", {})
     frontend.pick_pool_data_file()
     assert "initial_path" not in options[-1]

@@ -11,8 +11,9 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, anchorSelector, featuredAction, featuredLesson, lessonAction, runResultAction } from "../../frontend/src/tutorial/panel.ts";
-import { placeCoach, pressMissesTarget, spotFrame, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
+import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, pressFact, runResultAction } from "../../frontend/src/tutorial/panel.ts";
+import { ANCHORS, anchorSelector } from "../../frontend/src/tutorial/anchors.ts";
+import { placeCoach, pressMissesTarget, spotFrame, watchBoxedPress, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
 const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
@@ -97,23 +98,23 @@ test("completed lessons restart while a paused current lesson resumes", () => {
   assert.match(last, /COPY:choose_scenario/);
 });
 
-test("host route guidance and preparation stay actionable without an anchor", () => {
+test("a beat keeps its own words on another screen and offers only the way back to its screen", () => {
+  // #1127 C3: no per-screen substitute text or box — the beat's text always describes the beat's own control.
   const beat = { id: "b", title: "서식 고르기", body: "편집기에서 서식을 고르세요.", mode: "action",
-    screen: "editor", target: "template-list", placement: "right", can_next: false,
-    guidance: { library: { body: "새 작업을 여세요.", target: "new-job", primary: { action: "navigate", screen: "editor", label: "새 작업" } } } };
-  const html = render(snapshot({ active: true, beat }), { screen: "library" });
-  assert.match(html, /새 작업을 여세요\./);
-  assert.match(html, /id="tutorialPrimary"/);
-  assert.doesNotMatch(html, /편집기에서 서식을 고르세요/);
-  const lost = render(snapshot({ active: true, beat }), { screen: "authoring" });
-  assert.match(lost, /id="tutorialReturn"/);
-  assert.match(lost, /편집기에서 서식을 고르세요/);
+    screen: "editor", target: "template-row", arg: "a.hwpx", placement: "right", can_next: false };
+  for (const screen of ["library", "authoring"]) {
+    const html = render(snapshot({ active: true, beat }), { screen });
+    assert.match(html, /id="tutorialReturn"/);
+    assert.match(html, /편집기에서 서식을 고르세요/);
+    assert.doesNotMatch(html, /tutorialPrimary/);
+  }
 });
 
 test("relevant modal contains the guide and exit without another modal or click shield", () => {
-  const host = { querySelector: () => null, matches: (selector) => selector.includes("#poolRegModal") };
+  // The dialog is relevant exactly when the beat's boxed control is inside it.
+  const host = { querySelector: (selector) => selector === "#sheetList input[data-sheet='공고']" ? {} : null, matches: () => false };
   const html = render(snapshot({ active: true, practice: { active: true, return_screen: "library" },
-    beat: { id: "data", title: "공고 시트", body: "연습 사본의 공고 시트를 고르세요.", mode: "action", screen: "editor", target: "data-picker", placement: "right", can_next: false } }), { host });
+    beat: { id: "sheet", title: "공고 시트 체크", body: "연습 사본의 공고 시트를 고르세요.", mode: "action", screen: "editor", target: "sheet-check", arg: "공고", press: true, placement: "right", can_next: false } }), { host });
   assert.match(html, /tutorial-coach-inline/);
   assert.match(html, /id="tutorialDialogExit"/);
   assert.match(html, /연습 사본의 공고 시트를 고르세요/);
@@ -121,11 +122,17 @@ test("relevant modal contains the guide and exit without another modal or click 
 });
 
 test("semantic anchors resolve to real controls and coach flips/clamps to viewport", () => {
-  assert.equal(anchorSelector("new-job"), "#jobCandNewWork, #libraryNewWork, #jobPickInLibrary");
-  assert.equal(anchorSelector("template-list"), "#editorTplList");
-  assert.equal(anchorSelector("save-job"), "#editor-foot button[data-act='save']");
-  assert.equal(anchorSelector("row-filter"), "#jobTableHead .fico[data-col='메모']");
+  assert.equal(anchorSelector("new-job"), "#libraryNewWork");
+  assert.equal(anchorSelector("row-selection"), "#jobSelAll", "C7: never the first of a wider list");
+  assert.equal(anchorSelector("column-filter", "메모"), "#jobTableHead .fico[data-col='메모']");
+  assert.equal(anchorSelector("map-confirm", "담당자 전화번호"),
+    "#editor-body table.map tr[data-field='담당자 전화번호'] button[data-act='row-confirm']");
+  assert.equal(anchorSelector("library-row", "it's"), "#libraryList button[data-work='it\\'s']");
+  assert.equal(anchorSelector("map-confirm"), null, "a parameterised anchor without its parameter boxes nothing");
   assert.equal(anchorSelector("unknown"), null);
+  for (const [key, selector] of Object.entries(ANCHORS)) {
+    assert.ok(!selector.includes(","), `${key}: one selector, one control`);
+  }
   const bottom = placeCoach({ left: 480, right: 600, top: 610, bottom: 650, width: 120, height: 40 },
     { width: 900, height: 700 }, "bottom", 180);
   assert.equal(bottom.side, "top");
@@ -283,7 +290,7 @@ test("finale result action dismisses the card only after navigation succeeds; on
 });
 
 const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
-const pickBeat = { id: "b", title: "고르기", body: "누르세요.", mode: "action", screen: "job", target: "data-picker", placement: "right", can_next: false };
+const pickBeat = { id: "b", title: "고르기", body: "누르세요.", mode: "action", screen: "job", target: "row-selection", placement: "right", can_next: false };
 const coachHtml = (overrides) => renderToStaticMarkup(createElement(TutorialCoach, { beat: pickBeat, copy, step: "", placement: null,
   inline: false, lost: false, overlayBusy: false, pending: false, swap: 0, missed: 0, exit: null, act: () => {}, recover: () => {}, ...overrides }));
 
@@ -291,7 +298,7 @@ test("spotlight hugs the control: small pad and the control's own radius grown b
   assert.deepEqual(spotFrame({ rect: box(100, 50, 120, 40), radius: 6 }), { x: 96, y: 46, width: 128, height: 48, radius: 10 });
   assert.equal(spotFrame({ rect: box(100, 50, 120, 40), radius: 0 }).radius, 4, "square control keeps a barely rounded ring");
   assert.equal(spotFrame({ rect: box(100, 50, 120, 40), radius: 999 }).radius, 24, "pill control stays a pill, never rounder");
-  const html = renderToStaticMarkup(createElement(TutorialSpot, { target: { rect: box(100, 50, 120, 40), radius: 6 }, motionKey: "b1|data-picker", missed: 0, ring: false }));
+  const html = renderToStaticMarkup(createElement(TutorialSpot, { target: { rect: box(100, 50, 120, 40), radius: 6 }, motionKey: "b1|row-selection", missed: 0, ring: false }));
   assert.match(html, /class="tutorial-spot" aria-hidden="true" data-dim="scrim"/);
   assert.match(html, /style="transform:translate\(96px, 46px\);width:128px;height:48px;border-radius:10px"/);
   assert.match(html, /class="tutorial-spot-pulse"/);
@@ -321,6 +328,43 @@ test("coach takes the preferred side when it fits and its arrow points at the ta
   const inline = coachHtml({ inline: true, overlayBusy: true, swap: 1 });
   assert.match(inline, /class="tutorial-coach tutorial-coach-inline"[^>]*data-side="inline" data-swap="b"/);
   assert.doesNotMatch(inline, /tutorial-coach-arrow|style=/);
+});
+
+test("a press is a reportable fact only for the live press beat on its own screen", () => {
+  const beat = { id: "sheet", title: "t", body: "b", mode: "action", screen: "editor", target: "sheet-check", arg: "공고",
+    press: true, placement: "right", can_next: false };
+  const live = { kind: "tutorial-lessons/v1", active: true, paused: false, scenario_id: "replace_data", checkpoint: 5, beat };
+  assert.deepEqual(pressFact(live, "editor"), { scenario_id: "replace_data", checkpoint: 5, anchor: "sheet-check" });
+  assert.equal(pressFact(live, "job"), null, "another screen");
+  assert.equal(pressFact({ ...live, paused: true }, "editor"), null, "paused guidance");
+  assert.equal(pressFact({ ...live, beat: { ...beat, press: false } }, "editor"), null, "a product-command beat");
+  assert.equal(pressFact({ ...live, beat: { ...beat, mode: "explain" } }, "editor"), null);
+  assert.equal(pressFact(null, "editor"), null);
+});
+
+test("only an activation of the boxed control is reported, never intercepted", () => {
+  // #1127: a UI-only beat reports the fact "this beat's control was pressed"; the host decides the beat.
+  const inner = {};
+  const control = { disabled: false, getAttribute: (name) => name === "aria-disabled" ? control.dimmed : null,
+    dimmed: null, getBoundingClientRect: () => box(0, 0, 40, 20), closest: () => null,
+    contains: (node) => node === control || node === inner };
+  const listeners = [];
+  const doc = { querySelectorAll: (selector) => selector === "#boxed" ? [control] : [],
+    addEventListener: (type, fn, capture) => listeners.push({ type, fn, capture }),
+    removeEventListener: (type, fn) => listeners.splice(listeners.findIndex((entry) => entry.fn === fn), 1) };
+  let presses = 0;
+  const stop = watchBoxedPress(doc, "#boxed", () => { presses += 1; });
+  assert.deepEqual(listeners.map(({ type, capture }) => [type, capture]), [["click", true]]);
+  listeners[0].fn({ target: inner });
+  listeners[0].fn({ target: {} });
+  control.dimmed = "true";
+  listeners[0].fn({ target: control });
+  control.dimmed = null;
+  control.disabled = true;
+  listeners[0].fn({ target: control });
+  assert.equal(presses, 1, "elsewhere, dimmed and disabled presses are not presses of the boxed control");
+  stop();
+  assert.equal(listeners.length, 0);
 });
 
 test("a press outside the ring nudges the coach without intercepting the press", () => {

@@ -110,6 +110,23 @@ export function watchMissedPress(doc: Document, frame: SpotFrame, onMiss: () => 
   return () => doc.removeEventListener("pointerdown", listener, true);
 }
 
+/** A pressed control that cannot act (disabled, or dimmed with `aria-disabled`) is not a press of that control. */
+function inert(element: Element): boolean {
+  return (element as HTMLButtonElement).disabled === true || element.getAttribute("aria-disabled") === "true";
+}
+
+/** Observe (never intercept) an activation of the boxed control — the first visible match of `selector`.
+ *  `click` covers the pointer and the keyboard alike; the product still handles the click itself. */
+export function watchBoxedPress(doc: Document, selector: string, onPress: () => void): () => void {
+  const listener = (event: Event) => {
+    const boxed = visibleElement(doc, selector);
+    const origin = event.target as Node | null;
+    if (boxed && origin && boxed.contains(origin) && !inert(boxed)) onPress();
+  };
+  doc.addEventListener("click", listener, true);
+  return () => doc.removeEventListener("click", listener, true);
+}
+
 function guideOwned(mutation: MutationRecord): boolean {
   return !!(mutation.target as Element).closest?.("#tutorialPanelRoot, #tutorialCoach, .tutorial-spot");
 }

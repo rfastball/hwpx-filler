@@ -86,7 +86,7 @@ export function Trial({ controller, item, view }: Props & { item: Obj; view: Obj
         // 「필드 이름 사용」(IDE-01): 손대지 않은 필드만 그 이름으로 채우는 한 번의 입력 전이 — 채울 필드(trial_missing)가
         // 없으면 비활성이다. 어느 필드를 채울지는 Python 이 정한다.
         !!item.analysis?.fields?.length && h("div", { className: "authoring-actions start" },
-          button("필드 이름 사용", () => { void controller.guarded(controller.fillTrialNames); }, { disabled: !missingFields.length })),
+          button("필드 이름 사용", () => { void controller.guarded(controller.fillTrialNames); }, { disabled: !missingFields.length, "data-guide": "trial-fill-names" })),
         ...(item.analysis?.fields || []).map((field: Obj) => h("label", { key: field.name, className: "authoring-field" }, field.name,
           // 손대지 않은 필드는 입력칸이 aria-invalid 를 받고 결과 시험 탭 배지로 센다 — 결과는 빈 값 표식으로 렌더된다.
           h("input", { className: "field", "aria-invalid": missingFields.includes(field.name) || undefined, value: view.values[field.name] || "",
@@ -99,7 +99,7 @@ export function Trial({ controller, item, view }: Props & { item: Obj; view: Obj
             } })))),
       !!item.analysis?.slots?.length && h("div", { className: "authoring-trial-group" },
         ...(item.analysis?.slots || []).map((slot: Obj) => h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
-          h("select", { className: "field", "aria-invalid": missingSlots.includes(slot.id) || undefined, value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
+          h("select", { className: "field", "data-guide": "trial-slot", "data-slot": slot.id, "aria-invalid": missingSlots.includes(slot.id) || undefined, value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
             h("option", { value: "" }, "선택"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id)))))),
       h("label", { className: "authoring-check" }, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
       h("div", { className: "authoring-actions start" },

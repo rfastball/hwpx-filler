@@ -66,12 +66,13 @@ class TutorialWorkspace:
         write_text_atomic(self.root / _PROGRESS, json.dumps(value, ensure_ascii=False, indent=2))
 
     # ------------------------------------------------------------ 연습 홈
-    def seed(self, lesson_id: str, *, derived: str = "") -> dict:
+    def seed(self, lesson_id: str, *, derived: str = "", derived_name: str = "") -> dict:
         """그 과정의 새 회차 홈을 만들고 동봉 원본을 원래 이름으로 놓는다.
 
-        ``derived`` 는 원본과 다른 연습 데이터 한 벌(``replacement``·``blank``)을 더한다.
+        ``derived`` 는 원본과 다른 연습 데이터 한 벌(``replacement``·``blank``)을 더한다 —
+        파일 이름은 과정 안내가 그대로 부를 수 있게 ``derived_name`` 으로 고정한다(#1127).
         """
-        if derived not in {"", "blank", "replacement"}:
+        if derived not in {"", "blank", "replacement"} or bool(derived) != bool(derived_name):
             raise ValueError("알 수 없는 연습 데이터 종류입니다.")
         source = asset_root()
         missing = [name for name in ORIGINALS if not (source / name).is_file()]
@@ -81,7 +82,7 @@ class TutorialWorkspace:
         home = self.root / "lessons" / lesson_id / batch
         try:
             assets = {name: self._place(source / name, home, name, batch) for name in ORIGINALS}
-            extra = self._derive(source / DATA_NAME, home, batch, derived) if derived else None
+            extra = self._derive(source / DATA_NAME, home, batch, derived, derived_name) if derived else None
         except BaseException:
             shutil.rmtree(home, ignore_errors=True)
             raise
@@ -100,14 +101,19 @@ class TutorialWorkspace:
         return {"name": original.name, "path": str(target), "sha256": fingerprint(target),
                 "batch": batch}
 
-    def _derive(self, original: Path, home: Path, batch: str, derived: str) -> dict:
-        name = f"{original.stem} (연습 {batch}){original.suffix}"
+    def _derive(self, original: Path, home: Path, batch: str, derived: str, name: str) -> dict:
+        if Path(name).name != name or Path(name).suffix != original.suffix or name == original.name:
+            raise ValueError("연습 데이터 이름을 확인할 수 없습니다.")
         entry = self._place(original, home, name, batch)
         if derived == "blank":
             from openpyxl import load_workbook
 
             workbook = load_workbook(entry["path"])
-            workbook["계약"]["K2"] = None  # 계약보증금: 원본에는 빈 셀이 없다.
+            sheet = workbook["계약"]
+            column = next(cell.column for cell in sheet[1] if cell.value == "계약보증금")
+            # 계약보증금을 모든 행에서 비운다 — 작업대가 어느 행을 먼저 보이든 그 행에 〈빈 값〉이 선다.
+            for row in range(2, sheet.max_row + 1):
+                sheet.cell(row=row, column=column).value = None
             workbook.save(entry["path"])
             entry["sha256"] = fingerprint(Path(entry["path"]))
         entry["derived"] = derived

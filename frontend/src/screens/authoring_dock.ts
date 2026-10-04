@@ -79,11 +79,11 @@ export function renderDockContent(key: string, { controller, item, view, act, se
       ...(view.impact?.jobs || []).map((job: Obj) => { const blocked = view.impact.save_required || view.impact.usable === false; return h("div", { key: job.name }, h("strong", null, job.name),
         job.change_status && h("p", null, TPL_STATUS_COPY[job.change_status] || job.change_status),
         h("p", null, `추가 필드: ${(job.added_fields || []).join(", ") || "없음"} · 없어진 필드: ${(job.removed_fields || job.unmapped_fields || []).join(", ") || "없음"}`),
-        button("적용 영향 확인", act(() => controller.applyJob(job.name)), { "data-guide": "apply-change", disabled: blocked, "aria-disabled": blocked || undefined, title: (blocked && job.blocked_reason) || undefined }),
+        button("적용 영향 확인", act(() => controller.applyJob(job.name)), { "data-guide": "apply-check", disabled: blocked, "aria-disabled": blocked || undefined, title: (blocked && job.blocked_reason) || undefined }),
         blocked && job.blocked_reason && h("p", { className: "authoring-reason" }, job.blocked_reason)); }),
       view.jobApply && h("div", null, h("p", null, TPL_STATUS_COPY[view.jobApply.preparation?.status] || view.jobApply.message),
         ...(view.jobApply.preparation?.diagnostics || []).map((entry: Obj, index: number) => h("p", { key: index }, entry.message)),
-        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ jobApply: null })), primary("기존 작업에 적용", act(controller.confirmJob), { "data-guide": "apply-change", disabled: !view.jobApply.change_token }))));
+        h("div", { className: "authoring-actions" }, quiet("취소", () => controller.update({ jobApply: null })), primary("기존 작업에 적용", act(controller.confirmJob), { "data-guide": "apply-confirm", disabled: !view.jobApply.change_token }))));
     const fix = key === "problems" && view.preview ? problemFix(item.problems, view.command) : null;
     // 문제 한 건(§7.2·F24): 심각도·종류는 색이 아닌 글자로(P14), 대상·설명·다음 행동을 Python 의 problems 그대로 보인다.
     // 문제 한 건은 행이다(UX-09): 심각도 글자 칩 · 종류 · 설명 · 흐린 대상. 이동하는 다음 행동(「원문으로 이동」)은 그 행 자체이고

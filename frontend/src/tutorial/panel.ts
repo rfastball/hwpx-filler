@@ -1,23 +1,23 @@
-/* Eight task lessons. The host owns lesson state; this surface owns only geometry and controls. */
+/* Nine task lessons. The host owns lesson state; this surface owns only geometry and controls. */
 import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { icon } from "../screens/icons.ts";
-import { GLIDE_WINDOW, measureTarget, parity, placeCoach, sameTarget, spotFrame, visibleElement, watchLayout, watchMissedPress } from "./spotlight.ts";
+import { anchorSelector } from "./anchors.ts";
+import { GLIDE_WINDOW, measureTarget, parity, placeCoach, sameTarget, spotFrame, visibleElement, watchBoxedPress, watchLayout, watchMissedPress } from "./spotlight.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
 export type Lesson = {
   id: string; title: string; description: string; recommended: boolean;
   completed: boolean; checkpoint: number; step_count: number;
 };
+/** One beat = one boxed control (`target` with its parameter `arg`) on one screen. `press` marks a beat whose
+ *  control runs no product command: the surface reports the press and the host decides the beat (#1127). */
 export type TutorialBeat = {
   id: string; title: string; body: string; mode: "explain" | "action" | "finish";
-  screen: string | null; entry_screen?: string | null; target: string | null;
+  screen: string | null; entry_screen?: string | null; target: string | null; arg?: string; press?: boolean;
   placement: "top" | "right" | "bottom" | "left" | "center"; can_next: boolean;
-  primary?: GuideAction;
-  guidance?: Record<string, { body: string; target: string | null; primary?: GuideAction }>;
 };
-type GuideAction = { action: "navigate"; label: string; screen?: string };
 export type TutorialSnapshot = {
   kind: "tutorial-lessons/v1";
   invitation: { visible: boolean; title: string; body: string };
@@ -48,35 +48,6 @@ export type TutorialPorts = {
   doc: Document;
   portal?: (children: ReactNode, container: Element) => ReactNode;
 };
-
-const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
-  "new-job": "#jobCandNewWork, #libraryNewWork, #jobPickInLibrary",
-  "template-list": "#editorTplList",
-  "data-picker": "#jobBtnPickData, #editorPoolBrowse, #dataPickerBrowse",
-  mapping: "#editorPairZone, #wbMapPanel",
-  "filename-pattern": "#editor-body input[data-act='pattern']",
-  "save-job": "#editor-foot button[data-act='save']",
-  "job-list": "#jobBrowseRows, #jobBrowseOpen, #jobCandidates, #libraryList",
-  "library-jobs": "#libraryDetail [data-use], #libraryList",
-  "edit-job": "#libraryDetail [data-edit], #libraryList",
-  "open-workbench": "#jobGenBtn",
-  "row-filter": "#jobTableHead .fico[data-col='메모']",
-  "row-selection": "#jobSelAll, #jobTableBody",
-  "content-options": "#jobContentSelectionZone",
-  generate: "#jobManagedCreate, #jobGenBtn",
-  results: "#jobResult",
-  "txt-review": "#wbCard",
-  "txt-copy": "#wbCopy",
-  "authoring-canvas": "#authoring-canvas, #authoring-outline-title",
-  "authoring-open": "#authoring-menu[aria-label='파일'] [role='menuitem']:first-child, .authoring-empty-actions button:first-child, .authoring-head button[aria-haspopup='menu']",
-  trial: ".authoring-dock.trial #authoring-dock-panel, .authoring-toolbar-end button[aria-pressed]",
-  "save-template": "[data-guide='save-template']",
-  "apply-change": "[data-guide='apply-change'], #authoring-dock-tab-impact",
-});
-
-export function anchorSelector(key: string | null): string | null {
-  return key ? ANCHORS[key] ?? null : null;
-}
 
 const noHost = () => null;
 
@@ -187,16 +158,12 @@ type CoachProps = {
   act(action: string, payload?: Record<string, unknown>): void; recover(): void;
 };
 
-const primaryPayload = (primary: GuideAction) => primary.screen ? { screen: primary.screen } : {};
-
 function CoachFoot(props: CoachProps): ReactNode {
   const { beat, copy, pending } = props;
   const button = (id: string | undefined, label: string, onClick: () => void) =>
     h("button", { id, className: "btn primary sm", type: "button", disabled: pending, onClick }, label);
-  const guide = beat.primary && !props.overlayBusy ? beat.primary : null;
   return h("div", { className: "tutorial-coach-foot" },
-    guide ? button("tutorialPrimary", guide.label, () => props.act(guide.action, primaryPayload(guide))) : null,
-    !beat.primary && props.lost && !props.overlayBusy ? button("tutorialReturn", copy.return, props.recover) : null,
+    props.lost && !props.overlayBusy ? button("tutorialReturn", copy.return, props.recover) : null,
     beat.mode === "explain" && beat.can_next ? button(undefined, copy.next, () => props.act("next")) : null,
     props.inline ? props.exit : null);
 }
@@ -233,7 +200,7 @@ function TutorialGuide(props: GuideProps): ReactNode {
   const missed = useMissedPresses(doc, beat.mode === "action" ? frame : null, beat.id);
   const placement = found && !dialogHost ? placeCoach(found.rect, viewportOf(doc), beat.placement, coachHeight) : null;
   const coach = h(TutorialCoach, { ...props, placement, inline: !!dialogHost, lost: !found && !!beat.target, swap, missed });
-  const spot = found ? h(TutorialSpot, { target: found, motionKey: `${beat.id}|${beat.target}`, missed, ring: !!dialogHost }) : null;
+  const spot = found ? h(TutorialSpot, { target: found, motionKey: `${beat.id}|${beat.target}|${beat.arg ?? ""}`, missed, ring: !!dialogHost }) : null;
   if (dialogHost) return props.portal(h(Fragment, null, coach, spot), dialogHost);
   return h("div", { className: "tutorial-guide", "data-mode": beat.mode }, spot, coach);
 }
@@ -302,6 +269,27 @@ export function TutorialLessons(props: LessonControls): ReactNode {
       !practice ? quiet(snapshot.copy.reset, () => props.confirm("reset_progress"), { className: "btn quiet sm tutorial-destructive" }) : null));
 }
 
+/** The fact a press beat reports, or null: only a live action beat marked `press`, on its own screen. */
+export function pressFact(snapshot: TutorialSnapshot | null, screen: string | null): Record<string, unknown> | null {
+  const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  if (!beat || beat.mode !== "action" || beat.press !== true || !beat.target) return null;
+  if (beat.screen !== null && beat.screen !== screen) return null;
+  return { scenario_id: snapshot!.scenario_id, checkpoint: snapshot!.checkpoint, anchor: beat.target };
+}
+
+/** Report a press on the current beat's own boxed control (a press that runs no product command). The report
+ *  carries only the fact — lesson, position and anchor — and the host decides whether the beat is done. */
+function usePressReport(ports: TutorialPorts, snapshot: TutorialSnapshot | null, screen: string | null, beatSelector: string | null): void {
+  const fact = pressFact(snapshot, screen);
+  const key = fact && beatSelector ? `${fact.scenario_id}|${fact.checkpoint}|${beatSelector}` : "";
+  useEffect(() => {
+    if (!fact || !beatSelector) return undefined;
+    return watchBoxedPress(ports.doc, beatSelector, () => {
+      void Promise.resolve(ports.dispatch("observe_ui", fact)).catch((error) => ports.alarm(String(error)));
+    });
+  }, [ports, key]);
+}
+
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const raw = useSyncExternalStore(ports.model.subscribe, ports.model.getSnapshot, ports.model.getSnapshot);
   const snapshot = readSnapshot(raw);
@@ -327,26 +315,23 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     finally { setPending(false); }
   }, [pending, ports]);
 
-  const baseBeat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
-  const guidance = screen ? baseBeat?.guidance?.[screen] : undefined;
-  const beat = baseBeat && guidance ? { ...baseBeat, ...guidance, screen } : baseBeat;
+  const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
   const practice = snapshot?.practice?.active === true;
-  // Put help in the existing focus boundary; never create a second modal or intercept Escape.
-  const dialogRelevant = !!overlayHost && !!beat && (
-    !!overlayHost.querySelector(anchorSelector(beat.target) ?? "[data-tutorial-no-target]")
-    || beat.target === "data-picker" && overlayHost.matches("#dataPickerModal, #poolRegModal, #sheetModal")
-    || ["row-filter", "row-selection"].includes(beat.target ?? "") && overlayHost.matches("#dataSheet")
-    || beat.target === "job-list" && overlayHost.matches("#jobBrowseSheet"));
+  // Put help in the existing focus boundary when the boxed control is inside it; never create a second modal
+  // or intercept Escape.
+  const dialogRelevant = !!overlayHost && !!beatSelector && !!overlayHost.querySelector(beatSelector);
   const dialogHost = dialogRelevant ? overlayHost!.querySelector(".modal-card, .sheet-card, [role='dialog']") ?? overlayHost : null;
   const canGuide = !overlayBusy || !!dialogHost;
   const result = snapshot?.show_result && !snapshot.active && !overlayBusy ? snapshot.result : null;
   useEffect(() => setResultDismissed(false), [result?.title]);
-  const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beat.target
-    : result && result.screen === screen ? result.target : null;
+  const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beatSelector
+    : result && result.screen === screen ? anchorSelector(result.target) : null;
+  usePressReport(ports, snapshot, screen, beatSelector);
   useLayoutEffect(() => {
     if (!target) { setFound(null); return undefined; }
     const measure = () => {
-      const next = measureTarget(dialogHost ?? ports.doc, anchorSelector(target), viewportOf(ports.doc));
+      const next = measureTarget(dialogHost ?? ports.doc, target, viewportOf(ports.doc));
       setFound((before) => sameTarget(before, next) ? before : next);
     };
     measure();
@@ -364,7 +349,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const resultPosition = found && result ? placeCoach(found.rect, viewportOf(ports.doc), "right", resultHeight) : null;
 
   const recover = async () => {
-    const element = visibleElement(dialogHost ?? ports.doc, anchorSelector(beat?.target ?? null));
+    const element = visibleElement(dialogHost ?? ports.doc, beatSelector);
     if (element) {
       element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
       element.focus({ preventScroll: true });

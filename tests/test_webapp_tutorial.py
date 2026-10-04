@@ -907,68 +907,6 @@ def test_modified_practice_file_pauses_guidance_without_erasing_checkpoint(tmp_p
     assert record["checkpoint"] == 1 and data.is_file()
 
 
-def test_replace_data_lesson_persists_new_job_link_not_only_pool_mount(tmp_path, monkeypatch):
-    from hwpxfiller.webapp.app import WebFrontend
-
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    app = WebFrontend()
-    send = app.dispatch
-    send("tutorial", "select", {"scenario_id": "replace_data"})
-    tutorial = app.controllers["tutorial"]
-    name = tutorial._context()["job_name"]
-    original = tutorial._context()["assets"]["공고목록.xlsx"]["path"]
-    derived = tutorial._context()["derived_data_path"]
-    assert derived != original and Path(derived).is_file()
-    assert app.initial("tutorial")["checkpoint"] == 0
-    guide = app.initial("tutorial")["beat"]["guidance"]
-    assert guide["job"]["primary"]["screen"] == "library"
-    assert guide["library"]["target"] == "edit-job"
-    assert tutorial.file_picker_hint("data", "job") == ""
-    assert not str(app.open_job_in_editor(name)).startswith("ERROR:")
-    assert app.initial("tutorial")["beat"]["guidance"]["editor"]["target"] == "data-picker"
-    assert tutorial.file_picker_hint("data", "editor") == derived
-    app.load_data_sheet("editor", derived, "공고")
-    assert app.initial("tutorial")["checkpoint"] == 1
-    send("editor", "goto_section", {"section": "binding"})
-    send("editor", "resuggest_all", {})
-    send("editor", "confirm_suggested", {})
-    assert send("editor", "save", {})["ok"]
-    assert app.initial("tutorial")["checkpoint"] == 2
-    send("job", "select_job", {"name": name, "confirm": True})
-    snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 3
-    assert app.controllers["job"].data.path == derived
-    assert app.controllers["job"].data.sheet == "공고"
-    assert snap["result"]["count"] == 1
-def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, monkeypatch):
-    from hwpxfiller.webapp.app import WebFrontend
-
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    app = WebFrontend()
-    send = app.dispatch
-    send("tutorial", "select", {"scenario_id": "blank_values"})
-    derived = app.controllers["tutorial"]._context()["derived_data_path"]
-    assert Path(derived).is_file() and app.initial("tutorial")["checkpoint"] == 0
-    name = app.controllers["tutorial"]._context()["job_name"]
-    send("job", "select_job", {"name": name, "confirm": True})
-    send("job", "set_none", {})
-    send("job", "toggle_record", {"index": 0, "value": True})
-    send("job", "open_workbench", {})
-    send("workbench", "set_current", {"index": 0})
-    card = app.controllers["workbench"].snapshot()["card"]
-    assert "계약보증금" in card["empty_fields"]
-    assert "단위" not in card["empty_fields"]
-    unit = next(row for row in app.controllers["workbench"].snapshot()["rows"] if row["name"] == "단위")
-    assert unit["blank_declared"] and unit["value"] == ""
-    assert app.initial("tutorial")["checkpoint"] == 1
-    send("workbench", "set_map_value", {"name": "계약보증금", "text": "1000000"})
-    assert "계약보증금" not in app.controllers["workbench"].snapshot()["card"]["empty_fields"]
-    assert app.initial("tutorial")["checkpoint"] == 2
-    send("tutorial", "next", {})
-    snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 3
-    assert snap["result"]["count"] == 1
-    assert snap["result"]["next_scenario_id"] == "field_trial"
 def _select_notice_options(app, company_label, request_prefix):
     for slot_label, option_label in (("입찰참가자격", company_label), ("낙찰자 결정방법", "고시 미만")):
         view = app.dispatch("job", "open_slot_configuration", {})["current_view"]
@@ -1028,7 +966,8 @@ def test_blank_lesson_restart_reseeds_its_own_job_and_never_touches_user_jobs(tm
     tutorial.dispatch("restart", {"scenario_id": "blank_values"})
     context = tutorial._context()
     fresh = app._job_registry
-    assert context["job_name"] != name and fresh is not registry
+    # The fixed name the beat text says (#1127) — a fresh copy of it in a new lesson home.
+    assert context["job_name"] == name == "계약 안내 작업(빈 칸)" and fresh is not registry
     assert fresh.names() == [context["job_name"]]
     assert fresh.load(context["job_name"]).filename_pattern == ""
     assert fresh.load(context["job_name"]).data_path == context["derived_data_path"]

@@ -2469,103 +2469,283 @@ text = "항목 {}개를 전부 구간 표기로 되돌립니다. 되돌린 뒤: 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'계약보증금' 표시형을 금액 '원'으로 고르세요."
+text = "'{}'에 체크하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'군품명'을 쉼표로 나눈 첫 조각으로 가공하세요. 예제의 '드릴,전동식,휴대용'은 '드릴'이 됩니다."
+text = "'⋯'에는 연결 표 전체에 쓰는 명령이 있습니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'낙찰자결정방법'은 '낙찰방법', '담당자 전화번호'는 '담당자전화'로 연결된 제안을 직접 확인하세요."
+text = "'가공'은 칸 값의 일부만 문장에 쓰게 합니다. '군품명' 행의 '+ 가공'을 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'대표계약업체'에 '계약상대자' 열을 직접 연결하세요."
+text = "'가져올 시트 선택'에서 쓸 시트를 고릅니다. '공고'에 체크하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'안내 포함'은 문단을, '안내 생략'은 빈 줄을 담게 만드세요."
+text = "'값 선택'은 체크한 값이 든 행만 표에 남깁니다. '(전체)'를 눌러 체크를 모두 지우세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "3번 문단을 '예산 재배정 안내' 항목으로 묶으세요."
+text = "'검토·복사 시작'은 고른 행의 채운 문장을 한 건씩 보여 주는 작업대를 엽니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "TXT에 필드를 만들고 시험값으로 확인합니다."
+text = "'결과 시험'은 시험값을 넣은 결과 문서를 보여 줍니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "각 행의 채운 문장을 따로 복사하세요. 앱은 외부 붙여넣기를 확인하지 않습니다."
+text = "'계약' 시트에는 계약 건마다 업체와 금액이 한 행씩 있습니다. '공고목록.xlsx'의 '계약' 시트를 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "검색된 3행을 선택하세요."
+text = "'고르기'는 이 작업의 템플릿과 데이터를 바꾸는 단계입니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "결과 3건과 파일 이름을 확인하고 한 문서의 내용을 여세요."
+text = "'기존 작업에 적용'을 누르면 '계약 안내 작업'이 바뀐 서식을 씁니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "결과 시험에 필드값을 넣으세요."
+text = "'낙찰자 결정방법'에서 '고시 미만'을 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "계약 데이터 2건을 확인하고 각각 복사합니다."
+text = "'다시 받기'를 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "공고목록.xlsx의 '공고' 시트를 연결하세요."
+text = "'다음 ▶'은 작업 이름과 문서 파일 이름을 정하는 단계로 넘어갑니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "공고서 작업을 만들고 3건을 생성합니다."
+text = "'다음 ▶'은 작업 이름을 정하는 단계로 넘어갑니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "구매추진 TXT 작업을 저장하세요."
+text = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "구조 오류 없이 템플릿을 저장하세요."
+text = "'다음'은 다음 계약 행의 문장으로 넘어갑니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "구조 오류가 없는 '사용 준비' 상태로 저장하세요."
+text = "'담당자 전화번호'에는 '담당자전화' 열이 제안됐습니다. '제안'을 눌러 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "군품명의 첫 조각과 날짜·금액 표시를 확인합니다."
+text = "'데이터 열'은 이 필드에 채울 엑셀 열입니다. '대표계약업체'에는 같은 이름의 열이 없으니 '계약상대자'를 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "그 행의 필요한 값을 직접 입력해 다시 확인하세요."
+text = "'만든 문서'에는 이번에 만든 파일이 이름과 함께 놓입니다. 첫 문서의 '내용 보기'를 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "날짜와 금액의 표시형을 미리보기로 확인하세요."
+text = "'문서 만들기'는 고른 3행으로 공고서 3건을 만듭니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "다른 행과 내용을 골라 같은 작업을 다시 실행합니다."
+text = "'문서 만들기'는 고른 행마다 HWPX 파일을 하나씩 만듭니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "두 갈래를 시험하고 저장한 변경을 작업에 적용합니다."
+text = "'문서 만들기에서 사용'은 이 작업과 연결된 데이터를 문서 만들기 화면에 엽니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "두 선택을 각각 시험하고 현재 결과를 확인하세요."
+text = "'문서 작업' 목록에는 저장한 작업이 모여 있습니다. '{name}'을 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "메모 열에서 '소기업·소상공인'인 행만 찾으세요."
+text = "'문서 파일 이름'은 만들 파일마다 붙는 이름 규칙입니다. 칸을 구매입찰공고-{{입찰공고번호}}로 바꾸고 Tab 키를 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "메모에서 '중·소기업' 묶음인 R26BK99000004-000부터 006-000까지 찾으세요."
+text = "'미리보기'는 데이터 한 행으로 채운 값입니다. '▶'를 눌러 다음 행의 날짜와 금액이 적히는 모양을 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'변경 영향·작업 적용'은 이 서식을 쓰는 저장한 작업에 바뀐 점을 반영하는 패널입니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'보이는 행 모두 선택' 칸은 필터로 남은 행만 한꺼번에 고릅니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'부분일치 검색'에 적은 글자가 든 행만 표에 남습니다. 소상공인을 적으세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'비움 확정'은 일부러 비워 둔 항목입니다. 〈빈 값〉과 달리 복사 전 확인에서 빠집니다. '다음'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'생성 예정 문서'는 만들 파일의 이름을 미리 보여 줍니다. 이름마다 R26BK99000004-000 같은 입찰공고번호가 들어갔는지 확인하고 '다음'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'선택으로 만들기'는 고른 줄을 이 항목의 선택 하나로 만듭니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'선택으로 만들기'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'선택한 1개 시트 가져오기'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'연결 확인'에서 새 파일의 열과 필드 연결을 다시 확인합니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'예산재배정'에서 '안내포함'을 고르세요. 결과가 다시 만들어집니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'예시 값'에서 쓸 부분을 끌어 고르면 방식이 맞춰집니다. '드릴'만 끌어 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'완료'는 고른 가공으로 편집 칸을 닫습니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'입찰참가자격'에서 '소기업·소상공인'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'입찰참가자격'에서 '중·소기업'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'자동 제안 다시 받기'는 새 파일의 열 이름으로 모든 연결을 다시 제안합니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'작업 편집'은 저장한 작업의 템플릿·데이터·연결을 고치는 화면을 엽니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'저장'은 바꾼 서식을 파일에 씁니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'저장하고 문서 만들기로'는 바꾼 가공을 저장하고 문서 만들기 화면에서 엽니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'저장하고 문서 만들기로'는 바뀐 데이터로 작업을 저장하고 문서 만들기에서 엽니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'저장하고 문서 만들기로'는 작업을 저장하고 문서 만들기 화면에서 바로 엽니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'적용 영향 확인'은 작업에 생길 변화를 먼저 보여 줍니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'제안'은 이름이 달라 앱이 짐작한 연결입니다. '낙찰자결정방법'에 제안된 '낙찰방법' 열이 맞으니 '제안'을 눌러 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'파일 찾아보기…'는 등록하지 않은 엑셀 파일을 데이터로 고릅니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'포함할 내용'은 문서마다 넣을 문단을 고르는 자리입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'포함할 내용'의 '예산재배정'에서 '안내포함'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'표시 이름'에 안내생략을 적고 Enter 키를 두 번 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'표시 이름'에 안내포함을 적고 Enter 키를 두 번 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'표시 이름'은 문서 만들기에서 보일 항목 이름입니다. 예산재배정을 적고 Enter 키를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'표시형'은 값을 문장에 적는 모양입니다. '계약보증금'의 표시형에서 '금액' 아래 '원'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'필드 이름 사용'은 비어 있는 시험 칸을 필드 이름으로 채우고 결과를 다시 만듭니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'필드 이름 사용'은 비어 있는 시험 칸을 필드 이름으로 채웁니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'필드 이름'은 데이터 열과 연결할 이름입니다. 재배정기한을 적고 Enter 키를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'필드로 만들기'는 고른 문구를 데이터가 들어갈 자리로 바꿉니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'항목으로 만들기'는 고른 줄을 하나의 항목으로 묶습니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "TXT 템플릿은 파일을 만들지 않고 채운 문장을 복사해 쓰는 서식입니다. '{}'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "〈빈 값〉은 데이터 칸이 비어 있는 자리입니다. 이 행은 '계약보증금' 칸이 비어 있습니다. '다음'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "가공을 바꾼 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "가운데 글은 이 행의 데이터로 채운 문장입니다. '복사'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "가운데 문장의 군품명 자리에 가공한 값이 들어갔는지 확인하고 '복사'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "계약 데이터로 채운 안내 문장을 행마다 확인하고, 기안에 붙여 넣을 수 있게 복사합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "공고서 서식과 공고목록 엑셀로 공고서 3건을 만듭니다. '다음'을 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "공고서 서식과 엑셀 공고 목록을 연결해 작업을 저장하고, 고른 3행으로 공고서 3건을 만듭니다."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "데이터를 바꾸면 확인한 연결이 모두 미확정으로 돌아갑니다. '미확정으로 되돌리기'를 누르고, 열리는 창에서 '공고목록(새 판).xlsx'를 여세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "데이터에 비어 있는 칸이 문장에 어떻게 표시되는지 보고, 일부러 비워 둔 항목과 비교합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
@@ -2573,51 +2753,19 @@ text = "모든 과정의 학습 위치와 완료 기록을 지웁니다. 연습 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 만들기에서 '안내 포함'을 고르고 검토·복사 작업대에서 예산 재배정 문단을 확인하세요."
+text = "문단을 문서마다 넣거나 뺄 수 있는 항목으로 만들고, 두 선택을 시험한 뒤 서식을 저장합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 작업에서 새 작업을 열고 계약 안내 TXT와 공고목록.xlsx의 '계약' 시트를 고르세요."
+text = "본문에서 끌어 고른 문구가 필드로 바뀔 자리입니다. 3번 문단의 '10일'을 끌어 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 작업에서 새 작업을 열고 구매추진 안내 TXT와 '공고' 시트를 고르세요."
+text = "상단 '문서 만들기'는 데이터를 골라 작업을 실행하는 자리입니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 작업에서 새 작업을 열고 연습용 '물품 구매입찰 공고' 서식을 고르세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 작업에서 준비된 계약 연습 작업을 열고 빈 값이 있는 행을 검토·복사 작업대로 보내세요. 카드의 〈빈 값〉 표시를 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 작업에서 준비된 공고서 작업을 문서 만들기로 여세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "문서 작업에서 준비된 연습 작업의 편집기를 열고 새 데이터 사본의 공고 시트를 연결하세요. 연결을 다시 제안하고 두 제안을 확인한 뒤 저장하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "본문의 '10일'을 골라 '재배정기한' 필드로 만드세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "빈 값 표식을 확인하고 직접 입력으로 고칩니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "새 행의 입찰공고번호가 파일 이름에 들어가는지 확인하고 문서를 만드세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "선택한 3행의 문서 만들기를 실행하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "시험을 실행해 현재 구성의 결과를 확인하세요."
+text = "선택은 항목 안에서 문서마다 고를 수 있는 내용입니다. 항목 안의 3번 문단을 끌어 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
@@ -2625,27 +2773,15 @@ text = "아래 목록에서 삭제로 표시한 연습 사본만 지웁니다. �
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "앞서 고른 행을 해제해 새 묶음과 섞이지 않게 하세요."
+text = "안내문의 문구를 데이터가 들어갈 필드로 바꾸고, 시험값으로 결과를 확인한 뒤 저장합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "연결된 작업의 변경사항을 확인하고 적용하세요."
+text = "엑셀 칸 값의 일부만 쓰도록 가공하고, 날짜·금액이 문장에 적히는 모양을 확인합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "연결을 확인하고 TXT 작업을 저장하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "연습 데이터 사본을 작업에 다시 연결합니다."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "연습 사본을 데이터 선택 목록에 연결하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "연습용 공고서와 공고 데이터로 첫 문서를 만드세요."
+text = "열 이름 옆 '▾'는 그 열의 값으로 행을 거르는 필터입니다. '메모' 열의 '▾'를 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
@@ -2653,59 +2789,59 @@ text = "예제 서식과 데이터로 첫 문서를 만드세요. 시작할 때 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "오른쪽 '데이터' 목록은 문서에 채울 엑셀 시트입니다. '공고목록.xlsx'의 '공고' 시트를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "왼쪽 '템플릿' 목록은 문서의 틀이 되는 파일입니다. '물품 구매입찰 공고.hwpx'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "이 단계는 실제 동작을 마친 뒤에 넘어갈 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "이번 묶음의 3행만 선택하세요."
+text = "이 행의 문장도 '복사'를 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "입찰참가자격은 '소기업·소상공인', 낙찰자 결정방법은 '고시 미만'을 고르세요."
+text = "이번에는 '안내생략'을 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "입찰참가자격은 '중·소기업', 낙찰자 결정방법은 '고시 미만'을 고르세요."
+text = "저장한 작업이 새로 받은 엑셀 파일을 쓰도록 데이터를 바꾸고, 연결을 다시 확인해 저장합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "작업을 저장하고 다시 열어 새 경로와 시트가 유지되는지 확인하세요."
+text = "저장해 둔 공고서 작업을 열어 다른 3행과 다른 포함할 내용으로 공고서를 다시 만듭니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "저장한 계약 작업을 문서 만들기로 열고 두 행을 선택해 검토·복사 작업대로 들어가세요. 서로 다른 두 행을 확인하세요."
+text = "직접 고른 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "저장한 공고서 작업을 문서 만들기에서 여세요."
+text = "표 머리의 '전체 선택' 칸은 표의 행을 한꺼번에 고릅니다. 눌러서 {what}을 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "저장한 구매추진 작업을 문서 만들기로 열고 두 행을 선택해 검토·복사 작업대로 들어가세요. 서로 다른 행의 문장을 확인하세요."
+text = "표 위 '모두 확인' 단추는 제안된 연결을 한 번에 확인합니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "직접 입력으로 고친 '계약보증금'과 의도적으로 비워 둔 '단위'를 비교하세요."
+text = "표시형을 바꾼 연결도 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "템플릿 작업대의 파일 열기로 계약 안내 TXT 연습 사본을 여세요."
+text = "항목 안의 빈 줄을 누르세요. 문단을 뺄 때 이 줄이 대신 들어갑니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "템플릿 작업대의 파일 열기로 준비된 작업에 연결된 계약 안내 TXT 연습 사본을 여세요."
+text = "항목은 문서마다 넣거나 뺄 수 있는 문단 묶음입니다. 3번 문단 첫 글자부터 그 아래 두 번째 빈 줄까지 끌어 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "파일 이름 규칙을 구매입찰공고-{{입찰공고번호}}로 정하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "필요한 행의 TXT를 복사하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "확인한 연결과 파일 이름 규칙으로 작업을 저장하세요."
+text = "항목을 더한 서식을 저장한 작업에 적용하고, 문서 만들기에서 그 항목을 골라 채운 문장을 확인합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_state.py"
@@ -3410,6 +3546,10 @@ text = "{{{}}} 에 직접 입력한 값 '{}'은 '{}' 열의 값으로 바뀌고 
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
+text = "〈빈 값〉 표식과 비움 확정을 확인했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding.py"
 text = "과정을 다시 고르세요."
 
 [[sentence]]
@@ -3419,10 +3559,6 @@ text = "과정을 다시 고르세요."
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
 text = "모든 학습 기록을 지울지 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "빈 값 표식과 직접 입력 결과를 확인했습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
@@ -3465,6 +3601,14 @@ file = "src/hwpxfiller/webapp/onboarding.py"
 text = "튜토리얼을 전환하세요"
 
 [[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_match_authoring.py"
+text = "두 선택을 시험하고 서식을 저장했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_match_authoring.py"
+text = "재배정기한 필드를 시험하고 사용 준비 상태로 저장했습니다."
+
+[[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_match_results.py"
 text = "결과 문서의 내용을 확인했습니다."
 
@@ -3479,10 +3623,6 @@ text = "새 행의 입찰공고번호로 문서를 만들었습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_match_results.py"
 text = "서로 다른 {}개 행을 복사했습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding_match_results.py"
-text = "재배정기한 필드를 시험하고 사용 준비 상태로 저장했습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_match_results.py"
@@ -3506,14 +3646,14 @@ text = "연습 파일 4건이 준비됐습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_practice.py"
-text = "연습 파일을 먼저 준비하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding_practice.py"
 text = "연습 파일이 준비되지 않았습니다. 예제로 시작하세요."
 
 [[sentence]]
-file = "src/hwpxfiller/webapp/onboarding_practice.py"
+file = "src/hwpxfiller/webapp/onboarding_seed.py"
+text = "연습 파일을 먼저 준비하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_seed.py"
 text = "이 과정용 연습 작업 '{}'을 준비했습니다. 다른 과정의 완료 기록은 바꾸지 않습니다."
 
 [[sentence]]
