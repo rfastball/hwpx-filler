@@ -30,6 +30,9 @@ _SCRIPTS = _ROOT / "scripts"
 if _SCRIPTS.is_dir() and str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
+#: 부분 실창 범위(`--live-scope`, 로컬 전용) — 옵션이 없으면 아무것도 바꾸지 않는다.
+pytest_plugins = ["live_scope"]
+
 
 def _unwatched_temp_root() -> Path:
     """OneDrive 동기화·검색 인덱서가 감시하지 않는 시스템 임시 루트.

@@ -28,6 +28,7 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
+import live_scope
 from _live_budget import SELFTEST_AGGREGATE_BOOT_S, SELFTEST_HARNESS_MARGIN_S
 from _web_source import NAV_SCREENS
 from _web_source import source_text
@@ -254,7 +255,7 @@ def _seed_authoring_library(home: Path) -> None:
 
 
 @pytest.fixture(scope="module")
-def selftest_result(tmp_path_factory) -> dict:
+def selftest_result(tmp_path_factory, request) -> dict:
     """``--selftest`` 로 앱을 모듈당 1회 구동하고 DOM 되읽기 결과 JSON 을 로드한다.
 
     WebView2 콜드스타트가 비싸므로 창을 한 번만 띄우고 그 스냅샷에 여러 단언을 건다.
@@ -264,17 +265,25 @@ def selftest_result(tmp_path_factory) -> dict:
     스코프라 이 module 스코프 픽스처가 먼저 인스턴스화된다 — os.environ 상속에 맡기면
     서브프로세스가 실홈(``~/.hwpxfiller``)의 ``settings.json`` 을 물려받아, 사용자가 저장한
     테마가 ``test_theme_defaults_to_system_when_unpersisted`` 를 오염시킨다(미저장 전제 붕괴, #74).
+
+    부분 실창(``--live-scope``, 로컬 전용)이면 같은 부팅이 범위의 프로브와 그 ``after`` 닫힘만
+    돈다. 증거의 선택 표식이 이 실행의 해소와 어긋나면 — 부분이 전체로, 전체가 부분으로
+    읽히면 — 단언 전에 여기서 실패한다(``scripts/live_scope.py``).
     """
     out = tmp_path_factory.mktemp("selftest") / "selftest_result.json"
     home = tmp_path_factory.mktemp("selftest-home")
     _seed_authoring_library(home)
-    env = dict(os.environ, HWPX_SELFTEST_OUT=str(out), HWPXFILLER_HOME=str(home))
-    proc = _boot_selftest(env, out=out, what="full 모드 모듈 픽스처")
+    proc = _boot_selftest(
+        out=out,
+        **live_scope.selftest_boot(
+            request.config, dict(os.environ, HWPX_SELFTEST_OUT=str(out), HWPXFILLER_HOME=str(home))
+        ),
+    )
     assert out.exists(), (
         "selftest 결과 파일 미생성 — 창 부팅/렌더 실패 가능. "
         f"rc={proc.returncode}\nstdout={_tail(proc.stdout)}\nstderr={_tail(proc.stderr)}"
     )
-    return json.loads(out.read_text(encoding="utf-8"))
+    return live_scope.checked_evidence(request.config, out)
 
 
 def probe(evidence: dict, name: str):

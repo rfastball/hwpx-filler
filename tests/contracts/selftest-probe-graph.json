@@ -1,0 +1,576 @@
+{
+  "version": 1,
+  "clusters": [
+    "B",
+    "C",
+    "D",
+    "E",
+    "R"
+  ],
+  "probes": [
+    {
+      "name": "title_dom",
+      "cluster": "B",
+      "keys": [
+        "title_dom"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "nav_count",
+      "cluster": "B",
+      "keys": [
+        "nav_count"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "tpl_options",
+      "cluster": "B",
+      "keys": [
+        "tpl_options"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "job_on",
+      "cluster": "B",
+      "keys": [
+        "job_on"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "home_screen_gone",
+      "cluster": "B",
+      "keys": [
+        "home_screen_gone"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "library_surface",
+      "cluster": "B",
+      "keys": [
+        "library_surface",
+        "library_pairing_edit"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "home_screen_gone"
+      ]
+    },
+    {
+      "name": "library_view_tabs",
+      "cluster": "B",
+      "keys": [
+        "library_view_tabs"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "library_surface"
+      ]
+    },
+    {
+      "name": "data_picker_buttons",
+      "cluster": "B",
+      "keys": [
+        "data_picker_buttons"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "action_roundtrip",
+      "cluster": "B",
+      "keys": [
+        "action_roundtrip"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "modal_a11y",
+      "cluster": "B",
+      "keys": [
+        "modal_a11y",
+        "modal_confirm_serial"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "preserve",
+      "cluster": "B",
+      "keys": [
+        "preserve"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "preserve_real",
+      "cluster": "B",
+      "keys": [
+        "preserve_real"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "preserve"
+      ]
+    },
+    {
+      "name": "milestone_h_wave1",
+      "cluster": "B",
+      "keys": [
+        "milestone_h_wave1"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "preserve_real",
+        "job_data_first"
+      ]
+    },
+    {
+      "name": "milestone_h_overlay",
+      "cluster": "B",
+      "keys": [
+        "milestone_h_overlay"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "milestone_h_wave1"
+      ]
+    },
+    {
+      "name": "shell_settings",
+      "cluster": "B",
+      "keys": [
+        "shell_settings"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "job_data_first",
+      "cluster": "C",
+      "keys": [
+        "job_data_first"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "job_inherited",
+      "cluster": "C",
+      "keys": [
+        "job_inherited"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "job_data_first"
+      ]
+    },
+    {
+      "name": "job_active_card",
+      "cluster": "C",
+      "keys": [
+        "job_active_card"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "job_data_first"
+      ]
+    },
+    {
+      "name": "job_mirror",
+      "cluster": "C",
+      "keys": [
+        "job_mirror"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "job_data_first"
+      ]
+    },
+    {
+      "name": "job_result",
+      "cluster": "C",
+      "keys": [
+        "job_result"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "job_mirror"
+      ]
+    },
+    {
+      "name": "job_density_narrow",
+      "cluster": "C",
+      "keys": [
+        "job_density_narrow"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "job_result"
+      ]
+    },
+    {
+      "name": "view_order",
+      "cluster": "D",
+      "keys": [
+        "view_order"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "data_sheet",
+      "cluster": "D",
+      "keys": [
+        "data_sheet"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "view_order"
+      ]
+    },
+    {
+      "name": "range_draft",
+      "cluster": "D",
+      "keys": [
+        "range_draft"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "data_sheet"
+      ]
+    },
+    {
+      "name": "editor_tab_autodiscard",
+      "cluster": "D",
+      "keys": [
+        "editor_tab_autodiscard"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "range_draft"
+      ]
+    },
+    {
+      "name": "editor_discard_immediate",
+      "cluster": "D",
+      "keys": [
+        "editor_discard_immediate"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "editor_tab_autodiscard"
+      ]
+    },
+    {
+      "name": "editor_txt_band",
+      "cluster": "D",
+      "keys": [
+        "editor_txt_band"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "editor_discard_immediate"
+      ]
+    },
+    {
+      "name": "workbench",
+      "cluster": "D",
+      "keys": [
+        "workbench"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "editor_txt_band"
+      ]
+    },
+    {
+      "name": "sheet_gate",
+      "cluster": "D",
+      "keys": [
+        "sheet_gate"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "workbench"
+      ]
+    },
+    {
+      "name": "job_editmode",
+      "cluster": "D",
+      "keys": [
+        "job_editmode"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "sheet_gate"
+      ]
+    },
+    {
+      "name": "data_picker",
+      "cluster": "D",
+      "keys": [
+        "data_picker"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "job_editmode",
+        "milestone_h_wave1"
+      ]
+    },
+    {
+      "name": "editor_binding",
+      "cluster": "D",
+      "keys": [
+        "editor_binding"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "data_picker"
+      ]
+    },
+    {
+      "name": "editor_save_gate",
+      "cluster": "D",
+      "keys": [
+        "editor_save_gate"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "editor_binding"
+      ]
+    },
+    {
+      "name": "editor_lib_manage",
+      "cluster": "D",
+      "keys": [
+        "editor_lib_manage"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "editor_save_gate"
+      ]
+    },
+    {
+      "name": "editor_lib",
+      "cluster": "D",
+      "keys": [
+        "editor_lib"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "editor_lib_manage"
+      ]
+    },
+    {
+      "name": "url",
+      "cluster": "E",
+      "keys": [
+        "url"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "runtime",
+      "cluster": "E",
+      "keys": [
+        "runtime"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "url"
+      ]
+    },
+    {
+      "name": "chain_recovery",
+      "cluster": "E",
+      "keys": [
+        "chain_recovery"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "grid_narrow",
+      "cluster": "E",
+      "keys": [
+        "grid_narrow"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    },
+    {
+      "name": "grid_wide",
+      "cluster": "E",
+      "keys": [
+        "grid_wide"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "grid_narrow"
+      ]
+    },
+    {
+      "name": "theme_persist",
+      "cluster": "E",
+      "keys": [
+        "theme_persist"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "grid_wide"
+      ]
+    },
+    {
+      "name": "personalization_persist",
+      "cluster": "E",
+      "keys": [
+        "personalization_persist"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": [
+        "theme_persist"
+      ]
+    },
+    {
+      "name": "window_geometry",
+      "cluster": "E",
+      "keys": [
+        "window_geometry"
+      ],
+      "modes": [
+        "geometry_only"
+      ],
+      "after": []
+    },
+    {
+      "name": "font_scale_write",
+      "cluster": "E",
+      "keys": [
+        "set_result"
+      ],
+      "modes": [
+        "font_scale_write"
+      ],
+      "after": []
+    },
+    {
+      "name": "theme_write",
+      "cluster": "E",
+      "keys": [
+        "set_result"
+      ],
+      "modes": [
+        "theme_write"
+      ],
+      "after": []
+    },
+    {
+      "name": "react_runtime",
+      "cluster": "R",
+      "keys": [
+        "react_runtime"
+      ],
+      "modes": [
+        "full"
+      ],
+      "after": []
+    }
+  ]
+}

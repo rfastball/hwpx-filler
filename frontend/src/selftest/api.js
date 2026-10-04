@@ -43,7 +43,9 @@
    ## 계약 v1
 
        window.__hwpxTest                       // Object.freeze({ version: 1, run })
-       run({version: 1, action: "start", mode, input, flags})
+       run({version: 1, action: "start", mode, input, flags, probes})
+       // probes 는 선택 — 비어 있지 않은 문자열 배열(프로브 이름|클러스터 id). 부재 시 모드
+       // 전체가 돈다. 버전은 그대로 1 이다(추가 필드라 더해서 깨지지 않는다).
        // -> {ok: true, action: "start", runId, state: "running", mode, deadlineMs}
        run({version: 1, action: "poll", runId})
        // -> {ok: true,  action: "poll", state: "running",   runId, elapsedMs, deadlineMs}
@@ -325,6 +327,14 @@ function createRun({ token, createRunner, now, deadlineMs, randomBytes }) {
     if (!isPlainObject(flags)) {
       return fail(CODES.MALFORMED_REQUEST, "start", { field: "flags" });
     }
+    const probes = request.probes === undefined || request.probes === null ? null : request.probes;
+    if (
+      probes !== null
+      && (!Array.isArray(probes) || probes.length === 0
+        || !probes.every((entry) => typeof entry === "string" && entry.length > 0))
+    ) {
+      return fail(CODES.MALFORMED_REQUEST, "start", { field: "probes" });
+    }
     const input = request.input === undefined ? null : request.input;
 
     if (slot !== null) {
@@ -352,13 +362,13 @@ function createRun({ token, createRunner, now, deadlineMs, randomBytes }) {
        된다 — 시작 자체가 던지면 파이썬은 runId 없이 아무것도 물을 수 없다. */
     Promise.resolve()
       .then(() => {
-        const runner = createRunner({ mode, input, flags });
+        const runner = createRunner({ mode, input, flags, probes });
         if (!runner || typeof runner.run !== "function"
           || typeof runner.toEvidence !== "function") {
           throw new Error("주입된 러너에 run/toEvidence 가 없습니다.");
         }
         slot.runner = runner;
-        return runner.run(mode, { input, flags });
+        return runner.run(mode, probes === null ? { input, flags } : { input, flags, probes });
       })
       .then(onReport, onThrown);
 

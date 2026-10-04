@@ -381,6 +381,16 @@ def test_start_envelope_omits_absent_input_and_flags():
     assert envelope_of(api.start_expression("boot", flags={}))["flags"] == {}
 
 
+def test_start_envelope_carries_a_probe_selection_only_when_given():
+    """부분 실창의 선택은 ``probes`` 로 실린다 — 부재는 전체(키째 빠진다).
+
+    빈 목록·비문자열의 거절은 파사드(``api.js``)의 ``malformed_request`` 가 진다(Node 계약).
+    """
+    envelope = envelope_of(api.start_expression("full", probes=("C", "data_sheet")))
+    assert envelope["probes"] == ["C", "data_sheet"]
+    assert "probes" not in envelope_of(api.start_expression("full"))
+
+
 def test_poll_envelope_uses_the_camel_case_wire_key():
     envelope = envelope_of(api.poll_expression("r7"))
     assert envelope == {"version": 1, "action": "poll", "runId": "r7"}

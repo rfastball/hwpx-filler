@@ -39,6 +39,10 @@ export const PROBE_PHASES = Object.freeze([
   "emit",         // 반환값 모양 확정
 ]);
 
+/** 선택 실행(일부 프로브/클러스터만 돈 실행)의 증거 키. 부재가 "선택 없음"이다 — 전체
+ *  모드 증거의 키 집합에 끼어들지 않는다(build.ps1 이 세는 상수다). */
+export const SELECTION_EVIDENCE_KEY = "selftest_selection";
+
 export const ERROR_CODES = Object.freeze({
   DEADLINE_EXCEEDED: "deadline_exceeded",
   PREDICATE_THREW: "predicate_threw",
@@ -329,6 +333,76 @@ function normalizeDefinition(def, index, taken) {
   });
 }
 
+/* ────────────────────────── 부분 선택 ────────────────────────── */
+
+/* 부분 실창(로컬 국소 검증)의 선택 — 선택한 이름·클러스터 id 와 그 `after` 전이 폐포만
+   남긴다. 전체 계획의 모든 등록·호스트·키 검사는 선택 전에 이미 돌았다. */
+
+function selectionContractError(message) {
+  return probeError("<plan>", "registration", ERROR_CODES.CONTRACT, message);
+}
+
+function assertSelectionShape(selection) {
+  if (
+    !Array.isArray(selection) || selection.length === 0
+    || !selection.every((entry) => typeof entry === "string" && entry.length > 0)
+  ) {
+    throw selectionContractError("probes 선택은 비어 있지 않은 문자열 배열이어야 합니다.");
+  }
+}
+
+/** 선택 → 이름 집합. 클러스터는 그 클러스터가 모드에서 낸 프로브 전체로 펼친다. */
+function seedNames(selection, planned, byName, mode) {
+  const clusterIds = new Set(planned.map((p) => p.cluster));
+  const seeds = new Set();
+  for (const entry of selection) {
+    const isName = byName.has(entry);
+    const isCluster = clusterIds.has(entry);
+    if (isName && isCluster) {
+      throw selectionContractError(
+        `선택 ${entry} 가 프로브 이름과 클러스터 id 양쪽에 걸립니다 —`
+        + ` 모드 ${mode} 에서 구분할 수 없습니다.`,
+      );
+    }
+    if (!isName && !isCluster) {
+      throw selectionContractError(
+        `선택 ${entry} 는 모드 ${mode} 의 계획에서 프로브 이름도 클러스터 id 도 아닙니다.`,
+      );
+    }
+    if (isName) seeds.add(entry);
+    else for (const p of planned) if (p.cluster === entry) seeds.add(p.name);
+  }
+  return seeds;
+}
+
+/** `after` 전이 폐포 — 선택한 것을 재려면 그것이 기대는 전제도 함께 돌아야 한다. */
+function dependencyClosure(seeds, byName) {
+  const closure = new Set();
+  const stack = [...seeds];
+  while (stack.length > 0) {
+    const name = stack.pop();
+    if (closure.has(name)) continue;
+    closure.add(name);
+    for (const dep of byName.get(name).after) stack.push(dep);
+  }
+  return closure;
+}
+
+/** 위상 정렬 결과를 선택 폐포로 거른다 — 의존이 닫힌 부분집합은 그대로 유효한 순서다. */
+function selectOrder(order, planned, byName, options, mode) {
+  const selection = (options || {}).probes;
+  if (selection === undefined || selection === null) return order;
+  assertSelectionShape(selection);
+  const closure = dependencyClosure(seedNames(selection, planned, byName, mode), byName);
+  return order.filter((p) => closure.has(p.name));
+}
+
+/** 보고서의 선택 기록 — 선택이 없으면 `null`(전체 실행). */
+function selectionRecord(probes, order) {
+  if (probes === undefined || probes === null) return null;
+  return { requested: probes.slice(), planned: order.map((p) => p.name), partial: true };
+}
+
 /* ────────────────────────── 러너 ────────────────────────── */
 
 /** 호스트가 주입하는 능력. **전역에서 주워 오지 않는다** — `push` 도 인자다.
@@ -382,8 +456,13 @@ export function createSelftestRunner(capabilities) {
 
   /** 모드에 참여하는 프로브를 **실행 순서**로 세운다.
    *  1차 = `after` 위상 정렬(잃으면 조용히 틀리는 축), 동률은 `legacySite` 오름차순.
-   *  클러스터가 서로를 몰라도 `legacySite` 가 네 레인을 한 순서로 잇는다. */
-  function plan(mode) {
+   *  클러스터가 서로를 몰라도 `legacySite` 가 네 레인을 한 순서로 잇는다.
+   *
+   *  `options.probes` 가 서면 **부분 선택**이다 — 전체 계획(모든 등록·호스트·키 검사가
+   *  그대로 돈다)을 먼저 세우고, 선택한 이름·클러스터 id 와 그 `after` 전이 폐포만으로
+   *  그 순서를 **거른다**. 위상 정렬 결과의 부분집합은 의존이 닫혀 있으면 그대로 유효한
+   *  순서라 다시 정렬하지 않는다. */
+  function plan(mode, options) {
     const planned = registered.filter((p) => p.modes.includes(mode));
     const byName = new Map(planned.map((p) => [p.name, p]));
 
@@ -455,12 +534,13 @@ export function createSelftestRunner(capabilities) {
         `after 에 순환이 있습니다: ${stuck.join(", ")}`,
       );
     }
-    return order;
+
+    return selectOrder(order, planned, byName, options, mode);
   }
 
   /** 모드의 최악 시간 예산 — 시한 + 대기의 합. 레거시 기준선과 비교하려고 데이터로 낸다. */
-  function budgetMs(mode) {
-    return plan(mode).reduce(
+  function budgetMs(mode, options) {
+    return plan(mode, options).reduce(
       (total, p) => total + p.deadlineMs + p.settleBeforeMs + p.cooldownAfterMs,
       0,
     );
@@ -644,7 +724,7 @@ export function createSelftestRunner(capabilities) {
   /** 모드 하나를 처음부터 끝까지 몬다. 보고서는 **항상** 돌아오고, 실패는 보고서 안에서 시끄럽다. */
   async function run(mode, options) {
     const opts = options || {};
-    const order = plan(mode);
+    const order = plan(mode, opts);
     const report = {
       ok: true,
       mode,
@@ -653,6 +733,7 @@ export function createSelftestRunner(capabilities) {
       errors: [],
       skipped: [],
       timings: {},
+      selection: selectionRecord(opts.probes, order),
     };
     let poisonedBy = null;
     const alertRecorder = armAlertRecorder();
@@ -772,7 +853,11 @@ export function createSelftestRunner(capabilities) {
   }
 
   /** 보고서 → 디스크에 쓰는 증거. 실패가 있으면 `error` 가 서고, 실패한 키는 **없다**.
-   *  모양만 맞고 낡은 값이 성공인 척 실리는 오늘의 경로를 여기서 끊는다. */
+   *  모양만 맞고 낡은 값이 성공인 척 실리는 오늘의 경로를 여기서 끊는다.
+   *
+   *  선택 실행(`report.selection` 이 섬)이면 `SELECTION_EVIDENCE_KEY` 아래에 무엇을
+   *  요청했고 무엇이 돌았는지를 싣는다 — 전체 모드 증거의 키 집합(build.ps1 이 세는
+   *  것)은 선택이 없을 때 **그대로**다. */
   function toEvidence(report, extra) {
     const evidence = { ...(extra || {}), ...report.results };
     if (report.errors.length > 0 || report.skipped.length > 0) {
@@ -780,6 +865,13 @@ export function createSelftestRunner(capabilities) {
         (e) => `[${e.probe}/${e.phase}/${e.code}] ${e.message}`,
       ).concat(report.skipped.map((s) => `[${s.probe}/skipped/${s.code}] ${s.message}`));
       evidence.error = lines.join(" | ");
+    }
+    if (report.selection) {
+      evidence[SELECTION_EVIDENCE_KEY] = {
+        requested: report.selection.requested.slice(),
+        planned: report.selection.planned.slice(),
+        partial: true,
+      };
     }
     return evidence;
   }

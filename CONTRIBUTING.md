@@ -41,7 +41,7 @@ coverage 하한은 [원장](tests/contracts/package-coverage-floors.toml)의 패
 `native`·`browser`·`live`는 자원 경계 marker이며 미등록 marker는 실패한다.
 자원 부재를 조용한 skip으로 만들지 않는다. 자원이 없는 로컬에서만 `HWPX_SKIP_NATIVE_TESTS`·
 `HWPX_SKIP_MOTION_TESTS`·`HWPX_SKIP_GUI_TESTS`를 명시하고 결과에 제외 범위를 적는다.
-CI는 이 opt-out 없이 검사한다. 기존 창·fixture를 재사용하고 새 cold boot의 이유·비용을 검토한다.
+CI는 이 opt-out과 부분 live(`-LiveScope`) 없이 검사한다. 기존 창·fixture를 재사용하고 새 cold boot의 이유·비용을 검토한다.
 테스트의 autouse 앱 홈 격리를 우회하지 않는다.
 
 ```powershell

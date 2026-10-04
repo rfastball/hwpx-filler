@@ -240,6 +240,27 @@ def test_product_assertions_are_never_retried() -> None:
     assert "--maxfail=1" in _job_text(live), "첫 하드스톱 뒤 형제 live 부팅을 계속 태웁니다"
 
 
+#: 부분 실창(로컬 전용)의 흔적 — 병합·릴리스 live 단계에 하나라도 있으면 게이트가 약해진다.
+PARTIAL_LIVE_TOKENS = ("--live-scope", "-LiveScope", "HWPX_SELFTEST_PROBES")
+
+
+def test_merge_and_release_live_runs_never_narrow_the_live_scope() -> None:
+    """CI 의 live 는 언제나 **전체**다 — 부분 범위 옵션·선택 변수가 워크플로에 서지 않는다.
+
+    하니스는 CI 환경에서 부분 옵션을 하드 실패시키지만(`scripts/live_scope.py`), 그 거절은
+    환경 표지(`CI`·`GITHUB_ACTIONS`)에 기댄다. 워크플로 자체에 옵션이 적히는 길도 여기서 닫는다.
+    """
+    live = _jobs()["live-webview2"]
+    live_text = _job_text(live)
+    assert any(" -m live" in command for command in _run_commands(live)), (
+        "live-webview2 가 `pytest -m live` 전체 실행을 잃었습니다"
+    )
+    release_text = json.dumps(_release_steps(), ensure_ascii=False)
+    for token in PARTIAL_LIVE_TOKENS:
+        assert token not in live_text, f"live-webview2 가 부분 실창 흔적 {token} 을 씁니다"
+        assert token not in release_text, f"release 워크플로가 부분 실창 흔적 {token} 을 씁니다"
+
+
 def test_the_live_job_ceiling_covers_its_worst_case_arithmetic() -> None:
     """잡 상한은 그 아래 phase 예산의 **합**보다 성겨야 한다 — 그리고 그 대조가 기계여야 한다.
 

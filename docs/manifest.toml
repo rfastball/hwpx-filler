@@ -77,7 +77,7 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "9515aa3514155276f2ddc6d9155bd4fdb7b1dbec8e0853df10ac9ad0a1e2b610"
+source_sha256 = "5dcb4d395a7fe59b671ac87397e7ee449c90231ebf9e3f0172fb1fcad3ec5b01"
 body_sha256 = "a7c153329a7a315edb9a2bd03b48e6e717188c540b54d3a40548df97a8cb48af"
 
 [[document]]
@@ -209,7 +209,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_work_slot_configuration.py"]
-source_sha256 = "0f243f11e8c1f39c722546e0089fd2be8572ba53fe20e31f4400384fea977513"
+source_sha256 = "2752a3bb0e1cbeedbcbe0e2fbc249de74d5720df74a1581d0fb22bec0a133de1"
 body_sha256 = "ca03c1ee80e21fe19b9f720bac49e382e30cf36cc7fccb755aac7bcd2a16fe1d"
 
 [[topic]]
@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
-source_sha256 = "b265a7b82001aa7e553a5b9df225076a19dd854adb03d0154777b1a3d510ce6c"
+source_sha256 = "29d3ab84a61f61f71fed069320af3984abd1d10e991364ea07a617b349440896"
 body_sha256 = "270faa3873d86f978eb177b9a0efaefa599cd05a1a096b1c8e567db885c523c1"
 
 [[topic]]
@@ -257,15 +257,15 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "61ef241844486fc7d43aa133ef8a40d89810f71b3ebc7bdba8cead06919a7dab"
-body_sha256 = "29e1bb017573409e87983cc8d0c6e2bec90a7eaf8564fbef93622658aeea9273"
+source_sha256 = "d77301ceb232e0a2ba3a68ab04e1dadf094d0dbfd742e92b66801584a8f64ae2"
+body_sha256 = "a60ff73d9e896ea57cfac1804d787463026c63450c5fc529b8a4f3170f01de00"
 
 [[topic]]
 id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
 tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "78750b18781aaa6a4a8f6b1ce6b9b61c85cf81443a4a71106fd73cf4391c1b87"
+source_sha256 = "5e2a349d4406f074f00383a5a15faaacc4dfe70169fe0ce3ed53bd4ec20927f2"
 body_sha256 = "723d0591a30a41bcbaca6b8687bbecc4e9fdc992d9efda3d5b71b58220134f31"
 
 [[topic]]
