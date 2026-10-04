@@ -462,6 +462,50 @@ test("start 인자 — mode 는 비어 있을 수 없고 flags 는 평범한 객
   assert.equal(api.run(startRequest()).ok, true);
 });
 
+/* ────────────────────────── 음성·양성 — probes (부분 선택) ────────────────────────── */
+
+test("probes 가 비정상이면 malformed_request 다 — 러너를 몰지 않는다", () => {
+  const { api, runner } = band();
+  const bad = [[], "data_picker", [""], [1], [null], [["x"]]];
+  for (const probes of bad) {
+    const rejected = api.run(startRequest({ probes }));
+    assert.equal(rejected.code, CODES.MALFORMED_REQUEST, `거절해야 한다: ${JSON.stringify(probes)}`);
+    assert.equal(rejected.field, "probes");
+  }
+  assert.equal(runner.calls.length, 0, "형태가 틀린 요청은 러너를 몰지 않는다.");
+  /* 거절한 뒤에도 슬롯은 비어 있다. */
+  assert.equal(api.run(startRequest()).ok, true);
+});
+
+test("probes 는 그대로 createRunner 와 runner.run 에 전달된다", async () => {
+  const win = createWin();
+  const clock = createClock();
+  const createdWith = [];
+  const runner = createFakeRunner();
+  installSelftestApi({
+    win,
+    claimToken: () => TOKEN,
+    createRunner: (ports) => { createdWith.push(ports); return runner; },
+    now: clock.now,
+  });
+  const api = win[SELFTEST_GLOBAL];
+  api.run(startRequest({ probes: ["data_picker", "D"] }));
+  await flush();
+  assert.deepEqual(createdWith, [
+    { mode: "full", input: null, flags: {}, probes: ["data_picker", "D"] },
+  ]);
+  assert.deepEqual(runner.calls, [
+    { mode: "full", options: { input: null, flags: {}, probes: ["data_picker", "D"] } },
+  ]);
+});
+
+test("probes 가 없으면 러너로 가는 옵션에 선택이 실리지 않는다", async () => {
+  const { api, runner } = band();
+  api.run(startRequest());
+  await flush();
+  assert.equal(Object.prototype.hasOwnProperty.call(runner.calls[0].options, "probes"), false);
+});
+
 test("두 번째 start 는 조용히 재시작하지 않는다", async () => {
   const { api, runner, clock } = band();
   const runId = api.run(startRequest()).runId;

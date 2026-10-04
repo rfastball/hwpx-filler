@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import secrets
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from .product_api import ProductApiError, encode_js_literal
@@ -511,19 +511,28 @@ def start_fields(
     *,
     probe_input: object = None,
     flags: "Mapping[str, object] | None" = None,
+    probes: "Sequence[str] | None" = None,
 ) -> dict:
-    """개시 봉투의 필드 — ``mode`` 는 필수, ``input``·``flags`` 는 **없으면 키째 빠진다**.
+    """개시 봉투의 필드 — ``mode`` 는 필수, ``input``·``flags``·``probes`` 는 **없으면 키째 빠진다**.
 
     빈 값을 지어내 실으면 러너가 "호스트가 입력을 줬는데 비었다"와 "호스트가 입력을 안 줬다"를
     구별하지 못한다. 그래서 ``None`` 은 값이 아니라 **부재**로 옮긴다.
+
+    ``probes`` 는 부분 실창(국소 변경 검증)의 프로브·묶음 선택이다. 부재 = 전체 실행이다.
+    형태 판정은 두 끝이 진다 — 드라이버가 환경값의 빈 이름을, 파사드(``api.js``)가 빈 목록·
+    비문자열을 ``malformed_request`` 로 거절한다(빈 선택을 전체나 0개 실행으로 읽지 않는다).
     """
     if not isinstance(mode, str) or not mode:
         raise SelftestApiError(CODE_INTERNAL, f"mode 는 비어 있지 않은 문자열이어야 한다: {mode!r}")
     fields: dict = {"mode": mode}
-    if probe_input is not None:
-        fields["input"] = probe_input
-    if flags is not None:
-        fields["flags"] = dict(flags)
+    optional = (
+        ("input", probe_input),
+        ("flags", None if flags is None else dict(flags)),
+        ("probes", None if probes is None else list(probes)),
+    )
+    for key, value in optional:
+        if value is not None:
+            fields[key] = value
     return fields
 
 
@@ -541,9 +550,13 @@ def start_expression(
     *,
     probe_input: object = None,
     flags: "Mapping[str, object] | None" = None,
+    probes: "Sequence[str] | None" = None,
 ) -> str:
     """실행 개시 표현식. ``mode`` 는 드라이버가 환경에서 정한 값이다(프런트가 고르지 않는다)."""
-    return run_expression(ACTION_START, start_fields(mode, probe_input=probe_input, flags=flags))
+    return run_expression(
+        ACTION_START,
+        start_fields(mode, probe_input=probe_input, flags=flags, probes=probes),
+    )
 
 
 def poll_expression(run_id: str) -> str:
@@ -1427,10 +1440,12 @@ class SelftestClient:
         *,
         probe_input: object = None,
         flags: "Mapping[str, object] | None" = None,
+        probes: "Sequence[str] | None" = None,
     ) -> str:
         """실행 개시 — ``runId`` 를 돌려준다. 거절·형태 위반은 예외다."""
         raw = self._eval(
-            start_expression(mode, probe_input=probe_input, flags=flags), ACTION_START
+            start_expression(mode, probe_input=probe_input, flags=flags, probes=probes),
+            ACTION_START,
         )
         run_id, code, detail = classify_start(raw)
         if code != CODE_OK:
@@ -1472,6 +1487,7 @@ class SelftestClient:
         *,
         probe_input: object = None,
         flags: "Mapping[str, object] | None" = None,
+        probes: "Sequence[str] | None" = None,
     ) -> SelftestOutcome:
         """준비 → 개시 → 폴링(겸 회수)을 한 번에. **던지지 않고** 판정을 돌려준다.
 
@@ -1482,7 +1498,7 @@ class SelftestClient:
         try:
             # 한 번 묻지 않고 **선다는 것을 확인할 때까지** 기다린다 — 설치는 비동기다.
             self.await_readiness(deadline)
-            run_id = self.start(mode, probe_input=probe_input, flags=flags)
+            run_id = self.start(mode, probe_input=probe_input, flags=flags, probes=probes)
         except SelftestApiError as exc:
             return self._outcome(mode, exc.code, exc.detail, deadline)
 

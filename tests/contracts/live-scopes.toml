@@ -1,0 +1,256 @@
+# 부분 실창 범위 지도 — **로컬 전용**의 단일 출처(`scripts/live_scope.py` 가 읽는다).
+#
+# `pytest --live-scope=<이름[,이름]>|auto|full` 이 이 지도로 live 테스트를 고른다. 기본(옵션
+# 없음)과 CI 는 언제나 전체다 — CI 환경에서 부분 옵션은 하드 실패하고, 병합 판정은 CI
+# `live-webview2` 의 전체 `pytest -m live` 가 진다. 부분 실행의 초록은 병합 판정이 아니다.
+#
+# 판정 순서(auto): `shared` 에 걸리면 **전체** → 범위 `paths` 에 걸리면 그 범위들 →
+# `no_live` 에 걸리면 실창 불필요 → 어디에도 안 걸리면 **전체**. 애매하면 전체가 기본이다.
+# glob 은 저장소 루트 기준 POSIX 경로에 `PurePosixPath.full_match` 로 맞춘다(`**` = 0개 이상 폴더).
+#
+# 범위의 `probes` 는 `tests/contracts/selftest-probe-graph.json`(프로브 그래프 스냅숏)의 프로브
+# 이름 또는 묶음 id(B·C·D·E·R)다. 한 번의 `--selftest` 부팅이 그 선택과 `after` 닫힘만 돌고,
+# `TestWebSelftestGate` 는 그 닫힘이 내는 키만 읽는 테스트가 남는다(나머지는 deselect).
+# `tests` 는 그 밖의 live 테스트(콜드 부팅·101) 노드 id 다 — 파라미터 꼬리 `[...]` 없이 적는다.
+
+version = 1
+
+# 하나라도 바뀌면 국소가 아니다 — 앱 셸·브리지·런타임·selftest 엔진·하니스·빌드·잠금 파일.
+shared = [
+  # 제품 진입·합성 루트·공용 런타임
+  "frontend/index.html",
+  "frontend/src/main.js",
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+  "frontend/src/push_port.js",
+  "frontend/src/shell/**",
+  "frontend/src/react/**",
+  "frontend/src/runtime/**",
+  "frontend/src/state/**",
+  "frontend/src/overlay/**",
+  "frontend/src/contract/**",
+  "frontend/src/ports/**",
+  "frontend/src/domain/**",
+  "frontend/js/**",
+  "frontend/css/tokens.css",
+  "frontend/css/base.css",
+  "frontend/css/tail.css",
+  "frontend/css/overlay.css",
+  "frontend/css/forced-colors.css",
+  "frontend/fonts/**",
+  "frontend/img/**",
+  "frontend/vendor/**",
+  # selftest 엔진·프로토콜·레지스트리(묶음 파일 자체는 `selftest` 범위)
+  "frontend/src/selftest/runner.js",
+  "frontend/src/selftest/api.js",
+  "frontend/src/selftest/boot.js",
+  "frontend/src/selftest/schema.js",
+  "frontend/src/selftest/preserve.js",
+  "frontend/src/selftest/probes/index.js",
+  # 앱 셸·브리지·실창 수명(파이썬)
+  "src/hwpxfiller/webapp/__init__.py",
+  "src/hwpxfiller/webapp/__main__.py",
+  "src/hwpxfiller/webapp/app.py",
+  "src/hwpxfiller/webapp/live_run.py",
+  "src/hwpxfiller/webapp/boot_budget.py",
+  "src/hwpxfiller/webapp/product_api.py",
+  "src/hwpxfiller/webapp/selftest_api.py",
+  "src/hwpxfiller/webapp/selftest_runner.py",
+  "src/hwpxfiller/webapp/screens.py",
+  "src/hwpxfiller/webapp/action_registry.py",
+  "src/hwpxfiller/web_artifact.py",
+  "src/hwpxfiller/host/**",
+  "src/hwpxcore/**",
+  # 빌드·봉인·패키징·잠금 파일
+  "build-web.ps1",
+  "build.ps1",
+  "test.ps1",
+  "run-filler.ps1",
+  "package.json",
+  "package-lock.json",
+  "vite.config.mjs",
+  "tsconfig.json",
+  "pyproject.toml",
+  "uv.lock",
+  ".python-version",
+  ".node-version",
+  "packaging/**",
+  "vendor/**",
+  "scripts/seal_web_artifact.py",
+  "scripts/build_rhwp.ps1",
+  "scripts/gen_bridge_contract.py",
+  "scripts/gen_design_tokens.py",
+  ".github/**",
+  # 실창 하니스와 이 지도 자체
+  "conftest.py",
+  "tests/conftest.py",
+  "tests/_live_budget.py",
+  "tests/_web_source.py",
+  "tests/_web_artifact_contract.py",
+  "tests/test_web_selftest_gate.py",
+  "tests/contracts/live-scopes.toml",
+  "tests/contracts/selftest-probe-graph.json",
+  "scripts/live_scope*.py",
+  "scripts/selftest_probe_graph.mjs",
+]
+
+# 실창 결과를 바꿀 수 없는 변경 — 문서·에이전트 설정·live 가 아닌 테스트(위 `shared` 가 먼저다).
+no_live = [
+  "docs/**",
+  "*.md",
+  ".claude/**",
+  ".codex/**",
+  "research/**",
+  "tests/**",
+  "scripts/docs_contract.py",
+  "scripts/ui_copy_census.py",
+  "scripts/check_package_coverage.py",
+  "scripts/check_release_version.py",
+]
+
+# 어느 범위에도 넣지 않는 live 테스트 — 전체 실행에서만 돈다. 값은 그 이유다.
+[full_only]
+"tests/test_web_selftest_gate.py::test_completed_boot_stamps_the_home_and_narrows_the_budget" = "부팅 예산·완주 스탬프는 app.py·boot_budget.py(공유) 소관이다"
+"tests/test_web_selftest_gate.py::test_selftest_api_is_absent_without_the_capability_in_real_webview" = "시험 능력 비노출은 selftest 엔진·프로토콜(공유) 소관이다"
+"tests/test_web_selftest_gate.py::test_global_allowlist_gate_actually_catches_a_planted_leak" = "전역 allowlist 계측의 양성 대조 — selftest 엔진(공유) 소관이다"
+"tests/test_web_selftest_gate.py::test_selftest_run_adds_exactly_one_global_over_a_normal_run" = "전역 델타는 selftest 엔진·프로토콜(공유) 소관이다"
+
+[scopes.selftest]
+description = "selftest 부팅 한 번(전체 프로브) — 콜드 부팅·101 은 빼고 렌더 계약 전체를 본다"
+probes = ["B", "C", "D", "E", "R"]
+tests = []
+paths = ["frontend/src/selftest/probes/*.js"]
+
+[scopes.job]
+description = "문서 만들기 화면 — 묶음 C(작업 화면)와 데이터 펼침 시트"
+probes = ["C", "data_sheet"]
+tests = []
+paths = [
+  "frontend/src/screens/job_*.ts",
+  "frontend/src/screens/data_zone.ts",
+  "frontend/css/job.css",
+  "frontend/css/jobdata.css",
+  "frontend/css/draftcard.css",
+  "src/hwpxfiller/webapp/screen_job.py",
+  "src/hwpxfiller/webapp/job_list.py",
+  "src/hwpxfiller/webapp/job_presentation.py",
+  "src/hwpxfiller/webapp/data_zone.py",
+  "src/hwpxfiller/webapp/output_folder_zone.py",
+  "src/hwpxfiller/webapp/active_work_session.py",
+  "src/hwpxfiller/webapp/slot_configuration_product.py",
+  # 실제 생성 경로 — 101 실주행도 함께 탄다(`journey101`).
+  "src/hwpxfiller/webapp/job_execution_session.py",
+  "src/hwpxfiller/webapp/document_run_coordinator.py",
+  "src/hwpxfiller/webapp/managed_run_result.py",
+]
+
+[scopes.data]
+description = "데이터 선택·고르기 열 — data_picker 와 그 닫힘(D 묶음 앞단)"
+probes = ["data_picker", "range_draft"]
+tests = []
+paths = [
+  "frontend/src/screens/data_picker.ts",
+  "frontend/src/screens/pool_*.ts",
+  "frontend/src/screens/sheet_picker.ts",
+  "frontend/src/screens/slice_popover.ts",
+  "src/hwpxfiller/webapp/screen_pool.py",
+  "src/hwpxfiller/webapp/pool_column.py",
+]
+
+[scopes.authoring]
+description = "저작 작업대(TXT·HWPX) — editor_txt_band 와 그 닫힘"
+probes = ["editor_txt_band"]
+tests = []
+paths = [
+  "frontend/src/screens/authoring*.ts",
+  "frontend/src/editorview/**",
+  "frontend/css/authoring.css",
+  "src/hwpxfiller/webapp/screen_authoring.py",
+  "tests/corpus/real/bid_notice_limited_under100m.hwpx",
+  "tests/corpus/real/filled_notice_marine.hwpx",
+]
+
+[scopes.editor]
+description = "템플릿 편집기·연결 — editor_* 와 편집 모드 진입"
+probes = ["editor_lib", "job_editmode"]
+tests = []
+paths = [
+  "frontend/src/screens/editor*.ts",
+  "frontend/css/editor.css",
+  "src/hwpxfiller/webapp/screen_editor.py",
+  "src/hwpxfiller/webapp/editor_session.py",
+  "src/hwpxfiller/webapp/editor_presentation.py",
+  "src/hwpxfiller/webapp/mapping_verbs.py",
+]
+
+[scopes.workbench]
+description = "작업대 화면 — workbench 와 그 닫힘"
+probes = ["workbench"]
+tests = []
+paths = [
+  "frontend/src/screens/workbench*.ts",
+  "src/hwpxfiller/webapp/screen_workbench.py",
+  "src/hwpxfiller/webapp/workbench_observation_product.py",
+]
+
+[scopes.library]
+description = "템플릿 라이브러리 — 라이브러리 표면·보기 탭·조합 손잡이"
+probes = ["library_view_tabs", "tpl_options"]
+tests = []
+paths = [
+  "frontend/src/screens/library.ts",
+  "frontend/css/library.css",
+  "src/hwpxfiller/webapp/screen_library.py",
+  "src/hwpxfiller/webapp/screen_template.py",
+  "src/hwpxfiller/webapp/template_groups.py",
+]
+
+[scopes.settings]
+description = "설정·개인화 — 설정 시트 프로브와 테마·배율·창 기하 재시작 콜드 부팅"
+probes = ["shell_settings", "personalization_persist"]
+tests = [
+  "tests/test_web_selftest_gate.py::test_theme_choice_persists_across_restart_without_flicker",
+  "tests/test_web_selftest_gate.py::test_font_scale_persists_across_restart_without_major_overflow",
+  "tests/test_web_selftest_gate.py::test_window_geometry_restores_or_falls_back_in_real_webview",
+]
+paths = [
+  "frontend/src/screens/settings_sheet.ts",
+  "src/hwpxfiller/external/settings.py",
+]
+
+[scopes.tutorial]
+description = "튜토리얼 패널 — React 런타임 프로브의 튜토리얼 표면"
+probes = ["react_runtime"]
+tests = []
+paths = [
+  "frontend/src/tutorial/**",
+  "frontend/css/tutorial.css",
+  "src/hwpxfiller/webapp/screen_tutorial.py",
+  "src/hwpxfiller/webapp/tutorial_loop.py",
+  "src/hwpxfiller/webapp/onboarding.py",
+]
+
+[scopes.journey101]
+description = "Quickstart 101 실주행(완주·재시작·예제 홈 무오염)"
+probes = []
+tests = [
+  "tests/test_quickstart_101_live.py::test_check_mode_completes_the_101_journey_on_a_clean_home",
+  "tests/test_quickstart_101_live.py::test_a_healthy_run_reports_when_it_nears_the_live_budget",
+  "tests/test_quickstart_101_live.py::test_check_mode_leaves_the_example_home_untouched",
+]
+paths = [
+  "scripts/live101/**",
+  "scripts/capture_101_screenshots.py",
+  "tests/test_quickstart_101_live.py",
+  "examples/quickstart-101/**",
+  "frontend/src/screens/job_run*.ts",
+  "frontend/src/screens/job_result.ts",
+  "frontend/src/screens/job_artifact.ts",
+  "src/hwpxfiller/webapp/job_execution_session.py",
+  "src/hwpxfiller/webapp/document_run_coordinator.py",
+  "src/hwpxfiller/webapp/managed_run_result.py",
+  "src/hwpxfiller/webapp/txt_materialization.py",
+  "src/hwpxfiller/webapp/onboarding.py",
+  "src/hwpxfiller/webapp/screen_tutorial.py",
+  "src/hwpxfiller/webapp/tutorial_loop.py",
+]

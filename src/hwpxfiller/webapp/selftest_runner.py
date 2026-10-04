@@ -83,6 +83,12 @@ _SELFTEST_ECHO_KEYS = {"theme_write": "theme_write", "font_scale_write": "font_s
 #: Selftest engine budget (seconds).  app.py keeps the public monkeypatch seam.
 SELFTEST_BUDGET_S = 80.0
 
+#: 부분 실창 — 한 부팅 안에서 돌릴 프로브·묶음 이름(쉼표 구분). 값은 하니스
+#: (``scripts/live_scope.py``)가 범위 지도에서 정하고, 닫힘(``after``)은 프런트 러너가 계산한다.
+SELFTEST_PROBES_ENV = "HWPX_SELFTEST_PROBES"
+#: 선택 실행이 증거에 남기는 표식 — 부재 = 전체 실행. 러너(``runner.js``)와 같은 이름이다.
+SELECTION_EVIDENCE_KEY = "selftest_selection"
+
 
 def _selftest_mode(environ: Mapping[str, str]) -> tuple[str, str]:
     """Environment to ``(mode, input)``; preserve the legacy priority."""
@@ -97,6 +103,74 @@ def _selftest_mode(environ: Mapping[str, str]) -> tuple[str, str]:
     if theme := environ.get("HWPX_SELFTEST_SET_THEME"):
         return "theme_write", theme
     return "full", ""
+
+
+def _selftest_probe_selection(environ: Mapping[str, str]) -> "tuple[str, ...] | None":
+    """환경의 프로브 선택 — 부재는 ``None``(전체), 빈 이름·빈 목록은 시끄러운 거절이다."""
+    raw = environ.get(SELFTEST_PROBES_ENV)
+    if raw is None:
+        return None
+    names = tuple(part.strip() for part in raw.split(","))
+    if not names or any(not name for name in names):
+        raise ValueError(f"{SELFTEST_PROBES_ENV} 형태 위반(빈 이름): {raw!r}")
+    return names
+
+
+def _selection_echo_error(probes: "tuple[str, ...] | None", evidence: Mapping) -> "str | None":
+    """증거의 선택 표식이 요청과 맞는가 — 부분 실행이 전체로, 전체가 부분으로 읽히지 않게."""
+    echoed = evidence.get(SELECTION_EVIDENCE_KEY)
+    if probes is None:
+        if echoed is not None:
+            return f"선택 요청 없이 선택 표식이 섰다: {echoed!r}"
+        return None
+    if not isinstance(echoed, Mapping):
+        return f"선택 실행 {list(probes)!r} 의 증거에 {SELECTION_EVIDENCE_KEY} 가 없다"
+    if echoed.get("requested") != list(probes) or echoed.get("partial") is not True:
+        return f"선택 표식 불일치: 요청 {list(probes)!r} / 증거 {dict(echoed)!r}"
+    return None
+
+
+def _probe_selection_for(
+    mode: str, environ: Mapping[str, str]
+) -> "tuple[tuple[str, ...] | None, str | None]":
+    """``(선택, 거절 사유)`` — 선택은 full 모드의 프로브 그래프 위에서만 뜻을 갖는다.
+
+    다른 모드에 얹으면 무엇을 잰 결과인지 흐려지므로 돌리지 않고 거절한다.
+    """
+    try:
+        probes = _selftest_probe_selection(environ)
+    except ValueError as exc:
+        return None, str(exc)
+    if probes is not None and mode != "full":
+        return None, f"{SELFTEST_PROBES_ENV} 는 full 모드 전용: {mode}"
+    return probes, None
+
+
+def _outcome_evidence(
+    mode: str,
+    echo_value: str,
+    outcome: selftest_api.SelftestOutcome,
+    probes: "tuple[str, ...] | None",
+) -> dict:
+    """구동 판정 → 증거. 실패한 실행도 증거를 싣고, 그 위에 ``error`` 를 세운다."""
+    evidence: dict = {}
+    if echo_key := _SELFTEST_ECHO_KEYS.get(mode):
+        evidence[echo_key] = echo_value
+    if outcome.has_evidence:
+        evidence.update(outcome.evidence or {})
+    if not outcome.ok and "error" not in evidence:
+        evidence["error"] = outcome.alarm_text
+    _check_selection_echo(probes, outcome, evidence)
+    return evidence
+
+
+def _check_selection_echo(
+    probes: "tuple[str, ...] | None", outcome: selftest_api.SelftestOutcome, evidence: dict
+) -> None:
+    """증거가 있고 아직 실패가 없을 때만 선택 표식 에코를 대조해 ``error`` 로 올린다."""
+    if outcome.has_evidence and "error" not in evidence:
+        if echo_error := _selection_echo_error(probes, evidence):
+            evidence["error"] = echo_error
 
 
 def _selftest_non_exposure_evidence(window: object) -> dict:
@@ -142,6 +216,10 @@ def drive(ctx: live_run.LiveContext) -> None:
     """Run the selected selftest mode and finish through the supplied context."""
     window = ctx.window
     mode, echo_value = _selftest_mode(os.environ)
+    probes, refusal = _probe_selection_for(mode, os.environ)
+    if refusal is not None:
+        ctx.finish({"mode": mode, "error": refusal})
+        return
 
     if mode == _MODE_NO_CAPABILITY:
         ctx.finish(_selftest_non_exposure_evidence(window))
@@ -168,13 +246,7 @@ def drive(ctx: live_run.LiveContext) -> None:
         mode,
         probe_input=echo_value or None,
         flags={"offlineProbe": bool(os.environ.get("HWPX_SELFTEST_OFFLINE_PROBE"))},
+        probes=probes,
     )
 
-    evidence: dict = {}
-    if echo_key := _SELFTEST_ECHO_KEYS.get(mode):
-        evidence[echo_key] = echo_value
-    if outcome.has_evidence:
-        evidence.update(outcome.evidence or {})
-    if not outcome.ok and "error" not in evidence:
-        evidence["error"] = outcome.alarm_text
-    ctx.finish(evidence)
+    ctx.finish(_outcome_evidence(mode, echo_value, outcome, probes))
