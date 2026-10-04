@@ -46,7 +46,7 @@ from hwpxfiller.external.template_change import TemplateChangeCoordinator
 from hwpxfiller.host.locations import home_dir
 from hwpxfiller.viewmodel.mapping_state import RowState, display_options
 from hwpxfiller.webapp.action_registry import validate_dispatch
-from hwpxfiller.webapp.app import _content_selection_reader, _txt_materialization_port
+from hwpxfiller.webapp.workspace_graph import _content_selection_reader, _txt_materialization_port
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct

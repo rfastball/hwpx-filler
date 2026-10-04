@@ -1008,7 +1008,7 @@ function_complexity = 16
 function_complexity = 15
 
 [budget."src/hwpxfiller/external/settings.py"]
-module_statements = 343
+module_statements = 334
 
 [budget."src/hwpxfiller/external/settings.py::load_last_data_source"]
 function_complexity = 16
@@ -1051,9 +1051,6 @@ function_complexity = 13
 
 [budget."src/hwpxfiller/external/tutorial_practice.py::PracticeFiles._cleanup_locked"]
 function_complexity = 15
-
-[budget."src/hwpxfiller/external/tutorial_practice.py::PracticeFiles.prepare"]
-function_complexity = 12
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py"]
 module_statements = 399
@@ -1183,7 +1180,7 @@ class_methods = 21
 function_complexity = 22
 
 [budget."src/hwpxfiller/webapp/app.py"]
-module_statements = 726
+module_statements = 686
 
 [budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
 class_methods = 39
@@ -1266,36 +1263,22 @@ function_complexity = 16
 function_complexity = 14
 
 [budget."src/hwpxfiller/webapp/onboarding.py"]
-module_statements = 492
+module_statements = 343
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
 class_methods = 34
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._dispatch"]
-function_complexity = 50
-function_statements = 82
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._exit"]
-function_complexity = 24
-function_statements = 59
+function_complexity = 12
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._guide"]
-function_complexity = 39
-function_statements = 58
+function_complexity = 38
+function_statements = 56
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
 function_complexity = 27
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._preflight"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._resources"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._seed_job"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._select"]
 function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
@@ -1518,6 +1501,3 @@ module_statements = 3926
 
 [budget."tests/test_webapp_job_binding_review.py"]
 module_statements = 993
-
-[budget."tests/test_webapp_tutorial.py"]
-module_statements = 859

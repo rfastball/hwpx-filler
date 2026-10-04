@@ -74,13 +74,11 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("copy", "TXT 복사", "필요한 행의 TXT를 복사하세요.", "workbench", "txt-copy", "purchase_copied"),
     )),
     Lesson("replace_data", "다른 데이터 연결", "연습 데이터 사본을 작업에 다시 연결합니다.", (
-        Beat("prepare", "연습 데이터 사본", "원본과 별개인 연습 데이터 사본을 준비하세요.", None, "prepare-examples", "derived_data_prepared"),
         Beat("connect", "새 데이터 연결", "연습 사본을 데이터 선택 목록에 연결하세요.", "editor", "data-picker", "derived_data_selected"),
         Beat("rebind", "작업에 다시 연결", "문서 작업에서 준비된 연습 작업의 편집기를 열고 새 데이터 사본의 공고 시트를 연결하세요. 연결을 다시 제안하고 두 제안을 확인한 뒤 저장하세요.", "editor", "mapping", "derived_job_rebound", entry_screen="library"),
         Beat("reopen", "저장하고 다시 열기", "작업을 저장하고 다시 열어 새 경로와 시트가 유지되는지 확인하세요.", "job", "job-list", "derived_reopened"),
     )),
     Lesson("blank_values", "빈 값 살펴보기", "빈 값 표식을 확인하고 직접 입력으로 고칩니다.", (
-        Beat("prepare", "빈 값이 있는 연습 시트", "원본 예제에는 빈 셀이 없습니다. 빈 셀 하나가 있는 연습 사본을 준비하세요.", None, "prepare-examples", "blank_data_prepared"),
         Beat("observe", "빈 값 표식 확인", "문서 작업에서 준비된 계약 연습 작업을 열고 빈 값이 있는 행을 검토·복사 작업대로 보내세요. 카드의 〈빈 값〉 표시를 확인하세요.", "workbench", "txt-review", "blank_observed", entry_screen="library"),
         Beat("repair", "직접 입력으로 고치기", "그 행의 필요한 값을 직접 입력해 다시 확인하세요.", "workbench", "txt-review", "blank_repaired"),
         Beat("compare", "의도적인 비움 비교", "직접 입력으로 고친 '계약보증금'과 의도적으로 비워 둔 '단위'를 비교하세요.", "workbench", "txt-review"),
@@ -254,7 +252,7 @@ class LessonProgress:
             "copy": {
                 "start": "예제로 시작", "later": "나중에", "pause": "안내 일시정지",
                 "resume": "계속하기", "skip": "건너뛰기", "restart": "처음부터 안내",
-                "next": "다음", "prepare": "연습 파일 새로 준비",
+                "next": "다음",
                 "cleanup": "연습 파일 정리", "reset": "학습 기록 초기화",
                 "cleanup_confirm": "아래 목록에서 삭제로 표시한 연습 사본만 지웁니다. 수정한 파일과 작업이 참조하는 파일은 그대로 둡니다.",
                 "reset_confirm": "모든 과정의 학습 위치와 완료 기록을 지웁니다. 연습 파일, 사용자 파일, 저장한 작업과 생성 결과는 그대로 둡니다.",

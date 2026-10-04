@@ -17,7 +17,7 @@ export type TutorialBeat = {
   primary?: GuideAction;
   guidance?: Record<string, { body: string; target: string | null; primary?: GuideAction }>;
 };
-type GuideAction = { action: "prepare_examples" | "navigate"; label: string; screen?: string };
+type GuideAction = { action: "navigate"; label: string; screen?: string };
 export type TutorialSnapshot = {
   kind: "tutorial-lessons/v1";
   invitation: { visible: boolean; title: string; body: string };
@@ -32,7 +32,7 @@ export type TutorialSnapshot = {
   resources: { ready: boolean; summary: string; files?: readonly { name: string; path: string; kind: string }[] };
   copy: {
     start: string; later: string; pause: string; resume: string; skip: string;
-    restart: string; next: string; prepare: string; cleanup: string; reset: string;
+    restart: string; next: string; cleanup: string; reset: string;
     open_tutorial: string; close: string; choose_scenario: string; reset_confirm: string; cleanup_confirm: string;
     practice: string; exit: string; return: string;
   };
@@ -67,7 +67,6 @@ const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   results: "#jobResult",
   "txt-review": "#wbCard",
   "txt-copy": "#wbCopy",
-  "prepare-examples": "#tutorialPrepare",
   "authoring-canvas": "#authoring-canvas, #authoring-outline-title",
   "authoring-open": "#authoring-menu[aria-label='파일'] [role='menuitem']:first-child, .authoring-empty-actions button:first-child, .authoring-head button[aria-haspopup='menu']",
   trial: ".authoring-dock.trial #authoring-dock-panel, .authoring-toolbar-end button[aria-pressed]",
@@ -242,7 +241,7 @@ function TutorialGuide(props: GuideProps): ReactNode {
 type LessonControls = {
   snapshot: TutorialSnapshot; pending: boolean; practice: boolean;
   run(item: Lesson, action: string): void; close(): void;
-  act(action: "pause" | "skip" | "prepare_examples"): void; confirm(action: "reset_progress" | "cleanup"): void;
+  act(action: "pause" | "skip"): void; confirm(action: "reset_progress" | "cleanup"): void;
 };
 
 /** Open panel body. One featured lesson owns the only primary action; other lessons are quiet whole-row choices,
@@ -299,7 +298,6 @@ export function TutorialLessons(props: LessonControls): ReactNode {
         h("summary", null, h("span", { className: "tutorial-disclosure-mark", "aria-hidden": true }, icon("chevron-right")), summary), fileList)
         : summary ? h("p", null, summary) : fileList) : null,
     h("div", { className: "tutorial-maintenance" },
-      quiet(snapshot.copy.prepare, () => props.act("prepare_examples"), { id: "tutorialPrepare" }),
       !practice ? quiet(snapshot.copy.cleanup, () => props.confirm("cleanup"), { className: "btn quiet sm tutorial-destructive" }) : null,
       !practice ? quiet(snapshot.copy.reset, () => props.confirm("reset_progress"), { className: "btn quiet sm tutorial-destructive" }) : null));
 }

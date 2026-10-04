@@ -23,7 +23,7 @@ from .atomic import write_text_atomic
 # (app.py: 단일 인스턴스 뮤텍스 키·webview 루트) — 이름을 그대로 재노출해 호출 계약은 두고
 # 해석만 위임한다. 관용구를 여기 다시 적으면 settings.json 과 레지스트리가 다른 홈으로
 # 갈라질 수 있고, 그 조용한 갈라짐이 #76 이 없애려는 결함류다.
-from hwpxfiller.host.locations import home_dir
+from hwpxfiller.host.locations import home_dir, workspace_home
 
 __all__ = (
     "VALID_THEMES",
@@ -60,7 +60,6 @@ __all__ = (
     "VALID_DATA_SOURCES",
     "load_last_data_source",
     "save_last_data_source",
-    "restore_tutorial_preferences",
     "load_tutorial_progress",
     "save_tutorial_progress",
     "load_job_collapsed_groups",
@@ -131,8 +130,17 @@ def alert(msg: str) -> None:
 
 
 def _settings_path() -> Path:
-    """설정 파일 위치 — 홈 아래 ``settings.json``."""
+    """앱 전역 설정 파일 — 홈 아래 ``settings.json``(창·테마·배율·폭 등 셸 상태)."""
     return home_dir() / "settings.json"
+
+
+def _workspace_settings_path() -> Path:
+    """작업 공간 설정 파일(#1126) — 저장 폴더·데이터·서식 폴더·그룹 등 작업 환경 값.
+
+    사용자 환경에서는 :func:`_settings_path` 와 같은 파일이다. 튜토리얼 연습 환경에서는 그
+    과정의 홈 아래 파일이라 연습 동작이 사용자 설정을 바꾸지 않는다.
+    """
+    return workspace_home() / "settings.json"
 
 
 def _parse_settings(text: str) -> dict:
@@ -145,14 +153,14 @@ def _parse_settings(text: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _read() -> dict:
+def _read(path: "Path | None" = None) -> dict:
     """전체 설정 dict 반환 — 부재는 빈 dict(첫 실행). **일시 OSError 는 유계 재시도 후에만**
     폴백한다: AV 스캔·원자 교체 순간의 공유 위반 같은 일시 판독 장애가 저장 테마의 조용한
     'system' 리셋으로 승격되지 않게(#75 리뷰 #6, confirm-or-alarm). save_theme 재시도와 대칭.
 
     재시도를 소진한 **지속** 실패는 빈 dict 로 접되(부팅을 테마 하나로 죽일 순 없다) 조용히
     넘기지 않고 시끄럽게 알린다(#75 리뷰4 #2) — 조용한 리셋은 곧 저장 선택의 무단 소실이다."""
-    path = _settings_path()
+    path = path or _settings_path()
     last_exc: "OSError | None" = None
     for attempt in range(_READ_RETRIES):
         try:
@@ -184,7 +192,7 @@ def load_theme() -> str:
     return theme if theme in VALID_THEMES else "system"
 
 
-def _mutate(mutator) -> None:
+def _mutate(mutator, path: "Path | None" = None) -> None:
     """설정 dict 를 read-modify-write 로 갱신하는 공용 몸통 — 다른 키 보존 + 원자 교체.
 
     ``mutator(data)`` 는 판독한 dict 를 제자리에서 수정한다(단일 키·중첩 매체 등 갱신 형태
@@ -196,7 +204,7 @@ def _mutate(mutator) -> None:
     재판독을 try 안에 둔다 — 일시 공유 위반은 판독 쪽에서도 튈 수 있고(원자 교체 순간 타
     프로세스의 읽기 락), 이를 재시도로 흡수하지 않으면 쓰기만 관대하고 그 직전 읽기는 spurious
     alert 로 승격되는 비대칭이 된다(#75 리뷰4 #4). 재시도마다 재판독 = 손상·갱신된 다른 키 보존."""
-    path = _settings_path()
+    path = path or _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     # 판독→변이→쓰기 전체를 잠금 안에서(재시도 포함) — 동시 저장의 lost-update 차단(F3).
     with _MUTATE_LOCK:
@@ -212,25 +220,12 @@ def _mutate(mutator) -> None:
                 time.sleep(0.05 * (attempt + 1))
 
 
-def _save_key(key: str, value) -> None:
+def _save_key(key: str, value, path: "Path | None" = None) -> None:
     """단일 키 영속 — RMW·원자성·재시도 계약은 :func:`_mutate` 공용 몸통이 진다."""
-    _mutate(lambda data: data.__setitem__(key, value))
+    _mutate(lambda data: data.__setitem__(key, value), path)
 
 
-def restore_tutorial_preferences(data_source: dict | None, output_directory: str) -> None:
-    """Restore only practice's remembered mount/output, preserving unrelated preferences."""
-    def restore(data: dict) -> None:
-        for key, value in (("last_data_source", data_source),
-                           ("last_output_directory", output_directory)):
-            if value:
-                data[key] = value
-            else:
-                data.pop(key, None)
-
-    _mutate(restore)
-
-
-def _save_nested(top_key: str, sub_key: str, sub_value) -> None:
+def _save_nested(top_key: str, sub_key: str, sub_value, path: "Path | None" = None) -> None:
     """중첩 dict(``{top_key: {sub_key: sub_value}}``) 갱신 — **같은 top_key 아래 다른 sub_key
     를 보존**한다(매체별 그룹 상태처럼 한 top 아래 hwpx/txt 두 칸이 공존하는 경우, 한 매체
     저장이 다른 매체를 지우면 안 된다). top_key 가 dict 가 아니면(부재·손상) 새 dict 로 새 출발."""
@@ -241,7 +236,7 @@ def _save_nested(top_key: str, sub_key: str, sub_value) -> None:
         bucket[sub_key] = sub_value
         data[top_key] = bucket
 
-    _mutate(mutate)
+    _mutate(mutate, path)
 
 
 def save_theme(mode: str) -> None:
@@ -353,7 +348,7 @@ def load_draft_target_font() -> str:
 
     기본이 굴림체인 이유: 공문 표준 고정폭이라 연속 공백 정렬이 정당한 저작이고(린트 침묵),
     비례폭(맑은고딕)을 기본으로 두면 첫 화면부터 정렬 경보가 서는 역효과가 난다."""
-    font = _read().get("draft_target_font")
+    font = _read(_workspace_settings_path()).get("draft_target_font")
     return font if font in VALID_DRAFT_FONTS else "gulimche"
 
 
@@ -363,7 +358,7 @@ def save_draft_target_font(font: str) -> None:
     보존·원자성·재시도 계약은 :func:`_save_key` 공용 몸통이 진다(테마·접힌 그룹과 동형)."""
     if font not in VALID_DRAFT_FONTS:
         raise ValueError(f"유효하지 않은 대상 글꼴: {font!r} (허용: {VALID_DRAFT_FONTS})")
-    _save_key("draft_target_font", font)
+    _save_key("draft_target_font", font, _workspace_settings_path())
 
 
 # 부팅 완주 스탬프(#77) — 값은 그때 관측한 WebView2 런타임 버전, 못 읽었으면 아래 sentinel.
@@ -404,7 +399,7 @@ def load_last_output_directory() -> str:
 
     비문자열(손상·구버전)은 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은
     그대로 기본 거동으로 산다."""
-    raw = _read().get("last_output_directory")
+    raw = _read(_workspace_settings_path()).get("last_output_directory")
     return raw if isinstance(raw, str) else ""
 
 
@@ -415,7 +410,7 @@ def save_last_output_directory(path: str) -> None:
     침묵한다(confirm-or-alarm). 보존·원자성·재시도 계약은 :func:`_save_key` 가 진다."""
     if not isinstance(path, str) or not path.strip():
         raise ValueError(f"유효하지 않은 저장 폴더 경로: {path!r}")
-    _save_key("last_output_directory", path)
+    _save_key("last_output_directory", path, _workspace_settings_path())
 
 
 def load_templates_root() -> str:
@@ -428,7 +423,7 @@ def load_templates_root() -> str:
 
     비문자열(손상·구버전)은 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은
     그대로 기본 거동(앱 홈 ``templates``)으로 산다."""
-    raw = _read().get("templates_root")
+    raw = _read(_workspace_settings_path()).get("templates_root")
     return raw if isinstance(raw, str) else ""
 
 
@@ -439,7 +434,7 @@ def save_templates_root(path: str) -> None:
     침묵한다(:func:`save_last_output_directory` 와 같은 규율)."""
     if not isinstance(path, str) or not path.strip():
         raise ValueError(f"유효하지 않은 서식 폴더 경로: {path!r}")
-    _save_key("templates_root", path)
+    _save_key("templates_root", path, _workspace_settings_path())
 
 
 # 마지막으로 성사된 데이터 마운트의 출처 축(U3-07 · #880) — 세션의 `data_source` 플래그와
@@ -465,7 +460,7 @@ def load_last_data_source() -> "dict | None":
     비dict·형 불일치·필수 성분 부재(파일인데 경로 없음, 풀인데 슬롯 키 없음, 계약 목록인데
     db·뷰 없음)는 미저장과 같이 다룬다 — 이 키가 없는 기존 ``settings.json`` 은 그대로 빈
     부팅으로 산다."""
-    raw = _read().get("last_data_source")
+    raw = _read(_workspace_settings_path()).get("last_data_source")
     if not isinstance(raw, dict):
         return None
     source = raw.get("source")
@@ -528,6 +523,7 @@ def save_last_data_source(
             "header_row": header_row,
             "pool_key": pool_key,
         },
+        _workspace_settings_path(),
     )
 
 
@@ -577,17 +573,11 @@ def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
     _mutate(mutate)
 
 
-def load_tutorial_lessons() -> dict:
-    """Read the new curriculum independently of frozen T0–T17 progress."""
+def load_legacy_tutorial_lessons() -> dict:
+    """#1126 이전 학습 기록 — 읽기 전용 이관 출처(새 기록은 튜토리얼 전용 저장소에만 쓴다)."""
     bucket = _read().get("tutorial")
     raw = bucket.get("lessons") if isinstance(bucket, dict) else None
     return raw if isinstance(raw, dict) else {}
-
-
-def save_tutorial_lessons(value: dict) -> None:
-    if not isinstance(value, dict) or value.get("version") != 1:
-        raise ValueError("학습 기록 형식이 올바르지 않습니다.")
-    _save_nested("tutorial", "lessons", value)
 
 
 def load_tutorial_practice() -> dict:
@@ -613,7 +603,7 @@ def load_tutorial_manifest() -> "dict | None":
     반쯤 읽은 manifest 로 제거를 돌리면 「무엇을 지우는지」가 흔들린다 — 형상이 계약과
     다르면 없는 것으로 보고, 재설치가 정상 기재를 다시 쓰게 둔다(되돌리기 = 재설치, D4).
     """
-    raw = _read().get("tutorial")
+    raw = _read(_workspace_settings_path()).get("tutorial")
     if not isinstance(raw, dict):
         return None
     manifest = raw.get("manifest")
@@ -675,7 +665,7 @@ def save_tutorial_manifest(
         bucket["manifest"] = record
         data["tutorial"] = bucket
 
-    _mutate(mutate)
+    _mutate(mutate, _workspace_settings_path())
 
 
 def clear_tutorial_manifest() -> None:
@@ -692,7 +682,7 @@ def clear_tutorial_manifest() -> None:
             bucket.pop("manifest", None)
             data["tutorial"] = bucket
 
-    _mutate(mutate)
+    _mutate(mutate, _workspace_settings_path())
 
 
 def load_job_collapsed_groups() -> "list[str]":
@@ -701,7 +691,7 @@ def load_job_collapsed_groups() -> "list[str]":
     미저장·비유효 값은 빈 리스트 = 전부 펼침(무상태 기본, R-info 1부 결정 6-①②). 새 그룹은
     이 목록에 없으므로 자동으로 펼침이다. 리스트 안의 비문자열 항목만 걸러낸다(부분 손상이
     전체 리셋으로 승격되지 않게)."""
-    raw = _read().get("job_collapsed_groups")
+    raw = _read(_workspace_settings_path()).get("job_collapsed_groups")
     if not isinstance(raw, list):
         return []
     return [g for g in raw if isinstance(g, str)]
@@ -714,7 +704,7 @@ def save_job_collapsed_groups(groups: "list[str]") -> None:
     저장은 정렬·중복 제거로 정규화한다 — 파일 diff 안정성."""
     if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
         raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
-    _save_key("job_collapsed_groups", sorted(set(groups)))
+    _save_key("job_collapsed_groups", sorted(set(groups)), _workspace_settings_path())
 
 
 def recollapse_job_group(old: str, new: str = "") -> None:
@@ -760,7 +750,7 @@ def load_template_group_map(media: str) -> "dict[str, str]":
     부분 손상(비문자열 키/값·빈 그룹명)은 그 항목만 걸러낸다(전체 리셋으로 승격 금지) —
     빈 그룹명은 「그룹 없음」과 같으므로 애초에 저장되지 않아야 하고, 있어도 무시한다."""
     _check_media(media)
-    root = _read().get("template_groups")
+    root = _read(_workspace_settings_path()).get("template_groups")
     if not isinstance(root, dict):
         return {}
     sub = root.get(media)
@@ -779,7 +769,7 @@ def save_template_group_map(media: str, mapping: "dict[str, str]") -> None:
 
     비유효 인자(비dict·비문자열 키/값)는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm)."""
     _check_media(media)
-    _save_nested("template_groups", media, _clean_group_map(mapping))
+    _save_nested("template_groups", media, _clean_group_map(mapping), _workspace_settings_path())
 
 
 def load_template_collapsed_groups(media: str) -> "list[str]":
@@ -788,7 +778,7 @@ def load_template_collapsed_groups(media: str) -> "list[str]":
     작업 접힘(:func:`load_job_collapsed_groups`)과 동형: 비리스트는 전부 펼침, 리스트 안
     비문자열 항목만 걸러낸다(부분 손상이 전체 리셋으로 승격되지 않게)."""
     _check_media(media)
-    root = _read().get("template_collapsed_groups")
+    root = _read(_workspace_settings_path()).get("template_collapsed_groups")
     if not isinstance(root, dict):
         return []
     raw = root.get(media)
@@ -802,7 +792,7 @@ def save_template_collapsed_groups(media: str, groups: "list[str]") -> None:
 
     비유효 인자는 조용히 무시하지 않고 ``ValueError`` (job 접힘과 동형)."""
     _check_media(media)
-    _save_nested("template_collapsed_groups", media, _norm_collapsed(groups))
+    _save_nested("template_collapsed_groups", media, _norm_collapsed(groups), _workspace_settings_path())
 
 
 def _clean_group_map(mapping: "dict[str, str]") -> "dict[str, str]":
@@ -842,4 +832,4 @@ def save_template_group_state(
             bucket[media] = value
             data[top_key] = bucket
 
-    _mutate(mutate)
+    _mutate(mutate, _workspace_settings_path())

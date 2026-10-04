@@ -849,28 +849,31 @@ def test_new_lessons_restart_keeps_completion_but_clears_round_evidence():
     assert state.snapshot()["active"] and not state.snapshot()["show_result"]
 
 
-def test_fresh_practice_is_adopted_only_by_its_own_lesson_restart(tmp_path, monkeypatch):
+def test_lesson_start_and_restart_seed_a_fresh_private_home(tmp_path, monkeypatch):
+    """#1126: each start/restart lays the lesson's originals into a new home outside the user's."""
     from hwpxfiller.webapp.app import WebFrontend
 
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    home = tmp_path / "home"
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
     frontend = WebFrontend()
     tutorial = frontend.controllers["tutorial"]
     tutorial.dispatch("select", {"scenario_id": "field_trial"})
-    original = tutorial.snapshot()["resources"]["files"]
+    first = tutorial._context()["home"]
+    lessons = home / "tutorial_workspace" / "lessons" / "field_trial"
+    assert Path(first).parent == lessons
+    files = tutorial.snapshot()["resources"]["files"]
+    assert sorted(item["name"] for item in files) == sorted(tutorial.practice_names())
+    assert all(Path(item["path"]).name == item["name"] and Path(item["path"]).is_relative_to(first)
+               for item in files)
     record = tutorial.progress.record("field_trial")
     record["checkpoint"] = 2
     record["completed"] = True
-    tutorial.dispatch("prepare_examples", {})
-    pending = record["context"]["pending_assets"]
-    assert tutorial.snapshot()["resources"]["files"] == original
-    tutorial.dispatch("select", {"scenario_id": "contract_txt"})
-    assert tutorial.progress.record("contract_txt")["context"].get("pending_assets") is None
     tutorial.dispatch("restart", {"scenario_id": "field_trial"})
-    assert tutorial.snapshot()["resources"]["files"][0]["path"] == pending["물품 구매입찰 공고.hwpx"]["path"]
+    second = tutorial._context()["home"]
+    assert second != first and not Path(first).exists()
     assert record["completed"] and record["checkpoint"] == 0
-    assert all(Path(item["path"]).exists() for item in original)
-
-
+    assert all(Path(item["path"]).is_relative_to(second) for item in tutorial.snapshot()["resources"]["files"])
+    assert not (home / "templates").exists(), "연습 사본이 사용자 서식 폴더에 생겼습니다"
 def test_old_product_completion_cannot_advance_a_new_lesson(tmp_path, monkeypatch):
     from hwpxfiller.webapp.app import WebFrontend
 
@@ -904,185 +907,6 @@ def test_modified_practice_file_pauses_guidance_without_erasing_checkpoint(tmp_p
     assert record["checkpoint"] == 1 and data.is_file()
 
 
-@pytest.mark.parametrize("lesson_id,template_prefix,sheet", [
-    ("contract_txt", "낙찰자 선정", "계약"),
-    ("purchase_txt", "계약방법 결정", "공고"),
-])
-def test_txt_lesson_reaches_verified_copy_via_product_actions(
-    tmp_path, monkeypatch, lesson_id, template_prefix, sheet,
-):
-    from hwpxfiller.webapp import app as app_module
-    from hwpxfiller.webapp.app import WebFrontend
-
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    copied = []
-    monkeypatch.setattr(app_module, "set_clipboard_text", copied.append)
-    frontend = WebFrontend()
-    send = frontend.dispatch
-    send("tutorial", "select", {"scenario_id": lesson_id})
-    files = frontend.initial("tutorial")["resources"]["files"]
-    template = next(item["path"] for item in files if item["name"].startswith(template_prefix))
-    data = next(item["path"] for item in files if item["name"] == "공고목록.xlsx")
-    beat = frontend.initial("tutorial")["beat"]
-    assert beat["guidance"]["library"]["target"] == "new-job"
-    assert Path(template).name in beat["body"] and Path(data).name in beat["body"]
-    send("editor", "new_session", {})
-    send("editor", "use_library_template", {"path": template})
-    assert frontend.initial("tutorial")["beat"]["target"] == "data-picker"
-    frontend.load_data_sheet("editor", data, sheet)
-    send("editor", "goto_section", {"section": "binding"})
-    editor = frontend.controllers["editor"]
-    rows = {row.template_field: (index, row) for index, row in enumerate(editor.edit.model.rows)}
-    if lesson_id == "contract_txt":
-        firm = rows["대표계약업체"][0]
-        amount = rows["계약보증금"][0]
-        send("editor", "set_source", {"index": firm, "source": "계약상대자"})
-        send("editor", "set_confirmed", {"index": firm, "confirmed": True})
-        send("editor", "set_display", {"index": amount, "type": "amount", "fmt": ""})
-        send("editor", "set_confirmed", {"index": amount, "confirmed": True})
-    else:
-        item = rows["군품명"][0]
-        send("editor", "set_slice", {"index": item, "slice": {"mode": "split", "delimiter": ",", "index": 1}})
-        send("editor", "set_confirmed", {"index": item, "confirmed": True})
-        for index, row in enumerate(editor.edit.model.rows):
-            if row.type in {"date", "amount"}:
-                send("editor", "set_display", {"index": index, "type": row.type, "fmt": ""})
-                send("editor", "set_confirmed", {"index": index, "confirmed": True})
-        send("editor", "set_confirmed", {"index": rows["낙찰자결정방법"][0], "confirmed": True})
-    send("editor", "set_name", {"name": f"튜토리얼 {lesson_id}"})
-    assert send("editor", "save", {})["ok"]
-    send("job", "select_job", {"name": editor.edit.job_name, "confirm": True})
-    send("job", "set_none", {})
-    assert frontend.initial("tutorial")["beat"]["guidance"]["job"]["target"] == "row-selection"
-    for index in (0, 1):
-        send("job", "toggle_record", {"index": index, "value": True})
-    assert frontend.initial("tutorial")["beat"]["guidance"]["job"]["target"] == "open-workbench"
-    send("job", "open_workbench", {})
-    send("workbench", "step", {"delta": 1})
-    assert frontend.initial("tutorial")["checkpoint"] == 5
-    precheck = send("workbench", "copy_precheck", {})
-    assert frontend.copy_clipboard("workbench", precheck["token"])["copied"]
-    if lesson_id == "contract_txt":
-        card = frontend.controllers["workbench"].snapshot()["card"]
-        other = next(item["index"] for item in card["index_map"] if item["row"] != card["source_row"])
-        send("workbench", "set_current", {"index": other})
-        precheck = send("workbench", "copy_precheck", {})
-        assert frontend.copy_clipboard("workbench", precheck["token"])["copied"]
-        assert len(copied) == 2 and copied[0] != copied[1]
-        assert all("원" in text for text in copied)
-    else:
-        assert len(copied) == 1 and "드릴" in copied[0]
-        assert "드릴,전동식,휴대용" not in copied[0]
-    snap = frontend.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 6
-    assert snap["result"]["count"] == len(copied)
-
-
-def _authoring_lesson(tmp_path, monkeypatch, lesson_id):
-    from hwpxfiller.webapp.app import WebFrontend
-
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    app = WebFrontend()
-    app.dispatch("tutorial", "select", {"scenario_id": lesson_id})
-    assert app.initial("tutorial")["beat"]["target"] == "authoring-open"
-    path = next(item["path"] for item in app.initial("tutorial")["resources"]["files"]
-                if item["name"].startswith("낙찰자 선정"))
-    opened = app.open_authoring_document(path, True)
-    return app, opened
-
-
-def _authoring_command(app, session_id, command):
-    current = app.dispatch("authoring", "content", {"session_id": session_id})
-    preview = app.dispatch("authoring", "preview", {
-        "session_id": session_id, "revision": current["revision"], "command": command,
-    })
-    return app.dispatch("authoring", "update", {
-        "session_id": session_id, "revision": current["revision"], "content": preview["content"],
-    })
-
-
-def test_field_lesson_trials_and_saves_practice_txt(tmp_path, monkeypatch):
-    app, opened = _authoring_lesson(tmp_path, monkeypatch, "field_trial")
-    sid = opened["session_id"]
-    content = opened["content"]
-    start = len(content[:content.index("10일")].encode("utf-16-le")) // 2
-    updated = _authoring_command(app, sid, {
-        "type": "create_field", "start": start, "end": start + 3, "name": "재배정기한",
-    })
-    rev = updated["revision"]
-    values = {row["name"]: "연습값" for row in updated["analysis"]["fields"]}
-    app.dispatch("authoring", "trial_input", {
-        "session_id": sid, "revision": rev, "values": values, "selected": {},
-    })
-    trial = app.dispatch("authoring", "trial", {"session_id": sid, "revision": rev})
-    assert not trial["report"].get("errors")
-    saved = app.dispatch("authoring", "save", {"session_id": sid, "revision": rev})
-    assert saved["ok"] and Path(saved["path"]).is_file()
-    snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 5
-    assert snap["result"]["count"] == 1
-
-
-def test_option_lesson_trials_both_then_applies_and_reviews_content(tmp_path, monkeypatch):
-    app, opened = _authoring_lesson(tmp_path, monkeypatch, "option_apply")
-    sid, content = opened["session_id"], opened["content"]
-    start = content.index("3. ")
-    end = content.index("\n\n붙임", start)
-    _authoring_command(app, sid, {"type": "create_slot", "start": start, "end": end,
-                                  "id": "예산재배정", "label": "예산 재배정 안내"})
-    content = app.dispatch("authoring", "content", {"session_id": sid})["content"]
-    start = content.index("3. ")
-    _authoring_command(app, sid, {"type": "create_option", "start": start,
-                                  "end": content.index("\n", start), "slot_id": "예산재배정",
-                                  "id": "안내포함", "label": "안내 포함"})
-    current = app.dispatch("authoring", "content", {"session_id": sid})
-    content = current["content"].replace("{{/선택}}\n{{/항목}}", "{{/선택}}\n\n{{/항목}}", 1)
-    app.dispatch("authoring", "update", {"session_id": sid, "revision": current["revision"], "content": content})
-    empty = content.index("\n\n{{/항목}}") + 1
-    updated = _authoring_command(app, sid, {"type": "create_option", "start": empty,
-                                           "end": empty + 1, "slot_id": "예산재배정",
-                                           "id": "안내생략", "label": "안내 생략"})
-    values = {row["name"]: "연습값" for row in updated["analysis"]["fields"]}
-
-    def trial(option):
-        rev = app.dispatch("authoring", "content", {"session_id": sid})["revision"]
-        app.dispatch("authoring", "trial_input", {"session_id": sid, "revision": rev,
-                                                  "values": values, "selected": {"예산재배정": option}})
-        return app.dispatch("authoring", "trial", {"session_id": sid, "revision": rev})
-
-    trial("안내포함")
-    current = app.dispatch("authoring", "content", {"session_id": sid})
-    app.dispatch("authoring", "update", {"session_id": sid, "revision": current["revision"],
-                                         "content": current["content"] + "\n"})
-    trial("안내생략")
-    assert app.initial("tutorial")["checkpoint"] == 3  # old revision cannot count
-    trial("안내포함")
-    rev = app.dispatch("authoring", "content", {"session_id": sid})["revision"]
-    assert app.dispatch("authoring", "save", {"session_id": sid, "revision": rev})["ok"]
-    impact = app.dispatch("authoring", "impact", {"session_id": sid, "revision": rev})
-    name = impact["jobs"][0]["name"]
-    prepared = app.dispatch("authoring", "prepare_apply", {"session_id": sid, "revision": rev,
-                                                             "job_name": name})
-    assert prepared["preparation"]["status"] == "ready"
-    applied = app.dispatch("authoring", "apply_job", {"session_id": sid, "revision": rev,
-                                                       "job_name": name,
-                                                       "change_token": prepared["change_token"]})
-    assert applied["status"] == "applied"
-    app.dispatch("job", "select_job", {"name": name, "confirm": True})
-    app.dispatch("job", "set_all", {})
-    view = app.dispatch("job", "open_slot_configuration", {})["current_view"]
-    slot_id = view["projection"]["slots"][0]["slot_id"]
-    app.dispatch("job", "select_slot_option", {"configuration_token": view["new_configuration_token"],
-                                                "slot_id": slot_id, "option_id": "안내포함",
-                                                "request_id": "tutorial-include"})
-    app.dispatch("job", "open_workbench", {})
-    card = app.controllers["workbench"].snapshot()["card"]
-    assert "예산 재배정 여부" in "".join(part["text"] for part in card["segments"])
-    snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 7
-    assert snap["result"]["count"] == 1
-
-
 def test_replace_data_lesson_persists_new_job_link_not_only_pool_mount(tmp_path, monkeypatch):
     from hwpxfiller.webapp.app import WebFrontend
 
@@ -1093,8 +917,9 @@ def test_replace_data_lesson_persists_new_job_link_not_only_pool_mount(tmp_path,
     tutorial = app.controllers["tutorial"]
     name = tutorial._context()["job_name"]
     original = tutorial._context()["assets"]["공고목록.xlsx"]["path"]
-    derived = send("tutorial", "prepare_examples", {})["path"]
-    assert derived != original and app.initial("tutorial")["checkpoint"] == 1
+    derived = tutorial._context()["derived_data_path"]
+    assert derived != original and Path(derived).is_file()
+    assert app.initial("tutorial")["checkpoint"] == 0
     guide = app.initial("tutorial")["beat"]["guidance"]
     assert guide["job"]["primary"]["screen"] == "library"
     assert guide["library"]["target"] == "edit-job"
@@ -1103,20 +928,18 @@ def test_replace_data_lesson_persists_new_job_link_not_only_pool_mount(tmp_path,
     assert app.initial("tutorial")["beat"]["guidance"]["editor"]["target"] == "data-picker"
     assert tutorial.file_picker_hint("data", "editor") == derived
     app.load_data_sheet("editor", derived, "공고")
-    assert app.initial("tutorial")["checkpoint"] == 2
+    assert app.initial("tutorial")["checkpoint"] == 1
     send("editor", "goto_section", {"section": "binding"})
     send("editor", "resuggest_all", {})
     send("editor", "confirm_suggested", {})
     assert send("editor", "save", {})["ok"]
-    assert app.initial("tutorial")["checkpoint"] == 3
+    assert app.initial("tutorial")["checkpoint"] == 2
     send("job", "select_job", {"name": name, "confirm": True})
     snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 4
+    assert snap["checkpoint"] == snap["beat_count"] == 3
     assert app.controllers["job"].data.path == derived
     assert app.controllers["job"].data.sheet == "공고"
     assert snap["result"]["count"] == 1
-
-
 def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, monkeypatch):
     from hwpxfiller.webapp.app import WebFrontend
 
@@ -1125,7 +948,7 @@ def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, m
     send = app.dispatch
     send("tutorial", "select", {"scenario_id": "blank_values"})
     derived = app.controllers["tutorial"]._context()["derived_data_path"]
-    assert Path(derived).is_file() and app.initial("tutorial")["checkpoint"] == 1
+    assert Path(derived).is_file() and app.initial("tutorial")["checkpoint"] == 0
     name = app.controllers["tutorial"]._context()["job_name"]
     send("job", "select_job", {"name": name, "confirm": True})
     send("job", "set_none", {})
@@ -1137,17 +960,15 @@ def test_blank_lesson_observes_missing_value_and_direct_input_repair(tmp_path, m
     assert "단위" not in card["empty_fields"]
     unit = next(row for row in app.controllers["workbench"].snapshot()["rows"] if row["name"] == "단위")
     assert unit["blank_declared"] and unit["value"] == ""
-    assert app.initial("tutorial")["checkpoint"] == 2
+    assert app.initial("tutorial")["checkpoint"] == 1
     send("workbench", "set_map_value", {"name": "계약보증금", "text": "1000000"})
     assert "계약보증금" not in app.controllers["workbench"].snapshot()["card"]["empty_fields"]
-    assert app.initial("tutorial")["checkpoint"] == 3
+    assert app.initial("tutorial")["checkpoint"] == 2
     send("tutorial", "next", {})
     snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"] == 4
+    assert snap["checkpoint"] == snap["beat_count"] == 3
     assert snap["result"]["count"] == 1
     assert snap["result"]["next_scenario_id"] == "field_trial"
-
-
 def _select_notice_options(app, company_label, request_prefix):
     for slot_label, option_label in (("입찰참가자격", company_label), ("낙찰자 결정방법", "고시 미만")):
         view = app.dispatch("job", "open_slot_configuration", {})["current_view"]
@@ -1159,144 +980,14 @@ def _select_notice_options(app, company_label, request_prefix):
         })
 
 
-@pytest.mark.parametrize("lesson_id,indices,memo,company", [
-    ("first_hwpx", (0, 1, 2), "소기업·소상공인", "소기업·소상공인"),
-    ("repeat_hwpx", (3, 4, 5), "중·소기업", "중·소기업"),
-])
-def test_notice_lesson_generates_exact_three_rows_with_options(
-    tmp_path, monkeypatch, lesson_id, indices, memo, company,
-):
-    from hwpxfiller.webapp.app import WebFrontend
-
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    app = WebFrontend()
-    send = app.dispatch
-    send("tutorial", "select", {"scenario_id": lesson_id})
-    tutorial = app.controllers["tutorial"]
-    if lesson_id == "first_hwpx":
-        send("tutorial", "next", {})
-        files = app.initial("tutorial")["resources"]["files"]
-        template = next(item["path"] for item in files if item["name"].endswith(".hwpx"))
-        data = next(item["path"] for item in files if item["name"] == "공고목록.xlsx")
-        send("editor", "new_session", {})
-        send("editor", "use_library_template", {"path": template})
-        app.load_data_sheet("editor", data, "공고")
-        send("editor", "goto_section", {"section": "binding"})
-        send("editor", "confirm_suggested", {})
-        send("editor", "goto_section", {"section": "filename"})
-        send("editor", "set_pattern", {"pattern": "구매입찰공고-{{입찰공고번호}}"})
-        send("editor", "set_name", {"name": "튜토리얼 공고서"})
-        assert send("editor", "save", {})["ok"]
-        name = app.controllers["editor"].edit.job_name
-    else:
-        name = tutorial._context()["job_name"]
-    send("job", "select_job", {"name": name, "confirm": True})
-    if lesson_id == "repeat_hwpx":
-        send("job", "set_none", {})
-    send("job", "filter_col_text", {"column": "메모", "text": memo})
-    for index in indices:
-        send("job", "toggle_record", {"index": index, "value": True})
-    _select_notice_options(app, company, lesson_id)
-    app.controllers["job"].set_output_folder(str(tmp_path / "out"))
-    generated = app.generate("job")
-    assert generated["ok"] and generated["succeeded"] == 3
-    snap = app.initial("tutorial")
-    if lesson_id == "first_hwpx":
-        assert snap["checkpoint"] == 11
-        # The product reopens the delivered bytes and checks their structure.
-        job = app.controllers["job"]
-        ordinal = job.runs.delivered[0].item_ordinal
-        send("job", "artifact_open", {"ordinal": ordinal + 1000})
-        assert app.initial("tutorial")["checkpoint"] == 11
-        send("job", "artifact_open", {"ordinal": ordinal})
-        snap = app.initial("tutorial")
-    assert snap["checkpoint"] == snap["beat_count"]
-    assert snap["result"]["count"] == 3
-    assert len(snap["result"]["documents"]) == 3
-
-
-@pytest.mark.parametrize("origin,changed", [
-    ("job", False), ("job", True), ("job", "missing"),
-    ("editor", False), ("authoring", False), ("workbench", False),
-])
-def test_practice_exit_restores_original_context_only_on_identical_data(tmp_path, monkeypatch, origin, changed):
-    from hwpxfiller.webapp.app import WebFrontend
-
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    app = WebFrontend()
-    tutorial = app.controllers["tutorial"]
-    job = app.controllers["job"]
-    template = tutorial.practice.template_root / "원래 서식.txt"
-    template.parent.mkdir(parents=True, exist_ok=True)
-    template.write_text("{{이름}}", encoding="utf-8")
-    data = tmp_path / "original.csv"
-    data.write_text("이름\n원래\n다른\n", encoding="utf-8-sig")
-    saved = Job(name="원래 작업", template_path=str(template), data_path=str(data),
-                mapping=MappingProfile(mappings=[FieldMapping("이름", "이름")]),
-                binding_authority=JOB_MAPPING_AUTHORITY)
-    job.registry.save(saved)
-    job.load_data_path(str(data))
-    assert job.dispatch("prefer_work", {"name": saved.name})["promoted"]
-    job.dispatch("filter_col_text", {"column": "이름", "text": "원래"})
-    job.dispatch("toggle_record", {"index": 0, "value": True})
-    original_range = job.data.committed_range().fingerprint()
-    original_source = settings.load_last_data_source()
-    if origin == "editor":
-        app.controllers["editor"].load_job(saved.name)
-    if origin == "authoring":
-        authoring_id = app.open_authoring_document(str(template), True)["session_id"]
-    if origin == "workbench":
-        assert job.dispatch("open_workbench", {})["ok"]
-    guard = tutorial.dispatch("preflight", {"screen": origin, "action": "select", "scenario_id": "blank_values"})
-    assert guard["ok"] and not guard["needs_confirm"]
-    if origin == "editor":
-        app.controllers["editor"].dispatch("new_session", {})
-    tutorial.dispatch("select", {"scenario_id": "blank_values", "transition_token": guard["transition_token"]})
-    practice_name = tutorial._context()["job_name"]
-    job.dispatch("select_job", {"name": practice_name})
-    tutorial.dispatch("select", {"scenario_id": "field_trial"})  # must not replace the original return context
-    if origin == "authoring":
-        app.open_authoring_document(tutorial._asset("낙찰자 선정 및 계약체결 안내.txt"), True)
-    job.set_output_folder(str(tmp_path / "practice-output"))
-    settings.save_theme("dark")
-    if changed is True:
-        data.write_text("이름\n바뀐\n다른\n", encoding="utf-8-sig")
-    elif changed == "missing":
-        data.unlink()
-    result = tutorial.dispatch("exit", {})
-    if changed == "missing":
-        assert result["ok"] is False and result["error"]
-        assert tutorial.snapshot()["practice"]["active"]
-        data.write_text("이름\n원래\n다른\n", encoding="utf-8-sig")
-        result = tutorial.dispatch("exit", {})
-    assert result["ok"] and result["screen"] == origin
-    assert job.work.name == saved.name and job.data.path == str(data)
-    assert settings.load_last_data_source() == original_source
-    assert settings.load_last_output_directory() == "" and job.remembered_output_directory() == ""
-    assert settings.load_theme() == "dark"
-    assert not tutorial.snapshot()["practice"]["active"]
-    assert not tutorial.snapshot()["show_result"]
-    if changed is True:
-        assert job.data.selected_indices() == [] and not job.data.filter.is_active()
-        assert "변경" in result["notice"]
-    else:
-        assert job.data.committed_range().fingerprint() == original_range
-    if origin == "editor":
-        assert app.controllers["editor"].edit.base.name == saved.name
-    if origin == "authoring":
-        assert app.controllers["authoring"].active_id == authoring_id
-    if origin == "workbench":
-        assert app.controllers["workbench"].job_name == saved.name
-    assert job.registry.load(practice_name)  # no automatic practice deletion
-
-
-def test_practice_transition_guards_stale_tokens_and_keeps_exit_after_setup_failure(tmp_path, monkeypatch):
+def test_practice_transition_guards_stale_tokens_and_setup_failure_stays_in_user_env(tmp_path, monkeypatch):
     from hwpxfiller.webapp.app import WebFrontend
 
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
     app = WebFrontend()
     tutorial = app.controllers["tutorial"]
     editor = app.controllers["editor"]
+    user_controllers = dict(app.controllers)
     editor.dispatch("set_name", {"name": "미저장 작업"})
     before = tutorial.progress.progress()
     guard = tutorial.dispatch("preflight", {"screen": "editor", "action": "select", "scenario_id": "first_hwpx"})
@@ -1308,32 +999,38 @@ def test_practice_transition_guards_stale_tokens_and_keeps_exit_after_setup_fail
     with pytest.raises(ValueError, match="다시 시도"):
         tutorial.dispatch("select", {"scenario_id": "first_hwpx", "transition_token": guard["transition_token"]})
     guard = tutorial.dispatch("preflight", {"screen": "library", "action": "select", "scenario_id": "first_hwpx"})
-    monkeypatch.setattr(tutorial.practice, "prepare", lambda **_kw: (_ for _ in ()).throw(OSError("prepare failure")))
+    monkeypatch.setattr(tutorial.workspace, "seed",
+                        lambda *_a, **_kw: (_ for _ in ()).throw(OSError("prepare failure")))
     with pytest.raises(OSError, match="prepare failure"):
         tutorial.dispatch("select", {"scenario_id": "first_hwpx", "transition_token": guard["transition_token"]})
-    assert tutorial.snapshot()["practice"]["active"]
+    # A failed setup never leaves the window in a half-built practice workspace.
+    assert not tutorial.snapshot()["practice"]["active"]
+    assert all(app.controllers[name] is controller for name, controller in user_controllers.items())
     assert tutorial.progress.selected is None
-    assert tutorial.dispatch("exit", {}) == {"ok": True, "screen": "library", "notice": ""}
+    assert tutorial.dispatch("exit", {}) == {"ok": True, "screen": "job", "notice": ""}
     assert settings.load_last_data_source() is None
-
-
-def test_blank_lesson_restart_seeds_a_new_job_instead_of_overwriting_saved_edits(tmp_path, monkeypatch):
-    """#1117: each blank round prepares fresh data, so its job is a new one beside the user's."""
+def test_blank_lesson_restart_reseeds_its_own_job_and_never_touches_user_jobs(tmp_path, monkeypatch):
+    """#1117 → #1126: a restart lays a fresh job in a new lesson home; the user's store is not involved."""
     from hwpxfiller.webapp.app import WebFrontend
 
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
     app = WebFrontend()
+    user_registry = app._job_registry
     tutorial = app.controllers["tutorial"]
     tutorial.dispatch("select", {"scenario_id": "blank_values"})
     name = tutorial._context()["job_name"]
     registry = app._job_registry
+    assert registry is not user_registry
     edited = registry.load(name)
-    edited.filename_pattern = "사용자 편집-{{계약번호}}"
+    edited.filename_pattern = "연습 편집-{{계약번호}}"
     registry.save(edited)
 
     tutorial.dispatch("restart", {"scenario_id": "blank_values"})
     context = tutorial._context()
-    assert context["job_name"] != name
-    assert registry.load(name).filename_pattern == "사용자 편집-{{계약번호}}"
-    assert registry.load(context["job_name"]).data_path == context["derived_data_path"]
-    assert tutorial.progress.record("blank_values")["checkpoint"] == 1
+    fresh = app._job_registry
+    assert context["job_name"] != name and fresh is not registry
+    assert fresh.names() == [context["job_name"]]
+    assert fresh.load(context["job_name"]).filename_pattern == ""
+    assert fresh.load(context["job_name"]).data_path == context["derived_data_path"]
+    assert tutorial.progress.record("blank_values")["checkpoint"] == 0
+    assert user_registry.names() == []

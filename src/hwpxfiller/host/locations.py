@@ -24,9 +24,33 @@ DEFAULT_HOME_NAME = ".hwpxfiller"
 
 
 def home_dir() -> Path:
-    """앱 홈 — ``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``."""
+    """앱 홈 — ``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``.
+
+    단일 인스턴스 잠금·WebView2 프로필·경보 로그·앱 전역 설정은 연습 중에도 언제나 이 홈이다.
+    """
     root = os.environ.get(HOME_ENV_VAR) or (Path.home() / DEFAULT_HOME_NAME)
     return Path(root)
+
+
+#: 활성 작업 공간 홈(#1126) — ``None`` = 사용자 홈. 튜토리얼 연습 환경만 이것을 세운다.
+#: 메모리 값이라 비정상 종료 뒤 다음 기동은 언제나 사용자 환경이다(영속하지 않는다).
+_active_workspace: "Path | None" = None
+
+
+def activate_workspace(home: "Path | None") -> None:
+    """작업 저장소 기본 위치의 단일 전환점 — 연습 환경 진입·이탈만 부른다."""
+    global _active_workspace
+    _active_workspace = None if home is None else Path(home)
+
+
+def workspace_home() -> Path:
+    """작업·템플릿·데이터·결과·작업별 설정이 놓이는 홈 — 연습 중이면 그 과정의 홈."""
+    return _active_workspace if _active_workspace is not None else home_dir()
+
+
+def tutorial_workspace_root() -> Path:
+    """튜토리얼 전용 저장소 — 학습 기록과 과정별 연습 홈이 여기 아래에만 생긴다."""
+    return home_dir() / "tutorial_workspace"
 
 
 def default_jobs_dir() -> Path:
@@ -37,7 +61,7 @@ def default_jobs_dir() -> Path:
     ``HWPXFILLER_HOME`` 환경변수로 재지정 가능(테스트·CI·이식성 — 해석은
     :func:`~hwpxfiller.host.locations.home_dir`).
     """
-    return home_dir() / "jobs"
+    return workspace_home() / "jobs"
 
 
 def default_templates_dir() -> Path:
@@ -49,7 +73,7 @@ def default_templates_dir() -> Path:
     :func:`~hwpxfiller.host.locations.home_dir`). 관리 뷰모델 *클래스* 자체는 위치-불가지
     (생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
     """
-    return home_dir() / "templates"
+    return workspace_home() / "templates"
 
 
 def default_dataset_pool_dir() -> Path:
@@ -60,7 +84,7 @@ def default_dataset_pool_dir() -> Path:
     레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값
     해석기일 뿐이다(P2-22 #570 에서 dataset persistence 경계로부터 이동, P2-17 동형).
     """
-    return home_dir() / "datasets"
+    return workspace_home() / "datasets"
 
 
 def default_preset_dir() -> Path:
@@ -71,7 +95,7 @@ def default_preset_dir() -> Path:
     (:class:`~hwpxfiller.external.preset_store.PresetRegistry`)는 위치-불가지(생성자가
     디렉터리를 받는다) — 이 함수는 기본값 해석기일 뿐이다(S9-01 #827).
     """
-    return home_dir() / "presets"
+    return workspace_home() / "presets"
 
 
 def default_template_authority_dir() -> Path:
@@ -81,7 +105,7 @@ def default_template_authority_dir() -> Path:
     ``works``/``candidates``/``qualification`` 을 각자 받는다. 다른 durable 자산과 동일 홈
     관례이고 ``HWPXFILLER_HOME`` 을 존중한다(해석은 :func:`home_dir`).
     """
-    return home_dir() / "template_authority"
+    return workspace_home() / "template_authority"
 
 
 def default_example_data_dir() -> Path:
@@ -95,9 +119,9 @@ def default_example_data_dir() -> Path:
     — 폴더 생성은 예제 설치(:func:`hwpxfiller.external.example_pack.install`)의 몫이고,
     누르기 전에 홈을 건드리지 않는 것이 온보딩 D1 의 계약이다(#891).
     """
-    return home_dir() / "example_data"
+    return workspace_home() / "example_data"
 
 
 def default_authoring_dir() -> Path:
     """Template authoring: opt-in trial cases and last work positions."""
-    return home_dir() / "authoring"
+    return workspace_home() / "authoring"

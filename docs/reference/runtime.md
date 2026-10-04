@@ -262,7 +262,6 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `next` | — | — |
 | `pause` | — | — |
 | `preflight` | `screen`, `action` | `scenario_id`, `destination_screen` |
-| `prepare_examples` | — | `derived` |
 | `reset_progress` | `confirm` | — |
 | `restart` | `scenario_id` | `transition_token` |
 | `resume` | — | `transition_token` |
