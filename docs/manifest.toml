@@ -77,8 +77,8 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "ce5cc98cf6ecdf946dafae4fc14889c3c8a0118f336be562b72420f3154df5fe"
-body_sha256 = "e713e9f7bbeaffd8753f45938bd717eaa5cfbccd72a51cdc38f8af85b885ddd1"
+source_sha256 = "9515aa3514155276f2ddc6d9155bd4fdb7b1dbec8e0853df10ac9ad0a1e2b610"
+body_sha256 = "a7c153329a7a315edb9a2bd03b48e6e717188c540b54d3a40548df97a8cb48af"
 
 [[document]]
 path = "docs/reference/ui-gallery.html"
@@ -257,7 +257,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "7ee784ca62c34d21d7c9618896e5d448de9f10eaa96604d0ad893b97d7246b95"
+source_sha256 = "61ef241844486fc7d43aa133ef8a40d89810f71b3ebc7bdba8cead06919a7dab"
 body_sha256 = "29e1bb017573409e87983cc8d0c6e2bec90a7eaf8564fbef93622658aeea9273"
 
 [[topic]]
@@ -265,15 +265,15 @@ id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
 tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "193e39f54f785ef6487b66c31ab1ea34fc12530c7bad617b672fa62f5dd9d451"
-body_sha256 = "f64542c51616594ca2c9370c57dd2d9de851f66bddaac7b6c696d174722f5ead"
+source_sha256 = "78750b18781aaa6a4a8f6b1ce6b9b61c85cf81443a4a71106fd73cf4391c1b87"
+body_sha256 = "723d0591a30a41bcbaca6b8687bbecc4e9fdc992d9efda3d5b71b58220134f31"
 
 [[topic]]
 id = "documentation"
 document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "c0a4b1bd2c4fcb14c3dcd7534f3ea0f869faa2ba5426c30b12ec05f060f1417e"
+source_sha256 = "1a1288fb37e3f0d9e24df5c99f7ec3a8e4e6e9a91578dee605d9d26490576527"
 body_sha256 = "2583be20ae728c271f27072fd32f26055efa573b13c9e0b93e534991a5c062bf"
 
 [[support]]
