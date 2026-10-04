@@ -69,7 +69,7 @@ def _frontend(tmp_path, monkeypatch):
     """WebFrontend 브리지 — 실 사용자 jobs 디렉터리를 건드리지 않게 tmp 로 우회."""
     from hwpxfiller.webapp import app as app_mod
 
-    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     return app_mod.WebFrontend()
 
 

@@ -376,7 +376,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "resume": _schema(optional="transition_token"),
         "restart": _schema("scenario_id", optional="transition_token"),
         "next": _schema(),
-        "prepare_examples": _schema(optional="derived"),
         "cleanup_preview": _schema(),
         "cleanup": _schema("token"),
         "reset_progress": _schema("confirm"),

@@ -30,15 +30,8 @@ def _match_non_editor(tutorial: Any, event: str, screen: str, action: str,
         if matched is not None:
             return matched
     if screen == "tutorial":
-        return _match_prepared_data(event, action, result)
+        return None
     return match_authoring(tutorial, event, screen, action, result)
-
-
-def _match_prepared_data(event: str, action: str, result: Any) -> dict | None:
-    if event in {"derived_data_prepared", "blank_data_prepared"} and action == "prepare_examples":
-        return {"derived_data_path": result["path"],
-                "derived_sheet": "계약" if event == "blank_data_prepared" else "공고"} if isinstance(result, dict) and result.get("path") else None
-    return None
 
 
 def _correct_notice_options(job: Any, lesson: str) -> bool:

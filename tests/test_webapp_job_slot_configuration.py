@@ -819,7 +819,7 @@ def test_content_selection_reader_hands_the_workbench_effective_choices(
     작업대는 Product 의 형체를 모른 채 이 사전 하나로 투영한다. 실패는 삼키지 않고
     ``ValueError`` 로 올라간다 — 조용한 빈 사전은 「아무것도 안 골랐다」와 구별되지 않는다.
     """
-    from hwpxfiller.webapp.app import _content_selection_reader
+    from hwpxfiller.webapp.workspace_graph import _content_selection_reader
 
     ctrl, reg, _tpl = _txt_slot_bearing_controller(tmp_path)
     product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())

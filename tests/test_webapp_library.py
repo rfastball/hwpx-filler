@@ -204,7 +204,7 @@ def test_app_wires_library_session_guards_to_job(tmp_path, monkeypatch):
     """
     from hwpxfiller.webapp import app as app_mod
 
-    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     frontend = app_mod.WebFrontend()
     library = frontend.controllers["library"]
     assert library.session_guards == [

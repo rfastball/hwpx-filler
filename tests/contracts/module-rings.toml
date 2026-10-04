@@ -459,6 +459,24 @@ source_write_set = ["src/hwpxfiller/webapp/onboarding_match_results.py"]
 oracle_nodeid = "tests/test_webapp_tutorial.py"
 
 [[unit]]
+module = "hwpxfiller.webapp.onboarding_practice"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/onboarding_practice.py"]
+oracle_nodeid = "tests/test_tutorial_sandbox.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.workspace_graph"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/workspace_graph.py"]
+oracle_nodeid = "tests/test_tutorial_sandbox.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.workspace_switch"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/workspace_switch.py"]
+oracle_nodeid = "tests/test_tutorial_sandbox.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.screen_tutorial"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_tutorial.py"]

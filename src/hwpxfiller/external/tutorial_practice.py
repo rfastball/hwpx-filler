@@ -1,12 +1,15 @@
-"""Bundled tutorial originals and non-destructive practice copies."""
+"""Bundled tutorial originals and cleanup of legacy practice copies.
+
+Since #1126 practice runs in its own workspace (:mod:`.tutorial_workspace`) and never copies
+into the user's templates folder. :class:`PracticeFiles` remains only to clean up copies that
+older versions left in the user's environment, using the same safety checks as before.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import sys
-import uuid
 from pathlib import Path
 
 from . import settings
@@ -78,47 +81,6 @@ class PracticeFiles:
             return True, ""
         except (KeyError, OSError, TypeError, ValueError):
             return False, "연습 파일 상태를 확인할 수 없습니다."
-
-    def prepare(self, *, derived: str = "") -> dict:
-        """Create one fresh batch; never overwrite an existing practice file."""
-        if derived not in {"", "blank", "replacement"}:
-            raise ValueError("알 수 없는 연습 데이터 종류입니다.")
-        source = asset_root()
-        missing = [name for name in ORIGINALS if not (source / name).is_file()]
-        if missing:
-            raise FileNotFoundError("동봉 예제를 찾을 수 없습니다: " + ", ".join(missing))
-        manifest = self._manifest()
-        created: list[Path] = []
-        entries: list[dict] = []
-        batch = uuid.uuid4().hex[:10]
-        try:
-            names = ORIGINALS if not derived else ("공고목록.xlsx",)
-            for name in names:
-                original = source / name
-                root = self.data_root if name.endswith(".xlsx") else self.template_root
-                root.mkdir(parents=True, exist_ok=True)
-                target = root / f"{original.stem} (연습 {batch}){original.suffix}"
-                with original.open("rb") as reader, target.open("xb") as writer:
-                    created.append(target)
-                    shutil.copyfileobj(reader, writer)
-                if name.endswith(".xlsx") and derived == "blank":
-                    from openpyxl import load_workbook
-
-                    workbook = load_workbook(target)
-                    workbook["계약"]["K2"] = None  # 계약보증금: 원본에는 빈 셀이 없다.
-                    workbook.save(target)
-                entry = {
-                    "name": name, "path": str(target), "sha256": fingerprint(target),
-                    "batch": batch, "derived": derived,
-                }
-                entries.append(entry)
-            manifest["entries"].extend(entries)
-            settings.save_tutorial_practice(manifest)
-        except Exception:
-            for path in created:
-                path.unlink(missing_ok=True)
-            raise
-        return {"batch": batch, "entries": entries}
 
     def _referenced(self) -> dict[str, str]:
         """Path key -> preservation reason; unknown is never unreferenced.

@@ -2653,14 +2653,6 @@ text = "예제 서식과 데이터로 첫 문서를 만드세요. 시작할 때 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "원본 예제에는 빈 셀이 없습니다. 빈 셀 하나가 있는 연습 사본을 준비하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "원본과 별개인 연습 데이터 사본을 준비하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "이 단계는 실제 동작을 마친 뒤에 넘어갈 수 있습니다."
 
 [[sentence]]
@@ -3418,35 +3410,11 @@ text = "{{{}}} 에 직접 입력한 값 '{}'은 '{}' 열의 값으로 바뀌고 
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "'{}' 작업을 현재 데이터에 연결할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "과정을 고르세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "과정을 다시 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
 text = "과정을 다시 고르세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "다른 연습 데이터 기록을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "데이터를 불러오지 못했습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "돌아갈 화면을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "돌아갈 화면을 확인할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
@@ -3458,23 +3426,7 @@ text = "빈 값 표식과 직접 입력 결과를 확인했습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "새 연습 파일을 준비했습니다. 이 파일로 시작하려면 해당 과정의 안내를 처음부터 시작하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "새 연습 파일을 확인할 수 없습니다. 사본을 다시 준비하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "안내 진행을 확인하지 못했습니다: {}. 작업 결과는 보존됐습니다. 튜토리얼에서 다시 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "연습 파일 4건이 준비됐습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "연습 파일을 먼저 준비하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
@@ -3482,27 +3434,11 @@ text = "연습 파일을 확인하세요"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "연습 파일이 수정됐습니다. 현재 파일을 보존합니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "연습 파일이 준비되지 않았습니다. 예제로 시작하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "연습을 종료하세요"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "원래 데이터가 변경되어 필터와 행 선택을 복원하지 않았습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "원래 작업으로 돌아오지 못했습니다: {}. 연습 종료를 다시 시도하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "이 과정용 연습 작업 '{}'을 준비했습니다. 다른 과정의 완료 기록은 바꾸지 않습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
@@ -3551,6 +3487,34 @@ text = "재배정기한 필드를 시험하고 사용 준비 상태로 저장했
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_match_results.py"
 text = "저장한 작업을 다시 열어 새 파일과 시트를 확인했습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "과정을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "다른 연습 데이터 기록을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "돌아갈 화면을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "연습 파일 4건이 준비됐습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "연습 파일을 먼저 준비하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "연습 파일이 준비되지 않았습니다. 예제로 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "이 과정용 연습 작업 '{}'을 준비했습니다. 다른 과정의 완료 기록은 바꾸지 않습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"

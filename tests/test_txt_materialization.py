@@ -25,7 +25,7 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.materialization_conformance_vocabulary import (
     MaterializedDocumentBytes,
 )
-from hwpxfiller.webapp.app import (
+from hwpxfiller.webapp.workspace_graph import (
     _content_selection_reader,
     _txt_materialization_port,
 )

@@ -15,7 +15,7 @@ import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, anchorSele
 import { placeCoach, pressMissesTarget, spotFrame, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
-const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "prepare", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
+const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
 
 function snapshot(overrides = {}) {
   return {
@@ -108,9 +108,6 @@ test("host route guidance and preparation stay actionable without an anchor", ()
   const lost = render(snapshot({ active: true, beat }), { screen: "authoring" });
   assert.match(lost, /id="tutorialReturn"/);
   assert.match(lost, /편집기에서 서식을 고르세요/);
-  const prepare = render(snapshot({ active: true, beat: { ...beat, screen: null, target: "prepare-examples", primary: { action: "prepare_examples", label: "연습 파일 새로 준비" } } }));
-  assert.match(prepare, /id="tutorialPrimary"/);
-  assert.match(prepare, /연습 파일 새로 준비/);
 });
 
 test("relevant modal contains the guide and exit without another modal or click shield", () => {
@@ -205,7 +202,7 @@ test("running lesson keeps pause and skip beside its featured continue, not in m
   assert.doesNotMatch(maintenance, /COPY:pause|COPY:skip|COPY:resume/);
 });
 
-test("practice files sit behind a closed disclosure with names, paths stay copyable, prepare stays outside it", () => {
+test("practice files sit behind a closed disclosure with names, paths stay copyable, no prepare control remains", () => {
   const files = [{ name: "물품 구매입찰 공고.hwpx", path: "C:\연습\물품 구매입찰 공고.hwpx", kind: "template" },
     { name: "공고목록.xlsx", path: "C:\연습\공고목록.xlsx", kind: "data" }];
   const snap = snapshot({ scenario_id: "first_hwpx", paused: true, resources: { ready: true, summary: "연습 파일 2건", files },
@@ -217,11 +214,11 @@ test("practice files sit behind a closed disclosure with names, paths stay copya
   assert.match(html, /<li title="C:\연습\공고목록\.xlsx"><span class="tutorial-file-name">공고목록\.xlsx<\/span><span class="tutorial-file-path">C:\연습\공고목록\.xlsx<\/span>/);
   assert.doesNotMatch(html, /<code|<strong/);
   assert.match(html, /tutorial-recovery">연습 파일을 다시 확인하세요\./);
-  assert.ok(html.indexOf('id="tutorialPrepare"') > html.indexOf("</details>"));
+  assert.doesNotMatch(html, /tutorialPrepare/);
   assert.match(html, /COPY:cleanup.*COPY:reset/);
   assert.equal(count(html, /tutorial-destructive/g), 2);
   const practice = lessons(snap, { practice: true });
-  assert.match(practice, /id="tutorialPrepare"/);
+  assert.doesNotMatch(practice, /tutorialPrepare/);
   assert.doesNotMatch(practice, /COPY:cleanup|COPY:reset/);
   const same = lessons(snapshot({ resources: { ready: false, summary: "예제 준비 필요" }, recovery: { title: "확인", body: "예제 준비 필요" } }));
   assert.equal(count(same, /예제 준비 필요/g), 1);

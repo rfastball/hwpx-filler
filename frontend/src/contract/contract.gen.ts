@@ -271,7 +271,6 @@ export const SCREEN_ACTIONS = {
     resume: { required: [], optional: ["transition_token"] },
     restart: { required: ["scenario_id"], optional: ["transition_token"] },
     next: { required: [], optional: [] },
-    prepare_examples: { required: [], optional: ["derived"] },
     cleanup_preview: { required: [], optional: [] },
     cleanup: { required: ["token"], optional: [] },
     reset_progress: { required: ["confirm"], optional: [] },

@@ -398,6 +398,37 @@ def _pools(*entries):
     return SimpleNamespace(list_references=lambda: (list(entries), []), write_lock=lambda: lock)
 
 
+def _legacy_copies(practice, *, derived: str = "") -> dict:
+    """Residue exactly as versions before #1126 wrote it into the user's templates folder.
+
+    The product no longer creates these copies (practice has its own workspace); the
+    cleanup action stays for what older versions left behind, so the tests seed that residue.
+    """
+    import uuid
+
+    from hwpxfiller.external import settings
+    from hwpxfiller.external.tutorial_practice import ORIGINALS, fingerprint
+
+    manifest = settings.load_tutorial_practice()
+    batch = uuid.uuid4().hex[:10]
+    entries = []
+    for name in (ORIGINALS if not derived else ("공고목록.xlsx",)):
+        original = TUTORIAL_ASSETS / name
+        root = practice.data_root if name.endswith(".xlsx") else practice.template_root
+        root.mkdir(parents=True, exist_ok=True)
+        target = root / f"{original.stem} (연습 {batch}){original.suffix}"
+        shutil.copyfile(original, target)
+        if name.endswith(".xlsx") and derived == "blank":
+            workbook = load_workbook(target)
+            workbook["계약"]["K2"] = None
+            workbook.save(target)
+        entries.append({"name": name, "path": str(target), "sha256": fingerprint(target),
+                        "batch": batch, "derived": derived})
+    manifest["entries"].extend(entries)
+    settings.save_tutorial_practice(manifest)
+    return {"batch": batch, "entries": entries}
+
+
 def test_practice_cleanup_preserves_changed_and_referenced_files(tmp_path: Path) -> None:
     """A fresh batch is independent; cleanup only removes intact, unreferenced copies."""
     from types import SimpleNamespace
@@ -406,8 +437,8 @@ def test_practice_cleanup_preserves_changed_and_referenced_files(tmp_path: Path)
 
     jobs = _jobs()
     practice = PracticeFiles(tmp_path / "templates", tmp_path / "home", jobs, _pools())
-    first = practice.prepare()
-    second = practice.prepare(derived="blank")
+    first = _legacy_copies(practice)
+    second = _legacy_copies(practice, derived="blank")
     assert practice.latest("공고목록.xlsx") == second["entries"][0]
     assert practice.latest("없는 예제.xlsx") is None
     assert {entry["name"] for entry in first["entries"]} == {
@@ -442,7 +473,7 @@ def test_practice_cleanup_fails_closed_on_changed_preview_or_escape(tmp_path: Pa
 
     practice = PracticeFiles(tmp_path / "templates", tmp_path / "home",
                              _jobs(), _pools())
-    batch = practice.prepare()
+    batch = _legacy_copies(practice)
     preview = practice.cleanup_preview()
     changed = Path(batch["entries"][0]["path"])
     changed.write_bytes(changed.read_bytes() + b"changed")
@@ -467,7 +498,7 @@ def test_practice_entry_validation_rejects_missing_malformed_and_parent_escape(t
 
     practice = PracticeFiles(tmp_path / "templates", tmp_path / "home",
                              _jobs(), _pools())
-    entry = practice.prepare()["entries"][0]
+    entry = _legacy_copies(practice)["entries"][0]
     assert practice.validate(entry) == (True, "")
     assert not practice.validate({"name": entry["name"]})[0]
 
@@ -484,30 +515,37 @@ def test_practice_entry_validation_rejects_missing_malformed_and_parent_escape(t
     assert outside.read_bytes() == b"user document"
 
 
-def test_practice_prepare_fails_closed_and_rolls_back_partial_copies(tmp_path: Path, monkeypatch) -> None:
+def test_lesson_seed_fails_closed_and_rolls_back_partial_copies(tmp_path: Path, monkeypatch) -> None:
+    """#1126: a lesson home is either complete or absent — never a half-seeded practice."""
+    from hwpxfiller.external import tutorial_workspace
 
-    from hwpxfiller.external import tutorial_practice
-
-    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
-                                               _jobs(), _pools())
+    workspace = tutorial_workspace.TutorialWorkspace(tmp_path / "tutorial")
     with pytest.raises(ValueError, match="알 수 없는"):
-        practice.prepare(derived="user-file")
+        workspace.seed("first_hwpx", derived="user-file")
 
     source = tmp_path / "bundle"
     source.mkdir()
-    monkeypatch.setattr(tutorial_practice, "asset_root", lambda: source)
+    monkeypatch.setattr(tutorial_workspace, "asset_root", lambda: source)
     with pytest.raises(FileNotFoundError, match="동봉 예제"):
-        practice.prepare()
-    assert not practice.template_root.exists() and not practice.data_root.exists()
+        workspace.seed("first_hwpx")
+    assert not (tmp_path / "tutorial").exists()
 
-    for name in tutorial_practice.ORIGINALS:
+    for name in tutorial_workspace.ORIGINALS:
         shutil.copyfile(TUTORIAL_ASSETS / name, source / name)
-    monkeypatch.setattr(tutorial_practice.settings, "save_tutorial_practice",
-                        lambda _value: (_ for _ in ()).throw(OSError("settings disk failed")))
-    with pytest.raises(OSError, match="settings disk failed"):
-        practice.prepare()
-    assert not list(practice.template_root.iterdir())
-    assert not list(practice.data_root.iterdir())
+    calls = 0
+    real = tutorial_workspace.fingerprint
+
+    def fails_on_third(path):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise OSError("disk failed")
+        return real(path)
+
+    monkeypatch.setattr(tutorial_workspace, "fingerprint", fails_on_third)
+    with pytest.raises(OSError, match="disk failed"):
+        workspace.seed("first_hwpx")
+    assert not list((tmp_path / "tutorial" / "lessons" / "first_hwpx").iterdir())
 
 
 def test_practice_cleanup_stops_for_unknown_registry_or_changed_preflight(tmp_path: Path, monkeypatch) -> None:
@@ -517,7 +555,7 @@ def test_practice_cleanup_stops_for_unknown_registry_or_changed_preflight(tmp_pa
     jobs = _jobs()
     practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home", jobs,
                                                _pools())
-    batch = practice.prepare()
+    batch = _legacy_copies(practice)
     paths = [Path(entry["path"]) for entry in batch["entries"]]
     jobs.list_jobs_with_corruption = lambda: (_ for _ in ()).throw(
         OSError("job registry unreadable"))
@@ -555,7 +593,7 @@ def test_practice_manifest_corruption_blocks_cleanup_and_frozen_assets_use_bundl
     monkeypatch.setattr(tutorial_practice.settings, "load_tutorial_practice",
                         lambda: {"version": 99, "entries": []})
     with pytest.raises(ValueError, match="기록"):
-        practice.prepare()
+        practice.cleanup_preview()
 
     bundle = tmp_path / "frozen"
     monkeypatch.setattr(tutorial_practice.sys, "frozen", True, raising=False)
@@ -579,7 +617,7 @@ def test_practice_cleanup_refuses_when_a_saved_job_cannot_be_read(tmp_path: Path
     import json
 
     practice, jobs, _pools_registry = _real_practice(tmp_path)
-    batch = practice.prepare()
+    batch = _legacy_copies(practice)
     paths = [Path(entry["path"]) for entry in batch["entries"]]
     preview = practice.cleanup_preview()
     assert preview["delete_count"] == 4
@@ -600,8 +638,8 @@ def test_practice_cleanup_preserves_dataset_pool_registrations(tmp_path: Path) -
     from hwpxfiller.domain.dataset_reference import DatasetReference, excel_reference_opts
 
     practice, _jobs_registry, pools = _real_practice(tmp_path)
-    practice.prepare()
-    derived = Path(practice.prepare(derived="replacement")["entries"][0]["path"])
+    _legacy_copies(practice)
+    derived = Path(_legacy_copies(practice, derived="replacement")["entries"][0]["path"])
     pools.add(DatasetReference(name="연습 데이터", kind="excel",
                                opts=excel_reference_opts(str(derived), "공고")))
     preview = practice.cleanup_preview()
@@ -624,7 +662,7 @@ def test_practice_cleanup_records_partial_progress_and_recovers_lost_records(
 
     practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
                                                _jobs(), _pools())
-    paths = [Path(entry["path"]) for entry in practice.prepare()["entries"]]
+    paths = [Path(entry["path"]) for entry in _legacy_copies(practice)["entries"]]
     unlink = Path.unlink
     calls = 0
 
@@ -648,7 +686,7 @@ def test_practice_cleanup_records_partial_progress_and_recovers_lost_records(
     assert not any(path.exists() for path in paths)
 
     # 매니페스트 저장까지 실패하면 지워진 사본의 기록이 남는다 — 다음 정리가 그 기록만 걷는다.
-    paths = [Path(entry["path"]) for entry in practice.prepare()["entries"]]
+    paths = [Path(entry["path"]) for entry in _legacy_copies(practice)["entries"]]
     save = settings.save_tutorial_practice
     monkeypatch.setattr(tutorial_practice.settings, "save_tutorial_practice",
                         lambda _value: (_ for _ in ()).throw(OSError("settings disk failed")))
@@ -681,7 +719,7 @@ def test_practice_cleanup_holds_job_and_pool_writers_from_scan_to_delete(
     from hwpxfiller.external import tutorial_practice
 
     practice, jobs, pools = _real_practice(tmp_path)
-    paths = [Path(entry["path"]) for entry in practice.prepare()["entries"]]
+    paths = [Path(entry["path"]) for entry in _legacy_copies(practice)["entries"]]
     unlink = Path.unlink
     seen: list[tuple[bool, bool]] = []
 
@@ -715,7 +753,7 @@ def test_practice_cleanup_keeps_the_deletion_error_when_the_record_save_also_fai
 
     practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
                                                _jobs(), _pools())
-    paths = [Path(entry["path"]) for entry in practice.prepare()["entries"]]
+    paths = [Path(entry["path"]) for entry in _legacy_copies(practice)["entries"]]
     unlink = Path.unlink
     calls = 0
 
@@ -750,7 +788,7 @@ def test_practice_vanished_record_requires_an_app_copy_path_that_is_really_gone(
 
     practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
                                                _jobs(), _pools())
-    entry = next(item for item in practice.prepare()["entries"] if item["name"].endswith(".txt"))
+    entry = next(item for item in _legacy_copies(practice)["entries"] if item["name"].endswith(".txt"))
     present = dict(entry)
     assert not practice._vanished(present)  # 파일이 있으면 기록을 걷지 않는다.
     Path(entry["path"]).unlink()
@@ -785,7 +823,7 @@ def test_practice_cleanup_reference_scan_covers_pool_databases_and_empty_runs(tm
     pools = _pools()
     practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
                                                _jobs(), pools)
-    data = Path(practice.prepare()["entries"][-1]["path"])
+    data = Path(_legacy_copies(practice)["entries"][-1]["path"])
     pools.list_references = lambda: ([("slot", SimpleNamespace(opts={"db": str(data), "path": ""}))], [])
     preview = practice.cleanup_preview()
     row = next(row for row in preview["rows"] if row["path"] == str(data))
