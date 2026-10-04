@@ -11,7 +11,6 @@ from collections.abc import Mapping
 
 import lxml.etree as etree  # pyright: ignore[reportMissingImports]
 
-from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.field_occurrence import resolve_field_occurrences
 from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.package import HwpxPackage
@@ -21,6 +20,7 @@ from ..domain.authoring import begin_marker_text
 from ..domain.template_authoring import analyze as analyze_txt
 from ..domain.text_render import iter_field_token_matches
 from ..domain.text_structure import scan_text_token_spans
+from .authoring_transfer_block import block_paste, next_id as _next_id, section_root as _root
 from .hwpx_authoring import analyze_hwpx
 
 _HP = f"{{{HP_NS}}}"
@@ -159,32 +159,12 @@ def _txt_paste(text: str, captured: Mapping[str, object], destination: Mapping[s
                     "result": after, "expanded": False}
 
 
-def _root(package: HwpxPackage, entry: str):
-    if entry not in package.entries:
-        raise ValueError("붙여넣을 문서 영역을 찾을 수 없습니다.")
-    return etree.fromstring(package.entries[entry], parser=etree.XMLParser(resolve_entities=False))
-
-
 def _styles_compatible(source: HwpxPackage, target: HwpxPackage) -> bool:
     def dependencies(package: HwpxPackage) -> dict[str, bytes]:
         sections = set(section_xml_names(package))
         return {entry: raw for entry, raw in package.entries.items()
                 if entry not in sections and entry != "mimetype"}
     return dependencies(source) == dependencies(target)
-
-
-def _next_id(package: HwpxPackage) -> int:
-    maximum = 0
-    for entry, raw in package.entries.items():
-        if not entry.endswith(".xml"):
-            continue
-        root = etree.fromstring(raw, parser=etree.XMLParser(resolve_entities=False))
-        for element in root.iter():
-            for attribute in ("id", "fieldid"):
-                value = element.get(attribute)
-                if value and value.isdecimal():
-                    maximum = max(maximum, int(value))
-    return maximum + 1
 
 
 def _field_paste(source: HwpxPackage, target: HwpxPackage, selector: Mapping[str, object],
@@ -273,135 +253,6 @@ def _field_paste(source: HwpxPackage, target: HwpxPackage, selector: Mapping[str
     return original[start:end], copied_text
 
 
-def _region_from_selector(package: HwpxPackage, selector: Mapping[str, object]):
-    detail = analyze_hwpx(package)
-    kind = selector.get("kind")
-    selected = next((item for slot in detail["slots"]
-                     for item in ([slot] if kind == "slot" else slot["options"])
-                     if slot["id"] == selector.get("slot_id")
-                     and (kind == "slot" or item["id"] == selector.get("option_id"))), None)
-    if selected is None or selected["location"] is None or selected["raw"] is None:
-        raise ValueError("복사할 영역을 찾을 수 없습니다.")
-    loc, raw = selected["location"], selected["raw"]
-    region = next((item for item in resolve_bookmark_topology(package)
-                   if item.section == loc["entry"] and item.name == raw["bookmark_name"]
-                   and item.start_paragraph == loc["start_paragraph"]
-                   and item.end_paragraph == loc["end_paragraph"]), None)
-    assert region is not None
-    return region, selected
-
-
-def _block_paste(source: HwpxPackage, target: HwpxPackage, selector: Mapping[str, object],
-                 destination: Mapping[str, object], with_meaning: bool) -> tuple[str, str]:
-    region, selected = _region_from_selector(source, selector)
-    entry = destination.get("entry")
-    index = destination.get("destination_paragraph")
-    if not isinstance(entry, str) or not isinstance(index, int) or destination.get("start", 0) != 0:
-        raise ValueError("붙여넣을 문단 시작 위치를 고르세요.")
-    root = _root(target, entry)
-    paragraphs = [node for node in root if node.tag == f"{_HP}p"]
-    if not paragraphs:
-        raise ValueError("붙여넣을 문단이 없습니다.")
-    if not 0 <= index <= len(paragraphs):
-        raise ValueError("붙여넣을 문단 경계가 올바르지 않습니다.")
-    source_root = _root(source, region.section)
-    source_paragraphs = [node for node in source_root if node.tag == f"{_HP}p"]
-    block = source_paragraphs[region.start_paragraph:region.end_paragraph + 1]
-    first_boundary = next((node for node in block[0].iter(f"{_HP}fieldBegin")
-                           if node.get("id") == region._pairing_id), None)
-    last_boundary = next((node for node in block[-1].iter(f"{_HP}fieldEnd")
-                          if node.get("beginIDRef") == region._pairing_id), None)
-    if first_boundary is None or last_boundary is None:
-        raise ValueError("영역 경계를 문단 단위로 복사할 수 없습니다.")
-    first_nodes, last_nodes = list(block[0].iter()), list(block[-1].iter())
-    if (any(node.tag == f"{_HP}t" and (node.text or "") for node in first_nodes[:first_nodes.index(first_boundary)])
-            or any(node.tag == f"{_HP}t" and (node.text or "") for node in last_nodes[last_nodes.index(last_boundary) + 1:])):
-        raise ValueError("문단 일부만 포함한 의미 영역은 내용 손실 없이 복사할 수 없습니다.")
-    for paragraph in block:
-        for child in paragraph:
-            if child.tag == f"{_HP}lineSegArray":
-                continue
-            if child.tag != f"{_HP}run" or any(item.tag not in {f"{_HP}t", f"{_HP}ctrl"} for item in child):
-                raise ValueError("복합 문서 요소는 의미째 붙여넣을 수 없습니다.")
-            for control in child.iter(f"{_HP}ctrl"):
-                if len(control) != 1 or control[0].tag not in {f"{_HP}fieldBegin", f"{_HP}fieldEnd"}:
-                    raise ValueError("지원하지 않는 제어 요소가 포함되어 있습니다.")
-    begins = {node.get("id") for paragraph in block for node in paragraph.iter(f"{_HP}fieldBegin")}
-    ends = {node.get("beginIDRef") for paragraph in block for node in paragraph.iter(f"{_HP}fieldEnd")}
-    internal = begins & ends
-    clones = [copy.deepcopy(paragraph) for paragraph in block]
-    for paragraph in clones:
-        for control in list(paragraph.iter(f"{_HP}ctrl")):
-            field = control[0]
-            pairing = field.get("id") if field.tag == f"{_HP}fieldBegin" else field.get("beginIDRef")
-            if not with_meaning or pairing not in internal:
-                control.getparent().remove(control)
-    if with_meaning:
-        new_id = destination.get("new_id") or selected["id"]
-        if not isinstance(new_id, str) or not new_id.strip():
-            raise ValueError("새 식별자를 입력하세요.")
-        detail = analyze_hwpx(target)
-        copied_names = {field["name"] for field in analyze_hwpx(source)["fields"]
-                        for occurrence in field["occurrences"]
-                        if occurrence["entry"] == region.section
-                        and isinstance(occurrence["paragraph"], int)
-                        and region.start_paragraph <= occurrence["paragraph"] <= region.end_paragraph}
-        if copied_names & {field["name"] for field in detail["fields"]} and destination.get("link_existing") is not True:
-            raise ValueError("같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요.")
-        if selector["kind"] == "slot":
-            if any(slot["id"] == new_id for slot in detail["slots"]):
-                raise ValueError("같은 항목 식별자가 있습니다. 새 식별자를 입력하세요.")
-            if any(item.section == entry and item.start_paragraph < index <= item.end_paragraph
-                   for item in resolve_bookmark_topology(target)):
-                raise ValueError("항목을 다른 의미 영역 안에 넣을 수 없습니다.")
-        else:
-            owner_id = destination.get("slot_id")
-            owner = next((slot for slot in detail["slots"] if slot["id"] == owner_id), None)
-            if owner is None or owner["location"]["entry"] != entry or any(
-                option["id"] == new_id for option in owner["options"]
-            ):
-                raise ValueError("상위 항목이나 선택 식별자를 확인하세요.")
-            if not owner["location"]["start_paragraph"] < index <= owner["location"]["end_paragraph"]:
-                raise ValueError("선택은 상위 항목 안의 문단 경계에 붙여넣으세요.")
-        id_map = {}
-        next_id = _next_id(target)
-        for paragraph in clones:
-            for element in paragraph.iter():
-                for attribute in ("id", "fieldid"):
-                    old = element.get(attribute)
-                    if old is not None and old not in id_map:
-                        id_map[old] = str(next_id)
-                        next_id += 1
-        for paragraph in clones:
-            for element in paragraph.iter():
-                for attribute in ("id", "fieldid", "beginIDRef", "endIDRef"):
-                    old = element.get(attribute)
-                    if old in id_map:
-                        element.set(attribute, id_map[old])
-                if element.tag != f"{_HP}fieldBegin" or element.get("type") != "BOOKMARK":
-                    continue
-                original = next((old for old, mapped in id_map.items() if mapped == element.get("id")), None)
-                if original == region._pairing_id:
-                    element.set("name", (new_id if selector["kind"] == "slot" else f"{owner_id}/{new_id}"))
-                    for tag in element.iter(f"{_HP}metaTag"):
-                        if tag.text and '"hwpxFiller"' in tag.text:
-                            import json
-                            payload = json.loads(tag.text)
-                            payload["hwpxFiller"]["id"] = new_id
-                            tag.text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-                elif selector["kind"] == "slot":
-                    old_prefix = str(selector["slot_id"]) + "/"
-                    if (element.get("name") or "").startswith(old_prefix):
-                        element.set("name", f"{new_id}/{(element.get('name') or '')[len(old_prefix):]}")
-    insertion = root.index(paragraphs[index]) if index < len(paragraphs) else root.index(paragraphs[-1]) + 1
-    for offset, paragraph in enumerate(clones):
-        root.insert(insertion + offset, paragraph)
-    target.entries[entry] = serialize_modified_section(root)
-    resolve_bookmark_topology(target)
-    plain = "\n".join("".join(node.text or "" for node in paragraph.iter(f"{_HP}t")) for paragraph in block)
-    return "", plain
-
-
 def paste_semantic(
     media: str, target_content: str | object, captured: Mapping[str, object],
     destination: Mapping[str, object], *, with_meaning: bool = True,
@@ -428,7 +279,7 @@ def paste_semantic(
     if captured["kind"] == "field":
         previous, inserted = _field_paste(source, target, selector, destination, with_meaning)
     else:
-        previous, inserted = _block_paste(source, target, selector, destination, with_meaning)
+        previous, inserted = block_paste(source, target, selector, destination, with_meaning)
     result = analyze_hwpx(target)
     if result["diagnostics"]:
         raise ValueError("붙여넣으면 대상 문서의 의미 구조가 깨집니다.")
