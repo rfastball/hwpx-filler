@@ -58,64 +58,12 @@ function_complexity = 13
 [budget."frontend/src/runtime/adapter.ts::classify"]
 function_complexity = 11
 
-[budget."frontend/src/screens/authoring.ts"]
-module_statements = 1220
-
 [budget."frontend/src/screens/authoring.ts::AuthoringScreen"]
-function_complexity = 161
-function_statements = 165
-
-[budget."frontend/src/screens/authoring.ts::AuthoringScreen.dockContent"]
-function_complexity = 74
+function_complexity = 98
+function_statements = 155
 
 [budget."frontend/src/screens/authoring.ts::AuthoringScreen.shellInput.current.key"]
 function_complexity = 26
-
-[budget."frontend/src/screens/authoring.ts::CommandMenu"]
-function_complexity = 12
-
-[budget."frontend/src/screens/authoring.ts::DocumentEditor"]
-function_complexity = 13
-
-[budget."frontend/src/screens/authoring.ts::Outline"]
-function_complexity = 20
-
-[budget."frontend/src/screens/authoring.ts::Outline.spineNodes"]
-function_complexity = 31
-
-[budget."frontend/src/screens/authoring.ts::OutlineTree.onKeyDown"]
-function_complexity = 16
-
-[budget."frontend/src/screens/authoring.ts::SemanticForm"]
-function_complexity = 152
-function_statements = 72
-
-[budget."frontend/src/screens/authoring.ts::SemanticForm.command"]
-function_complexity = 12
-
-[budget."frontend/src/screens/authoring.ts::SemanticForm.finish"]
-function_complexity = 12
-
-[budget."frontend/src/screens/authoring.ts::Trial"]
-function_complexity = 38
-
-[budget."frontend/src/screens/authoring.ts::dockBadge"]
-function_complexity = 11
-
-[budget."frontend/src/screens/authoring.ts::dockTabs"]
-function_complexity = 18
-
-[budget."frontend/src/screens/authoring.ts::liveState"]
-function_complexity = 16
-
-[budget."frontend/src/screens/authoring.ts::outlineCurrent"]
-function_complexity = 20
-
-[budget."frontend/src/screens/authoring.ts::outlineSpine"]
-function_complexity = 13
-
-[budget."frontend/src/screens/authoring.ts::shellShortcut"]
-function_complexity = 25
 
 [budget."frontend/src/screens/authoring_a11y.ts::isCurrentTarget"]
 function_complexity = 12
@@ -125,6 +73,9 @@ function_complexity = 26
 
 [budget."frontend/src/screens/authoring_a11y.ts::treeKey"]
 function_complexity = 23
+
+[budget."frontend/src/screens/authoring_body.ts::renderAuthoringBody"]
+function_complexity = { value = 22, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 편집면·속성 배치에서 문서별 본문과 패널 표시 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
 
 [budget."frontend/src/screens/authoring_controller.ts"]
 module_statements = 663
@@ -161,6 +112,43 @@ function_complexity = 18
 
 [budget."frontend/src/screens/authoring_controller.ts::rangePickStep"]
 function_complexity = 13
+
+[budget."frontend/src/screens/authoring_dock.ts::renderDockContent"]
+function_complexity = { value = 74, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 독의 문제·검색·시험 탭별 렌더링을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_editor.ts::DocumentEditor"]
+function_complexity = { value = 13, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 편집기 설치 콜백과 내용·선택 동기화을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_footer.ts::renderAuthoringFooter"]
+function_complexity = { value = 11, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 상태 막대의 저장·시험 상태와 배율 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_outline.ts::Outline"]
+function_complexity = { value = 20, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 구조 트리의 키보드 이동·척추 노드·필드 행 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_outline.ts::Outline.spineNodes"]
+function_complexity = { value = 31, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 구조 트리의 키보드 이동·척추 노드·필드 행 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_outline.ts::OutlineTree.onKeyDown"]
+function_complexity = { value = 16, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 구조 트리의 키보드 이동·척추 노드·필드 행 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_overlays.ts::renderAuthoringOverlays"]
+function_complexity = { value = 16, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 명령 팔레트·문맥 메뉴·선택 막대별 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_properties.ts::SemanticForm"]
+function_complexity = { value = 152, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 속성 폼의 명령 생성·확인 전이·입력 구획을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+function_statements = { value = 72, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 속성 폼의 명령 생성·확인 전이·입력 구획을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_properties.ts::SemanticForm.command"]
+function_complexity = { value = 12, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 속성 폼의 명령 생성·확인 전이·입력 구획을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_properties.ts::SemanticForm.finish"]
+function_complexity = { value = 12, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 속성 폼의 명령 생성·확인 전이·입력 구획을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_shell_state.ts::liveState"]
+function_complexity = { value = 16, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 명령 알림과 검색 요약 상태 투영을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
+
+[budget."frontend/src/screens/authoring_trial.ts::Trial"]
+function_complexity = { value = 38, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 시험 입력·저장 케이스·결과 뷰어 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
 
 [budget."frontend/src/screens/command_palette.ts::paletteModel"]
 function_complexity = 12
@@ -860,14 +848,7 @@ function_complexity = 33
 function_statements = 71
 
 [budget."src/hwpxfiller/domain/template_authoring.py"]
-module_statements = 861
-
-[budget."src/hwpxfiller/domain/template_authoring.py::_edits"]
-function_complexity = 101
-function_statements = 126
-
-[budget."src/hwpxfiller/domain/template_authoring.py::_field_spans"]
-function_complexity = 13
+module_statements = 649
 
 [budget."src/hwpxfiller/domain/template_authoring.py::_line_block_children"]
 function_complexity = 14
@@ -924,19 +905,9 @@ function_complexity = 19
 [budget."src/hwpxfiller/domain/text_structure.py::_marker_spans"]
 function_complexity = 15
 
-[budget."src/hwpxfiller/external/authoring_transfer.py"]
-module_statements = 353
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::_block_paste"]
-function_complexity = 95
-function_statements = 96
-
 [budget."src/hwpxfiller/external/authoring_transfer.py::_field_paste"]
 function_complexity = 44
 function_statements = 81
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::_region_from_selector"]
-function_complexity = 15
 
 [budget."src/hwpxfiller/external/authoring_transfer.py::_txt_capture"]
 function_complexity = 29
@@ -968,111 +939,6 @@ function_complexity = 11
 [budget."src/hwpxfiller/external/headless_generation.py::run_headless_generation"]
 function_complexity = 32
 function_statements = 51
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py"]
-module_statements = 1281
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_adjust_region"]
-function_complexity = 40
-function_statements = 55
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_block_children"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_body_hit_parts"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_bookmark_location"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_cell_path"]
-function_complexity = 28
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_change_field"]
-function_complexity = 33
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_cloneable_paragraphs"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_command_preview_label"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_create_field"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_create_region"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_duplicate_region"]
-function_complexity = 61
-function_statements = 93
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_execute"]
-function_complexity = 49
-function_statements = 84
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_field_diagnostics"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_field_paragraph"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_fields"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_move_region"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_paragraph_pieces"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_preview_content_context"]
-function_complexity = 35
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_rename_region"]
-function_complexity = 44
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_revert_template"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_selected_paragraph"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_selection_frame"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_simple_field_span"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_structure_diagnostic_location"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::_token_location"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::analyze_hwpx"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::available_commands_hwpx"]
-function_complexity = 45
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::available_commands_hwpx.field_hit"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::same_text_hwpx"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::search_hwpx"]
-function_complexity = 23
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::selected_context_hwpx"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::syntax_view_hwpx"]
-function_complexity = 27
-
-[budget."src/hwpxfiller/external/hwpx_authoring.py::trial_hwpx"]
-function_complexity = 28
 
 [budget."src/hwpxfiller/external/hwpx_product_inspection.py::_inspect_slot_snapshot"]
 function_complexity = 23
@@ -1403,10 +1269,10 @@ function_complexity = 16
 function_complexity = 14
 
 [budget."src/hwpxfiller/webapp/onboarding.py"]
-module_statements = 695
+module_statements = 492
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
-class_methods = 39
+class_methods = 34
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._dispatch"]
 function_complexity = 50
@@ -1419,13 +1285,6 @@ function_statements = 59
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._guide"]
 function_complexity = 39
 function_statements = 58
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._match_authoring"]
-function_complexity = 54
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._matches"]
-function_complexity = 187
-function_statements = 141
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
 function_complexity = 27

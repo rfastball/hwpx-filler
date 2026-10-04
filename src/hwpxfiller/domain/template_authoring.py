@@ -13,7 +13,6 @@ the same words and shapes; the frontend never re-decides any of it.
 
 from __future__ import annotations
 
-import itertools
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -35,6 +34,32 @@ from .text_structure import (
     scan_text_token_spans,
     scan_text_structure,
     unselected_option_lines,
+)
+from .template_authoring_edits import edits as _plan_edits
+from .template_authoring_primitives import (
+    FIELD_COMMANDS as FIELD_COMMANDS,
+    INVALID_FIELD_NAME as INVALID_FIELD_NAME,
+    InvalidName as InvalidName,
+    NameConflict as NameConflict,
+    REASON_FIELD_OVERLAP,
+    REASON_INVALID_SELECTION,
+    REASON_NEED_IDENTIFIER as REASON_NEED_IDENTIFIER,
+    REASON_NEED_NEW_IDENTIFIER as REASON_NEED_NEW_IDENTIFIER,
+    REASON_NO_CONTENT_LINE as REASON_NO_CONTENT_LINE,
+    REASON_REGION_OVERLAP,
+    REASON_STRUCTURE_FIRST,
+    field_identifier as _identifier,
+    from_utf16 as _from_utf16,
+    from_utf16 as from_utf16,
+    line_at as _line_at,
+    line_range as _line_range,
+    line_starts as _line_starts,
+    preferred_eol as _eol,
+    region_identifier as region_identifier,
+    target_placement as _target,
+    to_utf16 as _to_utf16,
+    utf16_length as _unit_length,
+    whole_field_unset,
 )
 
 # --------------------------------------------------------------- shared vocabulary
@@ -59,24 +84,17 @@ COMMAND_NAMES: dict[str, str] = {
 #: 탭 투영(``document_commands``)으로 선다. 선택 명령 표(:data:`COMMAND_TYPES`)와 섞지 않는다 — 문맥 메뉴·속성 명령
 #: 선택은 고른 대상의 명령만 싣는다.
 DOCUMENT_COMMAND_TYPES: tuple[str, ...] = (REVERT_TEMPLATE,)
-FIELD_COMMANDS = frozenset({"create_field", "rename_field", "relink_field", "unset_field"})
 REGION_COMMANDS = frozenset({"rename_slot", "rename_option", "adjust_range", "unwrap", "delete",
                              "duplicate", "move"})
 
 # Availability reasons (spec §6.1 / §13 sentences where they exist).
-REASON_INVALID_SELECTION = "고른 위치가 올바르지 않습니다."
 REASON_MULTI_REGION = "고른 범위가 여러 독립 영역에 걸쳐 있습니다. 한 범위를 고르세요."
 REASON_OPTION_OUTSIDE_SLOT = "선택은 항목 안에 만들 수 있습니다. 먼저 항목 안의 내용을 고르세요."
 REASON_NEED_FIELD = "필드를 고르세요."
 REASON_ONE_FIELD = "필드를 하나만 고르세요."
 REASON_NEED_REGION = "항목이나 선택 영역을 고르세요."
 REASON_NEED_OPTION = "선택 영역을 고르세요."
-REASON_REGION_OVERLAP = "고른 범위가 기존 영역과 겹칩니다. 범위를 다시 고르세요."
-REASON_FIELD_OVERLAP = "고른 범위에 기존 필드가 포함되어 있습니다."
-REASON_STRUCTURE_FIRST = "구조 오류를 먼저 수정한 뒤 영역 명령을 실행하세요."
-REASON_NO_CONTENT_LINE = "고를 내용 줄이 없습니다."
 REASON_NEED_OCCURRENCE = "필드 사용 위치를 하나 고르세요."
-_FIELD_NOT_FOUND = "필드를 찾을 수 없습니다."
 REASON_NEED_RANGE = "문서에서 범위를 고르세요."
 #: 「원본 템플릿으로 되돌리기」 불가 — 모든 필드가 이미 ``{{이름}}`` 원형이거나 비었다. TXT 는 필드가 곧 ``{{이름}}``
 #: 표기라 값이 없다(늘 이 사유).
@@ -105,20 +123,6 @@ COMPILE_TOKEN_LABEL = "누름틀 변환"
 REASON_FIX_STALE = "이 문제의 자동 수정이 더는 적용되지 않습니다. 문제 목록을 다시 확인하세요."
 
 
-class NameConflict(ValueError):
-    """Renaming onto an existing field is never merged silently (AC08)."""
-
-    def __init__(self, name: str, existing_count: int) -> None:
-        self.name = name
-        self.existing_count = existing_count
-        self.message = f"‘{name}’ 필드가 이미 있습니다. 다른 이름을 쓰거나 기존 필드에 연결하세요."
-        super().__init__(self.message)
-
-    def to_dict(self) -> dict:
-        return {"code": "name_conflict", "name": self.name,
-                "existing_count": self.existing_count, "message": self.message}
-
-
 class CascadeRequired(ValueError):
     """Unwrapping a slot that still owns options needs an explicit cascade (AC10)."""
 
@@ -129,51 +133,6 @@ class CascadeRequired(ValueError):
 
     def to_dict(self) -> dict:
         return {"code": "cascade_required", "children": self.children, "message": self.message}
-
-
-#: 필드 이름 문법 거절(§13) — 비었거나 문법 기호가 든 이름.
-INVALID_FIELD_NAME = "필드 이름을 확인하세요. 비어 있거나 문법 기호가 포함되어 있습니다."
-#: 항목·선택 식별자가 빈 거절 — 만들기와 속성 변경이 각자의 문장을 쓴다(HWPX 가 먼저 쓰던 그 문장).
-REASON_NEED_IDENTIFIER = "항목이나 선택의 식별자를 입력하세요."
-REASON_NEED_NEW_IDENTIFIER = "항목이나 선택의 새 식별자를 입력하세요."
-
-
-class InvalidName(ValueError):
-    """A name or identifier the grammar cannot carry — refused in place, not raised as an error (P-06).
-
-    ``field`` names the input the sentence belongs to: ``"name"`` (필드 이름·표시 이름) or
-    ``"identifier"`` (연결 식별자). The surface puts the sentence right under that input.
-    """
-
-    def __init__(self, field: str, message: str) -> None:
-        self.field = field
-        self.message = message
-        super().__init__(message)
-
-    def to_dict(self) -> dict:
-        return {"code": "invalid_name", "field": self.field, "message": self.message}
-
-
-def region_identifier(raw: object, *, renaming: bool = False) -> str:
-    """항목·선택 식별자 — 구간 표기로 되읽히는 값만 통과한다(두 매체 공유). 거절은 식별자 칸의 것이다."""
-    from .authoring import marker_identifier
-
-    if not isinstance(raw, str) or not raw.strip():
-        raise InvalidName("identifier", REASON_NEED_NEW_IDENTIFIER if renaming else REASON_NEED_IDENTIFIER)
-    try:
-        return marker_identifier(raw)
-    except ValueError as exc:
-        raise InvalidName("identifier", str(exc)) from exc
-
-
-def _region_label(raw: object) -> None:
-    """항목·선택 표시 이름(이름 칸) — 되읽기 동등이 아니면 이름 칸의 거절이다."""
-    from .authoring import marker_label
-
-    try:
-        marker_label(raw)
-    except ValueError as exc:
-        raise InvalidName("name", str(exc)) from exc
 
 
 # --------------------------------------------------------------- field-name suggestion (P-06)
@@ -604,15 +563,6 @@ def target_availability(kind: str, *, name: str | None = None,
     return availability_entries(reasons)
 
 
-def whole_field_unset(command: Mapping[str, object]) -> bool:
-    """필드 전체(구조 목록의 필드 행 — ``occurrences`` 를 실은 대상)의 의미 해제인가(IDE-06 P-20).
-
-    전체 대상은 이름(``old_name``)이 같은 모든 사용 위치를 한 계획으로 치환한다. 사용 위치 한 곳의
-    해제는 좌표(TXT)나 차례(HWPX)로 그 자리만 고친다.
-    """
-    return command.get("type") == "unset_field" and isinstance(command.get("occurrences"), list)
-
-
 def available_target_commands(media: str, content: str | object, kind: str,
                               name: str | None = None) -> list[dict]:
     """TXT availability for an identity-chosen target; structure errors come from the same scan."""
@@ -627,76 +577,6 @@ def field_candidates(fields: list[dict]) -> list[dict]:
 
 
 # ------------------------------------------------------------------- TXT media
-def _unit_length(value: str) -> int:
-    return len(value.encode("utf-16-le")) // 2
-
-
-def _to_utf16(text: str, offset: int) -> int:
-    return _unit_length(text[:offset])
-
-
-def _from_utf16(text: str, offset: object) -> int:
-    # ponytail: linear conversion is enough for ordinary templates; build an offset map if large documents make command latency visible.
-    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
-        raise ValueError(REASON_INVALID_SELECTION)
-    units = 0
-    for index, char in enumerate(text):
-        if units == offset:
-            return index
-        units += _unit_length(char)
-        if units > offset:
-            raise ValueError("고른 위치가 문자 중간에 있습니다.")
-    if units == offset:
-        return len(text)
-    raise ValueError("고른 위치가 문서 밖에 있습니다.")
-
-
-def from_utf16(text: str, offset: object) -> int:
-    """편집기 선택의 UTF-16 단위 위치 → code point 위치. 문자 중간·문서 밖·잘못된 값은 ValueError."""
-    return _from_utf16(text, offset)
-
-
-def _line_starts(text: str) -> list[int]:
-    starts = [0]
-    for line in text.splitlines(keepends=True):
-        starts.append(starts[-1] + len(line))
-    return starts
-
-
-def _line_at(starts: list[int], offset: int) -> int:
-    return max(0, next((i - 1 for i, start in enumerate(starts) if start > offset), len(starts) - 2))
-
-
-def _line_range(text: str, start: int, end: int) -> tuple[int, int, int, int]:
-    starts = _line_starts(text)
-    if len(starts) == 1:
-        raise ValueError(REASON_NO_CONTENT_LINE)
-    first = _line_at(starts, start)
-    last = _line_at(starts, max(start, end - 1))
-    return first, last, starts[first], starts[last + 1]
-
-
-def _eol(text: str) -> str:
-    return "\r\n" if "\r\n" in text else "\n"
-
-
-def _identifier(raw: object) -> str:
-    name = normalize_field_id(raw)
-    if not name or "{{" in name or "}}" in name or "|" in name or name.startswith(("#", "/")):
-        raise InvalidName("name", INVALID_FIELD_NAME)
-    return name
-
-
-def _marker(kind: str, identifier: object, label: object = None) -> str:
-    from .authoring import begin_marker_text
-
-    return begin_marker_text(kind, identifier, label)
-
-
-def _end_marker(kind: str) -> str:
-    from .authoring import end_marker_text
-
-    return end_marker_text(kind)
 
 
 def _occurrences(text: str) -> list[dict]:
@@ -836,17 +716,6 @@ def _repair_suggestion(text: str, scan, diagnostic) -> dict | None:
                                          "diagnostic": diagnostic.to_dict()}}
 
 
-def _target(scan, command: Mapping[str, object]):
-    kind = str(command.get("kind", "slot"))
-    slot_id = str(command.get("slot_id", ""))
-    option_id = str(command.get("option_id", "")) if kind == "option" else None
-    return next(
-        (place for place in scan.placements if place.kind == kind
-         and place.slot_id == slot_id and place.option_id == option_id),
-        None,
-    )
-
-
 def _target_name(scan, target) -> str:
     slot = next((item for item in scan.slots if item.id == target.slot_id), None)
     if target.kind == "option":
@@ -881,173 +750,22 @@ def _line_block_children(text: str, scan, first: int, last: int) -> tuple[list[d
 def _edits(text: str, command: Mapping[str, object], *,
            projecting: bool = False) -> tuple[list[tuple[int, int, str]], bool, bool]:
     """Edit plan, whether the range expanded, and whether a cascade is still unconfirmed."""
-    action = command.get("type")
-    scan = scan_text_structure(text)
-    if action == "repair_marker":
+    if command.get("type") == "repair_marker":
+        scan = scan_text_structure(text)
         for diagnostic in scan.diagnostics:
             suggestion = _repair_suggestion(text, scan, diagnostic)
             if suggestion is not None and command == suggestion["command"]:
                 return [(_from_utf16(text, command["start"]),
                          _from_utf16(text, command["end"]), str(command["text"]))], False, False
         raise ValueError(REASON_FIX_STALE)
-    if scan.diagnostics and action not in FIELD_COMMANDS:
-        raise ValueError(REASON_STRUCTURE_FIRST)
-    matches = list(iter_field_token_matches(text))
-    starts = _line_starts(text)
-    start = _from_utf16(text, command.get("start", 0))
-    end = _from_utf16(text, command.get("end", command.get("start", 0)))
-    if start > end:
-        raise ValueError("고른 범위의 시작과 끝이 뒤바뀌었습니다.")
-    expanded = False
-    if action == "create_field":
-        name = _identifier(command.get("name"))
-        spans = _field_spans(text, command, start, end)
-        if any(match.start() < hi and lo < match.end() for lo, hi in spans for match in matches):
-            raise ValueError(REASON_FIELD_OVERLAP)
-        return [(lo, hi, "{{" + name + "}}") for lo, hi in spans], False, False
-    if action == "rename_field":
-        old = _identifier(command.get("old_name"))
-        new = _identifier(command.get("name"))
-        existing = [match for match in matches if match.group(1).strip() == old]
-        if not existing:
-            raise ValueError(_FIELD_NOT_FOUND)
-        if old == new:
-            return [], False, False
-        taken = [match for match in matches if match.group(1).strip() == new]
-        if taken:
-            raise NameConflict(new, len(taken))
-        edits = [(match.start(), match.end(), "{{" + new + "}}")
-                 for match in existing]
-        return edits, False, False
-    if action in {"relink_field", "unset_field"}:
-        replacement = ("{{" + _identifier(command.get("name")) + "}}") if action == "relink_field" else command.get("text")
-        if whole_field_unset(command):
-            # 필드 전체의 의미 해제(P-20): 이름이 같은 모든 사용 위치를 한 계획으로 치환한다.
-            name = _identifier(command.get("old_name"))
-            sites = [match for match in matches if match.group(1).strip() == name]
-            if not sites:
-                raise ValueError(_FIELD_NOT_FOUND)
-        else:
-            match = next((item for item in matches if item.start() <= start < item.end()), None)
-            if match is None:
-                raise ValueError("고른 필드 사용 위치를 찾을 수 없습니다.")
-            sites = [match]
-        if not isinstance(replacement, str):
-            raise ValueError("의미를 해제한 뒤 남길 본문을 입력하세요.")
-        return [(match.start(), match.end(), replacement) for match in sites], False, False
-    if action in {"create_slot", "create_option"}:
-        kind = PLACEMENT_SLOT if action == "create_slot" else PLACEMENT_OPTION
-        region_identifier(command.get("id"))
-        _region_label(command.get("label"))
-        first, last, lo, hi = _line_range(text, start, end)
-        expanded = (lo != start or hi != end)
-        if any(place.begin_marker_line <= last and first <= place.end_marker_line
-               for place in scan.placements if place.kind == kind):
-            raise ValueError(REASON_REGION_OVERLAP)
-        if kind == PLACEMENT_OPTION:
-            owners = [place for place in scan.placements if place.kind == PLACEMENT_SLOT
-                      and place.begin_marker_line < first <= last < place.end_marker_line]
-            if len(owners) != 1 or owners[0].slot_id != command.get("slot_id"):
-                raise ValueError("고른 범위는 하나의 항목 안에 있어야 합니다.")
-            if any(option.id == command.get("id") for slot in scan.slots
-                   if slot.id == owners[0].slot_id for option in slot.options):
-                raise ValueError("같은 항목에 해당 선택 식별자가 이미 있습니다.")
-        elif any(slot.id == command.get("id") for slot in scan.slots):
-            raise ValueError("항목 식별자가 이미 있습니다.")
-        eol = _eol(text)
-        if hi == len(text) and not text.endswith(("\r", "\n")):
-            return [(lo, lo, _marker(kind, command.get("id"), command.get("label")) + eol),
-                    (hi, hi, eol + _end_marker(kind))], expanded, False
-        return [(lo, lo, _marker(kind, command.get("id"), command.get("label")) + eol),
-                (hi, hi, _end_marker(kind) + eol)], expanded, False
-    target = _target(scan, command)
-    if target is None:
-        raise ValueError("항목이나 선택 영역을 찾을 수 없습니다.")
-    begin = target.begin_marker_line
-    finish = target.end_marker_line
-    if action in {"rename_slot", "rename_option"}:
-        new_id = command.get("id", target.option_id if target.kind == "option" else target.slot_id)
-        if new_id != (target.option_id if target.kind == "option" else target.slot_id):
-            region_identifier(new_id, renaming=True)
-        _region_label(command.get("label"))
-        if target.kind == "slot" and any(slot.id == new_id and slot.id != target.slot_id for slot in scan.slots):
-            raise ValueError("항목 식별자가 이미 있습니다.")
-        if target.kind == "option" and any(opt.id == new_id and opt.id != target.option_id
-                                           for slot in scan.slots if slot.id == target.slot_id
-                                           for opt in slot.options):
-            raise ValueError("같은 항목에 해당 선택 식별자가 이미 있습니다.")
-        existing = next(
-            (slot if target.kind == "slot" else option
-             for slot in scan.slots if slot.id == target.slot_id
-             for option in (slot.options if target.kind == "option" else (slot,))
-             if target.kind == "slot" or option.id == target.option_id),
-            None,
-        )
-        label = command.get("label", existing.label if existing else None)
-        replacement = _marker(target.kind, new_id, label)
-        return [(starts[begin], starts[begin + 1], replacement + _eol(text))], False, False
-    if action in {"unwrap", "delete", "duplicate", "move"}:
-        requires_cascade = False
-        child_options = [place for place in scan.placements if place.kind == "option"
-                         and place.slot_id == target.slot_id]
-        if target.kind == "slot" and action == "unwrap" and child_options and not command.get("cascade"):
-            if not projecting:
-                children, _ = _line_block_children(text, scan, begin, finish)
-                raise CascadeRequired([child for child in children if child["kind"] == "option"])
-            requires_cascade = True
-        lo, hi = starts[begin], starts[finish + 1]
-        if action == "delete":
-            return [(lo, hi, "")], False, False
-        if action == "unwrap":
-            child_lines = {begin, finish}
-            if target.kind == "slot":
-                child_lines |= {line for place in child_options
-                                for line in (place.begin_marker_line, place.end_marker_line)}
-            return [(starts[line], starts[line + 1], "") for line in sorted(child_lines)], False, requires_cascade
-        destination = _from_utf16(text, command.get("destination", hi))
-        if destination not in starts:
-            raise ValueError("옮기거나 복제할 위치는 줄 경계여야 합니다.")
-        if action == "move":
-            if lo <= destination <= hi:
-                raise ValueError("영역을 자기 안으로 옮길 수 없습니다.")
-            return [(lo, hi, ""), (destination, destination, text[lo:hi])], False, False
-        new_id = command.get("new_id")
-        if not new_id:
-            raise ValueError("복제할 영역의 새 식별자를 입력하세요.")
-        copied = text[lo:hi]
-        old_marker = text[starts[begin]:starts[begin + 1]].strip()
-        copied = copied.replace(old_marker, _marker(target.kind, new_id, command.get("label")), 1)
-        return [(destination, destination, copied)], False, False
-    if action == "adjust_range":
-        first, last, _, _ = _line_range(text, start, end)
-        if first > last:
-            raise ValueError("조정한 범위에 본문이 없습니다.")
-        begin_text = text[starts[begin]:starts[begin + 1]]
-        end_text = text[starts[finish]:starts[finish + 1]]
-        return [(starts[begin], starts[begin + 1], ""),
-                (starts[finish], starts[finish + 1], ""),
-                (starts[first], starts[first], begin_text),
-                (starts[last + 1], starts[last + 1], end_text)], True, False
-    raise ValueError(f"알 수 없는 저작 명령입니다: {action!r}")
-
-
-def _field_spans(text: str, command: Mapping[str, object], start: int, end: int) -> list[tuple[int, int]]:
-    """``create_field`` 의 자리들(code point) — ``ranges`` 가 있으면 고른 자리를 포함한 전부다(IDE-07 P-07).
-
-    고른 자리(``start/end``)는 ``ranges`` 안에 있어야 한다. 서로 겹치거나 같은 자리는 필드 겹침 거절이다.
-    """
-    ranges = command.get("ranges")
-    if ranges is None:
-        return [(start, end)]
-    if not isinstance(ranges, list) or not all(isinstance(item, Mapping) for item in ranges):
-        raise ValueError(REASON_INVALID_SELECTION)
-    spans = sorted((_from_utf16(text, item.get("start")), _from_utf16(text, item.get("end"))) for item in ranges)
-    # 같은 문구 N곳이다 — 고른 자리가 들어 있고 모든 자리의 글자가 같아야 한다(옛 좌표를 짐작해 끼우지 않는다).
-    if (start, end) not in spans or any(lo > hi or text[lo:hi] != text[start:end] for lo, hi in spans):
-        raise ValueError(REASON_INVALID_SELECTION)
-    if any(first[1] > second[0] or first == second for first, second in itertools.pairwise(spans)):
-        raise ValueError(REASON_FIELD_OVERLAP)
-    return spans
+    plan = _plan_edits(text, command)
+    if plan[2] and not projecting:
+        scan = scan_text_structure(text)
+        target = _target(scan, command)
+        assert target is not None
+        children, _ = _line_block_children(text, scan, target.begin_marker_line, target.end_marker_line)
+        raise CascadeRequired([child for child in children if child["kind"] == "option"])
+    return plan
 
 
 def _apply_edits(text: str, edits: list[tuple[int, int, str]]) -> str:

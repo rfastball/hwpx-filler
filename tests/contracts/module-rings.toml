@@ -447,6 +447,18 @@ source_write_set = ["src/hwpxfiller/webapp/onboarding.py"]
 oracle_nodeid = "tests/test_webapp_tutorial.py::test_notice_lesson_generates_exact_three_rows_with_options"
 
 [[unit]]
+module = "hwpxfiller.webapp.onboarding_match_editor"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/onboarding_match_editor.py"]
+oracle_nodeid = "tests/test_webapp_tutorial.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.onboarding_match_results"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/onboarding_match_results.py"]
+oracle_nodeid = "tests/test_webapp_tutorial.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.screen_tutorial"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_tutorial.py"]
