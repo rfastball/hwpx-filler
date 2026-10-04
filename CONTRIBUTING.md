@@ -90,9 +90,9 @@ registry·프런트 라우팅·DOM 루트·blocker 복구·selftest·live101·�
 모듈 문장 수·클래스 메서드 수·함수 분기와 문장 수는 [복잡도 예산](scripts/complexity_measure.py)의
 등급별 상한을 넘지 않는다. 제품·scripts는 목표 품질 값, 테스트·selftest 하니스는 느슨한 값이다.
 기존 초과분은 [동결 원장](tests/contracts/complexity-budget.toml)에 실측값으로 묶여 내려가기만 한다.
-실패하면 메시지가 가리키는 메서드 묶음·최상위 정의·블록을 책임별로 분리하고, 줄어든 값은
-`uv run python scripts/complexity_budget.py --tighten`으로 반영한다. 항목 추가·상향은 그 항목에
-새 이슈 번호의 `override`와 `reason`을 적을 때만 허용한다.
+실패하면 메시지가 가리키는 자리를 책임별로 분리하고, 줄어든 값은
+`uv run python scripts/complexity_budget.py --tighten`으로 반영한다. 추가·상향은 분리 중간 단계·측정
+보정에만 새로 단 `override`(추적 이슈)와 `reason`으로 허용한다.
 
 커밋은 한국어 Conventional Commits와 PR 번호를 사용한다. 빌드·venv·비밀값·coverage·pytest
 보고서·로컬 에이전트 설정은 커밋하지 않는다. 봇 리뷰는 자문이며 고칠 것은 고치고 독립 작업은

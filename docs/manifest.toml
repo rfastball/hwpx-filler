@@ -77,8 +77,8 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "5dcb4d395a7fe59b671ac87397e7ee449c90231ebf9e3f0172fb1fcad3ec5b01"
-body_sha256 = "a7c153329a7a315edb9a2bd03b48e6e717188c540b54d3a40548df97a8cb48af"
+source_sha256 = "76f8dece441203ae6aba14e249fb2c39b5f89f0da1fa29c15774e712f43f729b"
+body_sha256 = "637293d174af842bc01ba7e5ae56890a21f85a53acb7b3361edd1b1154d7523c"
 
 [[document]]
 path = "docs/reference/ui-gallery.html"
@@ -265,8 +265,8 @@ id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
 tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "5e2a349d4406f074f00383a5a15faaacc4dfe70169fe0ce3ed53bd4ec20927f2"
-body_sha256 = "723d0591a30a41bcbaca6b8687bbecc4e9fdc992d9efda3d5b71b58220134f31"
+source_sha256 = "78d39ae198d24337c391723171f704a6d12b52b9453e7a7654ba3b8bcdfba98b"
+body_sha256 = "3b28ef2501aa93a17d2ab6dd6602b69f145cf2d38b10c47b1a1c6129aabab6da"
 
 [[topic]]
 id = "documentation"

@@ -221,6 +221,46 @@ def test_js_measurements_follow_syntax_not_lines(tmp_path: Path) -> None:
     assert plain["src/a.js"] == {"module_statements": 12}
 
 
+def _component(handlers: int) -> str:
+    """`createElement as h` 컴포넌트 — 렌더 분기 둘(삼항·`&&`)과 분기 셋짜리 인라인 핸들러 N개."""
+    buttons = "\n".join(
+        f'    h("button", {{ onClick: () => {{ if (a === {index}) b(); if (b) a(); if (c) c(); }} }}),'
+        for index in range(handlers)
+    )
+    return ('import { createElement as h } from "react";\n'
+            "export function Panel({ a, b, c }) {\n"
+            '  return h("div", { className: a ? "on" : "off" },\n'
+            f"{buttons}\n"
+            '    h("input", { onKeyDown(event) { if (event.key === "x" && a) b(); } }),\n'
+            '    c && h("span", null, "c"));\n'
+            "}\n")
+
+
+@pytest.mark.parametrize("handlers", [1, 12])
+def test_props_object_callbacks_are_their_own_units_and_merge_by_max(tmp_path: Path, handlers: int) -> None:
+    raw = _js_units(tmp_path, f"src/panel_{handlers}.ts", _component(handlers))
+    units = _metrics(measure.merge_units(raw))
+    prefix = f"src/panel_{handlers}.ts::Panel"
+    # 컴포넌트는 핸들러 수와 무관하게 제 렌더 분기(삼항·`&&`)만 센다.
+    assert units[prefix] == {"function_complexity": 3, "function_statements": 1}
+    assert units[f"{prefix}.onKeyDown"] == {"function_complexity": 3, "function_statements": 2}
+    # 같은 이름의 핸들러는 위치 번호 없이 한 단위로 합쳐지고 축마다 최댓값이다.
+    assert [unit.qual for unit in raw].count("Panel.onClick") == handlers
+    assert units[f"{prefix}.onClick"] == {"function_complexity": 4, "function_statements": 6}
+    assert not any("onClick" in ident and not ident.endswith("Panel.onClick") for ident in units)
+
+
+def test_duplicate_names_merge_each_metric_by_its_own_max(tmp_path: Path) -> None:
+    source = ('const h = (tag, props) => createElement(tag, props);\n'
+              "export function Row({ a, b }) {\n"
+              '  return [h("a", { onClick: () => { if (a) b(); } }),\n'
+              '    h("b", { onClick: () => { b(); b(); b(); } })];\n'
+              "}\n")
+    units = _metrics(measure.merge_units(_js_units(tmp_path, "src/row.ts", source)))
+    assert units["src/row.ts::Row.onClick"] == {"function_complexity": 2, "function_statements": 3}
+    assert units["src/row.ts::Row"] == {"function_complexity": 1, "function_statements": 1}
+
+
 def test_a_synthetic_js_overflow_is_caught(tmp_path: Path) -> None:
     methods = "\n".join(f"  handleItem{index}() {{ return {index}; }}" for index in range(21))
     branches = "\n".join(f"  if (x === {index}) y = {index};" for index in range(10))
