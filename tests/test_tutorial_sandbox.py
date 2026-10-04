@@ -161,6 +161,44 @@ def test_switch_pushes_only_the_active_workspace(tmp_path, monkeypatch):
     assert pushed == ["job"]
 
 
+def _assert_boot_shaped(app, pushed: list, phase: str) -> None:
+    """Every channel pushed on activation keeps the screen contract of a boot pull."""
+    channels = {screen: snap for screen, snap in pushed if screen != "tutorial"}
+    assert {"job", "library", "tpl", "pool", "editor", "workbench", "authoring"} <= set(channels), phase
+    for screen, snap in channels.items():
+        assert isinstance(snap, dict) and snap, f"{phase}: {screen} 채널에 빈 스냅샷이 갔습니다"
+        # Same shape the web already accepts at boot (`initial`) — not a stale or empty cache.
+        assert set(snap) == set(app.initial(screen)), f"{phase}: {screen} 스냅샷 형상이 부팅과 다릅니다"
+    job = channels["job"]
+    # frontend/src/screens/job_read.ts fullSnapshot(): the render throws without these two.
+    assert isinstance(job["has_data"], bool) and isinstance(job["has_job"], bool), phase
+
+
+def test_activation_pushes_boot_shaped_snapshots_on_enter_and_leave(tmp_path, monkeypatch):
+    """#1126 회귀: 막 조립한 연습 그래프의 「문서 만들기」 캐시는 빈 ``{}`` 였고, 그것이 그대로 밀려
+    웹이 「job snapshot: has_data/has_job 판정이 없습니다」로 렌더를 멈췄다."""
+    from hwpxfiller.webapp.app import WebFrontend
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    app = WebFrontend()
+    for screen in ("job", "editor", "library"):  # what the web pulls at boot
+        app.initial(screen)
+    tutorial = app.controllers["tutorial"]
+    pushed: list = []
+    monkeypatch.setattr(app, "_window", object())
+    monkeypatch.setattr("hwpxfiller.webapp.app.product_api.ProductApiClient.for_window",
+                        lambda _window: type("Sink", (), {"push": lambda _s, screen, snap: pushed.append((screen, snap))})())
+    guard = tutorial.dispatch("preflight", {"screen": "job", "action": "start", "scenario_id": "first_hwpx"})
+    tutorial.dispatch("start", {"scenario_id": "first_hwpx", "transition_token": guard["transition_token"]})
+    _assert_boot_shaped(app, pushed, "enter")
+    pushed.clear()
+    tutorial.dispatch("select", {"scenario_id": "option_apply"})  # lesson switch inside practice
+    _assert_boot_shaped(app, pushed, "switch")
+    pushed.clear()
+    assert tutorial.dispatch("exit", {})["ok"]
+    _assert_boot_shaped(app, pushed, "leave")
+
+
 def test_crash_in_practice_boots_into_user_environment_and_resumes(tmp_path, monkeypatch):
     """연습 중 비정상 종료 — 다음 기동은 사용자 환경, 과정은 같은 연습 홈에서 이어진다."""
     from hwpxfiller.webapp.app import WebFrontend
