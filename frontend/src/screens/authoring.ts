@@ -1224,15 +1224,21 @@ function Outline({ controller, item, view, counts, onSelect, onMenu, onContext }
   const structureNodes = spineNodes(spine, !filtering);
 
   const tabButton = (key: "structure" | "fields", id: string, label: ReactNode[]) => h("button", { key, type: "button", role: "tab", id, className: "authoring-outline-tab",
-    tabIndex: tab === key ? 0 : -1, "aria-selected": tab === key, "aria-controls": `${id}-panel`, onClick: () => setTab(key), onFocus: () => setTab(key) }, ...label);
+    tabIndex: tab === key ? 0 : -1, "aria-selected": tab === key, "aria-controls": `${id}-panel`, "data-outline-view": key,
+    onClick: () => setTab(key), onFocus: () => setTab(key) }, ...label);
   const tree = (key: "structure" | "fields", labelledBy: string, nodes: TreeNode[], path: string[]) => nodes.length > 0 && h(OutlineTree, { key: `${item.id}:${key}:${filtering ? "filter" : "all"}`,
     labelledBy, nodes, current: path, inactive: tab !== key, onSelect, onMenu, onHighlight: highlight });
   return h("aside", { className: "authoring-outline", "aria-label": "템플릿 구조", onContextMenu: onContext },
     h("div", { className: "authoring-outline-head" },
       sectionLabel("템플릿 구조", { id: "authoring-outline-title" }),
-      // 두 보기는 한 쌍의 APG tabs 다(자동 활성화 — ←→ 로 옮기면 그 보기가 선다).
+      // 두 보기는 한 쌍의 APG tabs 다(자동 활성화 — ←→ 로 옮기면 그 보기가 선다). 화살표가 옮긴 탭은 키 처리 안에서 고른다 —
+      // focus 사건은 창이 OS 초점을 쥘 때만 오므로(배경 창이면 activeElement 만 옮는다) 활성화를 그 사건에 맡기지 않는다.
       h("div", { className: "authoring-outline-tabs", role: "tablist", "aria-labelledby": "authoring-outline-title",
-        onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal"); } },
+        onKeyDown: (event: any) => {
+          if (!roveFocus(event, event.currentTarget, '[role="tab"]', "horizontal")) return;
+          const moved = event.currentTarget.ownerDocument?.activeElement?.getAttribute?.("data-outline-view");
+          if (moved === "structure" || moved === "fields") setTab(moved);
+        } },
         tabButton("structure", "authoring-outline-structure", ["구조"]),
         tabButton("fields", "authoring-outline-fields", ["필드", " ", h("span", { key: "count", className: "authoring-tab-count" }, String(fields.length))])),
       h("label", { className: "authoring-filter" }, icon("search"),
