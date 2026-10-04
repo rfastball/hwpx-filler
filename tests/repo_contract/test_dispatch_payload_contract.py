@@ -56,6 +56,7 @@ SCREEN_OF_FILE = {
     "src/screens/data_picker.ts": "pool",
     "src/screens/job_read.ts": "job",
     "src/screens/data_zone.ts": "job",
+    "src/screens/job_column_panel.ts": "job",
     # 튜토리얼(#894)은 화면이 아니라 셸 레벨 표면이지만, 자기 채널의 액션을 자기 파일에서
     # 전부 부르므로 페이로드 대조 대상이다(발신은 화면-지역 헬퍼 `send` 하나).
     "src/tutorial/panel.ts": "tutorial",
@@ -67,6 +68,7 @@ LOCAL_SCREEN = {
     "src/screens/workbench.ts": {"sendWb": "workbench", "commit": "workbench"},
     "src/screens/job_read.ts": {"zone": "job"},
     "src/screens/data_zone.ts": {"zone": "job"},
+    "src/screens/job_column_panel.ts": {"zone": "job"},
     "src/tutorial/panel.ts": {"send": "tutorial"},
 }
 

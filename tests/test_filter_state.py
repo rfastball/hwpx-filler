@@ -313,6 +313,44 @@ def test_column_values_context_and_blank_last() -> None:
     assert m2.column_values("비고", ROWS) == ["행복도시 납품", "긴급", ""]  # (빈값) 말미
 
 
+def test_column_values_follow_own_text_condition() -> None:
+    """같은 열의 부분일치는 값 목록을 좁힌다(#1137) — 체크리스트와 「그리고」라 배제된 값은 고를 거리가 아니다.
+
+    「(전체)」(values=None)는 그대로 「맞는 값 전부」이고, 보이는 행과 목록이 같은 말을 한다.
+    """
+    m = model()
+    m.set_text("수요기관", "행복")
+    assert m.column_values("수요기관", ROWS) == ["행복도시건설청"]
+    assert m.column_state("수요기관")["values"] is None
+    assert m.visible_indices(ROWS) == [0, 2]
+    assert m.column_values("비고", ROWS) == [""]  # 다른 열(수요기관 「행복」)이 남긴 행의 비고만
+    m.set_text("수요기관", "")
+    m.set_text("비고", "긴")  # (빈값)은 「긴」을 포함하지 않는다 — 말미 (빈값)도 빠진다
+    assert m.column_values("비고", ROWS) == ["긴급"]
+
+
+def test_column_values_keep_own_checklist_out_under_text() -> None:
+    """부분일치 아래에서도 자기 체크리스트는 빼고 본다 — 맞는 값 중 끈 값을 다시 켤 수 있다."""
+    m = model()
+    m.set_text("공고명", "납품")
+    m.set_values("공고명", [])
+    assert m.column_values("공고명", ROWS) == ["닭고기 급식 납품"]  # 꺼져 있어도 목록에 선다
+    assert m.visible_indices(ROWS) == []
+    m.set_values("공고명", ["닭고기 급식 납품"])
+    assert m.visible_indices(ROWS) == [2]
+    # 부분일치가 배제한 값을 체크리스트에 들고 있어도 목록에는 서지 않는다(행도 서지 않는다).
+    m.set_values("공고명", ["물품 구매", "닭고기 급식 납품"])
+    assert m.column_values("공고명", ROWS) == ["닭고기 급식 납품"]
+    assert m.visible_indices(ROWS) == [2]
+
+
+def test_column_values_follow_own_range_condition() -> None:
+    """범위 조건도 같은 열의 조건이다 — 범위 밖 금액은 값 목록에 서지 않는다."""
+    m = model()
+    m.set_range("금액", RangeCondition(RangeClause("ge", "2,000,000")))
+    assert m.column_values("금액", ROWS) == ["2,500,000원", "3,000,000원"]
+
+
 # ------------------------------------------------------------- 정의줄·칩 문안
 def test_describe_parts_shapes() -> None:
     m = model()

@@ -1094,20 +1094,24 @@ class FilterModel:
         second = self._clause_pass(kind, cond.second, cell)
         return (first and second) if cond.joiner == "and" else (first or second)
 
-    def col_pass(self, record: "dict", *, except_column: "str | None" = None) -> bool:
-        """열 조건 전부(AND) — ``except_column`` 은 값 목록 산출용 자기 제외(엑셀 동형)."""
-        return self._conds_pass(self._cols, record, except_column=except_column)
+    def col_pass(self, record: "dict", *, except_values: "str | None" = None) -> bool:
+        """열 조건 전부(AND) — ``except_values`` 는 값 목록 산출용으로 그 열의 **값 체크리스트만** 뺀다.
+
+        그 열의 부분일치·범위 조건은 그대로 건다(#1137) — 값 목록은 체크를 풀고 다시 걸 수 있게
+        자기 체크리스트만 빼고 보며, 같은 열의 다른 조건이 이미 배제한 값은 고를 거리가 아니다.
+        """
+        return self._conds_pass(self._cols, record, except_values=except_values)
 
     def _conds_pass(
         self, conds: "dict[str, _ColumnCondition]", record: "dict", *,
-        except_column: "str | None" = None,
+        except_values: "str | None" = None,
     ) -> bool:
         """열 조건 묶음 하나의 AND 술어 — 지금 조건과 저장본 무리 구성원이 같은 술어를 쓴다."""
         for col, cond in conds.items():
-            if col == except_column or not cond.is_active():
+            if not cond.is_active():
                 continue
             cell = cell_text(record, col)
-            if cond.values is not None and cell not in cond.values:
+            if cond.values is not None and col != except_values and cell not in cond.values:
                 return False
             if cond.text and not jamo_contains(cell, cond.text):
                 return False
@@ -1219,10 +1223,13 @@ class FilterView:
 
     # ------------------------------------------------- 값 목록(체크리스트 소재)
     def column_values(self, column: str) -> "list[str]":
-        """열 체크리스트 값 목록 — 다른 열 조건+그룹 통과 행 기준, 등장 순서, (빈값) 말미.
+        """열 체크리스트 값 목록 — 다른 열 조건+그룹+켜진 저장본 통과 행 기준, 등장 순서, (빈값) 말미.
 
-        자기 열 조건은 제외하고 본다(엑셀 동형 — 체크를 풀 수 있어야 하므로). 빈 문자열이
-        하나라도 있으면 정식 값으로 말미에 포함한다((빈값) 일급, 결정 23).
+        자기 열의 **값 체크리스트만** 제외하고 본다(엑셀 동형 — 체크를 풀 수 있어야 하므로). 같은
+        열의 부분일치·범위 조건은 건다(#1137): 체크리스트와 「그리고」로 묶이므로 그 조건이 배제한
+        값은 체크해도 행이 서지 않는다 — 엑셀 검색 상자처럼 목록을 맞는 값으로 좁혀, 「(전체)」는
+        「조건에 맞는 값 전부」를 뜻한다. 빈 문자열이 하나라도 있으면 정식 값으로 말미에 포함한다
+        ((빈값) 일급, 결정 23).
         """
         self._m._require(column)
         seen: "dict[str, None]" = {}
@@ -1230,7 +1237,7 @@ class FilterView:
         for i, r in enumerate(self._records):
             if not (
                 self._preset_ok(i)
-                and self._m.col_pass(r, except_column=column)
+                and self._m.col_pass(r, except_values=column)
                 and self._group_pass(r)
             ):
                 continue

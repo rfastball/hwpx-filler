@@ -172,13 +172,13 @@ function_complexity = 18
 function_complexity = 33
 
 [budget."frontend/src/screens/data_zone.ts"]
-module_statements = 715
+module_statements = 696
 
 [budget."frontend/src/screens/data_zone.ts::CardEditor"]
 function_complexity = 22
 
 [budget."frontend/src/screens/data_zone.ts::ColumnPanel"]
-function_complexity = 17
+function_complexity = 14
 
 [budget."frontend/src/screens/data_zone.ts::ColumnPicker"]
 function_complexity = 18
@@ -195,7 +195,7 @@ function_complexity = 25
 
 [budget."frontend/src/screens/data_zone.ts::JobDataZone"]
 function_complexity = 68
-function_statements = 74
+function_statements = 73
 
 [budget."frontend/src/screens/data_zone.ts::PresetChip"]
 function_complexity = 11
