@@ -489,3 +489,66 @@ def test_proportional_font_is_single_source(home):
     assert settings.is_proportional_font("dotumche") is False
     # 비례폭 목록은 유효 열거형의 부분집합이어야 한다(오타 방지).
     assert set(settings.PROPORTIONAL_DRAFT_FONTS) <= set(settings.VALID_DRAFT_FONTS)
+
+
+
+# ------------------------------------------------ 작업 공간 설정 분할(#1126)
+def test_workspace_keys_follow_the_active_workspace_and_shell_keys_stay_in_the_app_home(home, monkeypatch):
+    """튜토리얼 연습 홈이 활성이면 작업 환경 키만 그 홈의 파일로 간다 — 셸 키·사용자 파일은 그대로."""
+    from hwpxfiller.host import locations
+
+    settings.save_last_output_directory(str(home / "내 결과"))
+    user_file = (home / "settings.json").read_bytes()
+    practice = home / "tutorial_workspace" / "lessons" / "first_hwpx" / "b1"
+    monkeypatch.setattr(locations, "_active_workspace", practice)
+    assert settings.load_last_output_directory() == ""
+    settings.save_last_output_directory(str(practice / "결과"))
+    settings.save_job_collapsed_groups(["연습"])
+    settings.save_template_group_map("hwpx", {"공고.hwpx": "연습"})
+    assert (home / "settings.json").read_bytes() == user_file, "연습 저장이 사용자 설정을 바꿨습니다"
+    settings.save_theme("dark")  # 앱 전역 셸 키는 실제 앱 홈으로 간다
+    assert json.loads((home / "settings.json").read_text(encoding="utf-8"))["theme"] == "dark"
+    assert json.loads((practice / "settings.json").read_text(encoding="utf-8")) == {
+        "last_output_directory": str(practice / "결과"),
+        "job_collapsed_groups": ["연습"],
+        "template_groups": {"hwpx": {"공고.hwpx": "연습"}},
+    }
+    monkeypatch.setattr(locations, "_active_workspace", None)
+    assert settings.load_last_output_directory() == str(home / "내 결과")
+    assert settings.load_job_collapsed_groups() == []
+
+
+def test_recollapse_job_group_renames_drops_or_ignores(home):
+    settings.save_job_collapsed_groups(["가", "나"])
+    settings.recollapse_job_group("없는 그룹", "다")  # 접혀 있지 않던 이름 — 무변이
+    assert settings.load_job_collapsed_groups() == ["가", "나"]
+    settings.recollapse_job_group("가", "다")  # 개명 — 접힘 승계
+    assert settings.load_job_collapsed_groups() == ["나", "다"]
+    settings.recollapse_job_group("나")  # 해산 — 접힘만 걷는다
+    assert settings.load_job_collapsed_groups() == ["다"]
+
+
+def test_template_group_state_tolerates_a_corrupt_media_slot(home):
+    (home / "settings.json").write_text(json.dumps({
+        "template_groups": {"hwpx": ["깨진 값"], "txt": {"a.txt": "그룹"}},
+        "template_collapsed_groups": {"hwpx": "깨진 값", "txt": ["그룹"]},
+    }), encoding="utf-8")
+    assert settings.load_template_group_map("hwpx") == {}
+    assert settings.load_template_collapsed_groups("hwpx") == []
+    assert settings.load_template_group_map("txt") == {"a.txt": "그룹"}
+    assert settings.load_template_collapsed_groups("txt") == ["그룹"]
+
+
+def test_clear_tutorial_manifest_is_idempotent_without_a_tutorial_bucket(home):
+    settings.save_theme("light")
+    settings.clear_tutorial_manifest()
+    assert settings.load_tutorial_manifest() is None
+    assert json.loads((home / "settings.json").read_text(encoding="utf-8"))["theme"] == "light"
+
+
+def test_alert_survives_an_unwritable_log_home(tmp_path, monkeypatch, capsys):
+    blocker = tmp_path / "파일"
+    blocker.write_text("", encoding="utf-8")
+    monkeypatch.setenv("HWPXFILLER_HOME", str(blocker / "home"))  # 부모가 파일 — 로그 폴더를 못 만든다
+    settings.alert("경보 본문")
+    assert "경보 본문" in capsys.readouterr().err

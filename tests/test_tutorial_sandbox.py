@@ -292,3 +292,31 @@ def test_lesson_seeding_failure_leaves_progress_and_workspace_unchanged(tmp_path
     assert all(app.controllers[name] is controller for name, controller in user.items())
     assert not tutorial.snapshot()["practice"]["active"]
     assert app._workspaces.practice is None
+
+
+
+def test_practice_entry_validation_rejects_unknown_moved_missing_and_modified(tmp_path):
+    workspace = TutorialWorkspace(tmp_path / "tutorial")
+    seeded = workspace.seed("first_hwpx")
+    home = seeded["home"]
+    entry = seeded["assets"]["공고목록.xlsx"]
+    assert workspace.validate(entry, home) == (True, "")
+    assert workspace.validate({**entry, "name": "남의 파일.xlsx"}, home)[1] == "연습 파일 경로를 확인할 수 없습니다."
+    elsewhere = tmp_path / "공고목록.xlsx"
+    elsewhere.write_bytes(Path(entry["path"]).read_bytes())
+    assert workspace.validate({**entry, "path": str(elsewhere)}, home)[1] == "연습 파일이 다른 위치를 가리킵니다."
+    Path(entry["path"]).write_bytes(b"changed")
+    assert workspace.validate(entry, home)[1] == "연습 파일이 수정됐습니다. 현재 파일을 보존합니다."
+    Path(entry["path"]).unlink()
+    assert workspace.validate(entry, home)[1] == "연습 파일이 없거나 이동했습니다."
+    assert workspace.validate({"name": "공고목록.xlsx"}, home)[1] == "연습 파일 상태를 확인할 수 없습니다."
+
+
+def test_sweep_without_a_lesson_folder_is_a_no_op_and_keeps_the_current_home(tmp_path):
+    workspace = TutorialWorkspace(tmp_path / "tutorial")
+    workspace.sweep("first_hwpx", tmp_path / "없음")  # 그 과정을 한 번도 시작하지 않았다
+    assert not (tmp_path / "tutorial").exists()
+    first = workspace.seed("first_hwpx")["home"]
+    second = workspace.seed("first_hwpx")["home"]
+    workspace.sweep("first_hwpx", second)
+    assert not Path(first).exists() and Path(second).is_dir()
