@@ -164,55 +164,73 @@ class PracticeFiles:
         except (KeyError, OSError, TypeError, ValueError):
             return False
 
-    def cleanup_preview(self) -> dict:
+    def _scan(self) -> tuple[dict, dict, list[str | None]]:
+        """(preview, manifest, per-entry action): ``unlink``, ``forget`` or ``None``."""
         referenced = self._referenced()
-        rows = []
-        for entry in self._manifest()["entries"]:
+        manifest = self._manifest()
+        rows, actions = [], []
+        for entry in manifest["entries"]:
             if not isinstance(entry, dict):
                 raise ValueError("연습 파일 기록이 손상됐습니다. 정리를 중단했습니다.")
             ready, reason = self.validate(entry)
+            action = "unlink" if ready else None
             path = Path(entry.get("path", ""))
             if not ready and self._vanished(entry):
                 # Nothing to delete; confirming cleanup drops the stale record.
-                ready, reason = True, MISSING
+                ready, reason, action = True, MISSING, "forget"
             key = _path_key(path)
             if ready and key in referenced:
-                ready, reason = False, referenced[key]
+                ready, reason, action = False, referenced[key], None
             rows.append({"name": entry.get("name", ""), "path": str(path),
                          "delete": ready, "reason": reason})
+            actions.append(action)
         token = hashlib.sha256(repr(rows).encode("utf-8")).hexdigest()
-        return {"token": token, "rows": rows, "delete_count": sum(row["delete"] for row in rows)}
+        preview = {"token": token, "rows": rows,
+                   "delete_count": sum(row["delete"] for row in rows)}
+        return preview, manifest, actions
+
+    def cleanup_preview(self) -> dict:
+        return self._scan()[0]
 
     def cleanup(self, token: str) -> dict:
-        preview = self.cleanup_preview()
+        # Job and pool writers wait from the reference scan until the last unlink, so
+        # a job save or data registration cannot slip in between and lose its file.
+        # Order: job lock, then pool lock. No other writer nests the two.
+        with self.jobs.write_lock(), self.pools.write_lock():
+            return self._cleanup_locked(token)
+
+    def _cleanup_locked(self, token: str) -> dict:
+        preview, manifest, actions = self._scan()
         if token != preview["token"]:
             raise ValueError("연습 파일 상태가 바뀌었습니다. 정리 내용을 다시 확인하세요.")
-        manifest = self._manifest()
-        deletions = [row for row in preview["rows"] if row["delete"]]
         # Check the whole set before deleting anything. A changed file must not
         # turn a confirmed cleanup into a partial, surprising operation.
         targets: list[tuple[str, bool]] = []
-        for row in deletions:
-            entry = next((item for item in manifest["entries"]
-                          if item.get("path") == row["path"]), None)
-            if entry is None:
+        for entry, action in zip(manifest["entries"], actions, strict=True):
+            if action == "unlink" and not self.validate(entry)[0]:
                 raise ValueError("연습 파일 상태가 바뀌었습니다. 정리 내용을 다시 확인하세요.")
-            vanished = row["reason"] == MISSING
-            if not (self._vanished(entry) if vanished else self.validate(entry)[0]):
-                raise ValueError("연습 파일 상태가 바뀌었습니다. 정리 내용을 다시 확인하세요.")
-            targets.append((row["path"], not vanished))
+            if action is not None:
+                targets.append((entry["path"], action == "unlink"))
         removed: set[str] = set()
+        failure: BaseException | None = None
         try:
             for path, exists in targets:
                 if exists:
                     Path(path).unlink()
                 removed.add(path)
-        finally:
-            # Record every removal that happened, even when a later unlink failed; the
-            # failure itself still propagates. If this save fails too, the records left
-            # behind are recognised as vanished copies by the next preview.
-            if removed:
-                manifest["entries"] = [e for e in manifest["entries"]
-                                       if e.get("path") not in removed]
+        except BaseException as exc:  # recorded below, then re-raised unchanged
+            failure = exc
+        # Record every removal that happened, even when a later unlink failed. If this
+        # save fails too, the next preview recognises the leftovers as vanished copies.
+        if removed:
+            manifest["entries"] = [e for e in manifest["entries"] if e.get("path") not in removed]
+            try:
                 settings.save_tutorial_practice(manifest)
+            except Exception as save_error:
+                if failure is None:
+                    raise
+                # The deletion error says why cleanup stopped; keep it as the raised one.
+                raise failure from save_error
+        if failure is not None:
+            raise failure
         return {"removed": len(removed), "preserved": len(preview["rows"]) - len(removed)}

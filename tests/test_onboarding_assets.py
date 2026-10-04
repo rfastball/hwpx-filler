@@ -380,17 +380,22 @@ def test_shipped_manual_workbook_has_the_practice_rows_without_blanks() -> None:
 
 
 def _jobs(*jobs):
-    """Job registry double: the corruption-aware listing cleanup must use."""
+    """Job registry double: the corruption-aware listing and writer lock cleanup uses."""
+    import threading
     from types import SimpleNamespace
 
-    return SimpleNamespace(list_jobs_with_corruption=lambda: (list(jobs), []))
+    lock = threading.RLock()
+    return SimpleNamespace(list_jobs_with_corruption=lambda: (list(jobs), []),
+                           write_lock=lambda: lock)
 
 
 def _pools(*entries):
     """Dataset pool double: ``(slot key, reference)`` entries and no corrupt files."""
+    import threading
     from types import SimpleNamespace
 
-    return SimpleNamespace(list_references=lambda: (list(entries), []))
+    lock = threading.RLock()
+    return SimpleNamespace(list_references=lambda: (list(entries), []), write_lock=lambda: lock)
 
 
 def test_practice_cleanup_preserves_changed_and_referenced_files(tmp_path: Path) -> None:
@@ -665,3 +670,125 @@ def test_practice_cleanup_records_partial_progress_and_recovers_lost_records(
     assert practice.cleanup(preview["token"]) == {"removed": 4, "preserved": 1}
     remaining = settings.load_tutorial_practice()["entries"]
     assert [entry["batch"] for entry in remaining] == ["forged"]
+
+
+def test_practice_cleanup_holds_job_and_pool_writers_from_scan_to_delete(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A job save or data registration cannot land between the reference scan and unlink."""
+    import threading
+
+    from hwpxfiller.external import tutorial_practice
+
+    practice, jobs, pools = _real_practice(tmp_path)
+    paths = [Path(entry["path"]) for entry in practice.prepare()["entries"]]
+    unlink = Path.unlink
+    seen: list[tuple[bool, bool]] = []
+
+    def probe(lock) -> bool:
+        free = lock.acquire(blocking=False)
+        if free:
+            lock.release()
+        return free
+
+    def unlink_with_probe(self, *args, **kwargs):
+        # 다른 스레드(웹 브리지 호출)에서 같은 디렉터리의 writer 잠금을 잡아 본다.
+        result: list[bool] = []
+        other = threading.Thread(target=lambda: result.extend(
+            (probe(jobs.write_lock()), probe(pools.write_lock()))))
+        other.start()
+        other.join()
+        seen.append((result[0], result[1]))
+        return unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(tutorial_practice.Path, "unlink", unlink_with_probe)
+    assert practice.cleanup(practice.cleanup_preview()["token"])["removed"] == 4
+    assert seen == [(False, False)] * 4
+    assert not any(path.exists() for path in paths)
+
+
+def test_practice_cleanup_keeps_the_deletion_error_when_the_record_save_also_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The user sees why cleanup stopped; the bookkeeping failure is chained, not substituted."""
+    from hwpxfiller.external import settings, tutorial_practice
+
+    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                                               _jobs(), _pools())
+    paths = [Path(entry["path"]) for entry in practice.prepare()["entries"]]
+    unlink = Path.unlink
+    calls = 0
+
+    def locked_third(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise PermissionError("백신이 파일을 잡고 있습니다")
+        return unlink(self, *args, **kwargs)
+
+    save = settings.save_tutorial_practice
+    monkeypatch.setattr(tutorial_practice.Path, "unlink", locked_third)
+    monkeypatch.setattr(tutorial_practice.settings, "save_tutorial_practice",
+                        lambda _value: (_ for _ in ()).throw(OSError("settings disk failed")))
+    with pytest.raises(PermissionError, match="백신") as raised:
+        practice.cleanup(practice.cleanup_preview()["token"])
+    assert isinstance(raised.value.__cause__, OSError)
+    assert "settings disk failed" in str(raised.value.__cause__)
+    monkeypatch.setattr(tutorial_practice.Path, "unlink", unlink)
+    monkeypatch.setattr(tutorial_practice.settings, "save_tutorial_practice", save)
+    assert [path.exists() for path in paths] == [False, False, True, True]
+    rows = practice.cleanup_preview()["rows"]
+    assert [row["delete"] for row in rows] == [True] * 4
+    assert [row["reason"] for row in rows] == ["연습 파일이 없거나 이동했습니다."] * 2 + [""] * 2
+
+
+def test_practice_vanished_record_requires_an_app_copy_path_that_is_really_gone(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Only a missing file at this app's own generated path is a droppable record."""
+    from hwpxfiller.external import tutorial_practice
+
+    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                                               _jobs(), _pools())
+    entry = next(item for item in practice.prepare()["entries"] if item["name"].endswith(".txt"))
+    present = dict(entry)
+    assert not practice._vanished(present)  # 파일이 있으면 기록을 걷지 않는다.
+    Path(entry["path"]).unlink()
+    assert practice._vanished(entry)
+    assert not practice._vanished({**entry, "name": "사용자 문서.txt"})
+    assert not practice._vanished({**entry, "batch": ""})
+    assert not practice._vanished({**entry, "batch": None})
+    assert not practice._vanished({key: value for key, value in entry.items() if key != "batch"})
+    assert not practice._vanished({**entry, "path": str(practice.data_root / Path(entry["path"]).name)})
+
+    lstat = Path.lstat
+
+    def denied(self, *args, **kwargs):
+        if str(self) == entry["path"]:
+            raise PermissionError("접근 거부")
+        return lstat(self, *args, **kwargs)
+
+    monkeypatch.setattr(tutorial_practice.Path, "lstat", denied)
+    assert not practice._vanished(entry)  # 확인할 수 없는 상태는 없는 것으로 보지 않는다.
+
+
+def test_practice_cleanup_reference_scan_covers_pool_databases_and_empty_runs(tmp_path: Path) -> None:
+    """A pool entry's ``db`` path protects a copy too; a cleanup with nothing to do writes nothing."""
+    from types import SimpleNamespace
+
+    from hwpxfiller.external import settings, tutorial_practice
+
+    empty = tutorial_practice.PracticeFiles(tmp_path / "t0", tmp_path / "h0", _jobs(), _pools())
+    assert empty.cleanup(empty.cleanup_preview()["token"]) == {"removed": 0, "preserved": 0}
+    assert settings.load_tutorial_practice() == {"version": 1, "entries": []}
+
+    pools = _pools()
+    practice = tutorial_practice.PracticeFiles(tmp_path / "templates", tmp_path / "home",
+                                               _jobs(), pools)
+    data = Path(practice.prepare()["entries"][-1]["path"])
+    pools.list_references = lambda: ([("slot", SimpleNamespace(opts={"db": str(data), "path": ""}))], [])
+    preview = practice.cleanup_preview()
+    row = next(row for row in preview["rows"] if row["path"] == str(data))
+    assert not row["delete"] and row["reason"] == "등록 데이터가 참조합니다."
+    assert practice.cleanup(preview["token"]) == {"removed": 3, "preserved": 1}
+    assert data.is_file()
