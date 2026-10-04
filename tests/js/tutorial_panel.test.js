@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TutorialLessons, TutorialPanel, anchorSelector, featuredAction, featuredLesson, lessonAction, placeCoach } from "../../frontend/src/tutorial/panel.ts";
+import { TutorialLessons, TutorialPanel, anchorSelector, featuredAction, featuredLesson, lessonAction, placeCoach, runResultAction } from "../../frontend/src/tutorial/panel.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
 const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "prepare", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
@@ -260,4 +260,25 @@ test("a paused re-run of a completed lesson resumes from the featured block inst
   assert.doesNotMatch(html, /COPY:pause|COPY:skip/);
   assert.equal(count(html, /과정 3</g), 1);
   assert.deepEqual(press(snap, "tutorialContinue"), [["resume", "contract_txt"]]);
+});
+
+test("finale result action dismisses the card only after navigation succeeds; on its own screen it reveals the target", async () => {
+  const trace = (navigated) => {
+    const calls = [];
+    return { calls, steps: {
+      navigate: async () => { calls.push("navigate"); if (navigated instanceof Error) throw navigated; return navigated; },
+      reveal: () => calls.push("reveal"), dismiss: () => calls.push("dismiss") } };
+  };
+  const cancelled = trace(false);
+  await runResultAction("job", "library", cancelled.steps);
+  assert.deepEqual(cancelled.calls, ["navigate"], "취소된 이탈·실패한 dispatch 는 결과 카드를 남긴다");
+  const moved = trace(true);
+  await runResultAction("job", "library", moved.steps);
+  assert.deepEqual(moved.calls, ["navigate", "dismiss"]);
+  const here = trace(true);
+  await runResultAction("job", "job", here.steps);
+  assert.deepEqual(here.calls, ["dismiss", "reveal"], "같은 화면은 이동 없이 대상으로 간다");
+  const failed = trace(new Error("dispatch failed"));
+  await assert.rejects(runResultAction("job", "library", failed.steps));
+  assert.deepEqual(failed.calls, ["navigate"]);
 });

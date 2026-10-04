@@ -90,6 +90,18 @@ function visibleElement(doc: ParentNode, selector: string | null): HTMLElement |
 
 const noHost = () => null;
 
+/** Finale result action. On another screen the card is dismissed only after navigation succeeds — a cancelled leave
+ *  guard or a failed dispatch keeps the result summary on screen. On the result's own screen it reveals the target. */
+export async function runResultAction(resultScreen: string, screen: string | null,
+  steps: { navigate(): Promise<boolean>; reveal(): void; dismiss(): void }): Promise<void> {
+  if (resultScreen !== screen) {
+    if (await steps.navigate()) steps.dismiss();
+    return;
+  }
+  steps.dismiss();
+  steps.reveal();
+}
+
 export function lessonAction(item: Lesson, snapshot: TutorialSnapshot): string {
   if (item.completed) return "restart";
   return item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select";
@@ -398,13 +410,15 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       h("h2", null, result.title), h("p", null, result.body),
       result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
       h("div", { className: "tutorial-actions" }, ...result.actions.map((action) => h("button", { key: action.target,
-        type: "button", className: "btn sm", onClick: () => {
-          setResultDismissed(true);
-          if (result.screen !== screen) { void act("navigate", { screen: result.screen }); return; }
-          const element = visibleElement(ports.doc, anchorSelector(action.target));
-          element?.scrollIntoView({ block: "center", behavior: "instant" });
-          element?.focus({ preventScroll: true });
-        } }, action.label)), nextLesson ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: pending,
+        type: "button", className: "btn sm", onClick: () => void runResultAction(result.screen, screen, {
+          navigate: () => act("navigate", { screen: result.screen }),
+          reveal: () => {
+            const element = visibleElement(ports.doc, anchorSelector(action.target));
+            element?.scrollIntoView({ block: "center", behavior: "instant" });
+            element?.focus({ preventScroll: true });
+          },
+          dismiss: () => setResultDismissed(true),
+        }) }, action.label)), nextLesson ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: pending,
           onClick: () => void chooseLesson(nextLesson) }, result.next_scenario_label ?? nextLesson.title) : null,
         h("button", { type: "button", className: nextLesson ? "btn sm" : "btn primary sm", onClick: () => { setResultDismissed(true); setOpen(true); } }, snapshot!.copy.choose_scenario),
         exitButton())) : null,
