@@ -153,7 +153,7 @@ id = "product-scope"
 document = "docs/product.md"
 sources = ["packaging/verify_specs.py", "packaging/hwpx_filler_web.spec", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial_lessons.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxcore/package.py", "src/hwpxfiller/external/hwpx_package_io.py", "frontend/src/react/*.ts", "frontend/index.html"]
 tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_package_budget.py"]
-source_sha256 = "b3f4bc341d30c3567bd1d156ca2df155f4bd21f2135f55e280ba351f52344080"
+source_sha256 = "311144ba24db2b5a387d984190e3cec5f683f202c1287fd4f04ef6a7099e2d03"
 body_sha256 = "56ecfb5e9b4c76d5e8e3eb31d75644fbee3f92d90e808cf9a7af8e7d2596cea5"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/workspace_*.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/host/native/dialogs.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_native_positive.py"]
-source_sha256 = "372400a1683550326d72c37f43728651e7c914a996c86525f048fd4612d33832"
+source_sha256 = "4d7b72707681a2b7a2a6d96352b7e9b784d2fbb0cb03b139bd0211fc04e6ddd5"
 body_sha256 = "c2082959878c21dc3301ec0d5e20980c1bf2a4a5b6ebae3f735d08eae1224c2d"
 
 [[topic]]
@@ -225,8 +225,8 @@ id = "workflow-storage"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/external/tutorial_workspace.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts"]
 tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py"]
-source_sha256 = "15682ca769fdfef28d29a97178e0c46c7a8eb896b83b6b88c6a71cb77d9e656f"
-body_sha256 = "2eda0dc4115cad4d3347a2d4a9bcde4685ad284c0aece83c562a9bbffdfb8fa5"
+source_sha256 = "44bdda170321a49f2ed180a402d2d579fb742fa553a3ebfeaf5eaf88b668b93b"
+body_sha256 = "dd106cf25858e57672e80e9bf42c8089eedec222ae9612a5275ddbd68b3cf3e4"
 
 [[topic]]
 id = "ui-terms"

@@ -78,14 +78,13 @@ class WorkspaceSwitch:
             if practice is not None and practice.home == home:
                 self._activate(practice)
                 return
+            # 조립 중 푸시는 화면에 닿지 않는다(토큰은 활성화가 끝난 뒤에 선다). 조립이 실패하면
+            # 기본 위치를 지금 활성 그래프의 홈으로 되돌린다 — 활성 그래프도 그대로다.
             token = object()
-            previous = self._token
-            self._token = token
             activate_workspace(home)
             try:
                 graph = self._build(home, self._gate(token), token)
             except BaseException:
-                self._token = previous
                 activate_workspace(self.active.home)
                 raise
             self.practice = graph
@@ -98,9 +97,9 @@ class WorkspaceSwitch:
 
     def _activate(self, graph: WorkspaceGraph) -> None:
         activate_workspace(graph.home)
-        self._token = graph.token
         self.active = graph
         self._adopt(graph)
+        self._token = graph.token  # 브리지 참조가 이 그래프로 바뀐 뒤에야 그 푸시가 닿는다.
         self.refresh()
 
     def refresh(self) -> None:

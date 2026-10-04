@@ -18,7 +18,9 @@ from ..external.tutorial_practice import ORIGINALS, PracticeFiles, fingerprint
 from ..external.tutorial_workspace import TutorialWorkspace
 from ..viewmodel.tutorial_lessons import BY_ID, LessonProgress
 from .onboarding_match_results import match_event
-from .onboarding_practice import capture_return, practice_resources, restore_screen, start_fresh
+from .onboarding_practice import (
+    NO_RETURN_SCREEN, capture_return, practice_resources, restore_screen, start_fresh,
+)
 
 
 def first_launch_candidate(home: Path) -> bool:
@@ -112,7 +114,7 @@ class OnboardingController:
         screen = payload["screen"]
         action = payload["action"]
         if screen not in {"job", "library", "editor", "workbench", "authoring"}:
-            raise ValueError("돌아갈 화면을 확인할 수 없습니다.")
+            raise ValueError(NO_RETURN_SCREEN)
         if action not in {"start", "select", "restart", "resume", "exit", "navigate"}:
             raise ValueError("튜토리얼 전환을 다시 시도하세요.")
         scenario = payload.get("scenario_id")
@@ -121,7 +123,7 @@ class OnboardingController:
         self._job().raise_if_generating_before_swap("튜토리얼을 전환하세요")
         destination = payload.get("destination_screen", "job") if action == "navigate" else "job"
         if destination not in {"job", "library", "editor", "workbench", "authoring"}:
-            raise ValueError("돌아갈 화면을 확인할 수 없습니다.")
+            raise ValueError(NO_RETURN_SCREEN)
         token = uuid4().hex
         if action != "navigate":
             self._pending_transition = {"token": token, "action": action, "scenario_id": scenario,
@@ -159,13 +161,14 @@ class OnboardingController:
         try:
             self._job().raise_if_generating_before_swap("연습을 종료하세요")
             self.switch.leave()
-            screen, notice = restore_screen(self, original)
         except (ValueError, OSError, KeyError) as exc:
             self._recovery = f"원래 작업으로 돌아오지 못했습니다: {exc}. 연습 종료를 다시 시도하세요."
             return {"ok": False, "error": self._recovery, "screen": "library"}
+        # Back in the user's workspace from here on, whatever happens to the screen below.
         self._return_context = None
         self._recovery = None
         self.progress.result = None
+        screen, notice = restore_screen(self, original)
         return {"ok": True, "screen": screen, "notice": notice}
 
     def _guide(self, beat: dict) -> None:

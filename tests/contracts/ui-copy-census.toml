@@ -3418,14 +3418,6 @@ text = "과정을 다시 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "돌아갈 화면을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "돌아갈 화면을 확인할 수 없습니다."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "모든 학습 기록을 지울지 확인하세요."
 
 [[sentence]]
@@ -3503,6 +3495,10 @@ text = "과정을 고르세요."
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_practice.py"
 text = "다른 연습 데이터 기록을 확인할 수 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "돌아갈 화면을 확인할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_practice.py"

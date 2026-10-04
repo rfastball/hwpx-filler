@@ -18,7 +18,9 @@ from ..external.tutorial_practice import ORIGINALS, fingerprint
 from ..external.tutorial_workspace import DATA_NAME
 from ..viewmodel.tutorial_lessons import BY_ID
 
-__all__ = ["capture_return", "practice_resources", "restore_screen", "start_fresh"]
+__all__ = ["NO_RETURN_SCREEN", "capture_return", "practice_resources", "restore_screen", "start_fresh"]
+
+NO_RETURN_SCREEN = "돌아갈 화면을 확인할 수 없습니다."
 
 from ..external.tutorial_workspace import MODIFIED_REASON as _MODIFIED
 
@@ -135,7 +137,19 @@ def capture_return(tutorial: Any, screen: str) -> dict:
 
 
 def restore_screen(tutorial: Any, original: dict) -> tuple[str, str]:
-    """Reopen the screen the web left; data, rows and job selection were never touched."""
+    """Reopen the screen the web left; data, rows and job selection were never touched.
+
+    Called after the switch is already back in the user's workspace: a screen that cannot
+    reopen (e.g. its job was deleted meanwhile) lands on the library with that said, never
+    on a failed exit that would keep the practice badge over the user's real data.
+    """
+    try:
+        return _reopen_screen(tutorial, original)
+    except (ValueError, OSError, KeyError):
+        return "library", NO_RETURN_SCREEN
+
+
+def _reopen_screen(tutorial: Any, original: dict) -> tuple[str, str]:
     screen = original["screen"]
     if screen == "editor" and original["editor_job"]:
         tutorial._editor().load_job(original["editor_job"])

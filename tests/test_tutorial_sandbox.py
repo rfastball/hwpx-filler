@@ -7,8 +7,11 @@
 """
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
+
+import pytest
 
 from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -203,3 +206,89 @@ def test_progress_lives_outside_user_settings_and_migrates_legacy_once(tmp_path,
     assert workspace.load_progress()["records"] == {}
     assert json.loads((home / "settings.json").read_text(encoding="utf-8")) == {"tutorial": {"lessons": legacy}}
     assert settings.load_legacy_tutorial_lessons() == legacy
+
+
+def _capture_pushes(app, monkeypatch) -> list:
+    pushed: list = []
+    monkeypatch.setattr(app, "_window", object())
+    monkeypatch.setattr("hwpxfiller.webapp.app.product_api.ProductApiClient.for_window",
+                        lambda _window: type("Sink", (), {"push": lambda _s, screen, snap: pushed.append(screen)})())
+    return pushed
+
+
+def test_exit_returns_to_user_env_even_when_the_left_screen_cannot_reopen(tmp_path, monkeypatch):
+    """Once the switch has left practice, a screen that cannot reopen never keeps the practice badge."""
+    from hwpxfiller.webapp.app import WebFrontend
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    saved = _user_environment(app, tmp_path)
+    app.controllers["editor"].load_job(saved.name)
+    guard = tutorial.dispatch("preflight", {"screen": "editor", "action": "select", "scenario_id": "first_hwpx"})
+    app.controllers["editor"].dispatch("new_session", {})  # the web leaves the editor
+    tutorial.dispatch("select", {"scenario_id": "first_hwpx", "transition_token": guard["transition_token"]})
+    assert tutorial.snapshot()["practice"]["active"]
+    for job_file in (home / "jobs").glob("*.json"):  # the captured job disappears meanwhile
+        job_file.unlink()
+    before = _user_state(app, home)
+
+    result = tutorial.dispatch("exit", {})
+    assert result == {"ok": True, "screen": "library", "notice": "돌아갈 화면을 확인할 수 없습니다."}
+    assert not tutorial.snapshot()["practice"]["active"]
+    assert locations.workspace_home() == locations.home_dir() == home
+    assert app.controllers is app._workspaces.user.controllers
+    assert _user_state(app, home) == before
+
+
+def test_failed_practice_build_keeps_the_active_workspace_and_drops_its_pushes(tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    user = dict(app.controllers)
+    pushed = _capture_pushes(app, monkeypatch)
+
+    def broken_build(_home, push, _token):
+        push("job", {"from": "half-built graph"})
+        raise OSError("graph build failed")
+
+    monkeypatch.setattr(app._workspaces, "_build", broken_build)
+    tutorial.snapshot()  # materialize every lesson record before comparing
+    before = copy.deepcopy(tutorial.progress.progress())
+    with pytest.raises(OSError, match="graph build failed"):
+        tutorial.dispatch("select", {"scenario_id": "first_hwpx"})
+    assert "job" not in pushed, "조립 중인 그래프의 푸시가 화면에 닿았습니다"
+    assert locations.workspace_home() == home
+    assert app._workspaces.active is app._workspaces.user
+    assert all(app.controllers[name] is controller for name, controller in user.items())
+    assert not tutorial.snapshot()["practice"]["active"]
+    assert tutorial.progress.progress() == before
+
+
+def test_lesson_seeding_failure_leaves_progress_and_workspace_unchanged(tmp_path, monkeypatch):
+    from hwpxfiller.webapp import onboarding_practice
+    from hwpxfiller.webapp.app import WebFrontend
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+    app = WebFrontend()
+    tutorial = app.controllers["tutorial"]
+    user = dict(app.controllers)
+    tutorial.snapshot()  # materialize every lesson record before comparing
+    before = copy.deepcopy(tutorial.progress.progress())
+
+    def broken_seed(*_args):
+        raise ValueError("seed failed")
+
+    monkeypatch.setattr(onboarding_practice, "_seed_job", broken_seed)
+    with pytest.raises(ValueError, match="seed failed"):
+        tutorial.dispatch("select", {"scenario_id": "repeat_hwpx"})
+    assert tutorial.progress.progress() == before
+    assert locations.workspace_home() == home
+    assert all(app.controllers[name] is controller for name, controller in user.items())
+    assert not tutorial.snapshot()["practice"]["active"]
+    assert app._workspaces.practice is None
