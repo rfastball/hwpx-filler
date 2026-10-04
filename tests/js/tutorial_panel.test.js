@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, runResultAction } from "../../frontend/src/tutorial/panel.ts";
+import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, pressFact, runResultAction } from "../../frontend/src/tutorial/panel.ts";
 import { ANCHORS, anchorSelector } from "../../frontend/src/tutorial/anchors.ts";
 import { placeCoach, pressMissesTarget, spotFrame, watchBoxedPress, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
 
@@ -328,6 +328,18 @@ test("coach takes the preferred side when it fits and its arrow points at the ta
   const inline = coachHtml({ inline: true, overlayBusy: true, swap: 1 });
   assert.match(inline, /class="tutorial-coach tutorial-coach-inline"[^>]*data-side="inline" data-swap="b"/);
   assert.doesNotMatch(inline, /tutorial-coach-arrow|style=/);
+});
+
+test("a press is a reportable fact only for the live press beat on its own screen", () => {
+  const beat = { id: "sheet", title: "t", body: "b", mode: "action", screen: "editor", target: "sheet-check", arg: "공고",
+    press: true, placement: "right", can_next: false };
+  const live = { kind: "tutorial-lessons/v1", active: true, paused: false, scenario_id: "replace_data", checkpoint: 5, beat };
+  assert.deepEqual(pressFact(live, "editor"), { scenario_id: "replace_data", checkpoint: 5, anchor: "sheet-check" });
+  assert.equal(pressFact(live, "job"), null, "another screen");
+  assert.equal(pressFact({ ...live, paused: true }, "editor"), null, "paused guidance");
+  assert.equal(pressFact({ ...live, beat: { ...beat, press: false } }, "editor"), null, "a product-command beat");
+  assert.equal(pressFact({ ...live, beat: { ...beat, mode: "explain" } }, "editor"), null);
+  assert.equal(pressFact(null, "editor"), null);
 });
 
 test("only an activation of the boxed control is reported, never intercepted", () => {

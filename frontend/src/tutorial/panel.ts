@@ -269,8 +269,6 @@ export function TutorialLessons(props: LessonControls): ReactNode {
       !practice ? quiet(snapshot.copy.reset, () => props.confirm("reset_progress"), { className: "btn quiet sm tutorial-destructive" }) : null));
 }
 
-/** Report a press on the current beat's own boxed control (a press that runs no product command). The report
- *  carries only the fact — lesson, position and anchor — and the host decides whether the beat is done. */
 /** The fact a press beat reports, or null: only a live action beat marked `press`, on its own screen. */
 export function pressFact(snapshot: TutorialSnapshot | null, screen: string | null): Record<string, unknown> | null {
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
@@ -279,6 +277,8 @@ export function pressFact(snapshot: TutorialSnapshot | null, screen: string | nu
   return { scenario_id: snapshot!.scenario_id, checkpoint: snapshot!.checkpoint, anchor: beat.target };
 }
 
+/** Report a press on the current beat's own boxed control (a press that runs no product command). The report
+ *  carries only the fact — lesson, position and anchor — and the host decides whether the beat is done. */
 function usePressReport(ports: TutorialPorts, snapshot: TutorialSnapshot | null, screen: string | null, beatSelector: string | null): void {
   const fact = pressFact(snapshot, screen);
   const key = fact && beatSelector ? `${fact.scenario_id}|${fact.checkpoint}|${beatSelector}` : "";
