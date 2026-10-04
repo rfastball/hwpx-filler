@@ -1,0 +1,1667 @@
+# 복잡도 예산 동결 원장 — 상한을 넘는 단위만, 실측값을 동결 상한으로 적는다.
+#
+# 이 파일은 **내려가기만** 한다. 실패를 고치는 길은 원장 상향이 아니라 책임 분리다.
+# 상한·측정 규칙: scripts/complexity_measure.py · 판정·작성기: scripts/complexity_budget.py
+#   uv run python scripts/complexity_budget.py --tighten   # 줄어든 값 내리기·낡은 항목 지우기
+# 불가피한 상향·신규 항목은 그 항목을 표로 쓰고 새 이슈를 단다(탈출구):
+#   function_complexity = { value = 14, override = "#1234", reason = "왜 지금 쪼갤 수 없는가" }
+
+schema = "complexity-budget/v1"
+
+[budget."frontend/js/popover.js::place"]
+function_complexity = 11
+
+[budget."frontend/src/bootstrap.js::bootProduct"]
+function_statements = 59
+
+[budget."frontend/src/domain/canonical_execution_encoding.ts::encodeValue"]
+function_complexity = 14
+
+[budget."frontend/src/editorview/rhwp_editor.ts"]
+module_statements = 403
+
+[budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp"]
+function_complexity = 38
+function_statements = 92
+
+[budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.rangeOf"]
+function_complexity = 18
+
+[budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.reportRect"]
+function_complexity = 13
+
+[budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.selection"]
+function_complexity = 14
+
+[budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.setDecorations"]
+function_complexity = 54
+function_statements = 51
+
+[budget."frontend/src/editorview/txt_lintpad.ts"]
+module_statements = 435
+
+[budget."frontend/src/editorview/txt_lintpad.ts::lintpadDecorations"]
+function_complexity = 11
+
+[budget."frontend/src/editorview/txt_lintpad.ts::lintpadPieces"]
+function_complexity = 12
+
+[budget."frontend/src/editorview/txt_lintpad.ts::lintpadUpdate"]
+function_complexity = 14
+
+[budget."frontend/src/editorview/txt_lintpad.ts::snapOutOfTokens"]
+function_complexity = 11
+
+[budget."frontend/src/product_api.js::createProductApi.deliver"]
+function_complexity = 13
+
+[budget."frontend/src/runtime/adapter.ts::classify"]
+function_complexity = 11
+
+[budget."frontend/src/screens/authoring.ts"]
+module_statements = 1220
+
+[budget."frontend/src/screens/authoring.ts::AuthoringScreen"]
+function_complexity = 161
+function_statements = 165
+
+[budget."frontend/src/screens/authoring.ts::AuthoringScreen.dockContent"]
+function_complexity = 74
+
+[budget."frontend/src/screens/authoring.ts::AuthoringScreen.shellInput.current.key"]
+function_complexity = 26
+
+[budget."frontend/src/screens/authoring.ts::CommandMenu"]
+function_complexity = 12
+
+[budget."frontend/src/screens/authoring.ts::DocumentEditor"]
+function_complexity = 13
+
+[budget."frontend/src/screens/authoring.ts::Outline"]
+function_complexity = 20
+
+[budget."frontend/src/screens/authoring.ts::Outline.spineNodes"]
+function_complexity = 31
+
+[budget."frontend/src/screens/authoring.ts::OutlineTree.onKeyDown"]
+function_complexity = 16
+
+[budget."frontend/src/screens/authoring.ts::SemanticForm"]
+function_complexity = 152
+function_statements = 72
+
+[budget."frontend/src/screens/authoring.ts::SemanticForm.command"]
+function_complexity = 12
+
+[budget."frontend/src/screens/authoring.ts::SemanticForm.finish"]
+function_complexity = 12
+
+[budget."frontend/src/screens/authoring.ts::Trial"]
+function_complexity = 38
+
+[budget."frontend/src/screens/authoring.ts::dockBadge"]
+function_complexity = 11
+
+[budget."frontend/src/screens/authoring.ts::dockTabs"]
+function_complexity = 18
+
+[budget."frontend/src/screens/authoring.ts::liveState"]
+function_complexity = 16
+
+[budget."frontend/src/screens/authoring.ts::outlineCurrent"]
+function_complexity = 20
+
+[budget."frontend/src/screens/authoring.ts::outlineSpine"]
+function_complexity = 13
+
+[budget."frontend/src/screens/authoring.ts::shellShortcut"]
+function_complexity = 25
+
+[budget."frontend/src/screens/authoring_a11y.ts::isCurrentTarget"]
+function_complexity = 12
+
+[budget."frontend/src/screens/authoring_a11y.ts::liveStep"]
+function_complexity = 26
+
+[budget."frontend/src/screens/authoring_a11y.ts::treeKey"]
+function_complexity = 23
+
+[budget."frontend/src/screens/authoring_controller.ts"]
+module_statements = 663
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController"]
+function_statements = 79
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.activate"]
+function_complexity = 12
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.adopt"]
+function_complexity = 12
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.applyPreview"]
+function_complexity = 18
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.caretSelection"]
+function_complexity = 29
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.close"]
+function_complexity = 13
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.save"]
+function_complexity = 14
+
+[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.select"]
+function_complexity = 26
+
+[budget."frontend/src/screens/authoring_controller.ts::echoes"]
+function_complexity = 16
+
+[budget."frontend/src/screens/authoring_controller.ts::previewHighlight"]
+function_complexity = 18
+
+[budget."frontend/src/screens/authoring_controller.ts::rangePickStep"]
+function_complexity = 13
+
+[budget."frontend/src/screens/command_palette.ts::paletteModel"]
+function_complexity = 12
+
+[budget."frontend/src/screens/data_picker.ts"]
+module_statements = 331
+
+[budget."frontend/src/screens/data_picker.ts::PoolRegistrationDialog"]
+function_complexity = 22
+
+[budget."frontend/src/screens/data_picker.ts::createDataPickerController.browseFile"]
+function_complexity = 12
+
+[budget."frontend/src/screens/data_picker.ts::createDataPickerController.inspectRegSheets"]
+function_complexity = 20
+
+[budget."frontend/src/screens/data_picker.ts::createDataPickerController.openRegDialog"]
+function_complexity = 18
+
+[budget."frontend/src/screens/data_picker.ts::createDataPickerController.submitReg"]
+function_complexity = 33
+
+[budget."frontend/src/screens/data_zone.ts"]
+module_statements = 715
+
+[budget."frontend/src/screens/data_zone.ts::CardEditor"]
+function_complexity = 22
+
+[budget."frontend/src/screens/data_zone.ts::ColumnPanel"]
+function_complexity = 17
+
+[budget."frontend/src/screens/data_zone.ts::ColumnPicker"]
+function_complexity = 18
+
+[budget."frontend/src/screens/data_zone.ts::FilterBuilder"]
+function_complexity = 42
+function_statements = 86
+
+[budget."frontend/src/screens/data_zone.ts::FilterBuilder.submit"]
+function_complexity = 11
+
+[budget."frontend/src/screens/data_zone.ts::FilterChipRow"]
+function_complexity = 25
+
+[budget."frontend/src/screens/data_zone.ts::JobDataZone"]
+function_complexity = 68
+function_statements = 74
+
+[budget."frontend/src/screens/data_zone.ts::PresetChip"]
+function_complexity = 11
+
+[budget."frontend/src/screens/data_zone.ts::pickerKey"]
+function_complexity = 15
+
+[budget."frontend/src/screens/data_zone.ts::rowsFromState"]
+function_complexity = 18
+
+[budget."frontend/src/screens/data_zone.ts::stateFromRows"]
+function_complexity = 18
+
+[budget."frontend/src/screens/data_zone.ts::wordsFromRange"]
+function_complexity = 12
+
+[budget."frontend/src/screens/detail_sheet.ts::DetailSheetFrame"]
+function_complexity = 13
+
+[budget."frontend/src/screens/editor.ts::DataColumnCell"]
+function_complexity = 11
+
+[budget."frontend/src/screens/editor.ts::DataPool"]
+function_complexity = 11
+
+[budget."frontend/src/screens/editor.ts::EditorFooter"]
+function_complexity = 17
+
+[budget."frontend/src/screens/editor.ts::NameSaveStage"]
+function_complexity = 18
+
+[budget."frontend/src/screens/editor.ts::TemplateGate"]
+function_complexity = 16
+
+[budget."frontend/src/screens/editor.ts::TplDetailSheet"]
+function_complexity = 17
+
+[budget."frontend/src/screens/editor_controller.ts"]
+module_statements = 569
+
+[budget."frontend/src/screens/editor_controller.ts::createEditorController"]
+function_statements = 95
+
+[budget."frontend/src/screens/editor_controller.ts::createEditorController.doSave"]
+function_complexity = 11
+
+[budget."frontend/src/screens/editor_controller.ts::createEditorController.handleSlotVerb"]
+function_complexity = 11
+
+[budget."frontend/src/screens/job_artifact.ts::JobArtifactSheet"]
+function_complexity = 13
+
+[budget."frontend/src/screens/job_content_selection.ts::JobContentSelection"]
+function_complexity = 32
+
+[budget."frontend/src/screens/job_content_selection.ts::presetNoticeText"]
+function_complexity = 14
+
+[budget."frontend/src/screens/job_read.ts"]
+module_statements = 471
+
+[budget."frontend/src/screens/job_read.ts::BrowseRow"]
+function_complexity = 12
+
+[budget."frontend/src/screens/job_read.ts::CandidateCard"]
+function_complexity = 19
+
+[budget."frontend/src/screens/job_read.ts::JobBrowseDialog"]
+function_complexity = 16
+
+[budget."frontend/src/screens/job_read.ts::JobCandidates"]
+function_complexity = 15
+
+[budget."frontend/src/screens/job_read.ts::createJobReadController.switchData"]
+function_complexity = 14
+
+[budget."frontend/src/screens/job_relink.ts::createJobRelink.relinkTemplate"]
+function_complexity = 15
+
+[budget."frontend/src/screens/job_result.ts::Evidence"]
+function_complexity = 16
+
+[budget."frontend/src/screens/job_result.ts::JobResultZone"]
+function_complexity = 36
+
+[budget."frontend/src/screens/job_run.ts"]
+module_statements = 422
+
+[budget."frontend/src/screens/job_run.ts::JobActionBar"]
+function_complexity = 23
+
+[budget."frontend/src/screens/job_run.ts::JobDelivery"]
+function_complexity = 25
+
+[budget."frontend/src/screens/job_run.ts::JobTemplateChange"]
+function_complexity = 28
+
+[budget."frontend/src/screens/job_run.ts::JobWorkbenchStatus"]
+function_complexity = 33
+
+[budget."frontend/src/screens/job_run.ts::createJobRunController.controller.templateCheck"]
+function_complexity = 11
+
+[budget."frontend/src/screens/job_run_state.ts::disposeBySession"]
+function_complexity = 12
+
+[budget."frontend/src/screens/job_slot_config.ts::createSlotConfigService.hydrate"]
+function_complexity = 11
+
+[budget."frontend/src/screens/library.ts::LibraryDetail"]
+function_complexity = 11
+
+[budget."frontend/src/screens/library.ts::LibraryToolbar"]
+function_complexity = 18
+
+[budget."frontend/src/screens/library.ts::PairCard"]
+function_complexity = 14
+
+[budget."frontend/src/screens/pool_column.ts::PoolColumn"]
+function_complexity = 15
+
+[budget."frontend/src/screens/pool_column.ts::PoolRow"]
+function_complexity = 16
+
+[budget."frontend/src/screens/pool_detail.ts::PoolDetailSheet"]
+function_complexity = 13
+
+[budget."frontend/src/screens/product_screen_executor.ts::restoreMemory"]
+function_complexity = 16
+
+[budget."frontend/src/screens/refresh_button.ts::RefreshButton.refresh"]
+function_complexity = 11
+
+[budget."frontend/src/screens/segment_view.ts::segmentNode"]
+function_complexity = 11
+
+[budget."frontend/src/screens/settings_sheet.ts::SettingsSheet"]
+function_complexity = 11
+
+[budget."frontend/src/screens/sheet_picker.ts::SheetPickerDialog"]
+function_complexity = 16
+
+[budget."frontend/src/screens/sheet_picker.ts::createSheetPickerController.pick"]
+function_complexity = 16
+
+[budget."frontend/src/screens/slice_popover.ts"]
+module_statements = 321
+
+[budget."frontend/src/screens/slice_popover.ts::SlicePopover"]
+function_complexity = 14
+function_statements = 81
+
+[budget."frontend/src/screens/slice_popover.ts::SlicePopover.propose"]
+function_complexity = 13
+
+[budget."frontend/src/screens/slice_popover.ts::SlicePopoverView"]
+function_complexity = 35
+
+[budget."frontend/src/screens/slice_popover.ts::SlicePopoverView.methodRow"]
+function_complexity = 24
+
+[budget."frontend/src/screens/slice_popover.ts::composeSliceSpec"]
+function_complexity = 15
+
+[budget."frontend/src/screens/workbench.ts::MapRow"]
+function_complexity = 19
+
+[budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
+function_complexity = 59
+
+[budget."frontend/src/screens/workbench.ts::createWorkbenchController.copyCard"]
+function_complexity = 11
+
+[budget."frontend/src/screens/workbench.ts::createWorkbenchController.leaveTo"]
+function_complexity = 15
+
+[budget."frontend/src/screens/workbench_state.ts::workbenchServerValues"]
+function_complexity = 11
+
+[budget."frontend/src/selftest/probes/boot_routing_overlay.js::createBootRoutingOverlayProbes.setup"]
+function_complexity = 23
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js"]
+module_statements = 2221
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js::createEditorWorkbenchDataProbes.run"]
+function_complexity = 53
+function_statements = 166
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js::probeAuthoringA11y"]
+function_complexity = 38
+function_statements = 148
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js::probeAuthoringKeyboard"]
+function_complexity = 58
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js::probeHwpxAuthoring"]
+function_complexity = 41
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js::probeLintpad"]
+function_complexity = 49
+
+[budget."frontend/src/selftest/probes/editor_workbench_data.js::runHwpxAuthoringBand"]
+function_complexity = 56
+function_statements = 255
+
+[budget."frontend/src/selftest/probes/job.js"]
+module_statements = 901
+
+[budget."frontend/src/selftest/probes/job.js::runJobMirror"]
+function_complexity = 63
+function_statements = 230
+
+[budget."frontend/src/selftest/probes/job.js::runJobResult"]
+function_complexity = 44
+function_statements = 207
+
+[budget."frontend/src/selftest/probes/react_runtime.js::measureTutorialSurface"]
+function_complexity = 28
+
+[budget."frontend/src/selftest/runner.js::normalizeDefinition"]
+function_complexity = 53
+
+[budget."frontend/src/shell/app.ts::createAppShell"]
+function_complexity = 14
+function_statements = 59
+
+[budget."frontend/src/shell/nav.ts::createShellNav.go"]
+function_complexity = 11
+
+[budget."frontend/src/tutorial/panel.ts::TutorialLessons"]
+function_complexity = 38
+
+[budget."frontend/src/tutorial/panel.ts::TutorialPanel"]
+function_complexity = 97
+function_statements = 91
+
+[budget."frontend/src/tutorial/panel.ts::TutorialPanel.measure"]
+function_complexity = 12
+
+[budget."frontend/src/tutorial/session.ts::createTutorialSession"]
+function_complexity = 29
+
+[budget."packaging/verify_specs.py::declared_hidden_imports"]
+function_complexity = 11
+
+[budget."packaging/verify_specs.py::main"]
+function_complexity = 18
+
+[budget."scripts/build_nara_testset.py::curate"]
+function_complexity = 24
+
+[budget."scripts/build_nara_testset.py::main"]
+function_complexity = 12
+
+[budget."scripts/capture_101_screenshots.py::_land"]
+function_complexity = 17
+
+[budget."scripts/capture_101_screenshots.py::main"]
+function_complexity = 22
+function_statements = 56
+
+[budget."scripts/check_package_coverage.py::evaluate"]
+function_complexity = 17
+
+[budget."scripts/check_package_coverage.py::load_floors"]
+function_complexity = 13
+
+[budget."scripts/docs_contract.py"]
+module_statements = 552
+
+[budget."scripts/docs_contract.py::acknowledge_review"]
+function_complexity = 17
+
+[budget."scripts/docs_contract.py::check"]
+function_complexity = 38
+
+[budget."scripts/docs_contract.py::inventory"]
+function_complexity = 66
+function_statements = 74
+
+[budget."scripts/docs_contract.py::link_problems"]
+function_complexity = 12
+
+[budget."scripts/docs_contract.py::link_targets"]
+function_complexity = 15
+
+[budget."scripts/docs_contract.py::registry"]
+function_complexity = 20
+
+[budget."scripts/docs_contract.py::render_index"]
+function_complexity = 13
+
+[budget."scripts/docs_contract.py::render_reference"]
+function_complexity = 12
+
+[budget."scripts/docs_contract.py::route"]
+function_complexity = 15
+
+[budget."scripts/extract_js_ast_axes.mjs"]
+module_statements = 463
+
+[budget."scripts/extract_js_ast_axes.mjs::collectDomFactoryAliases"]
+function_complexity = 18
+
+[budget."scripts/extract_js_ast_axes.mjs::domFactoryOrigin"]
+function_complexity = 12
+
+[budget."scripts/extract_js_ast_axes.mjs::expressionIdentity"]
+function_complexity = 17
+
+[budget."scripts/extract_js_ast_axes.mjs::jsTemplateIds"]
+function_complexity = 13
+
+[budget."scripts/extract_js_ast_axes.mjs::sources"]
+function_complexity = 11
+
+[budget."scripts/extract_js_ast_axes.mjs::typescriptAxes.visit"]
+function_complexity = 60
+function_statements = 66
+
+[budget."scripts/gen_bridge_contract.py::extract_app_contract"]
+function_complexity = 34
+
+[budget."scripts/gen_bridge_contract.py::render_contract"]
+function_complexity = 11
+
+[budget."scripts/live101/driver.py"]
+module_statements = 444
+
+[budget."scripts/live101/driver.py::_run_with_home.drive"]
+function_complexity = 11
+
+[budget."scripts/live101/driver.py::_run_with_home.stage_data"]
+function_complexity = 19
+function_statements = 56
+
+[budget."scripts/live101/report.py::judge"]
+function_complexity = 48
+function_statements = 68
+
+[budget."scripts/live101/scenario.py"]
+module_statements = 506
+
+[budget."scripts/live101/scenario.py::run"]
+function_statements = 166
+
+[budget."scripts/live101/scenario.py::run_sx"]
+function_complexity = 40
+function_statements = 205
+
+[budget."scripts/ui_copy_census.py::census"]
+function_complexity = 12
+
+[budget."scripts/ui_copy_census.py::scan_js"]
+function_complexity = 32
+function_statements = 66
+
+[budget."src/hwpxcore/bookmark_region.py"]
+module_statements = 416
+
+[budget."src/hwpxcore/bookmark_region.py::_parse_sections"]
+function_complexity = 17
+
+[budget."src/hwpxcore/bookmark_region.py::_remove_marker"]
+function_complexity = 15
+
+[budget."src/hwpxcore/bookmark_region.py::create_bookmark_region"]
+function_complexity = 45
+function_statements = 69
+
+[budget."src/hwpxcore/bookmark_region.py::remove_top_level_paragraph"]
+function_complexity = 20
+
+[budget."src/hwpxcore/field_occurrence.py::paragraph_container"]
+function_complexity = 18
+
+[budget."src/hwpxcore/field_occurrence.py::resolve_field_occurrences"]
+function_complexity = 60
+function_statements = 114
+
+[budget."src/hwpxcore/native_admission.py"]
+module_statements = 425
+
+[budget."src/hwpxcore/native_admission.py::_payload_outside"]
+function_complexity = 13
+
+[budget."src/hwpxcore/native_admission.py::apply_field_fill"]
+function_complexity = 17
+
+[budget."src/hwpxcore/native_admission.py::build_native_admission_index"]
+function_complexity = 24
+
+[budget."src/hwpxcore/native_admission.py::inspect_native_capabilities"]
+function_complexity = 38
+
+[budget."src/hwpxcore/native_admission.py::plan_bookmark_removal"]
+function_complexity = 46
+function_statements = 59
+
+[budget."src/hwpxcore/native_admission.py::plan_field_fill"]
+function_complexity = 18
+
+[budget."src/hwpxcore/structural_boundary.py::_bookmark_pairs"]
+function_complexity = 32
+function_statements = 65
+
+[budget."src/hwpxcore/structural_boundary.py::_scan_entry"]
+function_complexity = 25
+
+[budget."src/hwpxcore/text_extract.py"]
+module_statements = 304
+
+[budget."src/hwpxcore/text_extract.py::_blocks_from_paragraph"]
+function_complexity = 21
+
+[budget."src/hwpxfiller/application/dataset_pool.py"]
+module_statements = 341
+
+[budget."src/hwpxfiller/application/dataset_pool.py::DatasetPoolViewModel"]
+class_methods = 30
+
+[budget."src/hwpxfiller/application/dataset_pool.py::reference_summary"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/application/document_creation_workbench.py"]
+module_statements = 323
+
+[budget."src/hwpxfiller/application/document_creation_workbench.py::RecordValidationSummary.__post_init__"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/application/document_creation_workbench.py::compose_blockers"]
+function_complexity = 21
+
+[budget."src/hwpxfiller/application/execution_capture.py::_cross_reference_error"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/application/execution_capture.py::judge_captured_execution"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/application/execution_compilation.py::_resolve_selected"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/execution_compilation.py::qualify_and_compile_execution"]
+function_complexity = 24
+function_statements = 67
+
+[budget."src/hwpxfiller/application/execution_composition.py"]
+module_statements = 356
+
+[budget."src/hwpxfiller/application/execution_composition.py::_premise_c2"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/application/execution_composition.py::_premise_c4"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/application/execution_composition.py::_premise_c6"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/application/execution_contract_set.py::_verify_requirement_operation_bijection"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/execution_structure.py"]
+module_statements = 485
+
+[budget."src/hwpxfiller/application/execution_structure.py::_validate_occurrences"]
+function_complexity = 32
+
+[budget."src/hwpxfiller/application/execution_structure.py::_validate_structure_invariants"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/application/execution_structure.py::build_execution_structure"]
+function_complexity = 20
+
+[budget."src/hwpxfiller/application/generation_delivery.py"]
+module_statements = 530
+
+[budget."src/hwpxfiller/application/generation_delivery.py::_resolve"]
+function_complexity = 27
+function_statements = 78
+
+[budget."src/hwpxfiller/application/generation_delivery.py::_resolve_current"]
+function_complexity = 46
+function_statements = 89
+
+[budget."src/hwpxfiller/application/generation_delivery.py::resolve_delivery_field_value"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/application/legacy_field_binding_store_v1.py::_migrate_revision"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/application/legacy_field_binding_store_v1.py::migrate_stored_v1"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/application/record_validation.py"]
+module_statements = 386
+
+[budget."src/hwpxfiller/application/record_validation.py::_evaluate_review"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/record_validation.py::_validate"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/application/record_validation.py::_validate_current_value"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/application/record_validation.py::verify_current_validated_record_completeness"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/record_validation.py::verify_validated_record_completeness"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/application/selection_compatibility.py::classify_selection"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/application/selection_compatibility.py::option_compatibility_fingerprint"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/application/slot_configuration_context.py::_resolve_verified_chain"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/application/slot_configuration_projection.py::project_current_slot_configuration"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/application/slot_configuration_projection.py::project_retained_selections"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/application/slot_reconciliation.py::_compatibility_gated_selections"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/slot_reconciliation.py::derive_reconciliation_source_delta"]
+function_complexity = 22
+
+[budget."src/hwpxfiller/application/slot_reconciliation.py::resolve_slot_configuration"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/application/slot_selection_input.py::plan_capture"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/application/slot_token.py::open_configuration_token"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/stored_field_binding.py::StoredWorkFieldBinding.__post_init__"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/application/template_qualification.py::qualify_template"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/application/work_slot_configuration.py::WorkSlotConfigurationDraft.__post_init__"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/application/work_template_state.py::validate_aggregate"]
+function_complexity = 28
+function_statements = 58
+
+[budget."src/hwpxfiller/cli.py"]
+module_statements = 385
+
+[budget."src/hwpxfiller/cli.py::_load_records"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/cli.py::_report_generation"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/cli.py::_run"]
+function_complexity = 40
+function_statements = 91
+
+[budget."src/hwpxfiller/data/excel.py::ExcelDataSource._append_record"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/data/excel.py::ExcelDataSource._load_xlsx"]
+function_complexity = 24
+
+[budget."src/hwpxfiller/data/factory.py::source_for_binding"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/data/nara.py::NaraStdDataSource._records_paginated"]
+function_complexity = 20
+function_statements = 53
+
+[budget."src/hwpxfiller/data/nara.py::NaraStdDataSource.parse"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/domain/authoring.py"]
+module_statements = 602
+
+[budget."src/hwpxfiller/domain/authoring.py::_StructureReader.read_paragraph"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/domain/authoring.py::_build_paragraph_model"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/domain/authoring.py::_classify_paragraph_tokens"]
+function_complexity = 27
+
+[budget."src/hwpxfiller/domain/authoring.py::_clip_t"]
+function_complexity = 21
+
+[budget."src/hwpxfiller/domain/authoring.py::_compile_simple_group"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/domain/authoring.py::_process_paragraph"]
+function_complexity = 35
+
+[budget."src/hwpxfiller/domain/authoring.py::_run_shape"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/domain/authoring.py::compile_document"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/domain/authoring.py::insert_marker_paragraphs"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/domain/canonical_execution_encoding.py::_encode_value"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/domain/dataset_reference.py::reference_sheets"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/domain/field_binding.py"]
+module_statements = 324
+
+[budget."src/hwpxfiller/domain/field_binding.py::FieldBindingRule.__post_init__"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/domain/field_binding.py::_encode_rule"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/domain/identity_summary.py::identity_summary"]
+function_complexity = 21
+
+[budget."src/hwpxfiller/domain/job.py::advance_revisions"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/domain/lint.py::diff_schema"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/domain/output_name.py::parse_filename_pattern"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/domain/preset.py::_normalize_provenance"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/domain/schema.py::_walk_content.walk"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/domain/schema.py::extract_schema"]
+function_complexity = 33
+function_statements = 71
+
+[budget."src/hwpxfiller/domain/template_authoring.py"]
+module_statements = 861
+
+[budget."src/hwpxfiller/domain/template_authoring.py::_edits"]
+function_complexity = 101
+function_statements = 126
+
+[budget."src/hwpxfiller/domain/template_authoring.py::_field_spans"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/domain/template_authoring.py::_line_block_children"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/domain/template_authoring.py::_project"]
+function_complexity = 35
+function_statements = 80
+
+[budget."src/hwpxfiller/domain/template_authoring.py::_repair_suggestion"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/domain/template_authoring.py::_target_name"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/domain/template_authoring.py::analyze"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/domain/template_authoring.py::available_commands"]
+function_complexity = 35
+
+[budget."src/hwpxfiller/domain/template_authoring.py::command_label"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/domain/template_authoring.py::confirm_tier"]
+function_complexity = 20
+
+[budget."src/hwpxfiller/domain/template_authoring.py::created_target"]
+function_complexity = 23
+
+[budget."src/hwpxfiller/domain/template_authoring.py::renamed_target"]
+function_complexity = 23
+
+[budget."src/hwpxfiller/domain/template_authoring.py::same_text_sites"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/domain/template_authoring.py::shared_reasons"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/domain/template_authoring.py::suggest_field_name"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/domain/template_authoring.py::target_availability"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/domain/template_authoring.py::trial"]
+function_complexity = 27
+
+[budget."src/hwpxfiller/domain/text_slice.py::TextSlice.__post_init__"]
+function_complexity = 24
+
+[budget."src/hwpxfiller/domain/text_slice.py::TextSlice.locate"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/domain/text_structure.py::_marker_spans"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/authoring_transfer.py"]
+module_statements = 353
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::_block_paste"]
+function_complexity = 95
+function_statements = 96
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::_field_paste"]
+function_complexity = 44
+function_statements = 81
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::_region_from_selector"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::_txt_capture"]
+function_complexity = 29
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::_txt_paste"]
+function_complexity = 31
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::capture_semantic"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/external/authoring_transfer.py::paste_semantic"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/dataset_store.py::DatasetPoolRegistry"]
+class_methods = 30
+
+[budget."src/hwpxfiller/external/delivery_coordinator.py::deliver_current_documents"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/external/example_pack.py::install"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/example_pack.py::removal_plan"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/example_pack.py::remove"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/headless_generation.py::run_headless_generation"]
+function_complexity = 32
+function_statements = 51
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py"]
+module_statements = 1281
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_adjust_region"]
+function_complexity = 40
+function_statements = 55
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_block_children"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_body_hit_parts"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_bookmark_location"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_cell_path"]
+function_complexity = 28
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_change_field"]
+function_complexity = 33
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_cloneable_paragraphs"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_command_preview_label"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_create_field"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_create_region"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_duplicate_region"]
+function_complexity = 61
+function_statements = 93
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_execute"]
+function_complexity = 49
+function_statements = 84
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_field_diagnostics"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_field_paragraph"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_fields"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_move_region"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_paragraph_pieces"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_preview_content_context"]
+function_complexity = 35
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_rename_region"]
+function_complexity = 44
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_revert_template"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_selected_paragraph"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_selection_frame"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_simple_field_span"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_structure_diagnostic_location"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::_token_location"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::analyze_hwpx"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::available_commands_hwpx"]
+function_complexity = 45
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::available_commands_hwpx.field_hit"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::same_text_hwpx"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::search_hwpx"]
+function_complexity = 23
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::selected_context_hwpx"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::syntax_view_hwpx"]
+function_complexity = 27
+
+[budget."src/hwpxfiller/external/hwpx_authoring.py::trial_hwpx"]
+function_complexity = 28
+
+[budget."src/hwpxfiller/external/hwpx_product_inspection.py::_inspect_slot_snapshot"]
+function_complexity = 23
+
+[budget."src/hwpxfiller/external/hwpx_product_inspection.py::_product_tag"]
+function_complexity = 34
+function_statements = 59
+
+[budget."src/hwpxfiller/external/hwpx_product_inspection.py::_project_slots"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/hwpx_product_inspection.py::inspect_product_bookmarks"]
+function_complexity = 51
+function_statements = 84
+
+[budget."src/hwpxfiller/external/hwpx_qualification.py::_analyze_hwpx_detail"]
+function_complexity = 56
+function_statements = 141
+
+[budget."src/hwpxfiller/external/hwpx_qualification.py::_build_execution_structure"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/hwpx_qualification.py::_product_observation_consistent"]
+function_complexity = 22
+
+[budget."src/hwpxfiller/external/hwpx_structure_ops.py"]
+module_statements = 308
+
+[budget."src/hwpxfiller/external/hwpx_structure_ops.py::_create_structure_regions"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/hwpx_structure_ops.py::_structure_preflight"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/external/hwpx_structure_ops.py::decompile_slot"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/job_store.py"]
+module_statements = 354
+
+[budget."src/hwpxfiller/external/job_store.py::JobRegistry"]
+class_methods = 32
+
+[budget."src/hwpxfiller/external/job_store.py::_rules_values_or_raise"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/managed_generation.py::run_managed_generation"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/external/materialization_conformance.py::verify_materialization_postconditions"]
+function_complexity = 32
+function_statements = 60
+
+[budget."src/hwpxfiller/external/materialization_conformance.py::verify_structure_bytes_consistency"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/prepare_orchestration_runner.py::_admission_gate"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/prepare_orchestration_runner.py::_apply_integrity"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/external/prepare_orchestration_runner.py::apply_prepared_change_under_fence"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/external/seal_execution_capture_runner.py::SealExecutionCaptureRunner.read_current_field_binding_review"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/external/seal_execution_plan_service.py::SealExecutionPlanService.unrepresented_legacy_rules"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/settings.py"]
+module_statements = 343
+
+[budget."src/hwpxfiller/external/settings.py::load_last_data_source"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/external/settings.py::load_window_geometry"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/settings.py::save_last_data_source"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/external/settings.py::save_tutorial_manifest"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/external/slot_command_runner.py::_apply_selection_preset_under_fence"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/external/slot_command_runner.py::_mutate_under_fence"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/external/template_change.py"]
+module_statements = 324
+
+[budget."src/hwpxfiller/external/template_change.py::TemplateChangeCoordinator"]
+class_methods = 29
+
+[budget."src/hwpxfiller/external/text_materialization_conformance.py::apply_txt_execution_plan_in_memory"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/external/text_materialization_conformance.py::trial_txt_authoring"]
+function_complexity = 20
+
+[budget."src/hwpxfiller/external/text_materialization_conformance.py::verify_txt_materialization_postconditions"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/external/text_template_inspection.py::_execution_structure_from_text"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/text_template_inspection.py::_structure_from_text"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/external/tutorial_practice.py::PracticeFiles._cleanup_locked"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/external/tutorial_practice.py::PracticeFiles.prepare"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/viewmodel/edit_session.py"]
+module_statements = 399
+
+[budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation._save_locked"]
+function_complexity = 21
+
+[budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation.save"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/viewmodel/edit_session.py::EditSession.apply_mapping_action"]
+function_complexity = 30
+function_statements = 68
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py"]
+module_statements = 649
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel"]
+class_methods = 65
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.apply_state"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.normalize_preset_state"]
+function_complexity = 29
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.preset_status"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.set_range"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterView.stratified_sample"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::_short_condition"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/viewmodel/filter_state.py::sniff_column_kinds"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/viewmodel/home_state.py"]
+module_statements = 346
+
+[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel"]
+class_methods = 29
+
+[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel._library_pool"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel.library_counts"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel.library_sections"]
+function_complexity = 18
+
+[budget."src/hwpxfiller/viewmodel/home_state.py::JobRow.from_job"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/viewmodel/home_state.py::library_health_causes"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/viewmodel/job_editor_state.py::validate_save"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/viewmodel/mapping_state.py"]
+module_statements = 499
+
+[budget."src/hwpxfiller/viewmodel/mapping_state.py::MappingModel"]
+class_methods = 45
+
+[budget."src/hwpxfiller/viewmodel/mapping_state.py::row_projection"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/viewmodel/review_state.py::review_requirement"]
+function_complexity = 21
+
+[budget."src/hwpxfiller/viewmodel/run_state.py::RunViewModel._compose_preflight"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/viewmodel/slice_assist.py::_candidate_specs"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/viewmodel/slice_assist.py::preview_slice"]
+function_complexity = 32
+
+[budget."src/hwpxfiller/viewmodel/slice_assist.py::propose_slices"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/viewmodel/slice_assist.py::slice_label"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/viewmodel/template_manager_state.py"]
+module_statements = 389
+
+[budget."src/hwpxfiller/viewmodel/template_manager_state.py::TemplateManagerViewModel"]
+class_methods = 43
+
+[budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.__init__"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.snapshot"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/viewmodel/tutorial_state.py::TutorialViewModel"]
+class_methods = 25
+
+[budget."src/hwpxfiller/web_artifact.py"]
+module_statements = 451
+
+[budget."src/hwpxfiller/web_artifact.py::_load_seal"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/web_artifact.py::_studio_output_closure"]
+function_complexity = 23
+
+[budget."src/hwpxfiller/web_artifact.py::_validate_studio_local_references"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/web_artifact.py::_verify_output_tree"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/active_work_session.py::ActiveWorkSession"]
+class_methods = 21
+
+[budget."src/hwpxfiller/webapp/active_work_session.py::ActiveWorkSession.reconcile_data_transition"]
+function_complexity = 22
+
+[budget."src/hwpxfiller/webapp/app.py"]
+module_statements = 726
+
+[budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
+class_methods = 39
+
+[budget."src/hwpxfiller/webapp/app.py::WebFrontend._register_data_sheets"]
+function_complexity = 31
+
+[budget."src/hwpxfiller/webapp/app.py::WebFrontend.load_data_sheet"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/webapp/app.py::main"]
+function_complexity = 27
+function_statements = 89
+
+[budget."src/hwpxfiller/webapp/blocker_affordance.py::BlockerAffordance.validate"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/webapp/data_zone.py"]
+module_statements = 446
+
+[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession"]
+class_methods = 76
+
+[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession._do_list_filter_columns"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession.selection_guard"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession.zone_sections"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator"]
+class_methods = 22
+
+[budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator.run_managed"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/webapp/editor_session.py"]
+module_statements = 575
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader"]
+class_methods = 31
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._do_discard_patch"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._ensure_model"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._restore_from"]
+function_complexity = 32
+function_statements = 57
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection"]
+class_methods = 24
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection._pairing_snapshot"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection.prepare"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession"]
+class_methods = 39
+
+[budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession.resolve_delivery"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/job_presentation.py::serialize_observation"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/live_run.py::_check_drive_arity"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/live_run.py::validate"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/webapp/managed_run_result.py::project_managed_run_result"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/onboarding.py"]
+module_statements = 695
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
+class_methods = 39
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._dispatch"]
+function_complexity = 50
+function_statements = 82
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._exit"]
+function_complexity = 24
+function_statements = 59
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._guide"]
+function_complexity = 39
+function_statements = 58
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._match_authoring"]
+function_complexity = 54
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._matches"]
+function_complexity = 187
+function_statements = 141
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
+function_complexity = 27
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._preflight"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._resources"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._seed_job"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._select"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController.file_picker_hint"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/webapp/product_api.py::preferences_outcome"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py"]
+module_statements = 1098
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController"]
+class_methods = 94
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._clean_selection"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._context_label"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_impact"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_locate"]
+function_complexity = 60
+function_statements = 65
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_locate.hits"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_search"]
+function_complexity = 30
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._locate_target"]
+function_complexity = 41
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._problems_here"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._problems_here.hit"]
+function_complexity = 15
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._section_entries"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController.snapshot"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/screen_job.py"]
+module_statements = 929
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController"]
+class_methods = 113
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._capture_current_selected_records"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._current_record_validation"]
+function_complexity = 16
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._do_recover_record_issue"]
+function_complexity = 25
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._do_select_job"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._generate_managed_locked"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._prepare_base_panel"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController._prepare_hwpx_panel"]
+function_complexity = 13
+
+[budget."src/hwpxfiller/webapp/screen_job.py::JobController.workbench_observation"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/screen_library.py::LibraryController"]
+class_methods = 23
+
+[budget."src/hwpxfiller/webapp/screen_library.py::LibraryController._pairing_detail"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/screen_pool.py"]
+module_statements = 305
+
+[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController"]
+class_methods = 26
+
+[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_register_excel"]
+function_complexity = 27
+
+[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_register_pclm"]
+function_complexity = 38
+function_statements = 55
+
+[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_relink"]
+function_complexity = 19
+
+[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._registration_sheets"]
+function_complexity = 14
+
+[budget."src/hwpxfiller/webapp/screen_template.py::TemplateController"]
+class_methods = 33
+
+[budget."src/hwpxfiller/webapp/screen_workbench.py"]
+module_statements = 387
+
+[budget."src/hwpxfiller/webapp/screen_workbench.py::WorkbenchController"]
+class_methods = 50
+
+[budget."src/hwpxfiller/webapp/screen_workbench.py::WorkbenchController.snapshot"]
+function_complexity = 22
+
+[budget."src/hwpxfiller/webapp/screens.py::_pipeline_has_nara_source"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/screens.py::pool_reference_quad"]
+function_complexity = 12
+
+[budget."src/hwpxfiller/webapp/screens.py::relink_job_template"]
+function_complexity = 17
+
+[budget."src/hwpxfiller/webapp/selftest_api.py"]
+module_statements = 572
+
+[budget."src/hwpxfiller/webapp/selftest_api.py::classify_poll"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/slot_configuration_product.py::SlotConfigurationProduct"]
+class_methods = 25
+
+[budget."src/hwpxfiller/webapp/template_groups.py::TemplateGroupModel.rename_group"]
+function_complexity = 11
+
+[budget."src/hwpxfiller/webapp/txt_materialization.py::TxtMaterializationService.materialize_record"]
+function_complexity = 13
+
+[budget."tests/js/authoring.test.js"]
+module_statements = 1787
+
+[budget."tests/js/authoring_render.test.js"]
+module_statements = 1562
+
+[budget."tests/js/authoring_render.test.js::matchesCompound"]
+function_complexity = 21
+
+[budget."tests/js/n06_editor.test.js"]
+module_statements = 1135
+
+[budget."tests/repo_contract/test_architecture.py::test_screen_controllers_stay_transport_thin"]
+function_complexity = 36
+
+[budget."tests/repo_contract/test_architecture.py::test_web_controllers_use_ring1_public_seams"]
+function_complexity = 28
+
+[budget."tests/repo_contract/test_dispatch_payload_contract.py::test_literal_frontend_payloads_match_the_registered_schema"]
+function_complexity = 22
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_import_names"]
+function_complexity = 21
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_targets"]
+function_complexity = 24
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_facade_exports"]
+function_complexity = 21
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_facade_exports.visit"]
+function_complexity = 22
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_frontend_vendor_import_violations"]
+function_complexity = 21
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_kernel_effect_edges"]
+function_complexity = 49
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_public_definitions.visit"]
+function_complexity = 27
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_vendor_integrations"]
+function_complexity = 32
+
+[budget."tests/repo_contract/test_p3_forbidden_edges.py::_vendor_public_type_edges.visit"]
+function_complexity = 22
+
+[budget."tests/test_authoring.py"]
+module_statements = 1598
+
+[budget."tests/test_hwpx_structure_probe.py::test_native_bookmark_encodings_and_durability_observations"]
+function_complexity = 43
+
+[budget."tests/test_job.py"]
+module_statements = 1134
+
+[budget."tests/test_web_authoring_layout.py::test_authoring_columns_scale_and_narrow_sheet"]
+function_complexity = 22
+
+[budget."tests/test_web_selftest_gate.py"]
+module_statements = 1314
+
+[budget."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
+class_methods = 83
+
+[budget."tests/test_webapp_authoring.py"]
+module_statements = 1070
+
+[budget."tests/test_webapp_authoring.py::test_outline_targets_locate_by_identity_with_domain_availability"]
+function_complexity = 23
+
+[budget."tests/test_webapp_editor.py"]
+module_statements = 2123
+
+[budget."tests/test_webapp_job.py"]
+module_statements = 3926
+
+[budget."tests/test_webapp_job_binding_review.py"]
+module_statements = 993
+
+[budget."tests/test_webapp_tutorial.py"]
+module_statements = 859

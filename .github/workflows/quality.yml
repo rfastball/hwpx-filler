@@ -94,13 +94,18 @@ jobs:
     name: static
     runs-on: windows-latest
     timeout-minutes: 15
-    # 산출물을 읽지 않는다 — 정적 검사와 저장소 형상 계약만 맡는다.
-    # 그래서 생산자를 기다리지 않고 Node 도 설치하지 않는다.
+    # 산출물을 읽지 않는다 — 정적 검사와 저장소 형상 계약만 맡는다. 그래서 생산자를 기다리지
+    # 않는다. Node 는 빌드가 아니라 **파서**로만 들인다: 복잡도 예산
+    # (`tests/repo_contract/test_complexity_budget.py`)이 프런트 소스를 oxc(vite)로 잰다.
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 복잡도 예산의 닫힌 원장은 `origin/master` 와의 merge-base 원장과 견준다. 얕은
+          # checkout 에는 그 기준이 없고, 기준 부재는 통과가 아니라 실패다.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
@@ -117,6 +122,12 @@ jobs:
         run: uv run --no-sync ruff check src tests scripts
       - name: Pyright
         run: uv run --no-sync pyright
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install the frontend parser toolchain
+        run: npm.cmd ci
       - name: Repository contract suite
         shell: pwsh
         run: >-

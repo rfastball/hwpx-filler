@@ -24,6 +24,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG }}
+          # `test.ps1` 의 복잡도 예산이 `origin/master` merge-base 원장과 견준다 — 얕은
+          # checkout 에는 그 기준이 없다.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.28"
