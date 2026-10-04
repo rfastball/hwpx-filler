@@ -149,9 +149,9 @@ def _generated(tutorial: Any, obs: Observation) -> dict | None:
 
 def _result_opened(tutorial: Any, obs: Observation) -> dict | None:
     ctx = _ctx(tutorial)
-    artifact = tutorial._job().runs.artifact_payload()
+    artifact = tutorial._job().runs.artifact.payload()
     if (not _job_on(tutorial, obs, "artifact_open") or obs.result != {"ok": True} or not ctx.get("generated")
-            or artifact.get("status") != "observed" or not artifact.get("structure")
+            or artifact.get("status") != "observed"
             or not any(Path(doc["path"]).name == Path(artifact.get("filename", "")).name for doc in ctx["generated"])):
         return None
     tutorial._finish_result("생성한 문서 3건", "결과 문서의 내용을 확인했습니다.", "job", "results", ctx["generated"])

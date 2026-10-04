@@ -147,12 +147,6 @@ source_write_set = ["src/hwpxfiller/external/template_files.py"]
 oracle_nodeid = "tests/test_webapp_template.py"
 
 [[unit]]
-module = "hwpxfiller.viewmodel.artifact_view_state"
-target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/viewmodel/artifact_view_state.py"]
-oracle_nodeid = "tests/test_artifact_view_state.py"
-
-[[unit]]
 module = "hwpxfiller.viewmodel.compile_badge"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/compile_badge.py"]
@@ -331,6 +325,12 @@ module = "hwpxfiller.webapp.active_work_session"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/active_work_session.py"]
 oracle_kind = "structural"
+
+[[unit]]
+module = "hwpxfiller.webapp.artifact_view_session"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/artifact_view_session.py"]
+oracle_nodeid = "tests/test_webapp_job_artifact_view.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.document_run_coordinator"

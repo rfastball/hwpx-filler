@@ -11,6 +11,7 @@
 import { Fragment, createElement } from "react";
 import type { ReactNode } from "react";
 
+import { icon } from "./icons.ts";
 import { PathActions } from "./path_actions.ts";
 import type { JobRunController } from "./job_run.ts";
 import { DELIVERY_DISPOSITION_COPY, useRun, useRunSnapshot } from "./job_run.ts";
@@ -34,7 +35,7 @@ function FailRow(props: { fail: Obj }): ReactNode {
       "원인 진단 미연결 — 확인된 원인이 없어 받은 메시지를 그대로 보여줍니다."));
 }
 
-/** 만들어진 문서 한 줄(S7-03 · #825) — 파일명 · 안착 처분 · 경로 어포던스 · 내용 보기.
+/** 만들어진 문서 한 줄(S7-03 · #825) — 파일명 · 안착 처분 · 폴더에서 보기 · 내용 보기(둘 다 아이콘, #1138).
  *
  *  값은 Python 이 낸 `delivered` 행 그대로다. 처분 라벨만 공용 어휘 지도를 지나는데, 그
  *  지도는 이 화면이 이미 다른 자리에서 쓰던 것과 **같은 하나**다(라벨을 여기서 다시 지으면
@@ -57,17 +58,18 @@ function DeliveredRow(props: {
       createElement(PathActions as any, {
         client: props.controller.client,
         path: String(row.path || ""),
-        only: ["reveal", "copy"],
+        only: ["reveal"],
         notify: props.controller.notify,
       }),
+      // 폴더에서 보기와 같은 아이콘 단추다 — 이름은 aria-label, 보이는 이름은 title 이 싣는다.
       h("button", {
-        className: "btn sm", type: "button", "data-busy-lock": true,
-        "data-act": "artifact-open",
+        className: "btn sm icon track-btn", type: "button", "data-busy-lock": true,
+        "data-act": "artifact-open", title: "내용 보기",
         "aria-label": `'${String(row.filename || "")}' 내용 보기`,
         onClick: (event: any) => {
           props.controller.openArtifactFrom(ordinal, event?.currentTarget ?? null);
         },
-      }, "내용 보기")));
+      }, icon("view"))));
 }
 
 /** 접힘 증거 — 로그 상자가 나르던 것(FillNote 사실·받은 메시지 원문)의 거처(§10.10.3).

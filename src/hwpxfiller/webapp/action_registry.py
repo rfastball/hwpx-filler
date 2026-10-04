@@ -226,6 +226,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 값이고 ordinal 은 그 실행이 고정한 좌표다. 열림 여부는 Python 소유라 닫기는 무페이로드다.
         "artifact_open": _schema("ordinal"),
         "artifact_close": _schema(),
+        # 「내용 보기」의 보기 원료(#1138) — 열린 면의 문서만 다시 관찰해 검증된 bytes 를 낸다.
+        # 무페이로드다: 웹이 ordinal·경로를 실으면 그 지목이 곧 두 번째 겨눔이 된다.
+        "artifact_content": _schema(),
         "set_selected_only": _schema("value"),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),

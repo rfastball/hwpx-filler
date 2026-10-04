@@ -22,6 +22,7 @@ from hwpxfiller.webapp.screen_authoring import AuthoringController
 from hwpxfiller.viewmodel.edit_session import EditSession
 from hwpxfiller.webapp.editor_session import EditorLoader
 from hwpxfiller.webapp.data_zone import JobDataSession
+from hwpxfiller.webapp.artifact_view_session import ArtifactViewSession
 
 
 CONTROLLERS = {
@@ -88,7 +89,8 @@ def _controller_actions(controller: type) -> set[str]:
 
     owners = controller.__mro__
     if controller is JobController:
-        owners = (*owners, JobDataSession)
+        # 데이터 존·만든 문서 관찰 세션(`_action_owner`)이 job 액션의 일부를 소유한다.
+        owners = (*owners, JobDataSession, ArtifactViewSession)
     return {
         name.removeprefix("_do_")
         for cls in owners

@@ -153,6 +153,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 |---|---|---|
 | `apply_selection_preset` | `configuration_token`, `preset_key` | — |
 | `artifact_close` | — | — |
+| `artifact_content` | — | — |
 | `artifact_open` | `ordinal` | — |
 | `browse_query` | — | `text` |
 | `browse_tab` | — | `tab` |

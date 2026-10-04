@@ -1,30 +1,38 @@
-/* 산출물 관찰 시트 — 만들어진 문서의 실물을 읽기 전용으로 보는 면(S7-03 · #825).
+/* 산출물 관찰 시트 — 만들어진 문서의 실물을 보기 전용으로 보는 면(S7-03 · #825, #1138).
 
    ## 예고가 아니라 실물이다(#820 D4)
 
    이 파일이 그리는 것은 **생성 후** 실물, 그것도 디스크에서 다시 읽어 기록 digest 와 대조를
-   통과한 bytes 의 구조다. 생성 **전** 값을 그리던 확인 면(`job_preview.ts`)은 #957 에서
-   철거됐으므로 어휘가 갈릴 상대도 없지만, 그 어휘 규율은 남는다 — 골격 관용구
-   (`.modal-card .sheet-card`·`.sheet-head`/`.sheet-body`)만 공유하고 클래스는 `artifact-*`,
-   제목과 문안은 '산출물 관찰' 계열로 간다.
+   통과한 bytes 다. 골격 관용구(`.modal-card .sheet-card`·`.sheet-head`/`.sheet-body`)만
+   공유하고 클래스는 `artifact-*`, 제목은 '산출물 관찰' 계열로 간다.
+
+   ## 저작면의 렌더러를 보기 전용으로 쓴다(#1138)
+
+   문서는 템플릿 저작면과 같은 rhwp(봉인된 Studio·WASM·폰트)로 쪽 모양 그대로 그린다. 마운트는
+   `readOnly` 하나로 편집을 닫는다 — 보존 검사·도구 막대·선택 추적·문맥 메뉴·범위 고르기·장식이
+   없고, 내보내기(onChanged)는 받지 않으며, Studio 가 넘기는 셸 키는 Escape(닫기)만 듣는다.
+   저작 세션을 열지 않고 템플릿을 만지지 않는다. 어느 파일의 어느 bytes 인지는 Python 이 정한다
+   (`job/artifact_content` 는 무페이로드 — 열린 면의 문서를 다시 관찰해 낸다).
 
    ## 상태를 여기서 판정하지 않는다
 
-   열림·대상·성립 여부·구조·사유는 전부 Python 스냅샷(`artifact_view`)에서 온다. 이 층이
-   하는 일은 그 값을 자리에 놓는 것뿐이다 — 코드가 뜻하는 바를 문안으로 옮기는 지도 하나만
-   여기 산다.
+   열림·대상·성립 여부·사유는 Python 스냅샷(`artifact_view`)과 원료 응답에서 온다. 이 층은 그
+   값을 자리에 놓고, 코드가 뜻하는 바를 문안으로 옮기는 지도 하나만 쓴다.
 
-   ## 못 본 것을 본 것처럼 그리지 않는다(#820 D3)
+   ## 못 그린 것을 그린 것처럼 두지 않는다
 
-   구조 뷰는 문단과 표만 그린다. 커널이 모델링하지 못한 구간은 '표시하지 못한 구간'으로
-   **항상 병기**한다. 부분 포섭은 거절이 아니므로 관찰은 그대로 서고 그 옆에 사유가 붙는다.
-   관찰이 아예 서지 않은 넷은 각각 다른 문장으로 말한다. 빈 화면으로 접지 않는다. */
+   원료가 거절되거나(그사이 파일이 바뀌었다 등) 렌더러가 문서를 열지 못하면 빈 면이나 다른
+   표현(텍스트 투영)으로 접지 않고 거절 면에 사유를 그대로 말한다. */
 
-import { Fragment, createElement } from "react";
+import { Fragment, createElement, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { mountRhwp } from "../editorview/rhwp_editor.ts";
+import type { RhwpHandle, RhwpMountSpec } from "../editorview/rhwp_editor.ts";
+import { keepFocusOutside } from "./authoring_trial.ts";
 import type { JobRunController } from "./job_run.ts";
 import { ARTIFACT_REFUSAL_TITLE, useRun, useRunSnapshot } from "./job_run.ts";
+import { expectHostValue } from "./runtime.ts";
 
 type Obj = Record<string, any>;
 
@@ -32,87 +40,99 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
   return createElement(tag, props, ...children);
 }
 
-/** 셀 하나 — 병합 메타(`span`)는 그대로 colspan/rowspan 이 된다. 값이 없으면 속성을 걸지
- *  않는다: 1을 명시하면 병합이 없는 표와 있는 표가 DOM 에서 구분되지 않는다. */
-function Cell(props: { cell: Obj; keyName: string }): ReactNode {
-  const cell = props.cell;
-  // 키 이름은 원문 `cellSpan`/`cellAddr` 그대로다(hwpxcore 가 해석 없이 나른다).
-  const span = (cell.span || {}) as Obj;
-  const colspan = Number(span.colSpan || 1);
-  const rowspan = Number(span.rowSpan || 1);
-  const addr = (cell.addr || {}) as Obj;
-  return h("td", {
-    key: props.keyName,
-    colSpan: colspan > 1 ? colspan : undefined,
-    rowSpan: rowspan > 1 ? rowspan : undefined,
-    "data-addr": `${String(addr.rowAddr ?? "")},${String(addr.colAddr ?? "")}`,
-  }, ...blocks((cell.blocks || []) as Obj[], `${props.keyName}-b`));
+/** 렌더러 마운트 자리 — 제품은 늘 mountRhwp 다. Node 시험은 WASM iframe 을 띄울 수 없어 여기만 바꿔 낀다. */
+export const artifactRenderer = { mount: mountRhwp };
+
+/** 렌더러가 문서를 열지 못한 실패의 표지(DOM `data-status` 용 — 사용자 문안이 아니다). */
+export const ARTIFACT_RENDER_FAILED = "ARTIFACT_RENDER_FAILED";
+
+export type ArtifactShown =
+  | { state: "loading" }
+  | { state: "rendered" }
+  | { state: "failed"; status: string; detail: string };
+
+const noop = () => {};
+
+/** 보기 전용 마운트 인자. 편집으로 이어지는 훅(보존 검사·선택·문맥 메뉴·범위 고르기)을 하나도 싣지 않는다.
+ *  폭 맞춤은 마운트마다 명시한다(IDE-06 — Studio 가 맞춤 방식을 설정에 남긴다). */
+export function artifactViewerSpec(host: HTMLElement, content: string, filename: string,
+  callbacks: { onClose: () => void; onError: (error: unknown) => void }): RhwpMountSpec {
+  return {
+    host, content, fileName: filename, title: filename, readOnly: true, zoom: "fit", trackSelection: "never",
+    onChanged: noop, onSelectionChanged: noop, onError: callbacks.onError,
+    // iframe 안의 Escape 는 셸까지 올라오지 못한다 — Studio 가 넘긴 것만 닫기로 잇는다. 저장 등 그 밖의 키는 버린다.
+    onShortcut: (shortcut) => { if (shortcut === "Escape") callbacks.onClose(); },
+  };
 }
 
-/** 문단·표를 문서 순서대로 — 표 셀 안에는 다시 블록이 있으므로 재귀한다(중첩 표 포함). */
-function blocks(list: Obj[], keyPrefix: string): ReactNode[] {
-  return list.map((block, index) => {
-    const key = `${keyPrefix}-${index}`;
-    if (block.type === "paragraph") {
-      return h("p", { key, className: "artifact-para" }, String(block.text || ""));
+/** 실패 하나를 거절 면의 값으로 — 오류 문장은 그대로 사유가 된다. */
+export function renderFailure(error: unknown): ArtifactShown {
+  const detail = String((error as { message?: unknown } | null)?.message ?? error);
+  return { state: "failed", status: ARTIFACT_RENDER_FAILED, detail };
+}
+
+/** 원료를 받아 보기 전용으로 띄운다. 원료 거절·요청 실패·마운트 실패는 모두 거절 면 값으로 돌아온다. */
+export async function showArtifact(args: {
+  fetch: () => Promise<Obj>;
+  mount: (spec: RhwpMountSpec) => Promise<RhwpHandle>;
+  host: HTMLElement;
+  filename: string;
+  onClose: () => void;
+  onError: (error: unknown) => void;
+}): Promise<{ shown: ArtifactShown; handle: RhwpHandle | null }> {
+  try {
+    const reply = await args.fetch();
+    if (reply.ok !== true) {
+      return { shown: { state: "failed", status: String(reply.status || ""), detail: String(reply.detail || "") }, handle: null };
     }
-    const rows = (block.rows || []) as Obj[][];
-    return h("table", { key, className: "artifact-table" },
-      h("tbody", null,
-        ...rows.map((row, rowIndex) => h("tr", { key: `${key}-r${rowIndex}` },
-          ...row.map((cell, cellIndex) => createElement(Cell as any, {
-            key: `${key}-r${rowIndex}-c${cellIndex}`,
-            keyName: `${key}-r${rowIndex}-c${cellIndex}`,
-            cell,
-          }))))));
-  });
+    const handle = await args.mount(artifactViewerSpec(args.host, String(reply.content || ""), args.filename,
+      { onClose: args.onClose, onError: args.onError }));
+    return { shown: { state: "rendered" }, handle };
+  } catch (error) {
+    return { shown: renderFailure(error), handle: null };
+  }
 }
 
-function Region(props: { region: Obj; label: string; keyName: string }): ReactNode {
-  return h("section", { className: "picker-sec", key: props.keyName },
-    h("div", { className: "cap" }, props.label),
-    ...blocks((props.region.blocks || []) as Obj[], props.keyName));
-}
-
-/** 표시하지 못한 구간 — **언제나** 선다(#820 D3). 없으면 '없음' 이라고 말한다: 키째 지우면
- *  완전한 관찰과 부분 관찰이 화면에서 같아 보이고, 사용자는 못 본 구간을 본 것으로 읽는다. */
-function Unrendered(props: { structure: Obj }): ReactNode {
-  const regions = (props.structure.unrendered_regions || {}) as Obj;
-  const counts = (regions.counts || {}) as Record<string, number>;
-  const examples = (regions.examples || {}) as Record<string, unknown>;
-  const names = Object.keys(counts).sort();
-  const partial = props.structure.partial_coverage === true;
+function Refused(props: { status: string; detail: string }): ReactNode {
   return h("section", {
-    className: "picker-sec artifact-unrendered", id: "artifactUnrendered",
-    "data-partial": partial ? "true" : "false",
-    "aria-labelledby": "artifactUnrenderedCap",
+    className: "picker-sec artifact-refused", id: "artifactRefused", "data-status": props.status,
   },
-    h("div", { className: "cap", id: "artifactUnrenderedCap" }, "표시하지 못한 구간"),
-    partial
-      ? createElement(Fragment, null,
-          h("p", { className: "note warnbox", id: "artifactCoverageCode" },
-            `이 문서에는 여기서 그리지 못한 구간이 있습니다(${String(props.structure.coverage_code || "")}). 실제 문서를 열어 확인하세요.`),
-          h("ul", { className: "plain-list capnote", id: "artifactUnrenderedList" },
-            ...names.map((name) => h("li", { key: name },
-              `${name}: ${String(counts[name])}곳`,
-              examples[name] ? ` (예: ${String(examples[name])})` : ""))))
-      : h("p", { className: "muted capnote" }, "없음. 문서 전체를 구조로 읽었습니다."));
+    h("p", { className: "note dangerbox", id: "artifactRefusedTitle" },
+      ARTIFACT_REFUSAL_TITLE[props.status] || "문서를 확인하지 못했습니다"),
+    h("p", { className: "capnote", id: "artifactRefusedDetail" }, props.detail));
 }
 
-/** 미치환 표식 — 빈 값이 빈칸으로 새지 않고 표식으로 남는 것이 제품 계약이라, 실물에 그
- *  표식이 남았다면 세어서 드러낸다. 0건이면 그 사실을 말한다(침묵은 정보가 아니다). */
-function MissingMarkers(props: { structure: Obj }): ReactNode {
-  const markers = (props.structure.missing_value_markers || []) as Obj[];
-  return h("section", {
-    className: "picker-sec artifact-markers", id: "artifactMarkers",
-    "aria-labelledby": "artifactMarkersCap",
-  },
-    h("div", { className: "cap", id: "artifactMarkersCap" }, "빈 값 표식"),
-    markers.length
-      ? h("ul", { className: "plain-list capnote", id: "artifactMarkerList" },
-          ...markers.map((marker) => h("li", { key: String(marker.field || "") },
-            `${String(marker.field || "")}: ${String(marker.count || 0)}곳`)))
-      : h("p", { className: "muted capnote" }, "없음."));
+/** 관찰이 선 문서 하나의 보기 — 열린 면(ordinal)마다 새로 원료를 받아 마운트하고 닫히면 해제한다. */
+function ArtifactDocument(props: { controller: JobRunController; ordinal: number; filename: string }): ReactNode {
+  const host = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState<ArtifactShown>({ state: "loading" });
+  useEffect(() => {
+    let disposed = false;
+    let release: (() => void) | undefined;
+    const before = document.activeElement;
+    void showArtifact({
+      fetch: async () => expectHostValue(
+        await props.controller.client.dispatch("job", "artifact_content", {}), "job/artifact_content") as Obj,
+      mount: (spec) => artifactRenderer.mount(spec),
+      host: host.current!, filename: props.filename,
+      onClose: props.controller.closeArtifact,
+      onError: (error) => { if (!disposed) setShown(renderFailure(error)); },
+    }).then(({ shown: next, handle }) => {
+      if (disposed) { handle?.dispose(); return; }
+      if (handle) release = () => handle.dispose();
+      // Studio 는 문서를 싣는 동안 제 iframe 에 초점을 준다 — 시트가 준 초점(닫기)으로 돌린다.
+      keepFocusOutside(host.current, before);
+      setShown(next);
+    });
+    return () => { disposed = true; release?.(); };
+  }, [props.controller, props.ordinal]);
+  const failed = shown.state === "failed" ? shown : null;
+  return createElement(Fragment, null,
+    failed ? createElement(Refused as any, { status: failed.status, detail: failed.detail }) : null,
+    h("div", {
+      ref: host, className: "artifact-doc", id: "artifactDoc", "data-state": shown.state,
+      "aria-busy": shown.state === "loading" ? "true" : undefined, hidden: !!failed,
+    }));
 }
 
 export function JobArtifactSheet(props: { controller: JobRunController }): ReactNode {
@@ -120,12 +140,9 @@ export function JobArtifactSheet(props: { controller: JobRunController }): React
   const run = useRun(props.controller);
   const view = (snapshot?.artifact_view || {}) as Obj;
   const status = String(view.status || "");
-  const structure = (view.structure || null) as Obj | null;
   const filename = String(view.filename || "");
-  const observed = status === "observed" && structure !== null;
-  const sections = (structure?.sections || []) as Obj[];
-  const headers = (structure?.headers || []) as Obj[];
-  const footers = (structure?.footers || []) as Obj[];
+  const ordinal = Number(view.ordinal);
+  const observed = view.open === true && status === "observed";
   const saved = run.artifactSave;
 
   return h("div", { className: "modal-card sheet-card artifact-sheet" },
@@ -137,29 +154,11 @@ export function JobArtifactSheet(props: { controller: JobRunController }): React
         onClick: props.controller.closeArtifact,
       }, "닫기")),
     h("div", { className: "sheet-body artifact-sheet-body" },
-      h("p", { className: "modal-sub" },
-        "만들어진 문서를 다시 읽어 그린 내용입니다. 글꼴과 쪽 모양은 그리지 않습니다."),
       observed
-        ? createElement(Fragment, null,
-            ...headers.map((region, index) => createElement(Region as any, {
-              key: `h${index}`, keyName: `h${index}`, region, label: "머리말",
-            })),
-            ...sections.map((region, index) => createElement(Region as any, {
-              key: `s${index}`, keyName: `s${index}`, region, label: "본문",
-            })),
-            ...footers.map((region, index) => createElement(Region as any, {
-              key: `f${index}`, keyName: `f${index}`, region, label: "꼬리말",
-            })),
-            createElement(MissingMarkers as any, { structure }),
-            createElement(Unrendered as any, { structure }))
-        : h("section", {
-            className: "picker-sec artifact-refused", id: "artifactRefused",
-            "data-status": status,
-          },
-            h("p", { className: "note dangerbox", id: "artifactRefusedTitle" },
-              ARTIFACT_REFUSAL_TITLE[status] || "문서를 확인하지 못했습니다"),
-            h("p", { className: "capnote", id: "artifactRefusedDetail" },
-              String(view.detail || "")))),
+        ? createElement(ArtifactDocument as any, {
+            key: `${ordinal}:${filename}`, controller: props.controller, ordinal, filename,
+          })
+        : createElement(Refused as any, { status, detail: String(view.detail || "") })),
     h("div", { className: "modal-actions" },
       h("span", {
         className: "capnote", id: "artifactSaveNote", role: "status",
@@ -167,8 +166,8 @@ export function JobArtifactSheet(props: { controller: JobRunController }): React
       }, saved),
       h("button", {
         className: "btn primary", id: "artifactSaveAs", type: "button",
-        // 저장의 원료는 관찰한 bytes 다. 관찰이 서지 않은 상태에서 버튼을 살려 두면
-        // 「저장할 수 있을 것 같은」 미끼가 되고, 실제로 눌리면 백엔드가 거절한다.
+        // 저장의 원료는 관찰한 bytes 다. 관찰이 서지 않은 상태에서 버튼을 열어 두면
+        // 저장할 수 있을 것 같은 미끼가 되고, 실제로 눌리면 백엔드가 거절한다.
         disabled: !observed,
         onClick: () => { void props.controller.saveArtifactAs(); },
       }, "다른 이름으로 저장")));

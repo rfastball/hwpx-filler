@@ -159,21 +159,13 @@
    서야 하고 이쪽은 모달 하나가 창을 넘지 않아야 한다.) */
 .data-picker .pool-list{max-height:44vh}
 
-/* ---- 산출물 관찰 시트 (S7-03 · #825) ----
-   시트 골격(.sheet-card)을 쓰되 시각 어휘는 문서의 것이다(#820 D4). 문서를 문서처럼
-   읽히게 하려고 본문 폭을 재단하고 문단·표를 그 안에 세운다. 조판·서식 재현은
-   비범위라(#360) 글꼴·여백을 흉내 내지 않는다. */
-.artifact-sheet .artifact-sheet-body{display:flex;flex-direction:column;gap:var(--sp-12)}
-.artifact-sheet .picker-sec{max-width:72ch}
-.artifact-para{margin:0 0 var(--sp-6);white-space:pre-wrap;overflow-wrap:anywhere}
-.artifact-para:empty::before{content:"(빈 문단)";color:var(--a-muted)}
-/* 넓은 표는 **자기 상자 안에서** 가로로 흐른다 — 면 전체가 가로로 밀리면 본문을 잃는다. */
-.artifact-table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;
-  margin:var(--sp-6) 0;font-size:var(--fs-caption)}
-.artifact-table td{border:1px solid var(--n-border);padding:var(--sp-4) var(--sp-6);
-  vertical-align:top;min-width:6ch}
-.artifact-table td .artifact-para:last-child{margin-bottom:0}
-/* 못 본 구간·빈 값 표식은 부수 정보가 아니라 관찰의 일부다 — 접거나 흐리게 두지 않는다. */
-.artifact-sheet .artifact-unrendered[data-partial="true"]{
-  border-left:3px solid var(--a-warn);padding-left:var(--sp-8)}
-.artifact-sheet .artifact-refused{max-width:72ch}
+/* ---- 산출물 관찰 시트 (S7-03 · #825, #1138) ----
+   본문은 저작면과 같은 rhwp 보기 전용 렌더링이 시트의 남은 높이를 채운다(쪽 모양·글꼴은 렌더러가
+   그린다 — 여기서 흉내 내지 않는다). 렌더러가 제 스크롤을 가지므로 본문 상자는 스크롤하지 않는다.
+   거절 면만 읽는 폭으로 재단한다. */
+.artifact-sheet .artifact-sheet-body{display:flex;flex-direction:column;padding:0;overflow:hidden}
+.artifact-sheet .artifact-doc{flex:1 1 auto;min-height:0}
+.artifact-sheet .artifact-doc iframe{display:block;width:100%;height:100%;border:0}
+.artifact-sheet .artifact-refused{max-width:72ch;margin:0;padding:var(--sp-16) var(--sp-24)}
+.artifact-sheet>.modal-actions{flex:0 0 auto;align-items:center;margin:0;padding:var(--sp-12) var(--sp-24);
+  border-top:1px solid var(--a-border)}

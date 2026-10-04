@@ -68,10 +68,11 @@
  *                      reject_alerts(0 — 거절은 결과 구획이 앉힌다) ↔ refusal_alerts(1 —
  *                      구획이 말할 수 없는 거절은 알림 채널로 간다, #957 재라우팅).
  *                      하위 `artifact`(S7-03 · #825): 문서 목록 행이 그려지고(offsetParent) ·
- *                      「내용 보기」가 `job/artifact_open` 을 쏘고 `.artifact-sheet` 가
- *                      **보이며** · 관찰이 선 판은 문단·병합 표·빈 값 표식·「표시하지 못한
- *                      구간」을 함께 세우고 · 관찰이 서지 않은 두 상태(세션 밖 ↔ digest
- *                      불일치)가 **다른 문안**을 받으며 · 닫으면 초점이 그 행의 버튼으로
+ *                      「내용 보기」(아이콘)가 `job/artifact_open` 을 쏘고 `.artifact-sheet` 가
+ *                      **보이며** · 관찰이 선 판은 `job/artifact_content` 로 원료를 받아 실
+ *                      rhwp 보기 전용 렌더러에 싣고, 렌더러가 열지 못한 bytes 는 거절 면으로
+ *                      말하며(성공처럼 보이는 대체 없음) · 관찰이 서지 않은 두 상태(세션 밖 ↔
+ *                      digest 불일치)가 **다른 문안**을 받으며 · 닫으면 초점이 그 행의 버튼으로
  *                      돌아온다. 새 프로브 키·새 창 0 — 이 창의 증거에 붙는다.
  *   · job_density_narrow : 1열 ↔ job_mirror.job_grid_wide 의 2열.
  *
@@ -133,6 +134,23 @@ function stubDispatch(services, make) {
       if (Bridge.call === mine) Bridge.call = real;
       if (typedMine && Client.dispatch === typedMine) Client.dispatch = realDispatch;
     },
+  };
+}
+
+/** 관찰이 선 면의 렌더 결과(#1138) — 실 Studio iframe 이 서고 원료 적재를 시도해 로딩 상태를 벗을 때까지
+ *  기다린 뒤 읽는다. 옛 텍스트 투영의 자리가 다시 서면 실패를 성공처럼 접은 것이다. */
+async function readArtifactRender(ctx, doc, dispatches) {
+  const docEl = () => doc.getElementById("artifactDoc");
+  for (let tries = 0; tries < 100 && docEl()?.dataset?.state === "loading"; tries += 1) await ctx.sleep(100);
+  const text = (id) => String((doc.getElementById(id) || {}).textContent ?? "(자리 없음)");
+  return {
+    content_requested: dispatches.includes("job/artifact_content"),
+    observed_doc_state: String(docEl()?.dataset?.state ?? "(자리 없음)"),
+    observed_doc_hidden: !!docEl()?.hidden,
+    render_failed_status: String((doc.getElementById("artifactRefused") || {}).dataset?.status ?? "(자리 없음)"),
+    render_failed_title: text("artifactRefusedTitle"),
+    render_failed_detail: text("artifactRefusedDetail"),
+    text_projection_absent: doc.querySelector("#artifactSheet .artifact-para, #artifactSheet .artifact-table") === null,
   };
 }
 
@@ -1578,9 +1596,12 @@ async function runJobResult(ctx) {
   /* 열기 왕복은 스텁 안에서 돈다 — 실 백엔드에 닿으면 세션 없는 실 스냅샷이 이 창에
      착지해 §2.18 처분이 방금 세운 결과를 초기화한다(runJobMirror 가 같은 자리에서 배운 것). */
   const artifactDispatches = [];
+  /* 원료 요청에는 HWPX 가 아닌 bytes 를 「성립」으로 돌려준다 — 실 rhwp Studio 가 그것을 열지
+     못할 때 면이 빈 문서나 다른 표현으로 접지 않고 거절을 말하는지가 여기서 재는 사실이다. */
   const artifactStub = stubDispatch(services, () => async (screen, action) => {
     artifactDispatches.push(`${screen}/${action}`);
-    return {};
+    return action === "artifact_content"
+      ? { ok: true, ordinal: 0, filename: "공고서-001.hwpx", content: ctx.win.btoa("not a hwpx") } : {};
   });
   const openButton = docRow === null
     ? null : docRow.querySelector('[data-act="artifact-open"]');
@@ -1602,49 +1623,20 @@ async function runJobResult(ctx) {
   );
   artifact.absent_save_disabled = !!(doc.getElementById("artifactSaveAs") || {}).disabled;
 
-  /* 관찰이 선 상태의 상 — 구조·빈 값 표식·「표시하지 못한 구간」이 한 판에 선다.
-     값은 전부 Python 이 낸 스냅샷 형상 그대로다(표면이 재조립하지 않는다). */
+  /* 관찰이 선 상태 — 면은 원료를 받아 보기 전용 렌더러를 띄운다. 스냅샷에는 내용이 없다(#1138). */
   const observedSnap = deepCopy(baseSnap);
   observedSnap.artifact_view = {
     open: true, ordinal: 0, filename: "공고서-001.hwpx", status: "observed", detail: "",
-    structure: {
-      kind: "artifact-observation/v1",
-      sections: [{ blocks: [
-        { type: "paragraph", text: "계약 상대자 귀하", fields: [] },
-        { type: "table", rows: [[
-          { blocks: [{ type: "paragraph", text: "항목", fields: [] }],
-            span: { colSpan: 2, rowSpan: 1 }, addr: { colAddr: 0, rowAddr: 0 } },
-        ]] },
-      ] }],
-      headers: [], footers: [],
-      unrendered_regions: { counts: { mystery: 2 }, examples: { mystery: "sec/mystery" } },
-      partial_coverage: true,
-      coverage_code: "ARTIFACT_PARTIAL_COVERAGE",
-      missing_value_markers: [{ field: "추정가격", count: 1 }],
-    },
   };
   await pushAndSettle(ctx, "job", observedSnap);
-  artifact.observed_paragraph = mapAll(
-    doc.querySelectorAll("#artifactSheet .artifact-para"), (node) => node.textContent,
-  );
-  const mergedCell = doc.querySelector("#artifactSheet .artifact-table td");
-  artifact.observed_colspan = mergedCell === null ? -1 : Number(mergedCell.colSpan);
-  artifact.observed_markers = String(
-    (doc.getElementById("artifactMarkerList") || {}).textContent ?? "(자리 없음)",
-  );
-  const unrendered = doc.getElementById("artifactUnrendered");
-  artifact.unrendered_partial = String(unrendered?.dataset?.partial ?? "(자리 없음)");
-  artifact.unrendered_shown = !!unrendered && unrendered.offsetParent !== null;
-  artifact.unrendered_text = String(
-    (doc.getElementById("artifactUnrenderedList") || {}).textContent ?? "(자리 없음)",
-  );
+  Object.assign(artifact, await readArtifactRender(ctx, doc, artifactDispatches));
   artifact.observed_save_enabled = !(doc.getElementById("artifactSaveAs") || {}).disabled;
 
   /* 무결성 실패는 「준비 안 됨」과 다른 문장을 받는다(#820 §3, fallback 0). */
   const mismatchSnap = deepCopy(observedSnap);
   mismatchSnap.artifact_view = {
     open: true, ordinal: 0, filename: "공고서-001.hwpx",
-    status: "ARTIFACT_DIGEST_MISMATCH", detail: "내용이 안착 기록과 다르다", structure: null,
+    status: "ARTIFACT_DIGEST_MISMATCH", detail: "내용이 안착 기록과 다르다",
   };
   await pushAndSettle(ctx, "job", mismatchSnap);
   artifact.mismatch_title = String(

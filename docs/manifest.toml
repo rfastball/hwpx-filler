@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "f0ce38fa38d72ce8505f21df2243a88ac44fc0ed4e09f531e2e7f8ee7ba3e350"
+source_sha256 = "8b5c627df229cac436190282d0f43851510ec891a7dc23f02f2318078c5706fd"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/webapp/action_registry.py"]
 tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py"]
-source_sha256 = "7b6ca4beb119fc00a47deae4f16c70dbda9f2741b3b2d2c4083c3ebe1e2c7a24"
+source_sha256 = "4911e706fe5f58db2d74489b75ee73a8c2098abe40d8da95a52bc32e75c57656"
 body_sha256 = "ca13e786a14bb07b3a9363ceea6201f8e9d2d999421473945957c72acf7df235"
 
 [[topic]]
@@ -215,10 +215,10 @@ body_sha256 = "ca03c1ee80e21fe19b9f720bac49e382e30cf36cc7fccb755aac7bcd2a16fe1d"
 [[topic]]
 id = "workflow-results"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/job_execution_session.py", "src/hwpxfiller/webapp/txt_materialization.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
+sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/artifact_view_session.py", "src/hwpxfiller/webapp/job_execution_session.py", "src/hwpxfiller/webapp/txt_materialization.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py", "tests/test_txt_materialization.py"]
-source_sha256 = "65789c3ccbe0a5b761f3b08e14712380c719390b61074c408d81af44fe9fd8d4"
-body_sha256 = "5f7251e881413aae05c1a9d1d7d38129453ec623a93714858c00a9301d892369"
+source_sha256 = "72f09d30c75dfb211103826daa5d433635b2da57b0f6b1eaca2baa2c46abad67"
+body_sha256 = "6117c6262c8f41df0be77244ad44f06dbca4fe3bdb23cd01edae9ed91e74d8a7"
 
 [[topic]]
 id = "workflow-storage"
