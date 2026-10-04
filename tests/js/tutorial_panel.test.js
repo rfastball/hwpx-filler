@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, pressFact, runResultAction } from "../../frontend/src/tutorial/panel.ts";
 import { ANCHORS, anchorSelector } from "../../frontend/src/tutorial/anchors.ts";
-import { placeCoach, pressMissesTarget, spotFrame, watchBoxedPress, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
+import { createRevealer, measureTarget, placeCoach, pressMissesTarget, spotFrame, visibleRect, watchBoxedPress, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
 
 const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
 const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
@@ -416,4 +416,69 @@ test("reduced motion keeps the guide opacity-only: no glide, pulse or shake", ()
   assert.match(spot, /pointer-events:none/, "the scrim never takes the click");
   assert.match(spot, /var\(--a-scrim\)/);
   assert.doesNotMatch(spot, /outline-offset|transition/, "no detached outline; glide only between anchors");
+});
+
+/* A target and its ancestors, innermost first; the last ancestor's parent is <body>, where clipping stops. */
+function anchorIn(targetRect, ancestors, { position = "static" } = {}) {
+  const body = { parentElement: null };
+  const doc = { body, defaultView: { getComputedStyle: (node) => node.style } };
+  const node = (rect, style, client) => ({ ownerDocument: doc, style, getBoundingClientRect: () => rect, closest: () => null,
+    clientLeft: client?.left ?? 0, clientTop: client?.top ?? 0, clientWidth: client?.width ?? rect.width, clientHeight: client?.height ?? rect.height });
+  const element = node(targetRect, { position, overflowX: "visible", overflowY: "visible" });
+  let child = element;
+  for (const ancestor of ancestors) {
+    const parent = node(ancestor.rect, { position: "static", overflowX: "visible", overflowY: "visible", ...ancestor.style }, ancestor.client);
+    child.parentElement = parent;
+    child = parent;
+  }
+  child.parentElement = body;
+  return { element, root: { querySelectorAll: () => [element] } };
+}
+const scroller = (rect, style = { overflowY: "auto", overflowX: "hidden" }) => ({ rect, style, client: { width: rect.width - 12, height: rect.height } });
+const screenSize = { width: 1200, height: 800 };
+
+test("a target inside a scroll container is measured as its visible part, and as nothing once scrolled out", () => {
+  assert.deepEqual(visibleRect(box(100, 380, 60, 40), [box(80, 100, 300, 300)], screenSize), box(100, 380, 60, 20));
+  assert.equal(visibleRect(box(100, 520, 60, 24), [box(80, 100, 300, 300)], screenSize), null, "below the fold of the table");
+  assert.deepEqual(visibleRect(box(-10, 790, 40, 30), [], screenSize), box(0, 790, 30, 10), "the viewport clips too");
+  // The mapping table scrolls; the badge row sits below its fold, over the data preview drawn underneath.
+  const table = scroller(box(40, 120, 500, 300));
+  const hidden = anchorIn(box(300, 470, 40, 22), [{ rect: box(280, 460, 200, 40) }, table, { rect: box(0, 60, 1200, 740) }]);
+  assert.equal(measureTarget(hidden.root, "#badge", screenSize), null, "no ring over unrelated content");
+  const partial = anchorIn(box(300, 410, 40, 22), [table]);
+  assert.deepEqual(measureTarget(partial.root, "#badge", screenSize).rect, box(300, 410, 40, 10));
+  const scrollbar = anchorIn(box(520, 200, 40, 22), [table]);
+  assert.deepEqual(measureTarget(scrollbar.root, "#badge", screenSize).rect, box(520, 200, 8, 22), "the scrollbar gutter is not visible content");
+  const modal = anchorIn(box(300, 700, 80, 30), [scroller(box(250, 150, 600, 500)), { rect: box(0, 0, 1200, 800), style: { position: "fixed" } }]);
+  assert.equal(measureTarget(modal.root, "#browse", screenSize), null, "a dialog card clips its own scrolled-away controls");
+  const popover = anchorIn(box(300, 470, 40, 22), [table], { position: "fixed" });
+  assert.deepEqual(measureTarget(popover.root, "#pop", screenSize).rect, box(300, 470, 40, 22), "a fixed popover escapes the scroller");
+  const absolute = anchorIn(box(300, 470, 40, 22), [table, { rect: box(0, 60, 1200, 740), style: { position: "relative", overflowY: "hidden" } }], { position: "absolute" });
+  assert.deepEqual(measureTarget(absolute.root, "#abs", screenSize).rect, box(300, 470, 40, 22), "a static scroller is not an absolute box's container");
+});
+
+test("a changed anchor is scrolled into view once; re-measures never scroll against the user", () => {
+  const scrolled = [];
+  const reveal = createRevealer((element) => scrolled.push(element));
+  const first = anchorIn(box(300, 470, 40, 22), []);
+  const replaced = anchorIn(box(300, 470, 40, 22), []);
+  measureTarget(first.root, "#badge", screenSize, reveal("b6|mapping"));
+  measureTarget(first.root, "#badge", screenSize, reveal("b6|mapping"));
+  measureTarget(first.root, "#badge", screenSize, reveal("b6|mapping"));
+  assert.deepEqual(scrolled, [first.element], "one scroll per target change, none per re-measure");
+  measureTarget(replaced.root, "#badge", screenSize, reveal("b6|mapping"));
+  assert.deepEqual(scrolled, [first.element, replaced.element], "a re-rendered (replaced) element is revealed again");
+  measureTarget(replaced.root, "#badge", screenSize, reveal("b7|mapping"));
+  assert.equal(scrolled.length, 3, "the next beat reveals its anchor even when the element is the same");
+  let order = "";
+  const probe = anchorIn(box(1, 1, 1, 1), []);
+  probe.element.getBoundingClientRect = () => { order += "measure"; return box(1, 1, 1, 1); };
+  measureTarget(probe.root, "#x", screenSize, () => { order += "reveal,"; });
+  assert.match(order, /reveal,measure$/, "the ring's box is read after the reveal scrolled it");
+});
+
+test("a target scrolled out of sight leaves the existing way back, inside a dialog as well", () => {
+  assert.match(coachHtml({ lost: true }), new RegExp(`id="tutorialReturn"[^>]*>${copy.return}<`));
+  assert.match(coachHtml({ lost: true, inline: true, overlayBusy: true }), /id="tutorialReturn"/);
+  assert.doesNotMatch(coachHtml({ lost: true, overlayBusy: true }), /id="tutorialReturn"/, "an unrelated dialog keeps the guide quiet");
 });

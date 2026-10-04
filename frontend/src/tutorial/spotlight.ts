@@ -35,16 +35,72 @@ function cornerRadius(element: Element): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function inView(rect: Box, viewport: Viewport): boolean {
-  return rect.right > 0 && rect.bottom > 0 && rect.left < viewport.width && rect.top < viewport.height;
+/** The part of `rect` left visible by the viewport and every clipping box, or null when nothing of it shows. */
+export function visibleRect(rect: Box, clips: readonly Box[], viewport: Viewport): Box | null {
+  let left = Math.max(rect.left, 0), top = Math.max(rect.top, 0);
+  let right = Math.min(rect.right, viewport.width), bottom = Math.min(rect.bottom, viewport.height);
+  for (const clip of clips) {
+    left = Math.max(left, clip.left); top = Math.max(top, clip.top);
+    right = Math.min(right, clip.right); bottom = Math.min(bottom, clip.bottom);
+  }
+  return right > left && bottom > top ? { left, top, right, bottom, width: right - left, height: bottom - top } : null;
 }
 
-/** The first visible anchor inside `root`, or null when it is absent or wholly off screen. */
-export function measureTarget(root: ParentNode, selector: string | null, viewport: Viewport): Target | null {
+/** Padding box of a clipping ancestor (scrollbars excluded): what its scroll area can show. */
+function clientBox(node: Element): Box {
+  const rect = node.getBoundingClientRect();
+  const left = rect.left + node.clientLeft, top = rect.top + node.clientTop;
+  return { left, top, right: left + node.clientWidth, bottom: top + node.clientHeight, width: node.clientWidth, height: node.clientHeight };
+}
+
+function clipsOverflow(style: CSSStyleDeclaration): boolean {
+  return style.overflowX !== "visible" || style.overflowY !== "visible";
+}
+
+/** Boxes of the ancestors that clip `element`: every non-visible overflow box on its containing-block chain
+ *  (an absolute box skips static ancestors; a fixed box escapes them all). The viewport is clipped separately. */
+export function clipBoxes(element: Element): Box[] {
+  const view = element.ownerDocument?.defaultView;
+  const stop = element.ownerDocument?.body;
+  if (!view) return [];
+  const boxes: Box[] = [];
+  let scheme = view.getComputedStyle(element).position;
+  for (let node = element.parentElement; node && node !== stop && scheme !== "fixed"; node = node.parentElement) {
+    const style = view.getComputedStyle(node);
+    if (scheme === "absolute" && style.position === "static") continue;
+    if (clipsOverflow(style) && node.clientWidth > 0 && node.clientHeight > 0) boxes.push(clientBox(node));
+    scheme = style.position;
+  }
+  return boxes;
+}
+
+export type Reveal = (element: HTMLElement) => void;
+
+/** Brings a changed anchor into view inside every scroll ancestor. Instant, so the ring settles on the final box
+ *  in the same frame (the ring's own glide carries the motion, and reduced motion has none). */
+export function scrollAnchor(element: HTMLElement): void {
+  element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+}
+
+/** Reveal once per anchor: a new beat key or a replaced element scrolls; a re-measure of the same element never
+ *  does, so a user who scrolls the anchor away is not pulled back. */
+export function createRevealer(scroll: Reveal): (key: string) => Reveal {
+  let shown: { key: string; element: HTMLElement | null } = { key: "", element: null };
+  return (key) => (element) => {
+    if (shown.key === key && shown.element === element) return;
+    shown = { key, element };
+    scroll(element);
+  };
+}
+
+/** The first visible anchor inside `root`, as the box its clipping ancestors and the viewport leave visible;
+ *  null when it is absent or scrolled wholly out of sight. `reveal` runs before measuring. */
+export function measureTarget(root: ParentNode, selector: string | null, viewport: Viewport, reveal?: Reveal): Target | null {
   const element = visibleElement(root, selector);
   if (!element) return null;
-  const rect = element.getBoundingClientRect();
-  return inView(rect, viewport) ? { rect, radius: cornerRadius(element) } : null;
+  reveal?.(element);
+  const rect = visibleRect(element.getBoundingClientRect(), clipBoxes(element), viewport);
+  return rect ? { rect, radius: cornerRadius(element) } : null;
 }
 
 export function sameTarget(a: Target | null, b: Target | null): boolean {

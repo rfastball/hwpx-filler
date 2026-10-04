@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { icon } from "../screens/icons.ts";
 import { anchorSelector } from "./anchors.ts";
-import { GLIDE_WINDOW, measureTarget, parity, placeCoach, sameTarget, spotFrame, visibleElement, watchBoxedPress, watchLayout, watchMissedPress } from "./spotlight.ts";
+import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchBoxedPress, watchLayout, watchMissedPress } from "./spotlight.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
 export type Lesson = {
@@ -163,7 +163,7 @@ function CoachFoot(props: CoachProps): ReactNode {
   const button = (id: string | undefined, label: string, onClick: () => void) =>
     h("button", { id, className: "btn primary sm", type: "button", disabled: pending, onClick }, label);
   return h("div", { className: "tutorial-coach-foot" },
-    props.lost && !props.overlayBusy ? button("tutorialReturn", copy.return, props.recover) : null,
+    props.lost && (props.inline || !props.overlayBusy) ? button("tutorialReturn", copy.return, props.recover) : null,
     beat.mode === "explain" && beat.can_next ? button(undefined, copy.next, () => props.act("next")) : null,
     props.inline ? props.exit : null);
 }
@@ -269,6 +269,24 @@ export function TutorialLessons(props: LessonControls): ReactNode {
       !practice ? quiet(snapshot.copy.reset, () => props.confirm("reset_progress"), { className: "btn quiet sm tutorial-destructive" }) : null));
 }
 
+/** Visible box of the current anchor inside `root` (a dialog) or the document. A changed anchor — a new beat key or
+ *  a replaced element — is scrolled into view once; later re-measures only follow the layout and never scroll
+ *  against the user. A box scrolled wholly out of sight measures null, which offers the existing way back. */
+function useAnchorBox(doc: Document, root: Element | null, selector: string | null, key: string, deps: readonly unknown[]): Target | null {
+  const [found, setFound] = useState<Target | null>(null);
+  const [reveal] = useState(() => createRevealer(scrollAnchor));
+  useLayoutEffect(() => {
+    if (!selector) { setFound(null); return undefined; }
+    const measure = () => {
+      const next = measureTarget(root ?? doc, selector, viewportOf(doc), reveal(key));
+      setFound((before) => sameTarget(before, next) ? before : next);
+    };
+    measure();
+    return watchLayout(doc, measure);
+  }, [doc, root, selector, key, reveal, ...deps]);
+  return found;
+}
+
 /** The fact a press beat reports, or null: only a live action beat marked `press`, on its own screen. */
 export function pressFact(snapshot: TutorialSnapshot | null, screen: string | null): Record<string, unknown> | null {
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
@@ -298,7 +316,6 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const overlayHost = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.currentHost ?? noHost, ports.overlay.currentHost ?? noHost);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
-  const [found, setFound] = useState<Target | null>(null);
   const [resultDismissed, setResultDismissed] = useState(false);
 
   useEffect(() => { void ports.loadInitial().catch((error) => ports.alarm(String(error))); }, [ports]);
@@ -328,15 +345,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beatSelector
     : result && result.screen === screen ? anchorSelector(result.target) : null;
   usePressReport(ports, snapshot, screen, beatSelector);
-  useLayoutEffect(() => {
-    if (!target) { setFound(null); return undefined; }
-    const measure = () => {
-      const next = measureTarget(dialogHost ?? ports.doc, target, viewportOf(ports.doc));
-      setFound((before) => sameTarget(before, next) ? before : next);
-    };
-    measure();
-    return watchLayout(ports.doc, measure);
-  }, [target, ports.doc, screen, open, dialogHost]);
+  const found = useAnchorBox(ports.doc, dialogHost, target, `${beat?.id}|${target}`, [screen, open]);
   const resultHeight = useElementHeight(ports.doc, "tutorialFinale", 330, [result?.title, found]);
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
