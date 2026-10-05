@@ -725,7 +725,7 @@ export function createAuthoringController(deps: Deps) {
 
   return {
     // 「데이터로 필드 찾기」(#1156) — 다섯 액션과 띠·팝오버 상태. 만든 결과는 이 화면의 편집 사슬(편집기 apply → 내용 갱신)을 탄다.
-    proposal: createProposal({ dispatch, fenced, flush, editor: (id) => editors.get(id), viewId: () => viewId, tab, view: () => view, update, changed,
+    proposal: createProposal({ dispatch, fenced, flush, editor: (id) => editors.get(id), applyPreview, viewId: () => viewId, tab, view: () => view, update, changed,
       revision, pending: (id) => buffers.has(id), redecorate, scheduleTrial, dataPicker: deps.dataPicker, toast: deps.undo }),
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
     snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,

@@ -12,7 +12,7 @@ const proposalTab = () => ({ ...hwpxTab(), trial_result: null, trial_state: "unt
         binding: { type: "amount", fmt: "{:,}", label: "천 단위 쉼표" }, reason: "", note: "", only: null, links_existing: false, count_text: "1곳",
         spots: [{ id: "s1", entry: "Contents/section0.xml", paragraph: 4, cell_path: null, start: 7, end: 18, where: "" }] },
       { id: "g_way", kind: "held", name: "입찰방식", column: "입찰방식", columns: [], value: "전자입찰", raw: "전자입찰",
-        binding: { type: "text", fmt: "", label: "원문" }, reason: "문장 속 낱말과 같습니다. 같은 값 2곳이 모두 문장 속에 있습니다.", note: "", only: null,
+        binding: { type: "text", fmt: "", label: "원문" }, reason: "문장 속 낱말과 같습니다. 같은 값 2곳이 모두 문장 속에 있습니다.", note: "", only: null, only_label: "이 자리만 필드로",
         links_existing: false, count_text: "2곳",
         spots: [{ id: "s2", entry: "Contents/section0.xml", paragraph: 6, cell_path: null, start: 0, end: 4, where: "" },
           { id: "s3", entry: "Contents/section0.xml", paragraph: 8, cell_path: null, start: 2, end: 6, where: "" }] }],

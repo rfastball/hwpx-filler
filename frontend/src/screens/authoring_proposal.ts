@@ -9,7 +9,8 @@ import type { AuthoringEditor } from "./authoring_controller.ts";
 
 type Obj = Record<string, any>;
 
-/** 이 기능의 고정 문구 — 이름·수가 든 문장은 아래 함수가 계약 문형 그대로 잇는다(#1156 문구 목록). */
+/** 이 기능의 고정 문구(단추·표지) — 이름·수가 든 문장(출처 줄·같은 이름 필드 주석·「이 자리만」 단추 이름·만든 뒤 알림)은
+ *  Python 이 묶음·결과에 실어 준다(#1156 문구 목록). */
 export const PROPOSAL_COPY = {
   title: "데이터로 필드 찾기",
   menu: "데이터로 필드 찾기…",
@@ -28,20 +29,15 @@ export const PROPOSAL_COPY = {
   raw: "데이터 값",
   make: "필드로 만들기",
   only: "이 자리만",
-  onlyHeld: "이 자리만 필드로",
-  onlyCell: "표 칸 1곳만 필드로",
   keep: "그대로 두기",
   close: "제안 닫기",
   undo: "실행 취소",
-  linksExisting: "같은 이름 필드에 자리를 더합니다.",
+  columnPick: "필드 이름과 연결 열",
 } as const;
 export const countsText = (proposals: number, held: number) => `제안 ${proposals} · 보류 ${held}`;
 export const makeAllText = (count: number) => `제안 ${count}개 모두 필드로`;
 export const sameText = (count: number) => `같은 값 ${count}곳`;
-export const sourceText = (row: string, column: string) => `${row} ‘${column}’ 열과 같은 값입니다.`;
 export const spotName = (group: Obj) => `${group.kind === "held" ? "보류된 제안" : "필드 제안"} ${group.name}: ${group.value}`;
-export const madeOne = (name: string) => `‘${name}’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다.`;
-export const madeAll = (count: number) => `필드 ${count}개를 만들고 연결 초안에 열과 표시 형식을 넣었습니다.`;
 
 /** 팝오버가 선 자리 — 연 묶음·자리, 연 길(문서 캐럿 `spot`·구조 패널 줄 `row`), 문서에서 열었으면 캐럿 줄(호스트 좌표),
  *  초점을 팝오버로 옮길 차례 번호(패널 줄에서 연 때만 — 문서에서 연 팝오버는 타자 중의 초점을 가져가지 않는다). */
@@ -114,24 +110,18 @@ export function missingLines(proposal: Obj | null): { columns: string; reason: s
   return [...lines].map(([reason, columns]) => ({ columns: `${PROPOSAL_COPY.missing} · ${columns.join(", ")}`, reason }));
 }
 
-const isCell = (spot: Obj | null | undefined) => Array.isArray(spot?.cell_path) && spot!.cell_path.length > 0;
-/** 행 표지 — 고른 행의 Python 이름표(「3행」), 없으면 행 번호에 「행」. */
-function rowLabel(proposal: Obj): string {
-  const data: Obj = proposal.data || {};
-  const row = (Array.isArray(data.rows) ? data.rows : []).find((entry: Obj) => entry.index === data.row);
-  return String(row?.label ?? `${data.row ?? ""}${PROPOSAL_COPY.row}`);
-}
-
-/** 보류 묶음의 「이 자리만」 — 고를 수 있는 한 자리(`only`, 라벨 자리)가 있으면 그 자리이고 표 칸이면 「표 칸 1곳만 필드로」,
- *  아니면 연 자리 하나다. 제안 묶음은 자리가 둘 이상일 때만 연 자리 하나를 따로 만들 수 있다. */
+/** 보류 묶음의 「이 자리만」 — 단추 이름은 Python `only_label`(없으면 단추가 없다)이고, 고를 수 있는 한 자리(`only`)가 있으면
+ *  그 자리, 아니면 연 자리 하나다. 제안 묶음은 자리가 둘 이상일 때만 연 자리 하나를 따로 만들 수 있다. */
 function onlyAction(group: Obj, spot: Obj): { label: string; spot: string } | null {
-  if (group.kind !== "held") return spotsOf(group).length > 1 ? { label: PROPOSAL_COPY.only, spot: String(spot.id) } : null;
-  const only = spotsOf(group).find((entry) => entry.id === group.only);
-  return { label: only && isCell(only) ? PROPOSAL_COPY.onlyCell : PROPOSAL_COPY.onlyHeld, spot: String((only || spot).id) };
+  if (group.kind === "held") {
+    const only = spotsOf(group).find((entry) => entry.id === group.only);
+    return group.only_label ? { label: String(group.only_label), spot: String((only || spot).id) } : null;
+  }
+  return spotsOf(group).length > 1 ? { label: PROPOSAL_COPY.only, spot: String(spot.id) } : null;
 }
 
 /** 팝오버 한 장의 모양 — 연 묶음이 투영에 없으면(다시 계산되어 사라졌으면) null. 문장은 Python 것이고, 여기서 잇는 것은
- *  출처 줄(「N행 ‘열’ 열과 같은 값입니다.」)과 같은 값 수뿐이다. */
+ *  같은 값 수 표지뿐이다. 같은 값의 열이 여럿이면 머리가 열 고르기(`choices`)다. */
 export function popoverView(proposal: Obj | null, open: ProposalOpen | null | undefined) {
   const group = open ? findGroup(proposal, open.group) : null;
   const spot = spotsOf(group).find((entry) => entry.id === open?.spot) || firstSpot(group);
@@ -139,7 +129,9 @@ export function popoverView(proposal: Obj | null, open: ProposalOpen | null | un
   const held = group.kind === "held";
   return {
     group: String(group.id), spot: String(spot.id), held, name: String(group.name ?? ""), dialogLabel: `${group.name} ${PROPOSAL_COPY.proposals}`,
-    source: sourceText(rowLabel(proposal), columnOf(group)),
+    source: String(group.source_text ?? ""),
+    column: columnOf(group),
+    choices: columnChoices(group),
     ...popoverDetails(group),
     reason: held ? String(group.reason || "") : "",
     make: !held,
@@ -148,6 +140,11 @@ export function popoverView(proposal: Obj | null, open: ProposalOpen | null | un
 }
 /** 연결 열 이름 — Python `column`(없으면 필드 이름). */
 const columnOf = (group: Obj) => String(group.column ?? group.name ?? "");
+/** 팝오버 머리의 열 고르기 — 지금 열과 「열도 같은 값」 열(Python `columns`). 다른 열이 없으면 빈 목록(이름만 선다). */
+function columnChoices(group: Obj): string[] {
+  const others = (Array.isArray(group.columns) ? group.columns : []).map((column: Obj) => String(column.name ?? "")).filter(Boolean);
+  return others.length ? [columnOf(group), ...others] : [];
+}
 /** 표시 형식 줄 — 표시 이름이 「원문」이 아닐 때만, 데이터의 원시 값과 함께 선다. */
 function formatOf(group: Obj): { label: string; raw: string } | null {
   const label = group.binding?.label;
@@ -163,7 +160,7 @@ function popoverDetails(group: Obj) {
     format: formatOf(group),
     same: spots.length > 1 ? { text: sameText(spots.length), where } : null,
     note: String(group.note || ""),
-    linksExisting: !!group.links_existing,
+    links: String(group.links_note || ""),
   };
 }
 
@@ -229,6 +226,8 @@ export type ProposalHost = {
   fenced(id: string, payload?: Obj): Obj;
   flush(id: string): Promise<void>;
   editor(id: string): AuthoringEditor | undefined;
+  /** 이 화면의 미리보기 적용 사슬(`applyPreview`) — 확정 직전 revision 재검사·편집기 한 단위·내용 갱신·실행 취소 표지. */
+  applyPreview(prepared: Obj): Promise<unknown>;
   viewId(): string;
   tab(id?: string): Obj;
   view(): Obj;
@@ -317,24 +316,21 @@ export function createProposal(host: ProposalHost) {
     if (Object.keys(selection).length) await host.editor(host.viewId())?.focus(selection);
   }
 
-  /** 만든 결과(편집 후 본문)를 편집기의 기존 한 단위로 얹는다 — Python 이 그 revision 에서 지은 결과이고, 그사이 편집기가
-   *  바뀌었으면 편집기의 `apply` 가 기대 본문 검사로 거절한다. 만든 뒤 결과 시험이 다시 돈다. */
+  /** 만들기 — Python 이 그 revision 에서 지은 미리보기(와 그 명령)를 이 화면의 미리보기 적용 사슬에 넘긴다. 사슬이 확정 직전에
+   *  같은 명령을 다시 미리 보아 revision 을 재검사하고, 편집기에 한 단위로 얹은 뒤 내용을 갱신한다(그 갱신이 Python 의 연결 초안을
+   *  기록한다). 그사이 문서·탭이 바뀌었으면 얹지 않는다. */
   async function commit(id: string, action: string, payload: Obj): Promise<Obj | null> {
     const editor = host.editor(id);
     if (!editor) return null;
     await host.flush(id);
     const editorContent = await editor.content();
+    const atRevision = host.revision(id);
     const result = await host.dispatch(action, host.fenced(id, payload));
     if (result.refusal) throw new Error(String(result.refusal.message || ""));
-    const content = result.content ?? result.result;
-    if (typeof content !== "string") throw new Error(`authoring/${action}: content`);
-    await editor.apply(content, result.edits || [], "create_field", editorContent);
-    host.changed(id, await editor.content());
-    await host.flush(id);
-    const label = String(result.label || MAKE_LABEL);
-    host.update({ lastCommandLabel: label, commandNote: { seq: (host.view().commandNote?.seq || 0) + 1, kind: "apply", label } });
-    host.scheduleTrial(id);
-    return result;
+    if (!result.command || typeof result.command !== "object") throw new Error(`authoring/${action}: command`);
+    if (host.viewId() !== id || host.revision(id) !== atRevision) return null;
+    const applied = await host.applyPreview({ ...result, session_id: id, revision: atRevision, editorContent, command: result.command });
+    return applied ? result : null;
   }
 
   /** 행동 뒤 — 팝오버를 걷고, 패널 줄에서 열었으면 초점은 줄 목록(같은 차례의 줄)으로 간다. */
@@ -343,10 +339,11 @@ export function createProposal(host: ProposalHost) {
     if (open?.origin === "row") host.update({ proposalFocus: (host.view().proposalFocus || 0) + 1 });
   }
 
-  /** 되돌리기 알림 — Python 문장(없으면 계약 문형)과 「실행 취소」. 그 뒤 문서가 바뀌었으면 누름은 아무것도 되돌리지 않는다. */
-  function announce(id: string, result: Obj, fallback: string) {
+  /** 되돌리기 알림 — Python 문장(`toast`)과 「실행 취소」. 그 뒤 문서가 바뀌었으면 누름은 아무것도 되돌리지 않는다. */
+  function announce(id: string, result: Obj) {
     const at = host.revision(id);
-    const message = String(result.toast || result.message || fallback);
+    const message = String(result.toast || "");
+    if (!message) return;
     host.toast?.show(message, async () => {
       if (host.viewId() !== id || host.pending(id) || host.revision(id) !== at) return;
       await host.editor(id)?.command("undo");
@@ -369,7 +366,7 @@ export function createProposal(host: ProposalHost) {
       const result = group && await commit(id, "propose_make", { group_id: groupId, ...(spotId ? { spot_id: spotId } : {}) });
       if (!result) return;
       settle(open);
-      announce(id, result, madeOne(String(group!.name ?? "")));
+      announce(id, result);
     },
     async makeAll() {
       const id = host.viewId();
@@ -377,7 +374,7 @@ export function createProposal(host: ProposalHost) {
       const result = count ? await commit(id, "propose_make_all", {}) : null;
       if (!result) return;
       settle(host.view().proposalOpen || null);
-      announce(id, result, madeAll(Number(result.count) || count));
+      announce(id, result);
     },
     async dismiss(groupId: string) {
       const id = host.viewId();
@@ -385,6 +382,13 @@ export function createProposal(host: ProposalHost) {
       await host.flush(id);
       await host.dispatch("propose_dismiss", host.fenced(id, { group_id: groupId }));
       settle(open);
+    },
+    /** 팝오버 머리의 열 고르기 — 같은 값의 열 가운데 하나(판정·거절은 Python). 팝오버는 같은 묶음 열쇠로 그대로 선다. */
+    async pickColumn(groupId: string, column: string) {
+      const id = host.viewId();
+      await host.flush(id);
+      await host.dispatch("propose_pick_column", host.fenced(id, { group_id: groupId, column }));
+      host.redecorate();
     },
     async off() {
       const id = host.viewId();

@@ -22,13 +22,15 @@ const proposal = (patch = {}) => ({
   groups: [
     { id: "g_price", kind: "proposal", name: "추정가격", column: "추정가격", columns: [{ name: "현행가격", note: "현행가격 열도 같은 값입니다." }],
       value: "170,309,180원", raw: "170309180", binding: { type: "amount", fmt: "{:,}", label: "천 단위 쉼표" }, reason: "", note: "", only: null,
-      links_existing: false, count_text: "1곳", spots: [{ id: "s1", entry: SECTION, paragraph: 4, cell_path: null, start: 7, end: 18, text: "170,309,180", where: "1. 나" }] },
+      source_text: "3행 ‘추정가격’ 열과 같은 값입니다.", links_note: "", only_label: null, links_existing: false, count_text: "1곳", spots: [{ id: "s1", entry: SECTION, paragraph: 4, cell_path: null, start: 7, end: 18, text: "170,309,180", where: "1. 나" }] },
     { id: "g_title", kind: "proposal", name: "공고명", column: "공고명", columns: [], value: "청사 보안", raw: "청사 보안",
       binding: { type: "text", fmt: "", label: "원문" }, reason: "", note: "", only: null, links_existing: true, count_text: "2곳",
+      source_text: "3행 ‘공고명’ 열과 같은 값입니다.", links_note: "같은 이름 필드에 자리를 더합니다.", only_label: null,
       spots: [{ id: "s2", entry: SECTION, paragraph: 1, cell_path: null, start: 0, end: 5, where: "첫 문장" },
         { id: "s3", entry: SECTION, paragraph: 3, cell_path: null, start: 6, end: 11, where: "1. 가" }] },
     { id: "g_judge", kind: "held", name: "낙찰자결정방법", column: "낙찰자결정방법", columns: [], value: "적격심사", raw: "적격심사",
       binding: { type: "text", fmt: "", label: "원문" }, reason: "문장 속에도 3번 나옵니다. 표 칸 1곳만 고를 수 있습니다.", note: "", only: "s4",
+      source_text: "3행 ‘낙찰자결정방법’ 열과 같은 값입니다.", links_note: "", only_label: "표 칸 1곳만 필드로",
       links_existing: false, count_text: "4곳",
       spots: [{ id: "s5", entry: SECTION, paragraph: 12, cell_path: null, start: 3, end: 7, where: "" },
         { id: "s4", entry: SECTION, paragraph: 0, cell_path: CELL, start: 0, end: 4, where: "표 칸" }] },
@@ -100,9 +102,10 @@ test("#1156 outline: proposal and held rows carry Python's count text and the co
     { columns: "찾지 못한 열 · 담당", reason: "문서에서 같은 값을 찾지 못했습니다." }]);
 });
 
-test("#1156 popover: the source line names the row and column; format shows only when not 원문; other columns are read-only notes", () => {
+test("#1156 popover: Python's source line; format shows only when not 원문; equal-value columns make the head a column pick", () => {
   const price = popoverView(proposal(), { group: "g_price", spot: "s1" });
   assert.equal(price.source, "3행 ‘추정가격’ 열과 같은 값입니다.");
+  assert.deepEqual([price.column, price.choices], ["추정가격", ["추정가격", "현행가격"]], "같은 값의 열이 있으면 머리가 열 고르기다");
   assert.equal(price.dialogLabel, "추정가격 제안");
   assert.deepEqual(price.format, { label: "천 단위 쉼표", raw: "170309180" });
   assert.deepEqual(price.columns, ["현행가격 열도 같은 값입니다."]);
@@ -111,7 +114,8 @@ test("#1156 popover: the source line names the row and column; format shows only
   assert.equal(title.format, null, "원문은 표시 형식 줄을 세우지 않는다");
   assert.deepEqual(title.same, { text: "같은 값 2곳", where: "첫 문장, 1. 가" });
   assert.deepEqual(title.only, { label: "이 자리만", spot: "s3" });
-  assert.equal(title.linksExisting, true);
+  assert.equal(title.links, "같은 이름 필드에 자리를 더합니다.", "같은 이름 필드 주석은 Python 문장이다");
+  assert.deepEqual(title.choices, [], "다른 열이 없으면 이름만 선다");
 });
 
 test("#1156 popover (held): no make verb, Python's reason, and the one allowed place — a table cell reads 표 칸 1곳만 필드로", () => {
@@ -119,8 +123,10 @@ test("#1156 popover (held): no make verb, Python's reason, and the one allowed p
   assert.deepEqual([held.held, held.make, held.reason], [true, false, "문장 속에도 3번 나옵니다. 표 칸 1곳만 고를 수 있습니다."]);
   assert.deepEqual(held.only, { label: "표 칸 1곳만 필드로", spot: "s4" }, "고를 수 있는 자리는 Python 의 only 다");
   const loose = proposal();
-  loose.groups[2] = { ...loose.groups[2], only: null, reason: "문장 속 자리입니다." };
+  loose.groups[2] = { ...loose.groups[2], only: null, only_label: "이 자리만 필드로", reason: "문장 속 자리입니다." };
   assert.deepEqual(popoverView(loose, { group: "g_judge", spot: "s5" }).only, { label: "이 자리만 필드로", spot: "s5" }, "only 가 없으면 연 자리 하나");
+  loose.groups[2] = { ...loose.groups[2], only_label: null };
+  assert.equal(popoverView(loose, { group: "g_judge", spot: "s5" }).only, null, "Python 이 단추 이름을 주지 않으면 단추가 없다");
   assert.equal(popoverView(proposal(), { group: "gone", spot: "s1" }), null, "다시 계산되어 사라진 묶음은 그리지 않는다");
 });
 
@@ -248,8 +254,10 @@ test("#1156 panel row: opening scrolls the editor to the group's first spot (hel
 
 test("#1156 make: propose_make's result lands in the editor as one apply, then the content update; the toast carries Python's sentence and 실행 취소", async () => {
   let revision = 0;
+  const command = { type: "create_field", name: "추정가격", entry: SECTION, paragraph: 4, start: 7, end: 18 };
   const { controller, snapshot, calls, toasts } = harness((action) => action === "propose_make"
-    ? { content: "TkVX", edits: [], toast: "‘추정가격’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다." }
+    ? { content: "TkVX", edits: [], command, confirm: "none", toast: "‘추정가격’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다." }
+    : action === "preview" ? { content: "TkVX", edits: [] }
     : action === "update" ? { revision: ++revision } : {});
   snapshot.tabs[0].proposal = proposal();
   await controller.activate("a");
@@ -258,6 +266,8 @@ test("#1156 make: propose_make's result lands in the editor as one apply, then t
   controller.update({ proposalOpen: { group: "g_price", spot: "s1", origin: "spot", rect: null, focus: 0 } });
   await controller.proposal.make("g_price");
   assert.deepEqual(calls.find((call) => call.action === "propose_make"), { action: "propose_make", session_id: "a", revision: 0, group_id: "g_price" });
+  assert.deepEqual(calls.find((call) => call.action === "preview"), { action: "preview", session_id: "a", revision: 0, command },
+    "적용 사슬이 확정 직전에 같은 명령을 다시 미리 본다");
   assert.deepEqual(log, [["apply", "TkVX", [], "create_field", "원본"]], "편집기의 기존 한 단위(apply)에 기대 본문과 함께");
   assert.deepEqual(calls.filter((call) => call.action === "update").map((call) => call.content), ["TkVX"], "만든 본문이 Python 에 돌아간다");
   const view = controller.viewModel.getSnapshot();
@@ -275,7 +285,10 @@ test("#1156 make: propose_make's result lands in the editor as one apply, then t
 });
 
 test("#1156 make-all and dismiss: make-all is one apply with the contract sentence when Python sends none; dismiss and off are their own actions", async () => {
-  const { controller, snapshot, calls, toasts } = harness((action) => action === "propose_make_all" ? { content: "QUxM", edits: [] }
+  const all = { type: "create_fields", fields: [] };
+  const { controller, snapshot, calls, toasts } = harness((action) => action === "propose_make_all"
+    ? { content: "QUxM", edits: [], command: all, label: "필드로 만들기", toast: "필드 2개를 만들고 연결 초안에 열과 표시 형식을 넣었습니다." }
+    : action === "preview" ? { content: "QUxM", edits: [], label: "필드로 만들기" }
     : action === "update" ? { revision: 1 } : action === "propose_make" ? { refusal: { message: "문서가 바뀌었습니다." } } : {});
   snapshot.tabs[0].proposal = proposal();
   await controller.activate("a");
@@ -283,7 +296,8 @@ test("#1156 make-all and dismiss: make-all is one apply with the contract senten
   controller.attach("a", editor(log));
   await controller.proposal.makeAll();
   assert.deepEqual(calls.find((call) => call.action === "propose_make_all"), { action: "propose_make_all", session_id: "a", revision: 0 });
-  assert.deepEqual(log, [["apply", "QUxM", [], "create_field", "원본"]]);
+  assert.deepEqual(log, [["apply", "QUxM", [], "create_fields", "원본"]], "모두 필드로도 편집기 한 단위다");
+  assert.equal(controller.viewModel.getSnapshot().lastCommandLabel, "필드로 만들기");
   assert.equal(toasts[0].message, "필드 2개를 만들고 연결 초안에 열과 표시 형식을 넣었습니다.");
   await assert.rejects(controller.proposal.make("g_price"), /문서가 바뀌었습니다/, "거절은 Python 문장 그대로 오류다");
   await controller.proposal.dismiss("g_judge");
@@ -331,4 +345,20 @@ test("#1156 entry: 데이터로 필드 찾기… sits in 더보기 and the palet
   assert.equal(entry({ media: "hwpx", rhwp_editable: true })[2], false);
   assert.equal(entry({ media: "hwpx", rhwp_editable: false })[2], true);
   assert.equal(entry(undefined)[2], true);
+});
+
+test("#1156 column pick: equal-value columns turn the popover head into a named select; choosing one sends propose_pick_column", async () => {
+  const { controller, snapshot, calls } = harness((action) => action === "locate" ? { matches: [], commands: [] } : {});
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  controller.attach("a", editor([]));
+  controller.update({ proposalOpen: { group: "g_price", spot: "s1", origin: "spot", rect: null, focus: 0 } });
+  const markup = render(controller);
+  assert.ok(markup.includes('<select class="field authoring-proposal-field authoring-proposal-column" aria-label="필드 이름과 연결 열">'), "머리가 열 고르기다");
+  assert.ok(markup.includes('<option value="추정가격" selected="">추정가격</option><option value="현행가격">현행가격</option>'));
+  await controller.proposal.pickColumn("g_price", "현행가격");
+  assert.deepEqual(calls.find((call) => call.action === "propose_pick_column"),
+    { action: "propose_pick_column", session_id: "a", revision: 0, group_id: "g_price", column: "현행가격" });
+  controller.update({ proposalOpen: { group: "g_title", spot: "s3", origin: "spot", rect: null, focus: 0 } });
+  assert.ok(render(controller).includes('<span class="authoring-proposal-field">공고명</span>'), "다른 열이 없으면 이름만 선다");
 });

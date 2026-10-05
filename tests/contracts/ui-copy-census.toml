@@ -216,27 +216,11 @@ text = "연결된 작업의 영향은 확인하지 않았습니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_proposal.ts"
-text = "{} ‘{}’ 열과 같은 값입니다."
-
-[[sentence]]
-file = "frontend/src/screens/authoring_proposal.ts"
-text = "‘{}’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
-
-[[sentence]]
-file = "frontend/src/screens/authoring_proposal.ts"
-text = "같은 이름 필드에 자리를 더합니다."
-
-[[sentence]]
-file = "frontend/src/screens/authoring_proposal.ts"
 text = "남은 제안이 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_proposal.ts"
 text = "먼저 데이터를 고르세요."
-
-[[sentence]]
-file = "frontend/src/screens/authoring_proposal.ts"
-text = "필드 {}개를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
 
 [[sentence]]
 file = "frontend/src/screens/authoring_trial.ts"
@@ -1255,11 +1239,23 @@ text = "파일 경로가 비어 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/application/field_proposal.py"
+text = "{} ‘{}’ 열과 같은 값입니다."
+
+[[sentence]]
+file = "src/hwpxfiller/application/field_proposal.py"
 text = "‘{}’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/application/field_proposal.py"
+text = "같은 이름 필드에 자리를 더합니다."
+
+[[sentence]]
+file = "src/hwpxfiller/application/field_proposal.py"
 text = "남은 제안이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/application/field_proposal.py"
+text = "이 값과 같은 열 가운데서 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/application/field_proposal.py"

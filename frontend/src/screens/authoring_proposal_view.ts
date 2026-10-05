@@ -182,9 +182,17 @@ function popoverBody(model: PopoverModel): ReactNode[] {
     model.same && !model.held && h("p", { key: "same", className: "authoring-proposal-same" }, icon("same"), h("b", null, model.same.text),
       model.same.where ? h("span", null, ` · ${model.same.where}`) : null),
     model.note && h("p", { key: "note", className: "authoring-proposal-note" }, model.note),
-    model.linksExisting && h("p", { key: "links", className: "authoring-proposal-note" }, PROPOSAL_COPY.linksExisting),
+    model.links && h("p", { key: "links", className: "authoring-proposal-note" }, model.links),
     model.reason && h("p", { key: "why", className: "authoring-proposal-why" }, icon("info"), h("span", null, model.reason)),
   ];
+}
+
+/** 팝오버 머리의 이름 — 같은 값의 열이 여럿이면 그 가운데 고르는 칸(고르면 Python 이 그 열로 다시 판정한다), 아니면 이름. */
+function popoverName(controller: Props["controller"], model: PopoverModel): ReactNode {
+  if (!model.choices.length) return h("span", { className: "authoring-proposal-field" }, model.name);
+  return h("select", { className: "field authoring-proposal-field authoring-proposal-column", "aria-label": PROPOSAL_COPY.columnPick,
+    value: model.column, onChange: (event: any) => run(controller, () => controller.proposal.pickColumn(model.group, String(event.target.value)))() },
+    ...model.choices.map((column) => h("option", { key: column, value: column }, column)));
 }
 
 /** 제안 팝오버(비모달 대화상자 「이름 제안」) — 문서 자리를 누르거나 구조 패널 줄을 고르면 선다. Escape·닫기·행동이 걷고,
@@ -203,7 +211,7 @@ export function ProposalPopover({ controller, item, view }: Surface): ReactNode 
       event.preventDefault(); event.stopPropagation(); close();
     } },
     h("div", { className: "authoring-proposal-head" },
-      h("span", { className: "authoring-proposal-field" }, model.name),
+      popoverName(controller, model),
       model.held && h("span", { className: "authoring-proposal-chip" }, PROPOSAL_COPY.held),
       iconButton("close", PROPOSAL_COPY.close, close)),
     ...popoverBody(model),
