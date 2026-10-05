@@ -203,7 +203,7 @@ def _copied(rows: int, finish: bool) -> Matcher:
 
 def _option_reviewed(tutorial: Any, obs: Observation) -> dict | None:
     bench = _bench(tutorial)
-    rendered = "".join(segment.get("text", "") for segment in (bench[1] if bench else {}).get("segments", []))
+    rendered = str((bench[1] if bench else {}).get("text", ""))
     if not (_bench_opened(tutorial, obs) is not None and _same_job(tutorial) and _ctx(tutorial).get("applied")
             and "안내포함" in _chosen(tutorial._job(), "예산재배정") and "예산 재배정 여부" in rendered):
         return None

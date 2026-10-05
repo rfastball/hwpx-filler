@@ -314,8 +314,8 @@ def test_workbench_display_verbs_reach_the_copied_text(tmp_path, kind, code):
     )
     controller.open(registry.load("안내문"), [(0, {"수신처": "○○청", "값": raw})])
     card = controller.snapshot()["card"]
-    segment = next(s for s in card["segments"] if s["name"] == "건명")
-    assert segment["text"] == expected
+    mark = next(m for m in card["marks"] if m["name"] == "건명")
+    assert card["text"][mark["start"]:mark["end"]] == expected
 
     # 봉인된 물질화 bytes 를 복사한다 — 카드가 보인 글자와 같다(결정 17).
     written: "list[str]" = []

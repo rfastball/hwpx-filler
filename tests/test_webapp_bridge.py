@@ -190,7 +190,7 @@ def _armed_workbench(frontend, tmp_path):
                   FieldMapping(template_field="수신", source="부서")]))
     wb.registry.save(job)
     wb.open(wb.registry.load("기안"), [(0, {"부서": "총무과"}), (1, {"부서": "회계과"})])
-    wb.note_copied(wb.render()[1])  # 2건 중 1건 복사 = 진행 소실 위험
+    wb.note_copied(wb._card_view(wb.queue.current))  # 2건 중 1건 복사 = 진행 소실 위험
     return wb
 
 
@@ -780,7 +780,7 @@ def test_workbench_session_blocks_the_window_close(tmp_path, monkeypatch):
     wb.open(wb.registry.load("기안"), [(0, {"부서": "총무과"}), (1, {"부서": "회계과"})])
     assert frontend.close_guard_state()["armed"] is False   # 아직 잃을 것이 없다
 
-    wb.note_copied(wb.render()[1])                          # 2건 중 1건 복사 = 진행 소실
+    wb.note_copied(wb._card_view(wb.queue.current))                          # 2건 중 1건 복사 = 진행 소실
     state = frontend.close_guard_state()
     assert state["armed"] is True
     assert any("작업대" in reason for reason in state["reasons"]), state["reasons"]

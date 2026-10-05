@@ -14,7 +14,12 @@
 **연결은 읽기만 한다**(#1148 —지도 §10.15 판정 E 의 뒤집기). 이 화면은 필드 연결 표를 들지
 않는다: 복사할 본문이 화면의 중심이고, 연결 문제는 「연결 편집」(편집기 연결 표)과 「템플릿
 편집」(저작 작업대)으로 나가 저장해 푼다. 그래서 이 세션에는 저장할 규칙 변경이 생기지 않고,
-이탈 가드가 세는 것은 복사 진행과 다시 확인할 항목뿐이다.
+이탈 가드가 세는 것은 복사 진행·다시 확인할 항목·임시로 고친 본문이다.
+
+**본문은 그 행 복사본의 임시 편집기다**(#1148 PR B). 사용자가 고친 글자는 행별로 이 세션에만
+남고(템플릿·데이터·연결은 그대로), 복사는 편집본 그대로 나간다. 판정(표식 자리·빈 값 채움·
+린트)은 :mod:`~hwpxfiller.viewmodel.txt_card_edit` 가 하고, 봉인 물질화 대조는 편집 **전** 원문에만
+건다 — 편집은 그 위에 얹힌다.
 
 **경계**: 실제 클립보드 쓰기는 브리지(:meth:`HwpxFillerApi.copy_clipboard`)가 한다. 이
 컨트롤러는 시안의 mock 완료 사건이 아니라 **실제 복사**의 앞뒤(게이트·큐 전진·완료 노트)를
@@ -31,12 +36,13 @@ from pathlib import Path
 from ..application.jobs import stamp_run_completion
 from ..domain.job import Job, work_mode
 from ..external.job_store import JobRegistry
-from ..domain.text_render import RenderReport, template_fields
+from ..domain.text_render import template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
 from ..viewmodel.filter_state import sniff_column_kinds
 from ..viewmodel.mapping_state import MappingModel
 from ..viewmodel.selection_state import SelectionModel
-from ..viewmodel.txt_card import card_text, gate_empty_fields, render_card
+from ..viewmodel.txt_card import gate_empty_fields, render_card
+from ..viewmodel.txt_card_edit import CardEdits, CardView, card_view, raw_card, utf16_marks
 from ..viewmodel.tutorial_state import Milestone
 from ..viewmodel.txt_queue import TxtQueueModel
 from ..viewmodel.work_mode import WORK_MODE_TEXT, work_mode_label
@@ -194,6 +200,8 @@ class WorkbenchController:
         # 이미 다른 문장을 보여 주는데 배지는 「복사 완료」라고 말하는 창이 열린다. 사건을
         # 세지 말고 **조건을 재라**.
         self._copied_rules: "dict[int, str]" = {}
+        # 행별 임시 편집 — 세션 안에서만 산다. 나가면 가드가 알리고 버린다.
+        self._edits = CardEdits()
 
     def open(self, job: Job, rows: "list[tuple[int, dict]]") -> None:
         """세션 개시 — 고정 사본을 뜬다. ``rows`` = (원본 행 index, 레코드) 표시순.
@@ -334,19 +342,23 @@ class WorkbenchController:
             return REVIEW_TODO
         return (
             REVIEW_COPIED
-            if self._copied_rules[index] == self._rules_signature()
+            if self._copied_rules[index] == self._edits.signature(index, self._rules_signature())
             else REVIEW_RECHECK
         )
 
-    def _notice(self) -> dict:
-        """스냅샷 알림 — 이 세션 내내 참인 **상시 사실**(투영 실패 사유)을 낸다.
-
-        사건 노트를 내던 유일한 발신자(「기본 규칙으로 저장」 성공 배너)는 연결 편집과 함께
-        이 화면을 떠났다(#1148). 투영 실패는 사건이 아니라 상태라 파생으로 낸다.
-        """
-        if self._selection_note:
-            return {"text": self._selection_note, "level": "warn"}
-        return {"text": "", "level": "muted"}
+    def _card_view(self, index: "int | None", now: "datetime | None" = None) -> CardView:
+        """행 하나의 본문 판정 — 렌더(원문) 위에 그 행의 편집본을 얹는다(판정은 링1)."""
+        assert self.mapping is not None
+        record = self.records[index] if index is not None and 0 <= index < len(self.records) else {}
+        rendered = render_card(
+            self._card_text, self.mapping, record,
+            fullwidth=self._fullwidth, now=now if now is not None else self._clock(),
+        )
+        return card_view(
+            rendered, frozenset(self.mapping.declared_empty_fields()),
+            gate_empty_fields(rendered.report, self.mapping), self._edits.get(index),
+            fullwidth=self._fullwidth,
+        )
 
     # ------------------------------------------------------------- 스냅샷
     def snapshot(self) -> dict:
@@ -356,7 +368,9 @@ class WorkbenchController:
             "mode_label": work_mode_label(WORK_MODE_TEXT),
             "view": self.view,
             "target_font": self._font.value,
-            "notice": self._notice(),
+            # 상시 사실(투영 실패 사유)만 싣는다 — 사건 노트를 내던 유일한 발신자(「기본 규칙으로
+            # 저장」 성공 배너)는 연결 편집과 함께 이 화면을 떠났다(#1148).
+            "notice": {"text": self._selection_note, "level": "warn" if self._selection_note else "muted"},
         }
         if not self.is_open or self.mapping is None:
             # 세션 없음 = 빈 골격. 표면은 이 상태에서 화면을 세우지 않는다(라우팅 가드).
@@ -366,12 +380,11 @@ class WorkbenchController:
             })
             return base
 
-        rendered = render_card(
-            self._card_text, self.mapping, self._current_record(),
-            fullwidth=self._fullwidth, now=self._clock(),
-        )
-        report = rendered.report
         cur = self.queue.current
+        view = self._card_view(cur)
+        shown, shown_marks = (
+            (view.text, view.marks) if self.view == "filled" else raw_card(self.template_text)
+        )
         total = len(self.records)
         # 큐 퇴화(승계 — 「기안」 결정 8): 1건이면 순회할 곳이 없어 큐 장치 3종을 숨긴다.
         card = {
@@ -402,20 +415,25 @@ class WorkbenchController:
             ],
             "uncopied_count": len(self.queue.uncopied()),
             "advance_after": self._advance_after,
-            "segments": (
-                [{"text": s.text, "kind": s.kind, "name": s.name} for s in rendered.segments]
-                if self.view == "filled" else self._raw_segments()
-            ),
-            "missing_fields": report.missing_fields,
-            # 게이트·완료 노트가 소비하는 결손 — **확정-비움은 뺀다**(결정 12). 렌더는
-            # 그대로 〈빈 값〉으로 그린다: 보이는 것은 같고 「확인해야 하는가」만 다르다.
-            "empty_fields": gate_empty_fields(report, self.mapping),
+            # 본문 = 편집기 문서(#1148 PR B). 표식 좌표는 UTF-16(웹 문자열 단위)이고, 종류는
+            # 값(fill)·빈 값(blank)·비워 둠(declared)·미치환(missing)이다. 표면은 받은 좌표에
+            # 장식만 얹는다 — 빈 자리가 채워졌는지도 여기서 판정해 범위로 낸다.
+            "text": shown,
+            "marks": utf16_marks(shown, shown_marks),
+            "edited": cur in self._edits,
+            # 표면이 문서를 **갈아 끼울** 때만 바뀐다(행·보기·전각·되돌리기). 편집 왕복의
+            # 메아리는 같은 키라 표면이 들고 있는 문서·캐럿을 건드리지 않는다.
+            "text_key": f"{cur}|{self.view}|{int(self._fullwidth)}|{self._edits.epoch}",
+            "missing_fields": view.missing_fields,
+            # 게이트·완료 노트가 소비하는 결손 — **확정-비움은 뺀다**(결정 12). 편집본에서
+            # 채운 빈 자리도 뺀다. 표식은 그대로 남아 어디가 빈 값이었는지 보인다.
+            "empty_fields": view.empty_fields,
             "lint": {
                 "proportional": is_proportional_font(self._font.value),
-                "space_run": rendered.space_run,
+                "space_run": view.space_run,
                 "applied": self._fullwidth,
                 "active": self._fullwidth
-                or (is_proportional_font(self._font.value) and rendered.space_run),
+                or (is_proportional_font(self._font.value) and view.space_run),
             },
             "last_copy": self._last_copy,
             "copied_total": self._copied_total,
@@ -439,13 +457,6 @@ class WorkbenchController:
             "guard": self.leave_guard(),
         })
         return base
-
-    def _raw_segments(self) -> "list[dict]":
-        """원문 보기 — 토큰을 채우지 않고 ``{{이름}}`` 그대로 보여준다(§11 원문/채운 모습)."""
-        from ..domain.text_render import render_segments
-
-        segments, _ = render_segments(self.template_text, {})
-        return [{"text": s.text, "kind": s.kind, "name": s.name} for s in segments]
 
     def _copy_block(self) -> str:
         """복사 차단 사유(없으면 ``""``) — 「보이는 것 = 복사되는 것」의 술어(결정 17).
@@ -531,19 +542,15 @@ class WorkbenchController:
     def _do_copy_precheck(self, p: dict) -> dict:
         """복사 직전 판정 — 미치환·빈 값이 있으면 표면이 확인을 한 번 받는다."""
         self._require_open()
-        assert self.mapping is not None
-        rendered = render_card(
-            self._card_text, self.mapping, self._current_record(),
-            fullwidth=self._fullwidth, now=self._clock(),
-        )
         cur = self.queue.current
+        view = self._card_view(cur)
         return {
             # 사전확인이 **어느 카드의 것인지**를 함께 돌려준다 — 웹이 이 토큰을 그대로
             # 복사 호출에 실어 「확인 대상 = 복사 대상」을 만든다.
             "token": self.copy_token(),
             "row": self.source_rows[cur] if cur is not None else None,
-            "missing_fields": list(rendered.report.missing_fields),
-            "empty_fields": gate_empty_fields(rendered.report, self.mapping),
+            "missing_fields": view.missing_fields,
+            "empty_fields": view.empty_fields,
         }
 
     _do_copy_precheck.is_query = True  # type: ignore[attr-defined]
@@ -556,7 +563,27 @@ class WorkbenchController:
         두 번 누르거나 그사이 이동하면 **확인하지 않은 카드**가 클립보드로 나가던 창을 닫는다.
         """
         cur = self.queue.current
-        return "" if cur is None else f"{cur}|{self._rules_signature()}"
+        return "" if cur is None else f"{cur}|{self._edits.signature(cur, self._rules_signature())}"
+
+    # ---- 본문 임시 편집(#1148 PR B) — 그 행 복사본만, 이 세션에만
+    def _do_set_card_text(self, p: dict) -> None:
+        """행 하나의 편집본을 받는다. 원문과 같아지면 편집이 없는 것으로 접는다.
+
+        정체는 payload 의 ``index`` 다(작업점이 아니다): 친 글자가 늦게 도착하는 사이 「다음」이
+        먼저 착지해도 편집이 남의 행에 붙지 않는다.
+        """
+        self._require_open()
+        if self.view != "filled":  # 원문 보기는 읽기 전용이다 — 채운 모습만 복사된다
+            raise ValueError("원문 보기에서는 본문을 고치지 않습니다.")
+        index = int(p["index"])
+        if not 0 <= index < len(self.records):
+            raise ValueError(f"없는 항목입니다: {index}")
+        self._edits.put(index, str(p["text"]), self._card_view(index).base)
+
+    def _do_revert_card(self, p: dict) -> None:
+        """「원래대로」 — 그 행의 편집본을 버리고 원문으로 되돌린다."""
+        self._require_open()
+        self._edits.revert(int(p["index"]))
 
     # ---- 이탈 가드(T3 승계) — 복사 진행·다시 확인 대기를 열거한다
     def leave_guard(self) -> dict:
@@ -583,6 +610,8 @@ class WorkbenchController:
             lines.append(
                 f"규칙이 바뀌어 다시 확인해야 하는 항목 {recheck}건 — 나가면 그 표시가 사라집니다."
             )
+        if self._edits:
+            lines.append(f"임시로 고친 항목 {len(self._edits)}건 — 나가면 고친 내용은 사라집니다.")
         return {"armed": bool(lines), "lines": lines}
 
     def close_guard_reason(self) -> str:
@@ -596,7 +625,7 @@ class WorkbenchController:
         """
         with self._state_lock:
             return (
-                "검토·복사 작업대의 복사 진행"
+                "검토·복사 작업대의 복사 진행 또는 임시로 고친 본문"
                 if self.leave_guard()["armed"] else ""
             )
 
@@ -610,22 +639,8 @@ class WorkbenchController:
         self._clear()
         return {"ok": True}
 
-    # ------------------------------------------------ 클립보드 브리지 계약
-    # app.copy_clipboard(screen) 이 render → can_copy → note_copied 순으로 부른다.
-    # 「기안」과 **같은 3메서드 계약**이라 브리지가 화면을 몰라도 된다.
-    def render(self, now: "datetime | None" = None) -> "tuple[str, RenderReport]":
-        """작업점 카드의 (클립보드 텍스트, 리포트) — 카드와 **같은 통로**(링1 공유).
-
-        ``now`` 는 「오늘 날짜」의 기준 시각이다 — 복사 거래가 한 번 캡처해 봉인 물질화와 함께
-        넘긴다(RC-02). 없으면 이 호출이 한 번 읽는다(브리지의 3메서드 계약).
-        """
-        assert self.mapping is not None
-        rendered = render_card(
-            self._card_text, self.mapping, self._current_record(),
-            fullwidth=self._fullwidth, now=now if now is not None else self._clock(),
-        )
-        return card_text(rendered.segments), rendered.report
-
+    # ------------------------------------------------ 클립보드 복사 거래
+    # app.copy_clipboard(screen, token) 이 :meth:`copy_to` 하나를 부른다(대조·렌더·쓰기·전진).
     def can_copy(self) -> bool:
         """복사 가능 = 세션이 있고 작업점이 실재하며 **채운 모습을 보고 있다**.
 
@@ -670,27 +685,26 @@ class WorkbenchController:
                 return {"copied": False, "stale": True,
                         "missing_fields": [], "empty_fields": []}
             if not self.can_copy():
-                text, report = self.render()
-                return {"copied": False, "missing_fields": list(report.missing_fields),
-                        "empty_fields": list(report.empty_fields)}
+                return {"copied": False, "missing_fields": [], "empty_fields": []}
             # 「오늘 날짜」의 기준 시각은 이 거래에서 **한 번**만 읽는다(RC-02 · #950): 카드 렌더와
             # 봉인 물질화가 각자 시계를 읽으면 분 단위 서식에서 두 글자가 갈려 조용히 복사가 막힌다.
             now = self._clock()
-            text, report = self.render(now=now)
+            view = self._card_view(self.queue.current, now)
             if self._marker_count:
-                # slot-bearing 은 화면이 그린 투영이 아니라 **봉인된 실행 산출**을 내보낸다.
+                # slot-bearing 은 화면이 그린 투영이 아니라 **봉인된 실행 산출**을 대조한다 —
+                # 대조 대상은 편집 **전** 원문이다. 원문이 봉인 산출과 같을 때만 그 위에 얹은
+                # 편집본(없으면 원문)을 내보낸다(#1148 PR B).
                 materialized, reason = self._materialize_current(now)
                 if materialized is None:
                     return {"copied": False, "missing_fields": [], "empty_fields": [],
                             "error": reason}
-                if materialized != text:
+                if materialized != view.base:
                     return {"copied": False, "missing_fields": [], "empty_fields": [],
                             "error": COPY_BLOCK_MATERIALIZATION_DIVERGED}
-                text = materialized
-            write(text)                       # OS 쓰기도 임계구역 안 — 성사 뒤에만 전진한다
-            self.note_copied(report)
-            return {"copied": True, "missing_fields": list(report.missing_fields),
-                    "empty_fields": gate_empty_fields(report, self.mapping)}
+            write(view.text)                  # OS 쓰기도 임계구역 안 — 성사 뒤에만 전진한다
+            self.note_copied(view)
+            return {"copied": True, "missing_fields": list(view.missing_fields),
+                    "empty_fields": list(view.empty_fields)}
 
     def _materialize_current(self, now: datetime) -> "tuple[str | None, str]":
         """작업점 레코드의 물질화 결과 — (검증된 텍스트, 사유). 정확히 한쪽만 산다.
@@ -709,7 +723,7 @@ class WorkbenchController:
         except Exception as exc:  # noqa: BLE001 — 복사 차단 사유로 접는다(조용한 성공 0)
             return None, f"문서를 만들지 못했습니다: {exc}"
 
-    def note_copied(self, report) -> None:
+    def note_copied(self, view: CardView) -> None:
         """복사 성사 뒤 상태 전진 — 클립보드 쓰기가 **성공한 뒤에만** 불린다.
 
         작업점은 복사해도 그 카드에 머문다(조용한 이동 금지) — 전진은 사용자가 켰을 때만.
@@ -719,15 +733,14 @@ class WorkbenchController:
         이동이 **다른 카드**를 복사 완료로 찍는다. 잠금은 재진입 가능(`RLock`)이라 이
         메서드를 잠금 안에서 부르는 것이 안전하다.
         """
-        assert self.mapping is not None
         cur = self.queue.current
         if cur is None:
             return
         stamp_error = self._stamp_first_copy()
         self._last_copy = {
             "row": self.source_rows[cur],
-            "missing_fields": list(report.missing_fields),
-            "empty_fields": gate_empty_fields(report, self.mapping),
+            "missing_fields": list(view.missing_fields),
+            "empty_fields": list(view.empty_fields),
             # 스탬프 실패는 삼키지 않는다 — 복사는 이미 일어났으므로 예외로 완료 노트를
             # 날리는 건 더 큰 손실이고, 조용히 넘기면 이력이 아무 말 없이 이 사건을 잃는다.
             "stamp_error": stamp_error,
@@ -738,7 +751,7 @@ class WorkbenchController:
         self._tutorial(Milestone.COPY_DRAFT)
         # 지금 규칙으로 복사했다 — 그 지문을 못박는다. 다시 복사하면 덮어써 재확인이 해소되고,
         # 규칙이 갈리면 같은 값에서 파생이 「다시 확인 필요」로 넘어간다(별도 무효화 코드 없음).
-        self._copied_rules[cur] = self._rules_signature()
+        self._copied_rules[cur] = self._edits.signature(cur, self._rules_signature())
         self.queue.copy(cur)
         if self._advance_after:
             self.queue.advance_to_next_uncopied()

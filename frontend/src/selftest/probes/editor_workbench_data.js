@@ -88,6 +88,7 @@
  */
 
 import { ERROR_CODES } from "../runner.js";
+import { probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
 
 export const D_CLUSTER = "D";
 
@@ -2336,7 +2337,10 @@ export function createEditorWorkbenchDataProbes() {
         const Nav = service(ctx, "Nav");
         const out = { pending: true };
         ctx.state.out = out;
-        const seg = (t, kind, name) => ({ text: t, kind: kind || "literal", name: name || "" });
+        /* 본문은 편집면 문서 + Python 표식(UTF-16 좌표)이다(#1148 PR B). 비고는 데이터가 빈 칸,
+           단위는 일부러 비운 선언 — 두 표지가 같은 본문에서 갈려 서는지 잰다. */
+        const CARD_TEXT = "수신: 회계과\n비고: \n단위: ";
+        const mark = (kind, name, start, end) => ({ kind, name, start, end: end === undefined ? start : end });
         const snap = {
           open: true, job_name: "발주요청_기안", mode_label: "온나라 기안 검토·복사",
           view: "filled", target_font: "malgun", fullwidth: false,
@@ -2354,8 +2358,9 @@ export function createEditorWorkbenchDataProbes() {
             index_map: [{ index: 0, row: 7, state: "current", recheck: true },
               { index: 1, row: 4, state: "uncopied", recheck: false }],
             review_state: "recheck", uncopied_count: 2, advance_after: false,
-            segments: [seg("수신: "), seg("회계과", "fill", "수신"), seg("", "blank", "비고")],
-            missing_fields: [], empty_fields: [],
+            text: CARD_TEXT, text_key: "0|filled|0|0", edited: false,
+            marks: [mark("fill", "수신", 4, 7), mark("blank", "비고", 12), mark("declared", "단위", 17)],
+            missing_fields: [], empty_fields: ["비고"],
             lint: { proportional: true, space_run: true, applied: false, active: true },
             last_copy: null, copied_total: 1,
           },
@@ -2381,8 +2386,7 @@ export function createEditorWorkbenchDataProbes() {
             const body = ctx.doc.querySelector(".wb-body").getBoundingClientRect();
             return Math.round(byId(ctx, "wbCard").getBoundingClientRect().width / body.width * 100) / 100;
           })();
-          out.card_fill = ctx.doc.querySelectorAll("#wbCard .seg-fill").length;
-          out.card_blank = ctx.doc.querySelectorAll("#wbCard .seg-blank").length;
+          Object.assign(out, readWorkbenchCard(ctx));
           out.lint_shown = byId(ctx, "wbLint").style.display !== "none";
           /* 린트는 표지 + **행동**이 한 벌이다(2R P2) — 경고만 두면 손잡이 없는 통보가 된다. */
           out.lint_action = (function () {
@@ -2410,8 +2414,10 @@ export function createEditorWorkbenchDataProbes() {
           out.next_disabled = byId(ctx, "wbNext").disabled;
           /* 조각은 토큰 신원(data-token)을 지되 손잡이가 아니다 — 겨눌 연결 표가 없다(#1148).
              튜토리얼 앵커(`wb-blank`·`wb-declared`)가 이 신원으로 본문 조각을 가리킨다. */
-          out.card_tokens = ctx.doc.querySelectorAll("#wbCard [data-token]").length;
-          out.token_role = ctx.doc.querySelector('#wbCard [data-token="수신"]').getAttribute("role");
+          /* 임시 편집(#1148 PR B) — 빈 값 자리에 글자를 치면 그 자리가 값 칠이 되고, 쉼 뒤에 그 행
+             index 와 전문이 한 번 나간다. 한글 조합 중에는 보내지 않고 조합이 끝난 뒤 보낸다.
+             발신은 스텁으로 받는다(세션 없는 합성 스냅샷이라 실 백엔드는 거절한다). */
+          out.edit = await probeCardEdit(ctx, stubBridgeCall);
           const root = ctx.doc.documentElement;
           const scaleBefore = root.getAttribute("data-font-scale");
           try {

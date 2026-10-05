@@ -32,6 +32,8 @@ packages = [
   "@codemirror/view",
 ]
 allowed_source_roots = [
+  # 검토·복사 작업대 본문의 표식 층(#1148) — 편집면이 설치하는 상태 필드 하나다. 수명 소유자는 그대로 lintpad 하나.
+  "frontend/src/editorview/txt_card_marks.ts",
   "frontend/src/editorview/txt_lintpad.ts",
 ]
 mount_owner = "frontend/src/editorview/txt_lintpad.ts|mountLintpad"

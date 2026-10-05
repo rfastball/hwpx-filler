@@ -219,7 +219,7 @@ def test_workbench_copies_the_materialized_bytes_for_slot_bearing_txt(
     assert result["copied"] is True, result
     assert len(written) == 1
 
-    observed, _report = controller.render()  # 화면이 그린 그 문장
+    observed = controller.snapshot()["card"]["text"]  # 화면이 그린 그 문장
     materialized = materialized_text(
         harness.materialization.materialize_record("안내문", RECORD, request_id="probe")
     )
@@ -286,8 +286,8 @@ def test_sliced_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> N
     )
     controller.open(harness.registry.load("안내문"), [(0, record)])
     card = controller.snapshot()["card"]
-    segment = next(s for s in card["segments"] if s["name"] == "건명")
-    assert segment["text"] == "R26BK09017075"
+    mark = next(m for m in card["marks"] if m["name"] == "건명")
+    assert card["text"][mark["start"]:mark["end"]] == "R26BK09017075"
 
     written: "list[str]" = []
     result = controller.copy_to(controller.copy_token(), written.append)
@@ -319,8 +319,8 @@ def test_v5_new_mode_slice_copies_the_same_text_the_card_shows(tmp_path: Path) -
     )
     controller.open(harness.registry.load("안내문"), [(0, record)])
     card = controller.snapshot()["card"]
-    segment = next(s for s in card["segments"] if s["name"] == "건명")
-    assert segment["text"] == "R26BK09017075"
+    mark = next(m for m in card["marks"] if m["name"] == "건명")
+    assert card["text"][mark["start"]:mark["end"]] == "R26BK09017075"
 
     written: "list[str]" = []
     result = controller.copy_to(controller.copy_token(), written.append)
@@ -352,6 +352,57 @@ def test_workbench_refuses_when_the_screen_and_the_document_diverge(
     assert result["copied"] is False
     assert result["error"] == COPY_BLOCK_MATERIALIZATION_DIVERGED
     assert written == []  # 클립보드는 손대지 않았다
+
+
+def test_workbench_edit_copies_the_edited_text_for_slot_bearing_txt(tmp_path: Path) -> None:
+    """행별 임시 편집이 있으면 **편집본**이 나가고, 봉인 대조는 **편집 전 원문**에 선다(#1148 PR B).
+
+    대조 대상이 편집본이면 사용자가 글자 하나만 고쳐도 매번 「보이는 것과 다릅니다」가 뜬다 —
+    대조는 템플릿·연결·선택이 지어낸 원문(``_CardView.base``)을 보고, 그 위에 얹은 손댄
+    글자는 그대로 복사된다.
+    """
+    harness = _Harness(tmp_path, SLOT_BODY)
+    harness.choose("첨부", "견적서")
+    controller = harness.workbench()
+
+    base = controller.snapshot()["card"]["text"]
+    edited = base.replace("끝.", "끝. (수정)")
+    assert edited != base
+    controller.dispatch("set_card_text", {"index": controller.queue.current, "text": edited})
+    assert controller.snapshot()["card"]["text"] == edited
+
+    written: "list[str]" = []
+    result = controller.copy_to(controller.copy_token(), written.append)
+    assert result["copied"] is True, result
+    assert written == [edited]
+
+
+def test_workbench_edit_still_blocks_on_fullwidth_divergence_for_slot_bearing_txt(
+    tmp_path: Path,
+) -> None:
+    """편집본이 있어도 전각 정렬 괴리는 여전히 막는다 — 대조는 원문 축, 전각은 표시 축이다."""
+    harness = _Harness(tmp_path, "\n".join([
+        "수신:    {{수신}}",
+        "{{#항목 첨부 첨부}}",
+        "{{#선택 계약서 계약서}}",
+        "계약서",
+        "{{/선택}}",
+        "{{/항목}}",
+        "",
+    ]))
+    harness.choose("첨부", "계약서")
+    controller = harness.workbench()
+    controller.dispatch("set_fullwidth", {"value": True})
+    base = controller.snapshot()["card"]["text"]
+    controller.dispatch(
+        "set_card_text", {"index": controller.queue.current, "text": base + " "}
+    )
+
+    written: "list[str]" = []
+    result = controller.copy_to(controller.copy_token(), written.append)
+    assert result["copied"] is False
+    assert result["error"] == COPY_BLOCK_MATERIALIZATION_DIVERGED
+    assert written == []
 
 
 def test_unwired_materialization_port_blocks_slot_bearing_copy(tmp_path: Path) -> None:

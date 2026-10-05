@@ -75,6 +75,10 @@
 .wc-render .seg-fill{background:var(--fb-fill-bg);border-radius:var(--rad-control);padding:0 2px}
 .wc-render .seg-blank{color:var(--a-warn);background:var(--fb-blank-bg);border-radius:var(--rad-control);
   padding:0 var(--sp-4);font-weight:600}
+/* 비워 둠(확정-비움) — 데이터가 빈 칸(〈빈 값〉)이 아니라 일부러 비운 선언이라 경보색 없이 점선으로 조용히 선다.
+   복사 전 확인에서 빠지는 자리다(#1148 PR B — 본문 편집면의 표지). */
+.wc-render .seg-declared{color:var(--a-muted);border:1px dashed var(--a-border);border-radius:var(--rad-control);
+  padding:0 var(--sp-4)}
 .wc-render .seg-missing{background:var(--fb-missing-bg);color:var(--a-danger);
   border:1px dashed var(--fb-missing-bd);border-radius:var(--rad-control);padding:0 var(--sp-4);font-weight:700}
 /* 존 번호 표지(시안 ①②③④) — 캡션 앞 작은 원. 정보는 순서뿐이라 장식 최소. */
