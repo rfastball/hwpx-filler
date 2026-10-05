@@ -213,6 +213,8 @@ class JobController:
         "range_draft_cancel",
         "set_selected_only",
     }
+    #: 만든 문서 「내용 보기」 — 열림 상태와 보기 원료는 런 조정자의 관찰 세션이 소유한다(#1138).
+    _ARTIFACT_ACTIONS = frozenset({"artifact_open", "artifact_close", "artifact_content"})
 
     def __init__(
         self,
@@ -331,17 +333,6 @@ class JobController:
         """경로 어포던스가 허용할 실행 세션의 정확한 좌표."""
         return (self.runs.out_dir, *self.runs.delivered_paths())
 
-    def _do_artifact_open(self, p: dict) -> dict:
-        """배달 문서를 디스크에서 다시 관찰하고 실패도 열린 시트에서 재진술한다.
-
-        세션은 문서 bytes를 캐시하지 않는다.
-        """
-        self.runs.open_artifact(int(p["ordinal"]))
-        return {"ok": True}
-
-    def _do_artifact_close(self, p: dict) -> None:
-        self.runs.close_artifact()
-
     def _selection_key(self) -> str:
         """파일명에 영향을 주는 표시순서까지 담은 커밋 선택 지문을 낸다."""
         return ",".join(str(i) for i in self.data.selected_indices())
@@ -452,7 +443,7 @@ class JobController:
         selection_key = self._selection_key()
         data_target = self.data.data_target()
         data_row = self.data.data_row()
-        artifact_view = self.runs.artifact_payload()
+        artifact_view = self.runs.artifact.payload()
         _handoff, blocked = self.new_work_handoff()
         fields = (
             list(self.data.records[0])
@@ -1122,11 +1113,16 @@ class JobController:
         with self._state_lock:
             return self._dispatch(action, payload)
 
+    def _action_owner(self, action: str) -> object:
+        """액션 핸들러의 주인 — 데이터 존, 만든 문서 관찰 세션, 그 밖은 이 컨트롤러."""
+        if action in self._ARTIFACT_ACTIONS:
+            return self.runs.artifact
+        return self.data if action in self._DATA_ACTIONS else self
+
     def _dispatch(self, action: str, payload: dict):
         if self.data.is_stale_edit(action, payload, set(ZONE_MUTATIONS)):
             return {"stale": True, "epoch": self.data.zone_epoch}
-        owner = self.data if action in self._DATA_ACTIONS else self
-        handler = getattr(owner, f"_do_{action}", None)
+        handler = getattr(self._action_owner(action), f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 작업 화면 액션: {action!r}")
         if action in {"range_draft_open", "range_draft_apply"}:

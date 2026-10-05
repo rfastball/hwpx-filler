@@ -450,19 +450,7 @@ text = "편집 field '{}' 가 스냅샷에 없습니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_artifact.ts"
-text = "만들어진 문서를 다시 읽어 그린 내용입니다. 글꼴과 쪽 모양은 그리지 않습니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_artifact.ts"
 text = "문서를 확인하지 못했습니다"
-
-[[sentence]]
-file = "frontend/src/screens/job_artifact.ts"
-text = "없음. 문서 전체를 구조로 읽었습니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_artifact.ts"
-text = "이 문서에는 여기서 그리지 못한 구간이 있습니다({}). 실제 문서를 열어 확인하세요."
 
 [[sentence]]
 file = "frontend/src/screens/job_content_selection.ts"
@@ -3188,6 +3176,10 @@ file = "src/hwpxfiller/webapp/app.py"
 text = "호출 화면 이름이 비어 있습니다."
 
 [[sentence]]
+file = "src/hwpxfiller/webapp/artifact_view_session.py"
+text = "이 문서는 지금 세션의 생성 결과에 없습니다. 문서를 다시 만든 뒤에 내용을 볼 수 있습니다."
+
+[[sentence]]
 file = "src/hwpxfiller/webapp/blocker_affordance.py"
 text = "「변경사항 확인」이 이 요구를 지운다(적용은 그 다음 동사라 여기 아니다)."
 
@@ -3258,10 +3250,6 @@ text = "문서 생성이 진행 중입니다. 끝난 뒤에 {}."
 [[sentence]]
 file = "src/hwpxfiller/webapp/document_run_coordinator.py"
 text = "문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 {}."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/document_run_coordinator.py"
-text = "이 문서는 지금 세션의 생성 결과에 없습니다. 문서를 다시 만든 뒤에 내용을 볼 수 있습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/document_run_coordinator.py"

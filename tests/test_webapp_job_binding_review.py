@@ -1329,7 +1329,7 @@ def test_managed_pre_delivery_outcomes_keep_prior_session_evidence(
     )
     artifact_view = object()
     ctrl.runs.delivered = (prior,)
-    ctrl.runs.artifact_view = artifact_view
+    ctrl.runs.artifact.view = artifact_view
     ctrl.runs.last_generated = {9}
     ctrl.runs.last_failed = [7]
     prior_history = HistoricalOutcomeSummary("PRIOR_OUTCOME", NOW.isoformat())
@@ -1345,7 +1345,7 @@ def test_managed_pre_delivery_outcomes_keep_prior_session_evidence(
         assert (result["attempted"], result["unstarted"]) == (1, 1)
         assert (result["succeeded"], result["failed"], result["total"]) == (0, 0, 2)
     assert ctrl.runs.delivered == (prior,)
-    assert ctrl.runs.artifact_view is artifact_view
+    assert ctrl.runs.artifact.view is artifact_view
     assert ctrl.runs.last_generated == {9}
     assert ctrl.runs.last_failed == [7]
     assert ctrl.execution.managed_outcome is prior_history
@@ -1364,11 +1364,11 @@ def test_managed_ledger_failure_keeps_success_and_warns_loudly(
         "WRITE_NEW", "sha256:" + "0" * 64, (),
     )
     outcome = DeliveryCompleted(str(out), (delivered,))
-    ctrl.runs.artifact_view = object()
+    ctrl.runs.artifact.view = object()
 
     def fail_ledger(*_args, **_kwargs):
         assert ctrl.runs.delivered == (delivered,)
-        assert ctrl.runs.artifact_view is None
+        assert ctrl.runs.artifact.view is None
         raise OSError("ledger denied")
 
     monkeypatch.setattr(run_coordinator_module, "write_managed_delivery_ledger", fail_ledger)

@@ -15,10 +15,6 @@ from ..application.execution_contract_set import (
 from ..application.generation_delivery import CurrentResolvedDelivery, WRITE_OVERWRITE
 from ..application.document_creation_workbench import HistoricalOutcomeSummary
 from ..application.jobs import JobStorePort, stamp_run_completion
-from ..external.artifact_observation import (
-    ArtifactObservationRefused,
-    observe_delivered_artifact,
-)
 from ..external.delivery_coordinator import (
     DeliveredDocument,
     DeliveryAborted,
@@ -26,7 +22,6 @@ from ..external.delivery_coordinator import (
 )
 from ..external.ledger_export import write_managed_delivery_ledger
 from ..external.output_files import ensure_output_directory
-from ..viewmodel.artifact_view_state import observed_artifact_snapshot
 from ..application.run_delivery_intent import DEFAULT_COLLISION_POLICY
 from ..viewmodel.run_state import RunDataInput
 from ..domain.job import Job, rules_fingerprints
@@ -34,11 +29,9 @@ from .job_presentation import overwrite_response
 from ..external.current_execution_preparation import CurrentDeliveryPreparation
 from ..external.managed_generation import ManagedReadBackFailed, run_managed_generation
 from .managed_run_result import project_managed_run_result
+from .artifact_view_session import ArtifactViewSession
 from ..external.seal_execution_plan_service import ManagedRunContext
 from pathlib import Path
-
-ARTIFACT_NOT_IN_SESSION = "ARTIFACT_NOT_IN_SESSION"
-ARTIFACT_OBSERVED = "observed"
 
 
 def _record_failure_note(reason: str) -> str:
@@ -115,7 +108,7 @@ class DocumentRunCoordinator:
         self.overwrite_now_pin: tuple[str, datetime] | None = None
         self.delivery_collision = DEFAULT_COLLISION_POLICY
         self.delivered: tuple[DeliveredDocument, ...] = ()
-        self.artifact_view: dict | None = None
+        self.artifact = ArtifactViewSession(self.delivered_artifact)
         self.out_dir = ""
 
     def raise_if_generating(self, then_do: str, *, swap: bool = False) -> None:
@@ -355,7 +348,7 @@ class DocumentRunCoordinator:
 
     def record_delivery(self, delivered: tuple[DeliveredDocument, ...]) -> None:
         self.delivered = delivered
-        self.close_artifact()
+        self.artifact.view = None
 
     def record_result(
         self,
@@ -376,60 +369,7 @@ class DocumentRunCoordinator:
 
     def discard_delivery(self) -> None:
         self.delivered = ()
-        self.artifact_view = None
-
-    def artifact_payload(self) -> dict:
-        if self.artifact_view is None:
-            return {
-                "open": False,
-                "ordinal": -1,
-                "filename": "",
-                "status": "",
-                "detail": "",
-                "structure": None,
-            }
-        return dict(self.artifact_view)
-
-    def open_artifact(self, ordinal: int) -> None:
-        doc = self.delivered_artifact(ordinal)
-        if doc is None:
-            self.artifact_view = {
-                "open": True,
-                "ordinal": ordinal,
-                "filename": "",
-                "status": ARTIFACT_NOT_IN_SESSION,
-                "detail": (
-                    "이 문서는 지금 세션의 생성 결과에 없습니다. "
-                    "문서를 다시 만든 뒤에 내용을 볼 수 있습니다."
-                ),
-                "structure": None,
-            }
-            return
-        observed = observe_delivered_artifact(
-            absolute_path=doc.absolute_path,
-            recorded_digest=doc.output_digest,
-        )
-        if isinstance(observed, ArtifactObservationRefused):
-            self.artifact_view = {
-                "open": True,
-                "ordinal": ordinal,
-                "filename": doc.relative_path,
-                "status": observed.code,
-                "detail": observed.detail,
-                "structure": None,
-            }
-            return
-        self.artifact_view = {
-            "open": True,
-            "ordinal": ordinal,
-            "filename": doc.relative_path,
-            "status": ARTIFACT_OBSERVED,
-            "detail": "",
-            "structure": observed_artifact_snapshot(observed.package),
-        }
-
-    def close_artifact(self) -> None:
-        self.artifact_view = None
+        self.artifact.view = None
 
     def invalidate_work_results(self) -> None:
         self.last_generated = None

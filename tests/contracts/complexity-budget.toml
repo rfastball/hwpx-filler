@@ -245,9 +245,6 @@ function_complexity = 11
 [budget."frontend/src/screens/editor_controller.ts::createEditorController.handleSlotVerb"]
 function_complexity = 11
 
-[budget."frontend/src/screens/job_artifact.ts::JobArtifactSheet"]
-function_complexity = 13
-
 [budget."frontend/src/screens/job_content_selection.ts::JobContentSelection"]
 function_complexity = 32
 
@@ -403,15 +400,15 @@ function_complexity = 56
 function_statements = 255
 
 [budget."frontend/src/selftest/probes/job.js"]
-module_statements = 901
+module_statements = 900
 
 [budget."frontend/src/selftest/probes/job.js::runJobMirror"]
 function_complexity = 63
 function_statements = 230
 
 [budget."frontend/src/selftest/probes/job.js::runJobResult"]
-function_complexity = 44
-function_statements = 207
+function_complexity = 38
+function_statements = 200
 
 [budget."frontend/src/selftest/probes/react_runtime.js::measureTutorialSurface"]
 function_complexity = 28
@@ -1210,9 +1207,6 @@ function_complexity = 13
 [budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession.zone_sections"]
 function_complexity = 15
 
-[budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator"]
-class_methods = 22
-
 [budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator.run_managed"]
 function_complexity = 13
 
@@ -1318,10 +1312,10 @@ function_complexity = 16
 function_complexity = 14
 
 [budget."src/hwpxfiller/webapp/screen_job.py"]
-module_statements = 929
+module_statements = 928
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController"]
-class_methods = 113
+class_methods = 112
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController._capture_current_selected_records"]
 function_complexity = 11

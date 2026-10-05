@@ -11,14 +11,18 @@ managed 파이프라인을 지나는지가 여기서 재는 사실이다.
 """
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
 import pytest
 
 from _output_folder_pick import pick_output_folder
 
+from hwpxcore import extract_document
+from hwpxcore.package import HwpxPackage
+from hwpxcore.text_extract import full_text
 from hwpxfiller.host.locations import home_dir
-from hwpxfiller.webapp.document_run_coordinator import ARTIFACT_OBSERVED
+from hwpxfiller.webapp.artifact_view_session import ARTIFACT_OBSERVED
 
 WORK = "수용"
 
@@ -108,10 +112,8 @@ def test_content_view_opens_a_slotless_result(app, tmp_path):
 
     assert view["open"] is True and view["status"] == ARTIFACT_OBSERVED, view
     assert view["filename"] == made["delivered"][0]["filename"]
-    texts = "".join(
-        block["text"]
-        for section in view["structure"]["sections"]
-        for block in section["blocks"]
-        if "text" in block
-    )
-    assert "24,750,000원" in texts  # 동봉 데이터의 첫 행 값이 표시형 그대로 보인다
+    # 보기 원료는 그 문서의 검증된 bytes 다(#1138) — 그 bytes 에 첫 행 값이 표시형 그대로 있다.
+    content = app.dispatch("job", "artifact_content", {})
+    assert content["ok"] is True, content
+    document = extract_document(HwpxPackage.from_bytes(base64.b64decode(content["content"])))
+    assert "24,750,000원" in full_text(document)

@@ -44,7 +44,6 @@ from hwpxfiller.external.materialization_conformance import (
     _read_field_values,
     verify_materialization_postconditions,
 )
-from hwpxfiller.viewmodel.artifact_view_state import observed_artifact_snapshot
 from tests._materialization_case import SECTION, CaseSpec, _build_case, _run
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -289,12 +288,11 @@ def test_h2_extraction_records_unmodelled_t_children():
     }
 
 
-def test_h2_unmodelled_child_marks_artifact_partial_coverage():
-    snapshot = observed_artifact_snapshot(
+def test_h2_unmodelled_child_is_reported_as_unhandled():
+    payload = extract_document(
         _package("<hp:p><hp:run><hp:t>앞<x:unknown>x</x:unknown>뒤</hp:t></hp:run></hp:p>")
-    )
-    assert snapshot["partial_coverage"] is True
-    assert snapshot["unrendered_regions"]["counts"] == {"{urn:x}unknown": 1}
+    ).to_dict()
+    assert payload["unhandled"] == {"{urn:x}unknown": 1}
 
 
 # ─── L-3: Paragraph.fields type 거름 ─────────────────────────────────────────────
@@ -324,8 +322,6 @@ def test_l3_product_filter_keeps_only_fill_targets():
     doc = extract_document(_package(_TYPED_FIELDS), field_filter=is_fill_target_field_type)
     (paragraph,) = doc.sections[0].blocks
     assert paragraph.fields == ["계약명"]
-    snapshot = observed_artifact_snapshot(_package(_TYPED_FIELDS))
-    assert snapshot["sections"][0]["blocks"][0]["fields"] == ["계약명"]
 
 
 def test_l3_field_end_for_unopened_begin_closes_nothing():

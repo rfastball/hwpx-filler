@@ -141,6 +141,7 @@ paths = [
   # 실제 생성 경로 — 101 실주행도 함께 탄다(`journey101`).
   "src/hwpxfiller/webapp/job_execution_session.py",
   "src/hwpxfiller/webapp/document_run_coordinator.py",
+  "src/hwpxfiller/webapp/artifact_view_session.py",
   "src/hwpxfiller/webapp/managed_run_result.py",
 ]
 
@@ -248,6 +249,7 @@ paths = [
   "frontend/src/screens/job_artifact.ts",
   "src/hwpxfiller/webapp/job_execution_session.py",
   "src/hwpxfiller/webapp/document_run_coordinator.py",
+  "src/hwpxfiller/webapp/artifact_view_session.py",
   "src/hwpxfiller/webapp/managed_run_result.py",
   "src/hwpxfiller/webapp/txt_materialization.py",
   "src/hwpxfiller/webapp/onboarding.py",

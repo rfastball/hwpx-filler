@@ -65,7 +65,7 @@ from ..host.native.debug import log
 from ..host.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from ..host.native.reveal import open_path as _native_open_path
 from ..host.native.reveal import reveal_in_explorer as _native_reveal
-from .document_run_coordinator import ARTIFACT_NOT_IN_SESSION
+from .artifact_view_session import ARTIFACT_NOT_IN_SESSION
 from .onboarding import OnboardingController, first_launch_candidate
 from ..external.tutorial_practice import PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
@@ -850,7 +850,7 @@ class WebFrontend:
         :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상).
 
         이 세션이 **방금 만들어 앉힌** 문서의 절대경로도 세션 성분으로 든다(S7-03 · #825):
-        결과 존의 행 어포던스(폴더에서 보기·경로 복사)가 겨누는 대상이고, 등록의 근거는
+        결과 존의 행 어포던스(폴더에서 보기)가 겨누는 대상이고, 등록의 근거는
         「앱 자신이 그 파일을 냈다」는 사실 하나다 — 판정 자체는 그대로 exact 대조라
         화이트리스트가 넓어질 뿐 검증이 약해지지 않는다.
         """

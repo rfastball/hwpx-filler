@@ -1,10 +1,12 @@
 """S7-03(#825) — 결과 존 문서 목록·산출물 관찰 시트·「다른 이름으로 저장」의 헤드리스 계약.
 
-관찰 커널 자체의 진실은 :mod:`tests.test_artifact_observation` 이, 구조 투영의 진실은
-:mod:`tests.test_artifact_view_state` 가 소유한다. 여기가 재는 것은 **배선**이다:
+관찰 커널 자체의 진실은 :mod:`tests.test_artifact_observation` 이 소유한다. 여기가 재는 것은
+**배선**이다:
 
 - managed 결과 dict 가 배달 문서를 개별 단위로 싣는가(완주·되읽기 실패·중단 세 갈래).
 - ``artifact_open`` 이 매번 커널을 다시 불러 성립/거절을 **구분된 상태**로 내는가.
+- ``artifact_content`` 가 **열린 면의 문서만** 다시 관찰해 그 검증된 bytes 를 보기 원료로 내는가
+  (#1138 — 보기 전용 rhwp 렌더링의 원료. 웹은 겨눔을 싣지 못한다).
 - 세션 수명 — 데이터 교체·작업 전환 뒤 그 좌표가 남의 데이터를 가리키지 않는가.
 - ``save_artifact_as`` 의 저장 bytes 가 **관찰 bytes = 원본 안착 파일**과 byte-identical 한가
   (#820 D2 — 검증되지 않은 bytes 는 저장의 원료가 못 된다).
@@ -17,6 +19,8 @@ fixture 는 실 HWPX bytes 를 실제 파일로 앉힌다(합성 package → ``t
 from __future__ import annotations
 
 from pathlib import Path
+
+import base64
 
 import pytest
 
@@ -33,11 +37,11 @@ from hwpxfiller.external.delivery_coordinator import (
     DeliveryAborted,
     DeliveryCompleted,
 )
-from hwpxfiller.viewmodel.artifact_view_state import ARTIFACT_PARTIAL_COVERAGE
 from hwpxfiller.webapp import app as app_module
+from hwpxfiller.webapp.action_registry import validate_dispatch
 from hwpxfiller.webapp import document_run_coordinator as run_coordinator_module
 from hwpxfiller.external.managed_generation import ManagedReadBackFailed
-from hwpxfiller.webapp.document_run_coordinator import (
+from hwpxfiller.webapp.artifact_view_session import (
     ARTIFACT_NOT_IN_SESSION,
     ARTIFACT_OBSERVED,
 )
@@ -52,12 +56,12 @@ def _paragraph(text: str) -> str:
     return f"<hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p>"
 
 
-def _hwpx_bytes(*paragraphs: str, unknown: str = "") -> bytes:
-    """최소 HWPX 문서 bytes — ``unknown`` 을 실으면 CoverageLedger 가 못 본 구간을 남긴다."""
+def _hwpx_bytes(*paragraphs: str) -> bytes:
+    """최소 HWPX 문서 bytes."""
     package = HwpxPackage()
     package.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
     package.stored.add(MIMETYPE_NAME)
-    body = "".join(_paragraph(text) for text in paragraphs) + unknown
+    body = "".join(_paragraph(text) for text in paragraphs)
     package.entries["Contents/section0.xml"] = (
         f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{body}</hs:sec>'
     ).encode("utf-8")
@@ -173,48 +177,80 @@ def test_aborted_result_lists_only_what_actually_landed(
 
 
 # ═══ artifact_open — 성립·거절이 각각 구분된 상태다 ═════════════════════════════════════
-def test_open_observes_the_landed_file_and_projects_its_structure(
+def test_open_observes_the_landed_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctrl, out = _ready_controller(tmp_path)
     _completed(tmp_path, ctrl, out, monkeypatch)
 
-    ctrl.dispatch("artifact_open", {"ordinal": 0})
+    assert ctrl.dispatch("artifact_open", {"ordinal": 0}) == {"ok": True}
     view = ctrl.snapshot()["artifact_view"]
 
-    assert view["open"] is True
-    assert view["ordinal"] == 0
-    assert view["filename"] == "공고서-000.hwpx"
-    assert view["status"] == ARTIFACT_OBSERVED
-    assert view["detail"] == ""
-    assert view["structure"]["kind"] == "artifact-observation/v1"
-    # 실제 그 문서의 문단이다 — 다른 문서의 상을 그리지 않는다.
-    assert [b["text"] for b in view["structure"]["sections"][0]["blocks"]] == [
-        "첫째 문서 본문"
-    ]
-    # 부분 포섭 병기는 **언제나** 실린다(비어 있어도 키가 있다, #820 D3).
-    assert view["structure"]["partial_coverage"] is False
-    assert view["structure"]["coverage_code"] == ""
-    assert view["structure"]["unrendered_regions"] == {"counts": {}, "examples": {}}
+    # 스냅샷은 상태만 싣는다 — 문서 내용(텍스트 투영·bytes)은 실리지 않는다(#1138).
+    assert view == {
+        "open": True, "ordinal": 0, "filename": "공고서-000.hwpx",
+        "status": ARTIFACT_OBSERVED, "detail": "",
+    }
 
 
-def test_partial_coverage_is_carried_beside_a_standing_observation(
+# ═══ artifact_content — 보기 전용 렌더링의 원료는 열린 면의 검증된 bytes 다(#1138) ═══════
+def test_content_is_the_open_documents_verified_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """부분 포섭은 거절이 아니다 — 관찰은 서고 사유만 옆에 붙는다(#820 §3)."""
     ctrl, out = _ready_controller(tmp_path)
-    _completed(
-        tmp_path, ctrl, out, monkeypatch,
-        blobs=[_hwpx_bytes("본문", unknown="<hp:mystery/>"), _hwpx_bytes("둘째")],
-    )
+    documents, _ = _completed(tmp_path, ctrl, out, monkeypatch)
+    ctrl.dispatch("artifact_open", {"ordinal": 1})
+    pushed: list[str] = []
+    ctrl._push_sink = lambda screen, payload: pushed.append(screen)
 
+    reply = ctrl.dispatch("artifact_content", {})
+
+    assert reply["ok"] is True and reply["ordinal"] == 1
+    assert reply["filename"] == "공고서-001.hwpx"
+    # 실제 그 문서의 bytes 다 — 다른 문서의 상을 그리지 않는다.
+    assert base64.b64decode(reply["content"]) == Path(documents[1].absolute_path).read_bytes()
+    # 질의다 — 면 상태를 바꾸지 않고 push 도 내지 않는다.
+    assert pushed == []
+    assert ctrl.snapshot()["artifact_view"]["status"] == ARTIFACT_OBSERVED
+
+
+def test_content_rereads_and_refuses_bytes_that_changed_after_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bytes 캐시 금지 — 열린 뒤 바뀐 파일은 원료가 아니라 그 거절로 돌아온다."""
+    ctrl, out = _ready_controller(tmp_path)
+    documents, _ = _completed(tmp_path, ctrl, out, monkeypatch)
     ctrl.dispatch("artifact_open", {"ordinal": 0})
-    view = ctrl.snapshot()["artifact_view"]
+    Path(documents[0].absolute_path).write_bytes(b"changed after the open")
 
-    assert view["status"] == ARTIFACT_OBSERVED
-    assert view["structure"]["partial_coverage"] is True
-    assert view["structure"]["coverage_code"] == ARTIFACT_PARTIAL_COVERAGE
-    assert view["structure"]["unrendered_regions"]["counts"]
+    reply = ctrl.dispatch("artifact_content", {})
+
+    assert reply["ok"] is False and "content" not in reply
+    assert reply["status"] == ARTIFACT_DIGEST_MISMATCH
+    assert documents[0].output_digest in reply["detail"]
+
+
+def test_content_without_an_observed_open_sheet_carries_no_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """닫힌 면·거절된 면에는 원료가 없다 — 웹이 겨눔을 실어 다른 파일을 열 길도 없다."""
+    ctrl, out = _ready_controller(tmp_path)
+    documents, _ = _completed(tmp_path, ctrl, out, monkeypatch)
+
+    closed = ctrl.dispatch("artifact_content", {})
+    assert closed["ok"] is False and closed["status"] == ARTIFACT_NOT_IN_SESSION
+    assert "content" not in closed
+
+    Path(documents[1].absolute_path).unlink()
+    ctrl.dispatch("artifact_open", {"ordinal": 1})
+    refused = ctrl.dispatch("artifact_content", {})
+    assert refused["ok"] is False and "content" not in refused
+    assert refused["status"] == ARTIFACT_FILE_MISSING and refused["ordinal"] == 1
+
+    # 브리지 관문이 겨눔을 실은 요청을 거절한다 — 원료의 대상은 Python 이 연 면 하나뿐이다.
+    with pytest.raises(ValueError):
+        validate_dispatch("job", "artifact_content", {"ordinal": 0})
+    assert validate_dispatch("job", "artifact_content", {}) == {}
 
 
 def test_tampered_file_opens_as_a_loud_mismatch_not_a_blank_sheet(
@@ -230,7 +266,6 @@ def test_tampered_file_opens_as_a_loud_mismatch_not_a_blank_sheet(
     assert view["open"] is True  # 면은 뜬다 — 조용한 무시가 아니다
     assert view["status"] == ARTIFACT_DIGEST_MISMATCH
     assert documents[0].output_digest in view["detail"]
-    assert view["structure"] is None
 
 
 def test_missing_file_and_out_of_session_are_different_states(
@@ -260,7 +295,7 @@ def test_close_releases_the_open_state(
     assert ctrl.snapshot()["artifact_view"]["open"] is True
     ctrl.dispatch("artifact_close", {})
     view = ctrl.snapshot()["artifact_view"]
-    assert view["open"] is False and view["structure"] is None
+    assert view["open"] is False and view["status"] == ""
 
 
 def test_observation_rereads_the_file_on_every_open(
@@ -306,7 +341,7 @@ def test_work_switch_discards_the_delivered_coordinates(
     assert ctrl.delivered_artifact_paths() == ()
     assert ctrl.snapshot()["artifact_view"] == {
         "open": False, "ordinal": -1, "filename": "",
-        "status": "", "detail": "", "structure": None,
+        "status": "", "detail": "",
     }
 
 
@@ -402,7 +437,7 @@ def test_tampered_original_yields_the_observation_refusal_not_a_save(
 def test_owned_paths_enter_the_whitelist_without_weakening_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """행 어포던스(폴더에서 보기·경로 복사)가 결과 파일·현재 서식 폴더를 겨눈다.
+    """경로 어포던스(폴더에서 보기)가 결과 파일·현재 서식 폴더를 겨눈다.
 
     결과 파일은 앱이 냈다는 사실, 서식 폴더는 현재 단일 루트라는 사실이 근거다. 판정은
     그대로 exact 대조라 같은 폴더의 남의 파일은 여전히 거절된다.

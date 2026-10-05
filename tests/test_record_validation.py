@@ -405,8 +405,7 @@ def test_the_marker_text_matches_the_legacy_path_for_the_same_field() -> None:
     """정합 조건(#957) — 같은 입력에서 두 경로의 문서 텍스트가 같아야 한다.
 
     legacy 는 매핑 키(=템플릿 필드명 = Plan 의 ``field_id``)로 표식을 format 한다. 문구가
-    갈리면 산출물 사후 관찰(`artifact_view_state`)이 만든 문서의 표식을 못 세고, 같은 빈
-    값이 경로에 따라 다른 문서를 낳는다.
+    갈리면 같은 빈 값이 경로에 따라 다른 문서를 낳는다.
     """
     legacy = mark_missing_values([{"f_name": ""}], MISSING_MARKER)[0]["f_name"]
     assert missing_value_marker("f_name") == legacy

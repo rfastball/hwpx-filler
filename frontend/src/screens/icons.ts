@@ -28,9 +28,10 @@ const ICONS: Record<string, Part[]> = {
   redo: [path("M12.5 4.5L16 8l-3.5 3.5"), path("M16 8H8.5a4.5 4.5 0 0 0 0 9H11")],
   trash: [path("M4 6h12M8 6V4h4v2M5.5 6l.8 10h7.4l.8-10M8.5 9v4.5M11.5 9v4.5")],
   search: [["circle", { cx: 8.5, cy: 8.5, r: 5 }], path("M12.3 12.3L16.5 16.5")],
+  view: [path("M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"), ["circle", { cx: 10, cy: 10, r: 2.2 }]],
 };
 
-/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·확인 표지·펼침·실행 취소·다시 실행·삭제·찾기). */
+/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·확인 표지·펼침·실행 취소·다시 실행·삭제·찾기·내용 보기). */
 export function icon(name: keyof typeof ICONS | string): ReactNode {
   return draw("icon", ICONS[name] || []);
 }

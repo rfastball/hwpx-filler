@@ -194,6 +194,7 @@ export const SCREEN_ACTIONS = {
     range_draft_cancel: { required: [], optional: [] },
     artifact_open: { required: ["ordinal"], optional: [] },
     artifact_close: { required: [], optional: [] },
+    artifact_content: { required: [], optional: [] },
     set_selected_only: { required: ["value"], optional: [] },
     select_job: { required: ["name"], optional: ["confirm"] },
     toggle_favorite: { required: ["name", "value"], optional: [] },
