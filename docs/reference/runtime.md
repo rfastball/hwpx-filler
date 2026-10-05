@@ -268,6 +268,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `restart` | `scenario_id` | `transition_token` |
 | `resume` | — | `transition_token` |
 | `select` | `scenario_id` | `transition_token` |
+| `set_entry_visible` | `visible` | — |
 | `skip` | — | — |
 | `start` | `scenario_id` | `transition_token` |
 

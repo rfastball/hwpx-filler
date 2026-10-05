@@ -28,6 +28,8 @@ __all__ = ["TutorialWorkspace", "DATA_NAME", "MODIFIED_REASON"]
 #: 동봉 연습 데이터 — 원본 파생 사본도 이 파일에서 만든다.
 DATA_NAME = "공고목록.xlsx"
 _PROGRESS = "progress.json"
+#: 설정 「튜토리얼 버튼 표시」(#1147) — 학습 기록과 다른 파일이라 「학습 기록 초기화」에 지워지지 않는다.
+_ENTRY = "entry.json"
 MODIFIED_REASON = "연습 파일이 수정됐습니다. 현재 파일을 보존합니다."
 
 
@@ -64,6 +66,25 @@ class TutorialWorkspace:
             raise ValueError("학습 기록 형식이 올바르지 않습니다.")
         self.root.mkdir(parents=True, exist_ok=True)
         write_text_atomic(self.root / _PROGRESS, json.dumps(value, ensure_ascii=False, indent=2))
+
+    # ------------------------------------------------------------ 튜토리얼 버튼 표시(#1147)
+    def load_entry_visible(self) -> bool:
+        """미저장은 표시(기본)다. 손상은 알리고 표시로 연다 — 버튼을 잃으면 다시 켤 길이 설정뿐이다."""
+        try:
+            raw = json.loads((self.root / _ENTRY).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return True
+        except (OSError, ValueError) as exc:
+            settings.alert(f"튜토리얼 버튼 표시 설정 판독 실패 — 표시로 엽니다: {exc!r}")
+            return True
+        visible = raw.get("visible") if isinstance(raw, dict) else None
+        return visible if isinstance(visible, bool) else True
+
+    def save_entry_visible(self, visible: bool) -> None:
+        if not isinstance(visible, bool):
+            raise ValueError("튜토리얼 버튼 표시 값이 올바르지 않습니다.")
+        self.root.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(self.root / _ENTRY, json.dumps({"visible": visible}))
 
     # ------------------------------------------------------------ 연습 홈
     def seed(self, lesson_id: str, *, derived: str = "", derived_name: str = "") -> dict:

@@ -25,6 +25,9 @@ export type TutorialBeat = {
 export type TutorialSnapshot = {
   kind: "tutorial-lessons/v1";
   invitation: { visible: boolean; title: string; body: string };
+  /** 설정의 「튜토리얼 버튼 표시」 토글(#1147) — **최종값**(꺼져 있어도 연습 중이면 true).
+   *  판정은 백엔드가 지고 이 면은 그대로 따른다(다시 판정하지 않는다). */
+  entry?: { visible: boolean };
   active: boolean; paused: boolean; scenario_id: string | null; checkpoint: number;
   practice?: { active: boolean; return_screen: string | null };
   scenarios: readonly Lesson[];
@@ -428,6 +431,19 @@ function TutorialHud(props: HudProps): ReactNode {
       }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), props.exit);
 }
 
+/** 설정의 「튜토리얼 버튼 표시」 토글(#1147) — HUD·열린 패널을 백엔드가 낸 최종값
+ *  그대로 따른다(연습 중이면 토글과 무관하게 true). 여기서 다시 판정하지 않는다. */
+function useHudVisible(snapshot: TutorialSnapshot | null, close: () => void): boolean {
+  const visible = snapshot?.entry?.visible !== false;
+  useEffect(() => { if (!visible) close(); }, [visible]);
+  return visible;
+}
+
+/** 열린 과정 목록 패널을 그릴지 — HUD 숨김(#1147)·초대 카드·overlay 점유를 한데 묻는다. */
+function lessonsPanelOpen(hudVisible: boolean, open: boolean, snapshot: TutorialSnapshot | null, overlayBusy: boolean): boolean {
+  return hudVisible && open && !!snapshot && !snapshot.invitation.visible && !overlayBusy;
+}
+
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const raw = useSyncExternalStore(ports.model.subscribe, ports.model.getSnapshot, ports.model.getSnapshot);
   const snapshot = readSnapshot(raw);
@@ -451,6 +467,8 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     catch (error) { ports.alarm(String(error)); return false; }
     finally { setPending(false); }
   }, [pending, ports]);
+
+  const hudVisible = useHudVisible(snapshot, () => setOpen(false));
 
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
   const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
@@ -512,12 +530,14 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
 
   return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
-    (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry),
-    open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+    hudVisible
+      ? (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry)
+      : null,
+    lessonsPanelOpen(hudVisible, open, snapshot, overlayBusy) ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },
-      h(TutorialLessons, { snapshot, pending, practice, fresh,
+      h(TutorialLessons, { snapshot: snapshot!, pending, practice, fresh,
         run: (item, action) => void runLesson(item, action),
         close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
         act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null,

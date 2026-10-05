@@ -276,6 +276,7 @@ export const SCREEN_ACTIONS = {
     cleanup_preview: { required: [], optional: [] },
     cleanup: { required: ["token"], optional: [] },
     reset_progress: { required: ["confirm"], optional: [] },
+    set_entry_visible: { required: ["visible"], optional: [] },
   },
 } as const;
 

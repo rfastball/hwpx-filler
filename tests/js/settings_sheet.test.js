@@ -40,8 +40,8 @@ const ROOT = Object.freeze({
   busy: false,
 });
 
-function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT) {
-  const calls = { theme: [], scale: [], closed: [], picked: 0, pickedRoot: 0, refreshed: 0 };
+function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT, entryVisible = true) {
+  const calls = { theme: [], scale: [], closed: [], picked: 0, pickedRoot: 0, refreshed: 0, entryVisible: [] };
   return {
     calls,
     props: {
@@ -66,17 +66,23 @@ function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT)
         client: { invoke: () => null },
         notify: () => {},
       },
+      tutorial: {
+        subscribe: () => () => {},
+        getSnapshot: () => ({ entry: { visible: entryVisible } }),
+        setEntryVisible: (value) => { calls.entryVisible.push(value); },
+      },
       currentTheme: theme,
       currentScale: scale,
       outputFolder: folder,
       templatesRoot: root,
+      entryVisible,
     },
   };
 }
 
-function markup(theme, scale, folder, root) {
+function markup(theme, scale, folder, root, entryVisible) {
   return renderToStaticMarkup(
-    createElement(SettingsSheetView, ports(theme, scale, folder, root).props),
+    createElement(SettingsSheetView, ports(theme, scale, folder, root, entryVisible).props),
   );
 }
 
@@ -87,11 +93,11 @@ function pressedPairs(html, axis) {
     .map((m) => [m[1], m[2]]);
 }
 
-test("설정 모달은 테마·글자 크기·저장 폴더·서식 폴더 네 행을 편다", () => {
+test("설정 모달은 테마·글자 크기·저장 폴더·서식 폴더·튜토리얼 버튼 표시 다섯 행을 편다", () => {
   const html = markup();
   assert.match(html, /<h3 id="settingsTitle">설정<\/h3>/);
   assert.match(html, /id="settingsClose"/);
-  assert.equal(html.split('class="settings-row').length - 1, 4, "설정 행이 넷이 아닙니다.");
+  assert.equal(html.split('class="settings-row').length - 1, 5, "설정 행이 다섯이 아닙니다.");
 
   assert.deepEqual(pressedPairs(html, "data-set-theme").map((p) => p[0]),
     ["system", "light", "dark"]);
@@ -304,4 +310,43 @@ test("서식 폴더 행의 경로 어포던스는 **자기 포트**의 client·n
   assert.equal(rows.length, 1, "서식 폴더 행이 팩토리로 서지 않았습니다.");
   assert.equal(rows[0].client, props.templates.client, "남의 컨트롤러 client 를 빌렸습니다.");
   assert.equal(rows[0].notify, props.templates.notify);
+});
+
+/* 튜토리얼 버튼 표시 토글(#1147) — 판정·영속은 백엔드다. 이 면은 `tutorial` 채널 스냅샷의
+ * `entry.visible` 을 그대로 그리고, 바뀌면 그 값을 담아 동사 하나(`setEntryVisible`)를 부른다. */
+test("튜토리얼 버튼 표시 행은 백엔드 스냅샷 값을 그대로 그린다", () => {
+  const on = markup(undefined, undefined, undefined, undefined, true);
+  assert.match(on, /id="settingsTutorialEntryLabel">튜토리얼 버튼 표시</);
+  assert.ok(on.includes('id="settingsTutorialEntry"'));
+  assert.ok(on.includes('checked=""'), "켜짐 상태의 체크박스가 checked 로 서지 않았습니다.");
+
+  const off = markup(undefined, undefined, undefined, undefined, false);
+  const row = off.split('id="settingsTutorialEntry"')[1].split("/>")[0];
+  assert.ok(!row.includes("checked"), "꺼짐 상태인데 checked 가 섰습니다.");
+});
+
+test("튜토리얼 버튼 표시를 누르면 반대 값으로 백엔드 동사를 부른다 — 지역 판정 없음", () => {
+  const { calls, props } = ports("system", "normal", FOLDER, ROOT, true);
+  const tree = SettingsSheetView(props);
+  const inputs = [];
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.type === "function") {
+      let rendered;
+      try { rendered = node.type(node.props); } catch { return; }
+      walk(rendered);
+      return;
+    }
+    if (node.props) {
+      if (node.props.id === "settingsTutorialEntry") inputs.push(node.props);
+      walk(node.props.children);
+    }
+  };
+  walk(tree);
+  const input = inputs[0];
+  assert.ok(input, "튜토리얼 버튼 표시 체크박스가 없습니다.");
+  assert.equal(input.checked, true);
+  input.onChange();
+  assert.deepEqual(calls.entryVisible, [false], "켜짐에서 누르면 꺼짐 값으로 동사가 나가야 합니다.");
 });

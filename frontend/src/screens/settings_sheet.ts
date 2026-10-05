@@ -100,6 +100,15 @@ export const TEMPLATES_ROOT_BUSY_REASON =
 /** 루트가 아직 도출되지 않은 자리 문안(경로 칸이 빈 채로 서는 것을 막는다). */
 export const TEMPLATES_ROOT_EMPTY_TEXT = "아직 읽지 못했습니다 — 폴더를 선택하세요.";
 
+/** 튜토리얼 버튼 표시 토글 행이 쓰는 **구조적** 포트(#1147) — `tutorial` 채널 스냅샷의
+ *  `entry.visible`(최종값, 연습 중 유지 포함)을 그대로 읽는다. 판정은 백엔드가 지고
+ *  이 면은 값을 읽어 그리고 동사 하나를 전달할 뿐이다. */
+export type SettingsTutorialPort = {
+  subscribe(listener: () => void): () => void;
+  getSnapshot(): Obj | null;
+  setEntryVisible(visible: boolean): unknown;
+};
+
 /** 모달 DOM id — 여는 쪽(shell/app.ts)과 닫는 쪽(이 파일)이 같은 상수를 쓴다. */
 export const SETTINGS_MODAL_ID = "settingsModal";
 
@@ -234,14 +243,25 @@ export type OutputFolderView = {
 /** 서식 폴더 행이 그리는 값 — 저장 폴더와 같은 성분(둘 다 링0 도출의 투영이다). */
 export type TemplatesRootView = OutputFolderView;
 
+/** 저장 폴더·서식 폴더 공용 — backend 도출 투영의 네 칸을 같은 형상으로 뽑는다(중복 제거). */
+function folderRowView(zone: Obj, busy: boolean): OutputFolderView {
+  return {
+    directory: String(zone.directory || ""),
+    sourceLabel: String(zone.source_label || ""),
+    notice: String(zone.notice || ""),
+    busy,
+  };
+}
+
 export function SettingsSheet(props: {
   theme: SettingsThemePort;
   personalization: SettingsPersonalizationPort;
   modal: SettingsModalPort;
   job: SettingsOutputFolderPort;
   templates: SettingsTemplatesRootPort;
+  tutorial: SettingsTutorialPort;
 }): ReactNode {
-  const { theme, personalization, job, templates } = props;
+  const { theme, personalization, job, templates, tutorial } = props;
   const currentTheme = useShellValue("hwpx:themechange", () => theme.current());
   const currentScale = useShellValue(
     "hwpx:personalizationchange", () => personalization.currentFontScale(),
@@ -251,26 +271,21 @@ export function SettingsSheet(props: {
      저장소 판독이라 그것을 그대로 스냅샷 함수로 쓴다(파생 객체를 만들면 매 호출이 새 참조가
      돼 useSyncExternalStore 가 무한 재렌더에 든다). */
   const runState = useSyncExternalStore(job.subscribe, job.getRun, job.getRun);
-  const folder = ((runState.lastFull || {}).output_folder || {}) as Obj;
-  const outputFolder: OutputFolderView = {
-    directory: String(folder.directory || ""),
-    sourceLabel: String(folder.source_label || ""),
-    notice: String(folder.notice || ""),
-    busy: runState.running === true,
-  };
+  const busy = runState.running === true;
+  const outputFolder = folderRowView(((runState.lastFull || {}).output_folder || {}) as Obj, busy);
   /* 서식 폴더도 같은 규율이다 — tpl 채널의 `templates_root` 존을 그대로 판독한다. */
   const tplState = useSyncExternalStore(
     templates.subscribe, templates.getSnapshot, templates.getSnapshot,
   );
-  const root = ((tplState || {}).templates_root || {}) as Obj;
-  const templatesRoot: TemplatesRootView = {
-    directory: String(root.directory || ""),
-    sourceLabel: String(root.source_label || ""),
-    notice: String(root.notice || ""),
-    busy: runState.running === true,
-  };
+  const templatesRoot = folderRowView(((tplState || {}).templates_root || {}) as Obj, busy);
+  /* 튜토리얼 버튼 표시 토글(#1147) — `tutorial` 채널 스냅샷의 `entry.visible`을 그대로
+     읽는다(판정은 백엔드). 첫 당김 전·판독 실패는 기본 표시(백엔드 기본값과 같다). */
+  const tutorialState = useSyncExternalStore(
+    tutorial.subscribe, tutorial.getSnapshot, tutorial.getSnapshot,
+  );
+  const entryVisible = ((tutorialState || {}).entry || {}).visible !== false;
   return createElement(SettingsSheetView as any, {
-    ...props, currentTheme, currentScale, outputFolder, templatesRoot,
+    ...props, currentTheme, currentScale, outputFolder, templatesRoot, entryVisible,
   });
 }
 
@@ -285,12 +300,14 @@ export function SettingsSheetView(props: {
   modal: SettingsModalPort;
   job: SettingsOutputFolderPort;
   templates: SettingsTemplatesRootPort;
+  tutorial: SettingsTutorialPort;
   currentTheme: string;
   currentScale: string;
   outputFolder: OutputFolderView;
   templatesRoot: TemplatesRootView;
+  entryVisible: boolean;
 }): ReactNode {
-  const { theme, personalization, modal, job, templates, currentTheme, currentScale } = props;
+  const { theme, personalization, modal, job, templates, tutorial, currentTheme, currentScale } = props;
   const folder = props.outputFolder;
   const root = props.templatesRoot;
 
@@ -350,5 +367,14 @@ export function SettingsSheetView(props: {
         busyReason: TEMPLATES_ROOT_BUSY_REASON,
         onPick: () => { void pickRoot(); },
         client: templates.client, notify: templates.notify,
-      })));
+      }),
+      h("div", { className: "settings-row" },
+        h("span", { className: "settings-label", id: "settingsTutorialEntryLabel" }, "튜토리얼 버튼 표시"),
+        h("label", { className: "settings-check" },
+          h("input", {
+            id: "settingsTutorialEntry", type: "checkbox",
+            "aria-labelledby": "settingsTutorialEntryLabel",
+            checked: props.entryVisible,
+            onChange: () => { void tutorial.setEntryVisible(!props.entryVisible); },
+          })))));
 }

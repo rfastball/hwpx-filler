@@ -360,6 +360,9 @@ class LessonProgress:
         raw = raw if isinstance(raw, dict) and raw.get("version") == 1 else {}
         self.invite_seen = raw.get("invite_seen") is True
         self.first_launch = first_launch
+        #: Settings-owned toggle (#1147), injected by the controller — this viewmodel stays IO-free.
+        #: Hides the HUD pill and the first-launch invitation; the controller ORs in practice-active.
+        self.entry_visible = True
         selected = raw.get("selected")
         self.selected = selected if isinstance(selected, str) and selected in BY_ID else None
         stored = raw.get("records") if isinstance(raw.get("records"), dict) else {}
@@ -448,6 +451,10 @@ class LessonProgress:
             self.record(self.selected)["context"].update(context)
         return self._advance()
 
+    def _invite_visible(self) -> bool:
+        """첫 안내 카드 — 첫 실행·미열람·토글 켜짐(#1147) 셋을 모두 요구한다."""
+        return self.first_launch and not self.invite_seen and self.entry_visible
+
     def snapshot(self) -> dict:
         beat = self.beat() if self.active else None
         selected_lesson = BY_ID.get(self.selected) if self.selected else None
@@ -460,10 +467,12 @@ class LessonProgress:
         return {
             "kind": "tutorial-lessons/v1",
             "invitation": {
-                "visible": self.first_launch and not self.invite_seen,
+                "visible": self._invite_visible(),
                 "title": "문서나르미 첫 안내",
                 "body": "예제 서식과 데이터로 첫 문서를 만드세요. 시작할 때 연습 사본을 준비합니다.",
             },
+            #: Toggle-only value (#1147); the controller ORs in practice-active before this reaches the web.
+            "entry": {"visible": self.entry_visible},
             "active": self.active,
             "paused": not self.active and selected_lesson is not None and checkpoint < len(selected_lesson.beats),
             "scenario_id": self.selected,

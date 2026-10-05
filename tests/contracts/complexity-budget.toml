@@ -326,9 +326,6 @@ function_complexity = 11
 [budget."frontend/src/screens/segment_view.ts::segmentNode"]
 function_complexity = 11
 
-[budget."frontend/src/screens/settings_sheet.ts::SettingsSheet"]
-function_complexity = 11
-
 [budget."frontend/src/screens/sheet_picker.ts::SheetPickerDialog"]
 function_complexity = 16
 
@@ -424,7 +421,7 @@ function_complexity = 11
 function_complexity = 37
 
 [budget."frontend/src/tutorial/panel.ts::TutorialPanel"]
-function_complexity = 48
+function_complexity = 46
 
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]
 function_complexity = 29
@@ -1143,7 +1140,7 @@ module_statements = 389
 class_methods = 43
 
 [budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.snapshot"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."src/hwpxfiller/viewmodel/tutorial_state.py::TutorialViewModel"]
 class_methods = 25
@@ -1262,7 +1259,7 @@ function_complexity = 14
 function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/product_api.py::preferences_outcome"]
 function_complexity = 16

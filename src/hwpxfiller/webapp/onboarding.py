@@ -22,8 +22,10 @@ from .onboarding_guide import (
 )
 from .onboarding_match_results import match_event
 from .onboarding_practice import (
-    NO_RETURN_SCREEN, capture_return, note_practice_save, practice_resources, restore_screen, start_fresh,
+    NO_RETURN_SCREEN, capture_return, merge_practice_snapshot, note_practice_save, practice_resources,
+    restore_screen, start_fresh,
 )
+from .onboarding_settings import reset_progress, set_entry_visible
 
 
 def first_launch_candidate(home: Path) -> bool:
@@ -46,6 +48,7 @@ class OnboardingController:
         self.practice: PracticeFiles | None = None
         self.switch: Any = None
         self.progress = LessonProgress(workspace.load_progress(), first_launch=first_launch)
+        self.progress.entry_visible = workspace.load_entry_visible()
         self.controllers: dict = {}
         self._recovery: str | None = None
         self._lock = threading.RLock()
@@ -106,8 +109,7 @@ class OnboardingController:
         snap["resources"] = {"ready": ready, "summary": f"{summary} {notice}".strip(), "files": files}
         reason = self._recovery or (None if ready or not self.progress.selected else summary)
         snap["recovery"] = {"title": "연습 파일을 확인하세요", "body": reason} if reason else None
-        snap["practice"] = {"active": self._return_context is not None,
-                            "return_screen": self._return_context.get("screen") if self._return_context else None}
+        merge_practice_snapshot(self, snap)
         if snap["beat"]:
             guide_beat(self, snap["beat"])
         return snap
@@ -232,14 +234,13 @@ class OnboardingController:
         elif action == "next":
             self._next()
         elif action == "reset_progress":
-            if payload.get("confirm") is not True:
-                raise ValueError("모든 학습 기록을 지울지 확인하세요.")
-            self.progress = LessonProgress({"version": 1, "invite_seen": True})
-            self._recovery = None
+            reset_progress(self, payload)
         elif action == "later":
             self.progress.later()
         elif action in {"pause", "skip"}:
             self.progress.pause()
+        elif action == "set_entry_visible":
+            set_entry_visible(self, payload)
         else:
             raise ValueError(f"알 수 없는 tutorial 액션: {action!r}")
         self._persist()
