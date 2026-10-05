@@ -1289,9 +1289,6 @@ function_complexity = 15
 [budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._section_entries"]
 function_complexity = 16
 
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController.snapshot"]
-function_complexity = 14
-
 [budget."src/hwpxfiller/webapp/screen_job.py"]
 module_statements = 928
 
@@ -1441,7 +1438,7 @@ module_statements = 1134
 function_complexity = 22
 
 [budget."tests/test_web_selftest_gate.py"]
-module_statements = 1311
+module_statements = 1310
 
 [budget."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
 class_methods = 83

@@ -51,3 +51,9 @@ branch = 100
 path = "src/hwpxfiller/webapp"
 line = 86
 branch = 82
+
+# 「데이터로 필드 찾기」(#1156) 판정기 — 순수 함수라 전 분기를 단위 테스트가 잰다.
+[packages."hwpxfiller.domain.field_induction"]
+path = "src/hwpxfiller/domain/field_induction"
+line = 99
+branch = 98
