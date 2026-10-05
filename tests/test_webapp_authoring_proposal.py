@@ -23,7 +23,7 @@ from hwpxfiller.webapp.screen_authoring import AuthoringController
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
 STALE = "문서가 변경되었습니다"
-NO_GROUP = "제안을 찾을 수 없습니다. 다시 계산한 뒤 고르세요."
+NO_GROUP = "제안을 찾을 수 없습니다. 제안 목록에서 다시 고르세요."
 
 ROWS = [
     {"공고명": "다른 사업", "추정가격": "1", "수요기관": None, "낙찰자결정방법": "", "계약방법": ""},
@@ -147,7 +147,7 @@ def test_make_goes_through_the_preview_chain_and_records_the_draft(tmp_path: Pat
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     made = ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": group(view, "추정가격")["id"]})
     assert made["command"]["type"] == "create_field" and made["command"]["name"] == "추정가격"
-    assert made["toast"] == "‘추정가격’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
+    assert made["toast"] == "‘추정가격’ 필드를 만들고 연결 초안에 열과 표시형을 넣었습니다."
     assert made["created"]["name"] == "추정가격" and made["links_existing"] is False
     original = ctrl.dispatch("content", {"session_id": sid})["content"]
     # 표면의 적용 사슬: 같은 명령으로 다시 미리 본 뒤 그 문서를 확정한다.
@@ -233,7 +233,7 @@ def test_make_all_is_one_document_change(tmp_path: Path) -> None:
     ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     made = ctrl.dispatch("propose_make_all", {"session_id": sid, "revision": 0})
     assert made["command"]["type"] == "create_fields" and len(made["command"]["fields"]) == 3
-    assert made["toast"] == "필드 3개를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
+    assert made["toast"] == "필드 3개를 만들고 연결 초안에 열과 표시형을 넣었습니다."
     assert made["label"] == "필드로 만들기" and made["confirm"] == "none"
     assert sorted(made["field_delta"]["added_fields"]) == ["공고명", "수요기관", "추정가격"]
     ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": made["content"]})
@@ -269,7 +269,7 @@ def test_a_refused_preview_is_returned_as_is(tmp_path: Path) -> None:
     sid = hwpx_session(ctrl, *NOTICE)
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     bad = group(view, "{{}}")
-    assert bad["kind"] == "held" and bad["reason"] == "열 이름을 필드 이름으로 쓸 수 없습니다."
+    assert bad["kind"] == "held" and bad["reason"] == "열 이름을 필드 이름으로 쓸 수 없습니다. 문구를 고르고 직접 필드로 만드세요."
     with pytest.raises(ValueError, match="열 이름을 필드 이름으로"):
         ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": bad["id"]})
     # 미리보기의 구조화된 거절(같은 이름의 다른 구조 등)은 그대로 돌려준다 — 초안을 기다리지 않는다.
@@ -370,7 +370,7 @@ def test_pick_column_among_equal_values(tmp_path: Path) -> None:
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     number = group(view, "입찰공고번호")
     assert number["kind"] == "held" and number["id"] == "g_입찰공고번호|현행공고"
-    assert number["columns"] == [{"name": "현행공고", "note": "현행공고 열도 같은 값입니다."}]
+    assert number["columns"] == [{"name": "현행공고", "note": "‘현행공고’ 열도 같은 값입니다."}]
     with pytest.raises(ValueError, match="이 값과 같은 열 가운데서 고르세요."):
         ctrl.dispatch("propose_pick_column", {"session_id": sid, "revision": 0, "group_id": number["id"],
                                               "column": "추정가격"})
@@ -378,7 +378,7 @@ def test_pick_column_among_equal_values(tmp_path: Path) -> None:
                                                    "column": "현행공고"})
     chosen = next(item for item in picked["groups"] if item["id"] == number["id"])
     assert (chosen["kind"], chosen["column"], chosen["name"]) == ("proposal", "현행공고", "현행공고")
-    assert chosen["columns"] == [{"name": "입찰공고번호", "note": "입찰공고번호 열도 같은 값입니다."}]
+    assert chosen["columns"] == [{"name": "입찰공고번호", "note": "‘입찰공고번호’ 열도 같은 값입니다."}]
     assert chosen["source_text"] == "1행 ‘현행공고’ 열과 같은 값입니다."
     # 문서가 바뀌어도 고른 열은 남고, 띠를 끄면 잊는다.
     price = group(picked, "추정가격")

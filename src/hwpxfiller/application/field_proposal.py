@@ -56,11 +56,11 @@ REASON_NOT_SAME_VALUE = "이 값과 같은 열 가운데서 고르세요."
 
 
 def toast_one(name: str) -> str:
-    return f"‘{name}’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
+    return f"‘{name}’ 필드를 만들고 연결 초안에 열과 표시형을 넣었습니다."
 
 
 def toast_many(count: int) -> str:
-    return f"필드 {count}개를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
+    return f"필드 {count}개를 만들고 연결 초안에 열과 표시형을 넣었습니다."
 
 
 @dataclass(frozen=True)

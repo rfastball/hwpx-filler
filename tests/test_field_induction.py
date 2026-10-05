@@ -94,7 +94,7 @@ def test_every_kept_program_renders_identically_in_the_product_format_engine(val
 def test_binding_labels_follow_the_family() -> None:
     labels = {t.id: t.binding()["label"] for t in TRANSFORMS.values()}
     assert labels["identity"] == "원문" and labels["number_grouping"] == "천 단위 쉼표"
-    assert labels["date_korean"] == "날짜" and labels["datetime_dot_spaced"] == "날짜·시각"
+    assert labels["date_korean"] == "날짜" and labels["datetime_dot_spaced"] == "날짜+시각"
     assert TRANSFORMS["number_grouping"].binding() == {"type": "amount", "fmt": "{:,}", "label": "천 단위 쉼표"}
 
 
@@ -273,7 +273,7 @@ def test_mockup_notice_has_nine_proposals_two_held_and_a_label_only_short_value(
         "입찰공고번호", "공고명", "추정가격", "수량", "납품장소", "입찰마감일시", "개찰일시", "계약방법", "담당자"}
     number = groups["입찰공고번호"]
     assert len(number.spots) == 2 and note_for(number) == [
-        {"name": "현행공고", "note": "현행공고 열도 같은 값입니다."}]
+        {"name": "현행공고", "note": "‘현행공고’ 열도 같은 값입니다."}]
     assert len(groups["공고명"].spots) == 2 and groups["공고명"].count_text == "2곳"
     price = groups["추정가격"]
     assert (price.value, price.raw, price.transform, price.spots[0].text) == (
@@ -287,11 +287,11 @@ def test_mockup_notice_has_nine_proposals_two_held_and_a_label_only_short_value(
     # 표 칸 라벨 자리 하나 — 규정 문장(「…할 수 있습니다」) 속 반복은 싣지 않는다.
     assert [spot.where for spot in method.spots] == ["표 칸, 2. 라"]
     judge = groups["낙찰자결정방법"]
-    assert judge.kind == "held" and judge.reason == "문장 속에도 3번 나옵니다. 표 칸 1곳만 고를 수 있습니다."
+    assert judge.kind == "held" and judge.reason == "같은 값이 다른 곳에도 3번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다."
     assert judge.only == judge.spots[0].id and judge.count_text == "4곳"
     bidding = groups["입찰방식"]
     assert bidding.kind == "held"
-    assert bidding.reason == "문장 속 낱말과 같습니다. 같은 값 2곳이 모두 문장 속에 있습니다."
+    assert bidding.reason == "같은 값 2곳이 모두 문장 속에 있어 일반 낱말로 보입니다."
     assert [(item.column, item.reason) for item in result.missing] == [
         ("품명", "이 행에서 값이 비어 있습니다."), ("비고", "이 행에서 값이 비어 있습니다.")]
 
@@ -301,7 +301,7 @@ def test_two_columns_with_one_value_and_no_label_are_held_as_a_tie() -> None:
     result = propose(doc("한국상사"), {"상호": "한국상사", "거래처": "한국상사"}, ["상호", "거래처"])
     (group,) = result.groups
     assert group.kind == "held" and group.column == "상호" and group.others == ["거래처"]
-    assert group.reason == "‘상호’ 열과 ‘거래처’ 열의 값이 같아 어느 열인지 정할 수 없습니다."
+    assert group.reason == "값이 같은 열이 여럿입니다. 연결할 열을 고르세요."
 
 
 def test_fixed_wording_and_generic_sentences_are_held() -> None:
@@ -309,7 +309,7 @@ def test_fixed_wording_and_generic_sentences_are_held() -> None:
     assert quoted.groups[0].reason == "고정 문구 안의 낱말로 보입니다."
     generic = propose(doc("계약상대자는 납품장소 하차도 조건을 지켜야 하며 위반한 경우에는 해지합니다."),
                       {"인도조건": "납품장소 하차도"}, ["인도조건"])
-    assert generic.groups[0].reason == "모든 문서에 같은 규정 문장 안에 있습니다."
+    assert generic.groups[0].reason == "규정·안내 문장 안의 낱말로 보입니다."
 
 
 def test_unlabelled_values_by_place() -> None:
@@ -344,7 +344,7 @@ def test_column_names_become_field_names_or_are_held() -> None:
     assert field_name(" 담당자   전화번호 ") == "담당자 전화번호"
     assert field_name("#번호") == "번호" and field_name("{a|b}") == "a b" and field_name("{{}}") is None
     result = propose(doc("공고명: 장비 구매"), {"{{}}": "장비 구매"}, ["{{}}"])
-    assert result.groups[0].kind == "held" and result.groups[0].reason == "열 이름을 필드 이름으로 쓸 수 없습니다."
+    assert result.groups[0].kind == "held" and result.groups[0].reason == "열 이름을 필드 이름으로 쓸 수 없습니다. 문구를 고르고 직접 필드로 만드세요."
 
 
 def test_spots_after_a_control_are_not_offered() -> None:
@@ -403,7 +403,7 @@ def test_label_extraction_edges() -> None:
 def test_long_prose_repeats_and_cells_without_a_label_neighbour() -> None:
     paragraphs = doc("수요기관: 조달청", *["조달청 안내 문장입니다" for _ in range(55)])
     (group,) = propose(paragraphs, {"수요기관": "조달청"}, ["수요기관"]).groups
-    assert group.kind == "held" and group.reason.startswith("문장 속에도 55번")
+    assert group.kind == "held" and group.reason.startswith("같은 값이 다른 곳에도 55번")
     cells = [ParagraphText("a", "1,234,567", 10, cell=CellRef("t", 0, 0)),
              ParagraphText("b", "1,234,567", 10, cell=CellRef("t", 0, 1))]
     (group,) = propose(cells, {"금액": "1234567"}, ["금액"]).groups

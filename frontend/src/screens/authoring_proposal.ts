@@ -20,7 +20,7 @@ type ProposalEditor = {
 export const PROPOSAL_COPY = {
   title: "데이터로 필드 찾기",
   menu: "데이터로 필드 찾기…",
-  link: "데이터로 한 번에 찾기",
+  link: "데이터로 필드 찾기",
   data: "데이터",
   row: "행",
   noneLeft: "남은 제안 없음",
@@ -31,7 +31,7 @@ export const PROPOSAL_COPY = {
   held: "보류",
   emptyProposals: "남은 제안이 없습니다.",
   missing: "찾지 못한 열",
-  format: "표시 형식",
+  format: "표시형",
   raw: "데이터 값",
   make: "필드로 만들기",
   only: "이 자리만",

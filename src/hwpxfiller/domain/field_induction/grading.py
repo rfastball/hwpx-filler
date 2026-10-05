@@ -27,22 +27,22 @@ KIND_HELD = "held"
 
 
 def reason_one_slot(outside: int) -> str:
-    return f"문장 속에도 {outside}번 나옵니다. 표 칸 1곳만 고를 수 있습니다."
+    return f"같은 값이 다른 곳에도 {outside}번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다."
 
 
 def reason_prose_repeats(count: int) -> str:
-    return f"문장 속 낱말과 같습니다. 같은 값 {count}곳이 모두 문장 속에 있습니다."
+    return f"같은 값 {count}곳이 모두 문장 속에 있어 일반 낱말로 보입니다."
 
 
 REASON_PROSE_ONCE = ("문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다. "
                      "같은 양식 문서를 하나 더 넣으면 판단할 수 있습니다.")
 REASON_FIXED = "고정 문구 안의 낱말로 보입니다."
-REASON_GENERIC = "모든 문서에 같은 규정 문장 안에 있습니다."
-REASON_BAD_NAME = "열 이름을 필드 이름으로 쓸 수 없습니다."
+REASON_GENERIC = "규정·안내 문장 안의 낱말로 보입니다."
+REASON_BAD_NAME = "열 이름을 필드 이름으로 쓸 수 없습니다. 문구를 고르고 직접 필드로 만드세요."
 
 
-def reason_tie(first: str, second: str) -> str:
-    return f"‘{first}’ 열과 ‘{second}’ 열의 값이 같아 어느 열인지 정할 수 없습니다."
+#: 같은 값의 열이 둘 이상인데 라벨이 하나를 가리키지 않을 때 — 열 이름은 팝오버의 출처 줄·다른 열 주석이 이미 말한다.
+REASON_TIE = "값이 같은 열이 여럿입니다. 연결할 열을 고르세요."
 
 
 def reason_many(count: int) -> str:
@@ -64,7 +64,7 @@ def count_spots(count: int) -> str:
 
 
 def note_same_value(column: str) -> str:
-    return f"{column} 열도 같은 값입니다."
+    return f"‘{column}’ 열도 같은 값입니다."
 
 
 @dataclass
@@ -112,7 +112,7 @@ def grade(columns: Sequence[str], spots: Sequence[SpotEvidence], pick: str | Non
     if column is None:
         # 열 하나는 늘 정해진다 — 여기는 같은 값의 열이 둘 이상이고 라벨이 하나를 가리키지 않을 때다.
         return None if short else Grade(KIND_HELD, columns[0], list(columns[1:]), list(spots),
-                                        reason=reason_tie(columns[0], columns[1]))
+                                        reason=REASON_TIE)
     others = [other for other in columns if other != column]
     if short:
         return _grade_short(column, others, labelled, spots)

@@ -36,7 +36,7 @@ from ..external.hwpx_field_proposal import read_hwpx, read_txt, spot_location
 from ..viewmodel.run_state import resolve_pool_source
 from .screens import load_pool_into
 
-_NO_GROUP = "제안을 찾을 수 없습니다. 다시 계산한 뒤 고르세요."
+_NO_GROUP = "제안을 찾을 수 없습니다. 제안 목록에서 다시 고르세요."
 
 
 def pool_source_of(data) -> tuple[str, str | None] | None:

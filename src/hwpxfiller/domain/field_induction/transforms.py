@@ -26,7 +26,7 @@ _DATETIME_ANY = re.compile(r"(\d{4})([-/.])(\d{2})\2(\d{2})[ T](\d{2}):(\d{2})(?
 LABEL_TEXT = "원문"
 LABEL_NUMBER = "천 단위 쉼표"
 LABEL_DATE = "날짜"
-LABEL_DATETIME = "날짜·시각"
+LABEL_DATETIME = "날짜+시각"
 
 
 def as_datetime(value: str) -> _dt.datetime | None:
