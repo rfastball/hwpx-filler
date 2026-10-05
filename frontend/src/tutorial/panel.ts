@@ -1,9 +1,11 @@
 /* Nine task lessons. The host owns lesson state; this surface owns only geometry and controls. */
-import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
+import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { icon } from "../screens/icons.ts";
 import { SPAN_ANCHORS, anchorSelector } from "./anchors.ts";
+import { FLY_SCALE, clockOf, countShown, createCoachSwap, createSpotHold, flyFrom, freshIds, playFinale, prefersReducedMotion } from "./motion.ts";
+import type { FinaleState, HeldSpot } from "./motion.ts";
 import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchBoxedPress, watchLayout, watchMissedPress } from "./spotlight.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
@@ -126,46 +128,52 @@ function useMissedPresses(doc: Document, frame: SpotFrame | null, key: string): 
   return missed.key === key ? missed.count : 0;
 }
 
-type SpotProps = { target: Target; motionKey: string; missed: number; ring: boolean };
+type SpotProps = { target: Target; motionKey: string; missed: number; ring: boolean; faded?: boolean };
 
 /** Snug ring around the real control with the page dimmed around it. It glides between anchors, pulses once on
- *  arrival or on a missed press, and never takes pointer events. `ring` drops the scrim where a dialog already dims. */
+ *  arrival or on a missed press, and never takes pointer events. `ring` drops the scrim where a dialog already dims.
+ *  `faded` keeps the last frame invisible in place while the anchor is missing, so the next one glides from it. */
 export function TutorialSpot(props: SpotProps): ReactNode {
   const change = useChangeCount(props.motionKey);
   const frame = spotFrame(props.target);
   const gliding = change.count > 0 && Date.now() - change.at < GLIDE_WINDOW;
   const afterGlide = change.count > 0 && props.missed === 0;
   return h("div", { className: "tutorial-spot", "aria-hidden": true, "data-dim": props.ring ? "ring" : "scrim",
-    "data-glide": gliding ? "" : undefined, "data-swap": parity(change.count),
+    "data-glide": gliding ? "" : undefined, "data-fade": props.faded ? "" : undefined, "data-swap": parity(change.count),
     style: { transform: `translate(${frame.x}px, ${frame.y}px)`, width: frame.width, height: frame.height, borderRadius: frame.radius } },
   h("i", { key: `${props.motionKey}:${props.missed}`, className: "tutorial-spot-pulse",
     style: afterGlide ? { animationDelay: "var(--tutorial-glide)" } : undefined }));
 }
 
-type CoachProps = {
-  beat: TutorialBeat; copy: TutorialSnapshot["copy"]; step: string; placement: CoachPlacement | null; inline: boolean;
-  lost: boolean; overlayBusy: boolean; pending: boolean; swap: number; missed: number; exit: ReactNode;
+/** What the coach card shows: frozen on the old beat while it fades out (motion.ts createCoachSwap). */
+type CoachView = { beat: TutorialBeat; step: string; placement: CoachPlacement | null; lost: boolean; missed: number };
+
+type CoachProps = CoachView & {
+  copy: TutorialSnapshot["copy"]; inline: boolean; overlayBusy: boolean; pending: boolean; exit: ReactNode;
+  /** `hidden`: faded out between beats. `stale`: still the old beat's card, whose buttons must not act on the new beat. */
+  hidden?: boolean; stale?: boolean;
   act(action: string, payload?: Record<string, unknown>): void; recover(): void;
 };
 
 function CoachFoot(props: CoachProps): ReactNode {
   const { beat, copy, pending } = props;
   const button = (id: string | undefined, label: string, onClick: () => void) =>
-    h("button", { id, className: "btn primary sm", type: "button", disabled: pending, onClick }, label);
+    h("button", { id, className: "btn primary sm", type: "button", disabled: pending, onClick: props.stale ? undefined : onClick }, label);
   return h("div", { className: "tutorial-coach-foot" },
     props.lost && (props.inline || !props.overlayBusy) ? button("tutorialReturn", copy.return, props.recover) : null,
     beat.mode === "explain" && beat.can_next ? button(undefined, copy.next, () => props.act("next")) : null,
     props.inline ? props.exit : null);
 }
 
-/** Coach card. Its arrow points at the anchor from the chosen side; it fades in on each beat (`swap`) and shakes
- *  on a missed press (`missed`). Inside a dialog it is an inline section of that dialog instead. */
+/** Coach card. Its arrow points at the anchor from the chosen side; between beats it fades out in place and fades
+ *  in with the new words at the new place (`hidden`), and it shakes on a missed press (`missed`). Inside a dialog
+ *  it is an inline section of that dialog instead. */
 export function TutorialCoach(props: CoachProps): ReactNode {
   const { beat, placement, inline } = props;
   const style = !inline && placement ? { left: placement.x, top: placement.y, width: placement.width } : undefined;
   return h("section", { id: "tutorialCoach", className: inline ? "tutorial-coach tutorial-coach-inline" : "tutorial-coach", style,
     role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
-    "data-side": inline ? "inline" : placement?.side ?? "center", "data-swap": parity(props.swap),
+    "data-side": inline ? "inline" : placement?.side ?? "center", "data-shown": String(!props.hidden),
     "data-nudge": props.missed ? parity(props.missed) : undefined },
   placement?.arrow ? h("i", { className: "tutorial-coach-arrow", style: placement.arrow, "aria-hidden": true }) : null,
   h("div", { className: "tutorial-coach-scroll" },
@@ -175,31 +183,63 @@ export function TutorialCoach(props: CoachProps): ReactNode {
     h(CoachFoot, props)));
 }
 
-type GuideProps = Omit<CoachProps, "placement" | "inline" | "lost" | "swap" | "missed"> & {
-  found: Target | null; dialogHost: Element | null; doc: Document;
+type GuideProps = Omit<CoachProps, keyof CoachView | "inline" | "hidden" | "stale"> & {
+  beat: TutorialBeat; step: string; found: Target | null; dialogHost: Element | null; doc: Document;
   portal: (children: ReactNode, container: Element) => ReactNode;
 };
+
+/** The ring's shown frame: it holds and then fades in place while the anchor is missing, and glides from there to
+ *  the next anchor (motion.ts createSpotHold). The page and a dialog are separate places to glide in. */
+function useHeldSpot(doc: Document, found: Target | null, key: string, zone: Element | null): HeldSpot<Target> {
+  const [hold] = useState(() => createSpotHold<Target>(clockOf(doc), found, key));
+  useLayoutEffect(() => hold.feed(found, key, prefersReducedMotion(doc), zone), [doc, hold, found, key, zone]);
+  useEffect(() => hold.dispose, [hold]);
+  return useSyncExternalStore(hold.subscribe, hold.get, hold.get);
+}
+
+/** The coach for the live beat, paced by createCoachSwap: the old beat's card stays as it was while it fades out,
+ *  the new card shows once its anchor is found; a re-measure within one beat applies at once. */
+function useCoachSwap(doc: Document, view: CoachView, found: Target | null): { view: CoachView; hidden: boolean; stale: boolean } {
+  const key = view.beat.id;
+  const anchored = !view.beat.target || !!found;
+  const [swap] = useState(() => createCoachSwap(clockOf(doc), key, anchored));
+  const state = useSyncExternalStore(swap.subscribe, swap.get, swap.get);
+  const last = useRef(view);
+  const current = state.key === key;
+  useLayoutEffect(() => { if (current) last.current = view; });
+  useLayoutEffect(() => swap.feed(key, anchored, prefersReducedMotion(doc)), [doc, swap, key, anchored]);
+  useEffect(() => swap.dispose, [swap]);
+  return { view: current ? view : { ...last.current, missed: 0 }, hidden: state.hidden, stale: !current };
+}
 
 /** Spotlight and coach for the live beat. In a relevant dialog both join that dialog's focus boundary and the ring
  *  keeps no scrim (the dialog already dims the page); elsewhere the scrim dims everything but the anchor. */
 function TutorialGuide(props: GuideProps): ReactNode {
   const { beat, found, dialogHost, doc } = props;
-  const swap = useChangeCount(beat.id).count;
   const coachHeight = useElementHeight(doc, "tutorialCoach", 162, [beat.id, found]);
   const frame = found ? spotFrame(found) : null;
   const missed = useMissedPresses(doc, beat.mode === "action" ? frame : null, beat.id);
   const placement = found && !dialogHost ? placeCoach(found.rect, viewportOf(doc), beat.placement, coachHeight) : null;
-  const coach = h(TutorialCoach, { ...props, placement, inline: !!dialogHost, lost: !found && !!beat.target, swap, missed });
-  const spot = found ? h(TutorialSpot, { target: found, motionKey: `${beat.id}|${beat.target}|${beat.arg ?? ""}`, missed, ring: !!dialogHost }) : null;
+  const swap = useCoachSwap(doc, { beat, step: props.step, placement, lost: !found && !!beat.target, missed }, found);
+  const held = useHeldSpot(doc, found, `${beat.id}|${beat.target}|${beat.arg ?? ""}`, dialogHost);
+  const coach = h(TutorialCoach, { ...props, ...swap.view, inline: !!dialogHost, hidden: swap.hidden, stale: swap.stale });
+  const spot = held.target ? h(TutorialSpot, { target: held.target, motionKey: `${held.key}#${held.epoch}`, faded: held.faded, missed, ring: !!dialogHost }) : null;
   if (dialogHost) return props.portal(h(Fragment, null, coach, spot), dialogHost);
   return h("div", { className: "tutorial-guide", "data-mode": beat.mode }, spot, coach);
 }
 
 type LessonControls = {
   snapshot: TutorialSnapshot; pending: boolean; practice: boolean;
+  /** Lessons completed since the panel last showed them: their check draws once. */
+  fresh?: ReadonlySet<string>;
   run(item: Lesson, action: string): void; close(): void;
   act(action: "pause" | "skip"): void; confirm(action: "reset_progress" | "cleanup"): void;
 };
+
+function LessonCheck(props: { done: boolean; fresh: boolean }): ReactNode {
+  return h("span", { className: "tutorial-check", "aria-hidden": true, "data-fresh": props.fresh ? "" : undefined },
+    props.done ? icon("check") : null);
+}
 
 /** Open panel body. One featured lesson owns the only primary action; other lessons are quiet whole-row choices,
  *  practice copies sit behind one disclosure, and maintenance stays a quiet text row at the bottom. */
@@ -232,7 +272,7 @@ export function TutorialLessons(props: LessonControls): ReactNode {
     h("button", { type: "button", className: "tutorial-row", disabled: pending,
       "aria-label": item.completed ? undefined : `${item.title}, ${snapshot.copy.choose_scenario}`,
       onClick: () => props.run(item, lessonAction(item, snapshot)) },
-      h("span", { className: "tutorial-check", "aria-hidden": true }, item.completed ? icon("check") : null),
+      h(LessonCheck, { done: item.completed, fresh: props.fresh?.has(item.id) === true }),
       h("span", { className: "tutorial-row-title" }, item.title),
       !item.completed && item.checkpoint > 0 ? h("span", { className: "tutorial-progress" }, `${item.checkpoint}/${item.step_count}`) : null,
       item.completed ? h("span", { className: "tutorial-row-action" }, snapshot.copy.restart)
@@ -304,26 +344,81 @@ function spansLines(beat: TutorialBeat | null, target: string | null, beatSelect
 }
 
 type FinaleProps = {
-  result: NonNullable<TutorialSnapshot["result"]>; copy: TutorialSnapshot["copy"]; pending: boolean;
+  result: NonNullable<TutorialSnapshot["result"]>; copy: TutorialSnapshot["copy"]; pending: boolean; doc: Document;
   position: CoachPlacement | null; next: (() => void) | null; exit: ReactNode; close(): void;
 };
+
+type Flight = FinaleState & { from: Record<string, string | number> };
+
+/** Fan documents leave the result panel (the result anchor, measured as the card opens) small and land one by
+ *  one; the count follows each landing (playFinale). A first render already shows the end state, so nothing
+ *  depends on the timers to tell the truth. */
+function useFinaleFlight(doc: Document, fan: RefObject<HTMLDivElement | null>, origin: string | null, docs: number, key: string): Flight {
+  const [flight, setFlight] = useState<Flight>({ arrived: docs, counted: docs, from: {} });
+  useLayoutEffect(() => {
+    const offset = flyFrom(visibleElement(doc, origin)?.getBoundingClientRect() ?? null, fan.current?.getBoundingClientRect() ?? null);
+    const from = { opacity: 0, "--fly-x": `${offset.x}px`, "--fly-y": `${offset.y}px`, "--fly-s": FLY_SCALE };
+    setFlight({ arrived: 0, counted: 0, from });
+    return playFinale(clockOf(doc), docs, prefersReducedMotion(doc), (state) => setFlight({ ...state, from }));
+  }, [doc, docs, key]);
+  return flight;
+}
 
 /** Lesson-complete card. Two ways on (#1136): the next lesson (never named on the button) or leaving practice; the
  *  last lesson only leaves. Outside practice there is nothing to leave, so the card only closes. */
 function TutorialFinale(props: FinaleProps): ReactNode {
   const { result, copy } = props;
+  const fan = useRef<HTMLDivElement>(null);
+  const documents = result.documents.slice(0, 3);
+  const flight = useFinaleFlight(props.doc, fan, anchorSelector(result.target), documents.length, `${result.title}|${result.count}`);
   return h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
     style: props.position ? { left: props.position.x, top: props.position.y } : undefined },
-  h("div", { className: "tutorial-fin-fan", "aria-hidden": true }, ...result.documents.slice(0, 3).map((document, index) =>
-    h("div", { key: document.path, className: `tutorial-fin-doc tutorial-fin-doc-${index}` },
+  h("div", { ref: fan, className: "tutorial-fin-fan", "aria-hidden": true }, ...documents.map((document, index) =>
+    h("div", { key: document.path, className: `tutorial-fin-doc tutorial-fin-doc-${index}`,
+      "data-arrived": index < flight.arrived ? "" : undefined, style: index < flight.arrived ? undefined : flight.from },
       h("span", { className: "tutorial-fin-lines" }), h("span", null, document.kind)))),
-  h("div", { className: "tutorial-fin-count" }, h("strong", null, String(result.count)), h("span", null, result.documents.length ? "문서" : "완료")),
+  h("div", { className: "tutorial-fin-count" }, h("strong", null, String(countShown(result.count, flight.counted, documents.length))),
+    h("span", null, result.documents.length ? "문서" : "완료")),
   h("h2", null, result.title), h("p", null, result.body),
   result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
   h("div", { className: "tutorial-actions" },
     props.next ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: props.pending,
       onClick: props.next }, copy.next_lesson) : null,
     props.exit ?? h("button", { type: "button", className: "btn sm", onClick: props.close }, copy.close)));
+}
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** Ids that turned up since they were last shown; they stay fresh until the ids change again. Nothing is seen while
+ *  `shown` is false, and the first sight has nothing fresh. */
+function useFreshIds(ids: readonly string[] | null | undefined, shown = true): ReadonlySet<string> {
+  const key = `${shown}|${ids?.join("\n")}`;
+  const [memo, setMemo] = useState<{ key: string; base: ReadonlySet<string> | null; fresh: ReadonlySet<string> }>({ key: "", base: null, fresh: NONE });
+  if (memo.key === key) return memo.fresh;
+  const base = memo.base ?? (ids ? new Set(ids) : null);
+  const next = !shown || !ids ? { key, base, fresh: NONE } : { key, base: new Set(ids), fresh: freshIds(base ?? new Set(ids), ids) };
+  setMemo(next);
+  return next.fresh;
+}
+
+const lessonFraction = (lesson: Lesson | undefined) => lesson?.step_count ? lesson.checkpoint / lesson.step_count : 0;
+
+type HudProps = { snapshot: TutorialSnapshot | null; selected: Lesson | undefined; practice: boolean; open: boolean; exit: ReactNode; toggle(): void };
+
+/** Practice HUD: progress ring, stage dots and the exit. A stage dot that turns done pops once. */
+function TutorialHud(props: HudProps): ReactNode {
+  const { snapshot, selected, practice } = props;
+  const stages = snapshot?.stages ?? [];
+  const done = stages.filter((stage) => stage.status === "done").map((stage) => stage.id);
+  const popped = useFreshIds(done);
+  const fraction = stages.length ? done.length / stages.length : lessonFraction(selected);
+  return h("div", { className: "tutorial-hud" },
+    h("button", { id: "tutorialOpen", className: "tutorial-hud-pill", type: "button", "aria-label": snapshot?.copy.open_tutorial ?? "튜토리얼",
+      "aria-expanded": props.open, "aria-controls": "tutorialPanel", onClick: props.toggle },
+      h(Ring, { fraction: practice ? fraction : 0 }), h("span", { className: "tutorial-hud-label" }, practice ? snapshot!.copy.practice : "튜토리얼"),
+      practice ? h("span", { className: "tutorial-hud-dots", "aria-hidden": true }, ...stages.map((stage) => h("i", {
+        key: stage.id, className: stage.status, title: stage.title, "data-pop": popped.has(stage.id) ? "" : undefined,
+      }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), props.exit);
 }
 
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
@@ -368,9 +463,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
   const nextLesson = snapshot?.scenarios.find((item) => item.id === result?.next_scenario_id);
-  const stages = snapshot?.stages ?? [];
-  const stageDone = stages.filter((stage) => stage.status === "done").length;
-  const fraction = stages.length ? stageDone / stages.length : selected?.step_count ? selected.checkpoint / selected.step_count : 0;
+  const fresh = useFreshIds(snapshot?.scenarios.filter((item) => item.completed).map((item) => item.id), open);
   const shown = Boolean(beat && canGuide);
   const resultShown = Boolean(result && !resultDismissed);
   const resultPosition = found && result ? placeCoach(found.rect, viewportOf(ports.doc), "right", resultHeight) : null;
@@ -408,24 +501,16 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
 
   const entry = ports.doc.getElementById("tutorialEntrySlot");
   if (!entry) return null;
-  const label = snapshot?.copy.open_tutorial ?? "튜토리얼";
   const exitButton = (id?: string, primary = false) => practice ? h("button", { id, className: primary ? "btn primary sm tutorial-exit" : "btn sm tutorial-exit", type: "button", disabled: pending,
     onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
-  const hud = h("div", { className: "tutorial-hud" },
-    h("button", { id: "tutorialOpen", className: "tutorial-hud-pill", type: "button", "aria-label": label,
-      "aria-expanded": open, "aria-controls": "tutorialPanel", onClick: () => setOpen(!open) },
-      h(Ring, { fraction: practice ? fraction : 0 }), h("span", { className: "tutorial-hud-label" }, practice ? snapshot!.copy.practice : "튜토리얼"),
-      practice ? h("span", { className: "tutorial-hud-dots", "aria-hidden": true }, ...stages.map((stage) => h("i", {
-        key: stage.id, className: stage.status, title: stage.title,
-      }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), exitButton("tutorialExit"));
 
   return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
-    (ports.portal ?? createPortal)(hud, entry),
+    (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry),
     open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },
-      h(TutorialLessons, { snapshot, pending, practice,
+      h(TutorialLessons, { snapshot, pending, practice, fresh,
         run: (item, action) => void runLesson(item, action),
         close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
         act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null,
@@ -439,7 +524,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       h("p", null, snapshot.recovery?.body ?? selected?.title),
       h("button", { id: "tutorialResume", className: "btn primary sm", type: "button", disabled: pending,
         onClick: () => void act("resume") }, snapshot.copy.resume)) : null,
-    resultShown && result ? h(TutorialFinale, { result, copy: snapshot!.copy, pending, position: resultPosition,
+    resultShown && result ? h(TutorialFinale, { result, copy: snapshot!.copy, pending, doc: ports.doc, position: resultPosition,
       next: nextLesson ? () => void chooseLesson(nextLesson) : null, exit: exitButton(undefined, !nextLesson),
       close: () => setResultDismissed(true) }) : null,
     shown && beat ? h(TutorialGuide, { beat, copy: snapshot!.copy, found, dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
