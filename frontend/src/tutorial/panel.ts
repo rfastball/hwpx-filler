@@ -537,7 +537,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },
-      h(TutorialLessons, { snapshot, pending, practice, fresh,
+      h(TutorialLessons, { snapshot: snapshot!, pending, practice, fresh,
         run: (item, action) => void runLesson(item, action),
         close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
         act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null,
