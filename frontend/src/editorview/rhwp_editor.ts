@@ -1,20 +1,13 @@
 import { createStudio } from "../../vendor/rhwp/editor/index.js";
-import { DECORATION_LIMIT, fitMarkers, markerAt, problemMarkers, proposalMarkers, studioCellPath } from "./rhwp_marks.ts";
-import type { Marker, StudioCellPath } from "./rhwp_marks.ts";
+import { DECORATION_LIMIT, fitMarkers, markerAt, problemMarkers, proposalMarkers, studioCellPath, wireCellPath } from "./rhwp_marks.ts";
+import type { Marker, WireCellPath } from "./rhwp_marks.ts";
 export { DECORATION_LIMIT } from "./rhwp_marks.ts";
 
 type Obj = Record<string, unknown>;
-/** Table-cell coordinate on the Python wire (outermost table first); rhwp uses camelCase for the same entries. */
-type WireCellPath = Array<{ parent_paragraph: number; control: number; cell: number; paragraph: number }>;
 type Selection = { entry: string; paragraph: number; start_paragraph: number; end_paragraph: number; start: number; end: number;
   cell_path?: WireCellPath };
 
-const CELL_PATH_LIMIT = 16;
 const isIndex = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
-
-function wireCellPath(path: StudioCellPath): WireCellPath {
-  return path.map((entry) => ({ parent_paragraph: entry.parentParagraph, control: entry.control, cell: entry.cell, paragraph: entry.paragraph }));
-}
 
 export type RhwpMountSpec = {
   host: HTMLElement; content: string; fileName: string; sectionEntries?: string[];
@@ -225,13 +218,15 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     if (![start.paragraph, end.paragraph, next.start, next.end].every(isIndex)) { clear(); return; }
     if (range.cellPath) {
       // Studio reports cellPath only when both edges share one table cell; paragraphs are then cell-level.
-      if (range.cellPath.length === 0 || range.cellPath.length > CELL_PATH_LIMIT
-        || !range.cellPath.every((e) => [e.parentParagraph, e.control, e.cell, e.paragraph].every(isIndex))) { clear(); return; }
-      next.cell_path = wireCellPath(range.cellPath);
+      const cellPath = wireCellPath(range.cellPath);
+      if (!cellPath) { clear(); return; }
+      next.cell_path = cellPath;
     }
     const key = JSON.stringify(next);
-    if (key !== lastSelection) { lastSelection = key; spec.onSelectionChanged(next, visibleRect(context.rect)); }
     const collapsed = next.start_paragraph === next.end_paragraph && next.start === next.end;
+    // A caret polled mid-press has no line yet; the same caret is reported once more when its line is known (#1156).
+    const reported = `${key}${collapsed && !context.rect}`;
+    if (reported !== lastSelection) { lastSelection = reported; spec.onSelectionChanged(next, visibleRect(context.rect)); }
     reportRect(collapsed || disposed ? "" : key, context.rect);
   };
   // Selection occurs inside the iframe; host-element pointer/key events cannot observe it.

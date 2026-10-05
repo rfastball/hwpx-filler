@@ -605,6 +605,28 @@ test("IDE-08 H3: the host gets the selection end line once a non-empty selection
   }, timers);
 });
 
+test("#1156: the caret is reported with its line in host px; a caret first polled mid-press is reported once more when its line is known", () => {
+  const timers = fakeTimers();
+  return withDom(async () => {
+    globalThis.document.hidden = false;
+    const { state, studio } = selectingStudio();
+    const reports = [];
+    const handle = await mountRhwp({ host: { closest: () => null, offsetParent: {} }, content: b64("disk"), fileName: "a.hwpx", readOnly: false,
+      sectionEntries: ["Contents/section0.xml"], onChanged() {}, onSelectionChanged: (selection, caret) => reports.push([selection.start, caret ?? null]),
+      onError: (error) => { throw error; }, preflight: async () => ({ editable: true }), studio });
+    const poll = async (range, rect) => { state.context = { range, rect }; timers.tick(); await settle(); };
+    const line = { x: 40, y: 60, width: 1, height: 20 };
+    await poll(at(1, 3), null);
+    await poll(at(1, 3), line);
+    await poll(at(1, 3), line);
+    assert.deepEqual(reports, [[3, null], [3, { left: 70, top: 110, bottom: 140 }]], "mid-press caret, then the same caret with its line — once");
+    await poll(at(1, 3, 8), null);
+    await poll(at(1, 3, 8), line);
+    assert.equal(reports.length, 3, "a range is not re-reported when its line arrives (the selection-side bar has its own report)");
+    handle.dispose();
+  }, timers);
+});
+
 test("IDE-08 H3: a selection the host set follows its own centring scroll instead of being hidden as a user scroll; later moves hide it", () => {
   const timers = fakeTimers();
   return withDom(async () => {

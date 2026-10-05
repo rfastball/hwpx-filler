@@ -5,8 +5,9 @@
  * 단위로 잰다. */
 
 type Obj = Record<string, unknown>;
-/** Table-cell coordinate on the Python wire (outermost table first); rhwp uses camelCase for the same entries. */
+/** Table-cell coordinate in the Studio (camelCase) and on the Python wire (outermost table first). */
 export type StudioCellPath = Array<{ parentParagraph: number; control: number; cell: number; paragraph: number }>;
+export type WireCellPath = Array<{ parent_paragraph: number; control: number; cell: number; paragraph: number }>;
 export type Marker = { kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
   startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: StudioCellPath };
 
@@ -31,6 +32,13 @@ export function studioCellPath(place: Obj): StudioCellPath | null | undefined {
     path.push({ parentParagraph: parent_paragraph as number, control: control as number, cell: cell as number, paragraph: paragraph as number });
   }
   return path;
+}
+
+/** Studio 가 보고한 셀 경로 → Python 좌표. 비었거나 너무 깊거나 순번이 아니면 null(그 선택은 쓰지 않는다). */
+export function wireCellPath(path: StudioCellPath): WireCellPath | null {
+  if (path.length === 0 || path.length > CELL_PATH_LIMIT
+    || !path.every((entry) => [entry.parentParagraph, entry.control, entry.cell, entry.paragraph].every(isIndex))) return null;
+  return path.map((entry) => ({ parent_paragraph: entry.parentParagraph, control: entry.control, cell: entry.cell, paragraph: entry.paragraph }));
 }
 
 /** 한 자리(Python 좌표)의 Studio 표지 — 구역·문단·셀 경로를 읽을 수 없으면 null(그 자리는 칠하지 않는다). */
