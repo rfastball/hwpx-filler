@@ -569,6 +569,13 @@ export function bootProduct() {
               client,
               notify: (message) => window.alert(message),
             },
+            /* 튜토리얼 버튼 표시 토글(#1147) — 값의 주인은 tutorial 채널이라 그 모델을
+               그대로 구독한다. 소유·판정은 백엔드(OnboardingController)다. */
+            tutorial: {
+              subscribe: (listener) => runtime.model("tutorial").subscribe(listener),
+              getSnapshot: () => runtime.model("tutorial").getSnapshot(),
+              setEntryVisible: (visible) => client.dispatch("tutorial", "set_entry_visible", { visible }),
+            },
           }),
       ],
     },

@@ -86,6 +86,29 @@ test("host pause retains an immediate resume and exit even though active is fals
   assert.match(ended, /튜토리얼/);
 });
 
+test("설정 토글이 꺼지면 HUD도 초대 카드도 서지 않는다 (#1147)", () => {
+  const html = render(snapshot({ entry: { visible: false },
+    invitation: { visible: false, title: "처음 안내", body: "첫 작업을 시작하세요." } }));
+  assert.doesNotMatch(html, /id="tutorialOpen"/);
+  assert.doesNotMatch(html, /tutorial-invite/);
+});
+
+test("연습 중에는 토글이 꺼져 있어도 HUD가 유지된다 (#1147)", () => {
+  // `entry.visible` 은 백엔드가 이미 연습-중 OR 를 반영해 낸 **최종값**이다(계약) — 이 면은
+  // 그 값을 다시 판정하지 않고 그대로 따른다. 그래서 연습 중인 픽스처는 true 를 싣는다.
+  const html = render(snapshot({ entry: { visible: true },
+    active: true, scenario_id: "first_hwpx",
+    practice: { active: true, return_screen: "job" },
+    beat: { id: "b1", title: "연결 확인", body: "실제 연결 버튼을 누르세요.", mode: "action",
+      screen: "editor", target: null, placement: "center", can_next: false } }));
+  assert.match(html, /id="tutorialOpen"/);
+});
+
+test("entry 필드가 없으면(구 호스트) 기본은 표시 — 하위호환", () => {
+  const html = render(snapshot());
+  assert.match(html, /id="tutorialOpen"/);
+});
+
 test("completed lessons restart while a paused current lesson resumes", () => {
   const snap = snapshot({ paused: true, scenario_id: "first_hwpx" });
   assert.equal(lessonAction(snap.scenarios[0], snap), "resume");

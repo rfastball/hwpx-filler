@@ -75,6 +75,8 @@
 .settings-folder-row{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
 .settings-folder-row .field{flex:1;min-width:0;width:auto}
 .settings-folder-row>:not(.field){flex:none;white-space:nowrap}
+/* 튜토리얼 버튼 표시 토글(#1147) — 체크박스 하나뿐인 조작 칸이라 세그먼트와 같은 쪽에 붙인다. */
+.settings-check{flex:1 1 auto;display:flex;justify-content:flex-end}
 
 /* ---- 템플릿 관리(#13) ---- */
 /* 상태 배지(pill) — compile_badge level(muted/warn/ok/danger)을 fb 토큰 계열로 렌더.

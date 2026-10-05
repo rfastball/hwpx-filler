@@ -100,6 +100,15 @@ export const TEMPLATES_ROOT_BUSY_REASON =
 /** 루트가 아직 도출되지 않은 자리 문안(경로 칸이 빈 채로 서는 것을 막는다). */
 export const TEMPLATES_ROOT_EMPTY_TEXT = "아직 읽지 못했습니다 — 폴더를 선택하세요.";
 
+/** 튜토리얼 버튼 표시 토글 행이 쓰는 **구조적** 포트(#1147) — `tutorial` 채널 스냅샷의
+ *  `entry.visible`(최종값, 연습 중 유지 포함)을 그대로 읽는다. 판정은 백엔드가 지고
+ *  이 면은 값을 읽어 그리고 동사 하나를 전달할 뿐이다. */
+export type SettingsTutorialPort = {
+  subscribe(listener: () => void): () => void;
+  getSnapshot(): Obj | null;
+  setEntryVisible(visible: boolean): unknown;
+};
+
 /** 모달 DOM id — 여는 쪽(shell/app.ts)과 닫는 쪽(이 파일)이 같은 상수를 쓴다. */
 export const SETTINGS_MODAL_ID = "settingsModal";
 
@@ -240,8 +249,9 @@ export function SettingsSheet(props: {
   modal: SettingsModalPort;
   job: SettingsOutputFolderPort;
   templates: SettingsTemplatesRootPort;
+  tutorial: SettingsTutorialPort;
 }): ReactNode {
-  const { theme, personalization, job, templates } = props;
+  const { theme, personalization, job, templates, tutorial } = props;
   const currentTheme = useShellValue("hwpx:themechange", () => theme.current());
   const currentScale = useShellValue(
     "hwpx:personalizationchange", () => personalization.currentFontScale(),
@@ -269,8 +279,14 @@ export function SettingsSheet(props: {
     notice: String(root.notice || ""),
     busy: runState.running === true,
   };
+  /* 튜토리얼 버튼 표시 토글(#1147) — `tutorial` 채널 스냅샷의 `entry.visible`을 그대로
+     읽는다(판정은 백엔드). 첫 당김 전·판독 실패는 기본 표시(백엔드 기본값과 같다). */
+  const tutorialState = useSyncExternalStore(
+    tutorial.subscribe, tutorial.getSnapshot, tutorial.getSnapshot,
+  );
+  const entryVisible = ((tutorialState || {}).entry || {}).visible !== false;
   return createElement(SettingsSheetView as any, {
-    ...props, currentTheme, currentScale, outputFolder, templatesRoot,
+    ...props, currentTheme, currentScale, outputFolder, templatesRoot, entryVisible,
   });
 }
 
@@ -285,12 +301,14 @@ export function SettingsSheetView(props: {
   modal: SettingsModalPort;
   job: SettingsOutputFolderPort;
   templates: SettingsTemplatesRootPort;
+  tutorial: SettingsTutorialPort;
   currentTheme: string;
   currentScale: string;
   outputFolder: OutputFolderView;
   templatesRoot: TemplatesRootView;
+  entryVisible: boolean;
 }): ReactNode {
-  const { theme, personalization, modal, job, templates, currentTheme, currentScale } = props;
+  const { theme, personalization, modal, job, templates, tutorial, currentTheme, currentScale } = props;
   const folder = props.outputFolder;
   const root = props.templatesRoot;
 
@@ -350,5 +368,14 @@ export function SettingsSheetView(props: {
         busyReason: TEMPLATES_ROOT_BUSY_REASON,
         onPick: () => { void pickRoot(); },
         client: templates.client, notify: templates.notify,
-      })));
+      }),
+      h("div", { className: "settings-row" },
+        h("span", { className: "settings-label", id: "settingsTutorialEntryLabel" }, "튜토리얼 버튼 표시"),
+        h("label", { className: "settings-check" },
+          h("input", {
+            id: "settingsTutorialEntry", type: "checkbox",
+            "aria-labelledby": "settingsTutorialEntryLabel",
+            checked: props.entryVisible,
+            onChange: () => { void tutorial.setEntryVisible(!props.entryVisible); },
+          })))));
 }

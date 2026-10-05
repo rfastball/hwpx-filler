@@ -251,7 +251,7 @@ TXT 작업대는 진입 때 받은 고정 사본을 한 건씩 검토·복사한
 [template_root.py](../src/hwpxfiller/external/template_root.py)와
 [template_root_default.py](../src/hwpxfiller/domain/template_root_default.py)가 원천이다.
 
-설정은 테마·글자 크기와 폴더를 제공한다. 생성 중 관련 폴더 변경은 이유와 함께 잠그되
+설정은 테마·글자 크기·폴더·튜토리얼 버튼 토글을 제공한다. 생성 중 관련 폴더 변경은 이유와 함께 잠그되
 테마·글자 크기까지 무조건 잠그지 않는다. 공유 FolderRow와 기존 설정 경계를 사용한다.
 화면 좌표 변경은 [live101](../scripts/live101/scenario.py)·selftest·실렌더와 함께 검증한다.
 헤드리스 `tests/test_webapp_*.py`와 [프런트 테스트](../tests/js),

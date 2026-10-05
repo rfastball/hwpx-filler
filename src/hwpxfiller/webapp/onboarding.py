@@ -14,6 +14,7 @@ import threading
 from typing import Any
 from uuid import uuid4
 
+from ..external import settings
 from ..external.tutorial_practice import ORIGINALS, PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
 from ..viewmodel.tutorial_lessons import BY_ID, LessonProgress
@@ -46,6 +47,7 @@ class OnboardingController:
         self.practice: PracticeFiles | None = None
         self.switch: Any = None
         self.progress = LessonProgress(workspace.load_progress(), first_launch=first_launch)
+        self.progress.entry_visible = settings.load_tutorial_entry_visible()
         self.controllers: dict = {}
         self._recovery: str | None = None
         self._lock = threading.RLock()
@@ -106,8 +108,11 @@ class OnboardingController:
         snap["resources"] = {"ready": ready, "summary": f"{summary} {notice}".strip(), "files": files}
         reason = self._recovery or (None if ready or not self.progress.selected else summary)
         snap["recovery"] = {"title": "연습 파일을 확인하세요", "body": reason} if reason else None
-        snap["practice"] = {"active": self._return_context is not None,
+        practice_active = self._return_context is not None
+        snap["practice"] = {"active": practice_active,
                             "return_screen": self._return_context.get("screen") if self._return_context else None}
+        # HUD stays up mid-practice even with the toggle off (#1147); only the invitation stays toggle-only.
+        snap["entry"]["visible"] = snap["entry"]["visible"] or practice_active
         if snap["beat"]:
             guide_beat(self, snap["beat"])
         return snap
@@ -234,12 +239,20 @@ class OnboardingController:
         elif action == "reset_progress":
             if payload.get("confirm") is not True:
                 raise ValueError("모든 학습 기록을 지울지 확인하세요.")
+            entry_visible = self.progress.entry_visible
             self.progress = LessonProgress({"version": 1, "invite_seen": True})
+            self.progress.entry_visible = entry_visible
             self._recovery = None
         elif action == "later":
             self.progress.later()
         elif action in {"pause", "skip"}:
             self.progress.pause()
+        elif action == "set_entry_visible":
+            # 타입 검사·문안은 settings.save_tutorial_entry_visible 하나가 진다(confirm-or-alarm) —
+            # 여기서 다시 검사하면 사용자 새 문장이 하나 더 늘어난다(census #1147 교훈).
+            visible = payload.get("visible")
+            settings.save_tutorial_entry_visible(visible)
+            self.progress.entry_visible = visible
         else:
             raise ValueError(f"알 수 없는 tutorial 액션: {action!r}")
         self._persist()

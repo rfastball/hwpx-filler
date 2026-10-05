@@ -25,6 +25,9 @@ export type TutorialBeat = {
 export type TutorialSnapshot = {
   kind: "tutorial-lessons/v1";
   invitation: { visible: boolean; title: string; body: string };
+  /** 설정의 「튜토리얼 버튼 표시」 토글(#1147) — **최종값**(꺼져 있어도 연습 중이면 true).
+   *  판정은 백엔드가 지고 이 면은 그대로 따른다(다시 판정하지 않는다). */
+  entry?: { visible: boolean };
   active: boolean; paused: boolean; scenario_id: string | null; checkpoint: number;
   practice?: { active: boolean; return_screen: string | null };
   scenarios: readonly Lesson[];
@@ -452,6 +455,11 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     finally { setPending(false); }
   }, [pending, ports]);
 
+  // 설정 토글이 꺼지면 HUD·열린 패널을 모두 숨긴다(#1147). 값은 백엔드가 낸 최종값
+  // 그대로 따른다(연습 중이면 토글과 무관하게 true) — 여기서 다시 판정하지 않는다.
+  const hudVisible = snapshot?.entry?.visible !== false;
+  useEffect(() => { if (!hudVisible) setOpen(false); }, [hudVisible]);
+
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
   const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
   const practice = snapshot?.practice?.active === true;
@@ -512,8 +520,10 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
 
   return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
-    (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry),
-    open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+    hudVisible
+      ? (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry)
+      : null,
+    hudVisible && open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },

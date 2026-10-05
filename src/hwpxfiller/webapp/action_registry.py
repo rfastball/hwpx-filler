@@ -385,6 +385,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "cleanup_preview": _schema(),
         "cleanup": _schema("token"),
         "reset_progress": _schema("confirm"),
+        # 설정 모달의 「튜토리얼 버튼 표시」 토글(#1147) — 소유·판정은 백엔드, 프런트는 결과값만 따른다.
+        "set_entry_visible": _schema("visible"),
     },
 }
 
