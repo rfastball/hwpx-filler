@@ -301,6 +301,23 @@ const spanField = StateField.define<SpanState>({
   ],
 });
 
+/** 튜토리얼 범위(#1136)가 칠해져 있는가 — 한 줄 글자 칠(`guide`)이나 줄 칠(`cm-tutorial-range`). */
+export function guidePainted(spans: readonly LintpadSpan[]): boolean {
+  return spans.some((span) => span.kind === "guide" || span.className === SPAN_CLASS.guide);
+}
+const guided = (state: EditorState): boolean => guidePainted(state.field(spanField).spans);
+
+/** 튜토리얼 범위가 칠해진 동안은 이미 고른 글을 끌어 옮기지 않는다(#1146). 그 단계가 바라는 것은 새로 끌어 고르기인데,
+ *  방금 만든 '항목'처럼 이미 고른 범위 안에서 누른 끌기는 글 옮기기가 되어 범위를 고르지 못하고 연습 문서를 바꾼다.
+ *  끌기를 거절하면 CodeMirror 가 그 누름 자리부터 새 범위를 고른다. 판정은 하지 않는다 — 칠이 있는가만 본다. */
+const GUIDE_DRAG: Extension = EditorView.domEventHandlers({
+  dragstart(event, view) {
+    if (!guided(view.state)) return false;
+    event.preventDefault();
+    return true;
+  },
+});
+
 /** 가린 토큰의 [from, to] 목록 — 원자 범위의 평범한 얼굴(vendor 타입 없음). */
 function atomList(state: EditorState): { from: number; to: number }[] {
   const out: { from: number; to: number }[] = [];
@@ -685,6 +702,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
         ...(spec.onSelectionRect ? [selectionRectExtension(spec.onSelectionRect)] : []),
         ...(spec.onRangePick ? [rangePickExtension(spec.onRangePick)] : []),
         spanField,
+        GUIDE_DRAG,
         regionField,
         problemField,
         pairField,

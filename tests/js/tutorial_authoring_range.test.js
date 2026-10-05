@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { beatRange, followBeatRange } from "../../frontend/src/tutorial/range.ts";
 import { guideFeed, guideSpans } from "../../frontend/src/screens/authoring_guide.ts";
+import { guidePainted } from "../../frontend/src/editorview/txt_lintpad.ts";
 
 const range = { session_id: "s1", start: 10, end: 20 };
 const live = (beat) => ({ active: true, paused: false, beat });
@@ -66,4 +67,14 @@ test("a range within one line paints those characters in order; any other range 
   assert.equal(guideSpans([], text, { start: begin, end: finish }).at(-1).kind, "highlight");
   assert.equal(guideSpans([], text, { start: finish + 1, end: finish + 1 }).at(-1).kind, "highlight");
   assert.equal(guideSpans([field], text, { start: field.start, end: field.end + 1 }).at(-1).kind, "highlight");
+});
+
+test("while a guide range is painted the editor refuses text drags, so a press inside a selection starts a new range (#1146)", () => {
+  // After '항목으로 만들기' the new item stays selected over the next beat's paragraph; a drag started inside it was a text
+  // move (nothing chosen, the document changed). Only the guide's own paint switches that off — never the structure highlight.
+  const text = "가\n3. 수요기관은 10일 이내\n\n\n붙임";
+  const at = text.indexOf("10일");
+  assert.equal(guidePainted(guideSpans([], text, { start: at, end: at + 3 })), true, "한 줄 글자 칠");
+  assert.equal(guidePainted(guideSpans([], text, { start: 2, end: text.indexOf("\n", 2) })), true, "줄 칠");
+  assert.equal(guidePainted([{ kind: "highlight", start: 0, end: 3 }, { kind: "field", start: 4, end: 8 }]), false, "구조 강조·필드는 끌기를 막지 않는다");
 });
