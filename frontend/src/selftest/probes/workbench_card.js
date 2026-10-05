@@ -47,7 +47,7 @@ export async function probeCardEdit(ctx, stubBridgeCall) {
        (사용자 데스크톱의 초점을 빼앗지 않고 잰다). */
     content.focus();
     const box = hole.getBoundingClientRect();
-    const at = { bubbles: true, cancelable: true, button: 0, buttons: 1, view: ctx.win,
+    const at = { bubbles: true, cancelable: true, button: 0, buttons: 1, detail: 1, view: ctx.win,
       clientX: box.left + 1, clientY: box.top + box.height / 2 };
     hole.dispatchEvent(new ctx.win.MouseEvent("mousedown", at));
     ctx.win.dispatchEvent(new ctx.win.MouseEvent("mouseup", { ...at, buttons: 0 }));
