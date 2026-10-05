@@ -118,11 +118,12 @@ def test_proposal_uses_the_job_data_and_the_best_row(tmp_path: Path) -> None:
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     assert view["state"] == "ready" and view["revision"] == 0
     assert view["data"]["row"] == 2 and view["data"]["name"] == "공고 목록"
-    assert view["data"]["rows"] == [{"index": 1, "label": "1행", "hint": "맞는 값 1개"},
-                                    {"index": 2, "label": "2행", "hint": "값이 가장 많이 맞는 행 · 4개"}]
+    assert view["data"]["rows"] == [{"index": 1, "label": "1행", "hint": "찾은 값 1개"},
+                                    {"index": 2, "label": "2행", "hint": "찾은 값이 가장 많은 행 · 4개"}]
+    assert view["data"]["rows_note"] == ""
     assert view["counts"] == {"proposal": 3, "held": 1}
     price = group(view, "추정가격")
-    assert price["binding"] == {"type": "amount", "fmt": "{:,}", "label": "천 단위 쉼표"}
+    assert price["binding"] == {"type": "amount", "fmt": "{:,}", "label": "숫자"}
     assert price["value"] == "170,309,180원" and price["spots"][0]["entry"] == "Contents/section0.xml"
     judge = group(view, "낙찰자결정방법")
     assert judge["kind"] == "held" and judge["only_label"] == "표 칸 1곳만 필드로"
@@ -323,7 +324,16 @@ def test_row_limits_and_fallbacks() -> None:
     assert chosen_row(state, [0, 2, 2]) == 2
     view = empty_view("failed", 4, [], "실패", FieldProposalState(pool_key="k", loaded=loaded))
     assert view["data"] == {"pool_key": "k", "name": "큰 목록", "sheet": None, "row": None, "rows": [],
-                            "rows_truncated": False}
+                            "rows_truncated": False, "rows_note": ""}
+
+
+def test_rows_note_appears_only_when_the_pool_was_truncated(tmp_path: Path) -> None:
+    many_rows = [{"공고명": "청사 보안 장비 구매", "추정가격": "170309180"} for _ in range(501)]
+    ctrl = controller(tmp_path, Port(many_rows))
+    sid = hwpx_session(ctrl, *NOTICE)
+    view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
+    assert view["data"]["rows_truncated"] is True
+    assert view["data"]["rows_note"] == "앞 500행만 맞춰 봅니다."
 
 
 def test_a_group_of_many_spots_is_one_command_and_a_hand_edited_value_survives_undo(tmp_path: Path) -> None:
@@ -332,6 +342,7 @@ def test_a_group_of_many_spots_is_one_command_and_a_hand_edited_value_survives_u
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     title = group(view, "공고명")
     assert title["count_text"] == "2곳"
+    assert title["only_label"] == "이 자리만"  # 제안 묶음 자리 2곳 이상
     made = ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": title["id"]})
     assert len(made["command"]["ranges"]) == 2 and made["confirm"] == "enter" and made["affected"] == 2
     original = ctrl.dispatch("content", {"session_id": sid})["content"]

@@ -34,8 +34,7 @@ def reason_prose_repeats(count: int) -> str:
     return f"같은 값 {count}곳이 모두 문장 속에 있어 일반 낱말로 보입니다."
 
 
-REASON_PROSE_ONCE = ("문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다. "
-                     "같은 양식 문서를 하나 더 넣으면 판단할 수 있습니다.")
+REASON_PROSE_ONCE = "문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
 REASON_FIXED = "고정 문구 안의 낱말로 보입니다."
 REASON_GENERIC = "규정·안내 문장 안의 낱말로 보입니다."
 REASON_BAD_NAME = "열 이름을 필드 이름으로 쓸 수 없습니다. 문구를 고르고 직접 필드로 만드세요."
@@ -50,9 +49,8 @@ def reason_many(count: int) -> str:
     return f"같은 값이 {count}곳에 나옵니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
 
 
-def note_short(label: str, chosen: int, others: int, numeric: bool) -> str:
-    inside = "다른 숫자 속입니다." if numeric else "다른 낱말 속입니다."
-    return f"라벨 ‘{label}’ 옆 {chosen}곳만 골랐습니다. 다른 {others}곳은 {inside}"
+def note_short(label: str, chosen: int, others: int) -> str:
+    return f"라벨 ‘{label}’ 옆 {chosen}곳만 골랐습니다. 다른 {others}곳은 라벨이 없어 고르지 않았습니다."
 
 
 def count_short(chosen: int) -> str:
@@ -126,8 +124,7 @@ def _grade_short(column: str, others: list[str], labelled: list[SpotEvidence],
     if not labelled:
         return None
     outside = len(spots) - len(labelled)
-    numeric = any(ch.isdigit() for ch in spots[0].text)
-    note = note_short(labelled[0].label, len(labelled), outside, numeric) if outside else ""
+    note = note_short(labelled[0].label, len(labelled), outside) if outside else ""
     count = count_short(len(labelled)) if outside else count_spots(len(labelled))
     return Grade(KIND_PROPOSAL, column, others, list(labelled), note=note, count_text=count)
 

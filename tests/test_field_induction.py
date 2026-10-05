@@ -34,6 +34,7 @@ from hwpxfiller.domain.field_induction.labels import (
     static_cue,
     strip_markers,
 )
+from hwpxfiller.domain.field_induction.grading import REASON_PROSE_ONCE, note_short
 from hwpxfiller.domain.field_induction.proposal import field_name, note_for, propose
 from hwpxfiller.domain.field_induction.transforms import TRANSFORMS, renderings
 from hwpxfiller.domain.format_engine import render as product_render
@@ -91,11 +92,25 @@ def test_every_kept_program_renders_identically_in_the_product_format_engine(val
         assert product_render(binding["type"], binding["fmt"], value) == text
 
 
-def test_binding_labels_follow_the_family() -> None:
+def test_binding_labels_come_from_the_product_preset_table() -> None:
     labels = {t.id: t.binding()["label"] for t in TRANSFORMS.values()}
-    assert labels["identity"] == "원문" and labels["number_grouping"] == "천 단위 쉼표"
-    assert labels["date_korean"] == "날짜" and labels["datetime_dot_spaced"] == "날짜+시각"
-    assert TRANSFORMS["number_grouping"].binding() == {"type": "amount", "fmt": "{:,}", "label": "천 단위 쉼표"}
+    assert labels["identity"] == ""  # 화면이 형식 줄을 숨기는 신호
+    assert labels["number_grouping"] == "숫자"
+    assert labels["date_iso"] == "ISO"
+    assert labels["date_dot"] == "점"
+    assert labels["date_dot_spaced"] == "표준"
+    assert labels["date_korean"] == "한글"
+    assert labels["date_slash"] == "%Y/%m/%d"  # 프리셋 표에 없는 코드는 코드 자체
+    assert labels["date_korean_padded"] == "%Y년 %m월 %d일"
+    assert labels["datetime_iso"] == "날짜+시각"
+    assert labels["datetime_dot_spaced"] == "표준"
+    assert labels["datetime_korean"] == "한글"
+    assert TRANSFORMS["number_grouping"].binding() == {"type": "amount", "fmt": "{:,}", "label": "숫자"}
+
+
+def test_note_short_and_reason_prose_once_texts() -> None:
+    assert note_short("수량:", 1, 2) == "라벨 ‘수량:’ 옆 1곳만 골랐습니다. 다른 2곳은 라벨이 없어 고르지 않았습니다."
+    assert REASON_PROSE_ONCE == "문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
 
 
 # ------------------------------------------------------------------ candidates (engine test_core)
@@ -281,7 +296,7 @@ def test_mockup_notice_has_nine_proposals_two_held_and_a_label_only_short_value(
     assert price.spots[0].where == "1. 나"
     quantity = groups["수량"]
     assert len(quantity.spots) == 1 and quantity.count_text == "라벨 옆 1곳만"
-    assert quantity.note == "라벨 ‘수량:’ 옆 1곳만 골랐습니다. 다른 2곳은 다른 숫자 속입니다."
+    assert quantity.note == "라벨 ‘수량:’ 옆 1곳만 골랐습니다. 다른 2곳은 라벨이 없어 고르지 않았습니다."
     assert groups["입찰마감일시"].transform == "datetime_dot_spaced"
     method = groups["계약방법"]
     # 표 칸 라벨 자리 하나 — 규정 문장(「…할 수 있습니다」) 속 반복은 싣지 않는다.
@@ -314,8 +329,7 @@ def test_fixed_wording_and_generic_sentences_are_held() -> None:
 
 def test_unlabelled_values_by_place() -> None:
     once = propose(doc("이번 사업은 정부대전청사 3동 이전을 위한 구매입니다"), {"장소": "정부대전청사 3동"}, ["장소"])
-    assert once.groups[0].reason == ("문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다. "
-                                     "같은 양식 문서를 하나 더 넣으면 판단할 수 있습니다.")
+    assert once.groups[0].reason == "문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
     alone = propose(doc("정부대전청사 3동"), {"장소": "정부대전청사 3동"}, ["장소"])
     assert alone.groups[0].kind == "proposal"
     many = propose(doc("정부대전청사 3동", "정부대전청사 3동", "정부대전청사 3동"), {"장소": "정부대전청사 3동"}, ["장소"])
@@ -332,7 +346,7 @@ def test_range_values_on_one_line_are_each_their_own_slot() -> None:
 
 def test_short_values_keep_only_the_label_spot() -> None:
     word = propose(doc("단위: 대", "대한민국 대표 대학"), {"단위": "대"}, ["단위"])
-    assert word.groups[0].note == "라벨 ‘단위:’ 옆 1곳만 골랐습니다. 다른 3곳은 다른 낱말 속입니다."
+    assert word.groups[0].note == "라벨 ‘단위:’ 옆 1곳만 골랐습니다. 다른 3곳은 라벨이 없어 고르지 않았습니다."
     lone = propose(doc("단위: 대"), {"단위": "대"}, ["단위"])
     assert (lone.groups[0].note, lone.groups[0].count_text) == ("", "1곳")
     unlabelled = propose(doc("총 12 건"), {"수량": "12"}, ["수량"])

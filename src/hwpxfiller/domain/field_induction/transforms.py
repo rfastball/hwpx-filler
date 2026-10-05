@@ -14,6 +14,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..format_engine import presets as product_presets
 from ..format_engine import render as product_render
 
 _CANON_INT = re.compile(r"-?(0|[1-9]\d*)")
@@ -21,13 +22,6 @@ _CANON_DEC = re.compile(r"-?(0|[1-9]\d*)\.\d+")
 # 원천 값은 2026/09/15·2026.09.15 로도 온다(데이터베이스 내보내기) — 한 값에 구분자는 한 종류다.
 _DATE_ANY = re.compile(r"(\d{4})([-/.])(\d{2})\2(\d{2})")
 _DATETIME_ANY = re.compile(r"(\d{4})([-/.])(\d{2})\2(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?")
-
-#: 표시 형식 묶음 → 사람이 읽는 이름(계약 「binding.label」).
-LABEL_TEXT = "원문"
-LABEL_NUMBER = "천 단위 쉼표"
-LABEL_DATE = "날짜"
-LABEL_DATETIME = "날짜+시각"
-
 
 def as_datetime(value: str) -> _dt.datetime | None:
     """날짜·시각 값 — ``YYYY-MM-DD HH:MM[:SS]``(구분자 ``-``·``/``·``.``)."""
@@ -104,8 +98,17 @@ class Transform:
 
     @property
     def label(self) -> str:
-        return {"identity": LABEL_TEXT, "number": LABEL_NUMBER, "date": LABEL_DATE}.get(
-            self.family, LABEL_DATETIME)
+        """표시 형식의 사람이 읽는 이름(계약 「binding.label」) — 제품 프리셋 표에서 찾는다.
+
+        원문(identity)은 화면이 형식 줄을 숨기도록 빈 문자열이다. 그 밖은 ``(kind, fmt)`` 가 가리키는
+        프리셋 라벨이고, 프리셋 표에 없는 코드(예: ``%Y년 %m월 %d일``)는 코드 자체가 이름이다.
+        """
+        if self.family == "identity":
+            return ""
+        for label, code in product_presets(self.kind):
+            if code == self.fmt:
+                return label
+        return self.fmt
 
     def binding(self) -> dict:
         """제품 연결 초안의 표시 형식 — ``{"type", "fmt", "label"}``."""
@@ -142,7 +145,7 @@ def domain_equivalent(a: str, b: str, value: str) -> bool:
     """두 프로그램이 이 값의 모든 같은 모양 값에서 같은 글자를 내는가.
 
     원문과 날짜 형식은 그 형식 그대로 적힌 날짜 글자에서 늘 같다 — 관찰로 가를 수 없으니 한 프로그램이다.
-    원문과 천 단위 쉼표는 ``500`` 에서 같아도 1000 에서 갈린다 — 같은 프로그램이 아니다.
+    원문과 숫자(천 단위 쉼표) 형식은 ``500`` 에서 같아도 1000 에서 갈린다 — 같은 프로그램이 아니다.
     """
     if "identity" not in {a, b}:
         return False

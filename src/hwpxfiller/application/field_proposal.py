@@ -30,6 +30,9 @@ ROW_SHOWN = 20
 NO_PROPOSAL_LEFT = "남은 제안이 없습니다."
 _ONLY_CELL = "표 칸 1곳만 필드로"
 _ONLY_SPOT = "이 자리만 필드로"
+_ONLY_THIS = "이 자리만"
+#: 앞 500행만 맞춰 보는 중임을 알리는 문장(``ROW_LIMIT``) — 데이터가 그보다 많을 때만 싣는다.
+ROWS_NOTE = "앞 500행만 맞춰 봅니다."
 
 
 def row_label(index: int) -> str:
@@ -37,11 +40,11 @@ def row_label(index: int) -> str:
 
 
 def hint_best(count: int) -> str:
-    return f"값이 가장 많이 맞는 행 · {count}개"
+    return f"찾은 값이 가장 많은 행 · {count}개"
 
 
 def hint_other(count: int) -> str:
-    return f"맞는 값 {count}개"
+    return f"찾은 값 {count}개"
 
 
 def source_text(row: int, column: str) -> str:
@@ -128,10 +131,14 @@ def chosen_row(state: FieldProposalState, counts: Sequence[int]) -> int:
 
 
 def _only_label(group: Group, spots: list[dict]) -> str | None:
-    """보류 묶음의 「이 자리만」 단추 이름 — 고를 수 있는 한 자리(``only``)가 표 칸이면 「표 칸 1곳만 필드로」.
+    """「이 자리만」류 단추 이름.
 
-    ``only`` 가 없으면 연 자리 하나다. 열 이름이 필드 이름이 될 수 없거나 자리가 없으면 단추가 없다.
+    보류 묶음은 고를 수 있는 한 자리(``only``)가 표 칸이면 「표 칸 1곳만 필드로」, 아니면 「이 자리만 필드로」다
+    (열 이름이 필드 이름이 될 수 없거나 자리가 없으면 단추가 없다). 제안 묶음은 자리가 2곳 이상일 때만
+    「이 자리만」이다(자리가 1곳뿐이면 묶음을 만드는 것과 같아 단추가 없다).
     """
+    if group.kind == KIND_PROPOSAL:
+        return _ONLY_THIS if len(spots) >= 2 else None
     if group.kind != KIND_HELD or not spots or group.reason == REASON_BAD_NAME:
         return None
     only = next((spot for spot in spots if spot["id"] == group.only), None)
@@ -166,7 +173,8 @@ def proposal_view(*, state: FieldProposalState, revision: int, paragraphs: Seque
     return {
         "state": STATE_READY, "error": "", "revision": revision, "datasets": datasets,
         "data": {"pool_key": state.pool_key, "name": loaded.name, "sheet": state.sheet, "row": row,
-                 "rows": _rows_view(counts, row), "rows_truncated": loaded.truncated},
+                 "rows": _rows_view(counts, row), "rows_truncated": loaded.truncated,
+                 "rows_note": ROWS_NOTE if loaded.truncated else ""},
         "counts": {"proposal": result.count(KIND_PROPOSAL), "held": result.count(KIND_HELD)},
         "groups": [_group_view(group, locate, row) for group in result.groups],
         "missing": [{"column": item.column, "reason": item.reason} for item in result.missing],
@@ -178,7 +186,7 @@ def empty_view(state_name: str, revision: int, datasets: list[dict], error: str 
     """데이터가 없거나(``needs_data``) 읽지 못한(``failed``) 스냅숏 — 묶음이 없다."""
     data = None if state is None or not state.pool_key else {
         "pool_key": state.pool_key, "name": state.loaded.name if state.loaded else "", "sheet": state.sheet,
-        "row": None, "rows": [], "rows_truncated": False}
+        "row": None, "rows": [], "rows_truncated": False, "rows_note": ""}
     return {"state": state_name, "error": error, "revision": revision, "datasets": datasets, "data": data,
             "counts": {"proposal": 0, "held": 0}, "groups": [], "missing": []}
 
