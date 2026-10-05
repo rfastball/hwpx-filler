@@ -137,11 +137,17 @@ function stubDispatch(services, make) {
   };
 }
 
-/** 관찰이 선 면의 렌더 결과(#1138) — 실 Studio iframe 이 서고 원료 적재를 시도해 로딩 상태를 벗을 때까지
- *  기다린 뒤 읽는다. 옛 텍스트 투영의 자리가 다시 서면 실패를 성공처럼 접은 것이다. */
-async function readArtifactRender(ctx, doc, dispatches) {
+/** 관찰이 선 면의 렌더 결과(#1138) — `show` 로 면을 세우고, 실 Studio iframe 이 원료 적재를 시도해 로딩
+ *  상태를 벗을 때까지 기다린 뒤 읽는다. 옛 텍스트 투영의 자리가 다시 서면 실패를 성공처럼 접은 것이다.
+ *  Studio 가 적재 중 가져간 초점을 면이 돌려주면 창 focus 가 실 백엔드 갱신(#932 B5)을 쏴 이 합성 세계를
+ *  실 스냅샷으로 덮는다 — 그 사이 창 focus 만 막는다(제품 경로는 실 스냅샷이 같은 세션이라 무해하다). */
+async function readArtifactRender(ctx, doc, dispatches, show) {
+  const block = (event) => event.stopImmediatePropagation();
+  ctx.win.addEventListener("focus", block, true);
+  await show();
   const docEl = () => doc.getElementById("artifactDoc");
   for (let tries = 0; tries < 100 && docEl()?.dataset?.state === "loading"; tries += 1) await ctx.sleep(100);
+  ctx.win.removeEventListener("focus", block, true);
   const text = (id) => String((doc.getElementById(id) || {}).textContent ?? "(자리 없음)");
   return {
     content_requested: dispatches.includes("job/artifact_content"),
@@ -1615,21 +1621,19 @@ async function runJobResult(ctx) {
      결함 클래스와 「눌렸지만 안 보인다」 결함 클래스가 각각 다른 계기에 걸린다). */
   artifact.sheet_shown = !!sheetCard && isShown(ctx, sheetCard) && sheetCard.offsetParent !== null;
   /* ④ 백엔드에 그 문서가 없는 상태 — 조용한 빈 화면이 아니라 **구분된 거절 문안**이다. */
-  artifact.absent_status = String(
-    (doc.getElementById("artifactRefused") || {}).dataset?.status ?? "(자리 없음)",
-  );
-  artifact.absent_title = String(
-    (doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)",
-  );
-  artifact.absent_save_disabled = !!(doc.getElementById("artifactSaveAs") || {}).disabled;
+  Object.assign(artifact, {
+    absent_status: String((doc.getElementById("artifactRefused") || {}).dataset?.status ?? "(자리 없음)"),
+    absent_title: String((doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)"),
+    absent_save_disabled: !!(doc.getElementById("artifactSaveAs") || {}).disabled,
+  });
 
   /* 관찰이 선 상태 — 면은 원료를 받아 보기 전용 렌더러를 띄운다. 스냅샷에는 내용이 없다(#1138). */
   const observedSnap = deepCopy(baseSnap);
   observedSnap.artifact_view = {
     open: true, ordinal: 0, filename: "공고서-001.hwpx", status: "observed", detail: "",
   };
-  await pushAndSettle(ctx, "job", observedSnap);
-  Object.assign(artifact, await readArtifactRender(ctx, doc, artifactDispatches));
+  Object.assign(artifact, await readArtifactRender(ctx, doc, artifactDispatches,
+    () => pushAndSettle(ctx, "job", observedSnap)));
   artifact.observed_save_enabled = !(doc.getElementById("artifactSaveAs") || {}).disabled;
 
   /* 무결성 실패는 「준비 안 됨」과 다른 문장을 받는다(#820 §3, fallback 0). */
@@ -1639,12 +1643,10 @@ async function runJobResult(ctx) {
     status: "ARTIFACT_DIGEST_MISMATCH", detail: "내용이 안착 기록과 다르다",
   };
   await pushAndSettle(ctx, "job", mismatchSnap);
-  artifact.mismatch_title = String(
-    (doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)",
-  );
-  artifact.mismatch_detail = String(
-    (doc.getElementById("artifactRefusedDetail") || {}).textContent ?? "(자리 없음)",
-  );
+  Object.assign(artifact, {
+    mismatch_title: String((doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)"),
+    mismatch_detail: String((doc.getElementById("artifactRefusedDetail") || {}).textContent ?? "(자리 없음)"),
+  });
   artifact.mismatch_differs_from_absent = artifact.mismatch_title !== artifact.absent_title;
 
   /* 닫기 — runJobMirror 관용구 그대로(transitionend 수동 발화 + 복귀 초점 판별). */
