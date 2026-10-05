@@ -20,9 +20,9 @@ from ..application.template_authoring_session import AuthoringSession
 from ..domain import template_authoring as semantics
 from ..external.authoring_store import WORKSPACE_INVALID, AuthoringStore, ExternalChangeError, digest
 from ..external.authoring_transfer import capture_semantic, paste_semantic
+from ..external.hwpx_field_proposal import apply_authoring_command
 from ..external.hwpx_authoring import (
     analyze_hwpx,
-    apply_hwpx,
     available_commands_hwpx,
     available_target_commands_hwpx,
     same_text_hwpx,
@@ -35,6 +35,7 @@ from ..external.hwpx_authoring import (
 from ..external.rhwp_preflight import compare_rhwp_roundtrip
 from ..external.text_materialization_conformance import trial_txt_authoring
 from ..host.locations import default_authoring_dir
+from .authoring_proposal import ProposalPanel
 from .screens import MutationSink, PushSink
 
 _INVALID_SELECTION = "고른 위치가 유효하지 않습니다."
@@ -99,7 +100,7 @@ class AuthoringController:
 
     def __init__(
         self, push: PushSink, *, directory: Path | None = None,
-        job_registry=None, template_change=None,
+        job_registry=None, template_change=None, proposal_data=None,
     ) -> None:
         self._push_sink = push
         self.store = AuthoringStore(directory or default_authoring_dir())
@@ -128,6 +129,8 @@ class AuthoringController:
         #: 연결 작업 유무(NG-09) 캐시 — 세션별 (저장 경로, 판정). 스냅숏마다 작업 파일을 다시 훑지 않는다.
         #: 저장 경로가 바뀌면 다시 재고, 활성화·외부 변경 확인(창 초점)·영향 확인·초기 스냅숏에서 버린다.
         self._linked_cache: dict[str, tuple[str, bool]] = {}
+        #: 「데이터로 필드 찾기」(#1156) — 액션 다섯과 탭의 ``proposal`` 투영. 상태는 세션이 든다.
+        self._proposal = ProposalPanel(self._session, self._do_preview, self._parse, proposal_data, job_registry)
 
     @staticmethod
     def _media(path: Path) -> str:
@@ -404,6 +407,7 @@ class AuthoringController:
             "document_commands": semantics.document_commands(session.media, session.analysis),
             "problems": self._problems(session),
             "trial_missing": self._trial_missing(self._outline_analysis(session), session),
+            "proposal": self._proposal.view(session),
         }
 
     @staticmethod
@@ -578,12 +582,9 @@ class AuthoringController:
         with self._lock:
             for key in [key for key in self._projection_revisions if key[0] not in self.sessions]:
                 del self._projection_revisions[key]
-            for session_id in [sid for sid in self._outline_cache if sid not in self.sessions]:
-                del self._outline_cache[session_id]
-            for session_id in [sid for sid in self._lint_cache if sid not in self.sessions]:
-                del self._lint_cache[session_id]
-            for session_id in [sid for sid in self._linked_cache if sid not in self.sessions]:
-                del self._linked_cache[session_id]
+            for cache in (self._outline_cache, self._lint_cache, self._linked_cache):
+                for session_id in [sid for sid in cache if sid not in self.sessions]:
+                    del cache[session_id]
             return {
                 "tabs": [self._tab(session) for session in self.sessions.values()],
                 "active_id": self.active_id,
@@ -858,6 +859,7 @@ class AuthoringController:
             "impact": self._do_impact,
             "prepare_apply": self._do_prepare_apply,
             "apply_job": self._do_apply_job,
+            **self._proposal.handlers(),
         }
         if action not in handlers:
             raise ValueError(f"알 수 없는 authoring 액션: {action!r}")
@@ -916,10 +918,7 @@ class AuthoringController:
             raise ValueError("명령이 올바르지 않습니다.")
         parsed = self._parse(session.media, session.content)
         try:
-            changed, preview = (
-                semantics.apply(session.media, parsed, command)
-                if session.media == "txt" else apply_hwpx(parsed, command)
-            )
+            changed, preview = apply_authoring_command(session.media, parsed, command)
         except (semantics.NameConflict, semantics.CascadeRequired, semantics.InvalidName) as exc:
             # 구조화된 거절(AC08·AC10·P-06) — 문서는 바뀌지 않았고 프런트가 해결 경로를 그린다.
             # 이름 문법 거절(invalid_name)은 그 입력 칸 곁에 선다 — 오류 띠가 아니다.
@@ -1801,4 +1800,6 @@ class AuthoringController:
         token = p.get("change_token")
         if not isinstance(token, str) or not token:
             raise ValueError("변경 확인 토큰이 없습니다.")
-        return {"job_name": job.name, **self._template_change.apply(job.name, token)}
+        # 「데이터로 필드 찾기」의 연결 초안은 적용이 성공한 뒤 새 필드에만 심는다(#1156).
+        return {"job_name": job.name,
+                **self._proposal.applied(job.name, session, self._template_change.apply(job.name, token))}

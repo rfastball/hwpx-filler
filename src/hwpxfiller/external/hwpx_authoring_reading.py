@@ -14,6 +14,7 @@ from ..domain.template_authoring import (
     occurrence_context,
     occurrence_context_parts,
 )
+from ..domain.template_authoring_primitives import REASON_CONTROL_BEFORE
 
 _HP = f"{{{HP_NS}}}"
 
@@ -300,7 +301,7 @@ def _field_range_refusal(sites: list, hazards: list[int], text: str, start: int,
     if not sites:
         return "이 문단에는 편집 가능한 텍스트가 없습니다."
     if any(position <= end for position in hazards):
-        return "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+        return REASON_CONTROL_BEFORE
     return None
 
 

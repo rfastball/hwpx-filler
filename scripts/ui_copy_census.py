@@ -46,6 +46,10 @@ PY_GLOBS = (
     # 가공(글자 범위·구분자 나누기) 명세의 거절 사유도 같다 — 편집 동사가 도메인 판정기의
     # `TextSliceError` 문장을 오류 배너에 그대로 세운다(링1 에서 다시 감싸지 않는다).
     "src/hwpxfiller/domain/text_slice.py",
+    # 「데이터로 필드 찾기」(#1156) — 보류 이유·주석 문장은 도메인 판정기가 짓고, 행 힌트·토스트는 응용 층이
+    # 짓는다. 표면은 그 문장을 그대로 세운다(다시 조립하지 않는다).
+    "src/hwpxfiller/domain/field_induction/*.py",
+    "src/hwpxfiller/application/field_proposal.py",
     "src/hwpxfiller/external/hwpx_authoring*.py",
     "src/hwpxfiller/external/authoring_transfer*.py",
     "src/hwpxfiller/external/authoring_store.py",

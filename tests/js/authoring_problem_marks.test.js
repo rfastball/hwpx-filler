@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createAuthoringController, problemNote } from "../../frontend/src/screens/authoring_controller.ts";
+import { createAuthoringController } from "../../frontend/src/screens/authoring_controller.ts";
+import { problemNote } from "../../frontend/src/screens/authoring_outline_model.ts";
 import { AuthoringScreen, markerPairs, problemAction, problemFix, txtProblemMarks } from "../../frontend/src/screens/authoring.ts";
 import { lintpadDecorations, problemMarks, usableSpans } from "../../frontend/src/editorview/txt_lintpad.ts";
 

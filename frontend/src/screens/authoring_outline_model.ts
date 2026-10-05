@@ -5,6 +5,8 @@ import type { AuthoringController } from "./authoring_controller.ts";
 import { isCurrentTarget } from "./authoring_a11y.ts";
 import type { Obj } from "./authoring_primitives.ts";
 
+export { problemNote } from "./authoring_problem_note.ts";
+
 export const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택", text: "본문" };
 export const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };
 export const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성", authoring: "필드" };

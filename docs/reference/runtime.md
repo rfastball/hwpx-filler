@@ -103,6 +103,12 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `prepare_apply` | `session_id`, `revision`, `job_name` | — |
 | `preview` | `session_id`, `revision`, `command` | — |
 | `preview_paste` | `session_id`, `revision`, `clipboard_token`, `destination`, `with_meaning` | — |
+| `propose_dismiss` | `session_id`, `revision`, `group_id` | — |
+| `propose_fields` | `session_id`, `revision` | `pool_key`, `sheet`, `row` |
+| `propose_make` | `session_id`, `revision`, `group_id` | `spot_id` |
+| `propose_make_all` | `session_id`, `revision` | — |
+| `propose_off` | `session_id` | — |
+| `propose_pick_column` | `session_id`, `revision`, `group_id`, `column` | — |
 | `reload` | `session_id`, `revision` | `force` |
 | `remember_view` | `session_id`, `revision`, `selection`, `mode` | — |
 | `rhwp_roundtrip_preflight` | `session_id`, `revision`, `content` | — |

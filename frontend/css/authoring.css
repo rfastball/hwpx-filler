@@ -439,3 +439,80 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-document .cm-txtRegion-slot{border-left:3px solid CanvasText}
   .authoring-document .cm-txtRegion-slot.cm-txtRegion-option{border-left-style:dashed}
 }
+
+/* 「데이터로 필드 찾기」(#1156) — 띠·구조 패널 묶음·문서 표식·팝오버. 제안은 필드 색(초록) 점선, 보류는 회색 점선이다.
+   색은 기존 토큰(필드 의미색·흐린 글자)에서 섞어 지어 라이트·다크가 함께 따라가고, 모양(점선·칩·이름)으로도 가른다. */
+.authoring-shell{--proposal-ink:var(--a-sem-field);--proposal-held:color-mix(in srgb,var(--a-muted) 78%,var(--a-card));--proposal-face:color-mix(in srgb,var(--a-sem-field) 12%,var(--a-card))}
+.authoring-proposal-band{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:nowrap;min-height:42px;padding:var(--sp-4) var(--sp-8) var(--sp-4) var(--sp-12);background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control);font-size:var(--fs-dense);white-space:nowrap;overflow-x:auto;scrollbar-width:thin;flex-shrink:0}
+.authoring-proposal-title{display:inline-flex;align-items:center;gap:var(--sp-6);margin-right:var(--sp-6);font-weight:600;color:var(--a-ink)}
+.authoring-shell .authoring-proposal-title .icon{width:16px;height:16px;stroke-linecap:round}
+.authoring-proposal-title .icon path:last-child{stroke:var(--proposal-ink)}
+.authoring-proposal-band label{color:var(--n-ink-soft)}
+.authoring-proposal-band .authoring-proposal-select{width:auto;max-width:16rem;min-height:28px;padding-block:0;font-size:var(--fs-dense)}
+.authoring-proposal-hint,.authoring-proposal-rows-note{font-size:var(--fs-caption);color:var(--n-ink-soft)}
+/* 맞춰 보는 동안·남은 제안이 없을 때 띠의 조작은 aria-disabled 로 흐린다(초점을 쥔 채로 — disabled 는 초점을 몸통으로 떨군다). */
+.authoring-proposal-band .btn[aria-disabled=true],.authoring-proposal-band .authoring-proposal-select[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.authoring-proposal-band .btn[aria-disabled=true]:active{transform:none}
+.authoring-proposal-status{margin-left:auto;color:var(--n-ink-soft);font-variant-numeric:tabular-nums}
+.authoring-proposal-status b{color:var(--a-ink);font-weight:600}
+.authoring-proposal-status[data-severity=error]{color:var(--a-danger);white-space:normal}
+.authoring-proposal-sep{flex:none;width:1px;height:18px;background:var(--a-border)}
+.authoring-shell .authoring-proposal-band .btn{font-size:var(--fs-dense)}
+/* 구조 패널 묶음 — 필드 목록 위. 줄은 이동하는 줄(단추 모양 아님)이고 눌린 줄은 선택 면. */
+.authoring-proposal-list{display:flex;flex-direction:column}
+.authoring-proposal-group{display:flex;justify-content:space-between;padding:var(--sp-8) var(--sp-4) var(--sp-2);font-size:var(--fs-caption);font-weight:600;color:var(--n-ink-soft);font-variant-numeric:tabular-nums}
+.authoring-proposal-row{display:flex;align-items:center;gap:var(--sp-8);width:100%;min-height:28px;padding:0 var(--sp-4);border:0;border-radius:var(--rad-control);background:transparent;font:inherit;font-size:var(--fs-dense);text-align:left;color:var(--a-ink);cursor:pointer}
+.authoring-proposal-row:hover{background:var(--n-hover)}
+.authoring-proposal-row[aria-expanded=true]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.authoring-shell .authoring-proposal-row:focus-visible{outline-offset:-2px}
+.authoring-proposal-swatch{flex:none;width:10px;height:10px;border:1.5px dashed var(--proposal-ink);border-radius:2px;background:var(--a-card)}
+.authoring-proposal-swatch.held{border-color:var(--proposal-held)}
+.authoring-proposal-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.authoring-proposal-count{flex:none;font-size:var(--fs-caption);font-weight:400;color:var(--n-ink-soft);white-space:nowrap}
+.authoring-proposal-row[aria-expanded=true] .authoring-proposal-count{color:inherit}
+.authoring-proposal-missing{margin:var(--sp-6) var(--sp-4) 0;font-size:var(--fs-caption);line-height:1.5;color:var(--n-ink-soft)}
+.authoring-proposal-link{padding:0;border:0;background:transparent;font:inherit;font-weight:600;color:var(--a-primary);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.authoring-proposal-link:hover{color:var(--a-primary-h)}
+/* TXT 편집면 표식(본문 표식 층) — 원문을 밀지 않는 점선 밑줄, 연 자리는 면과 흐린 이름표. */
+.authoring-document .cm-authoring-proposal{border-bottom:2px dotted var(--proposal-ink);cursor:pointer}
+.authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:var(--proposal-held)}
+.authoring-document .cm-authoring-proposal-open{background:var(--proposal-face);box-shadow:0 0 0 2px color-mix(in srgb,var(--proposal-ink) 45%,transparent);border-radius:2px 2px 0 0}
+.authoring-document .cm-authoring-proposal-held.cm-authoring-proposal-open{background:color-mix(in srgb,var(--proposal-held) 14%,var(--a-card));box-shadow:0 0 0 2px color-mix(in srgb,var(--proposal-held) 45%,transparent)}
+.authoring-document .cm-authoring-proposal-tag{display:inline-block;margin-right:3px;padding:0 4px;border:1px dashed color-mix(in srgb,var(--proposal-ink) 55%,transparent);border-radius:3px;background:var(--proposal-face);color:var(--a-ink);font-family:var(--font-ui);font-size:.6875rem;font-weight:600;line-height:1.35;vertical-align:1px}
+.authoring-document .cm-authoring-proposal-tag.cm-authoring-proposal-held{border-color:var(--proposal-held);background:var(--a-card);color:var(--n-ink-soft)}
+/* 제안 팝오버 — 셸 층의 비모달 대화상자. 행동 줄: 주 행동 · 보조 · 오른쪽 끝의 물러선 「그대로 두기」. */
+.authoring-proposal-popover{position:absolute;z-index:var(--z-popover);width:min(340px,calc(100vw - 2rem));padding:var(--sp-10) var(--sp-10) var(--sp-10) var(--sp-12);background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);box-shadow:0 16px 40px var(--a-shadow);font-size:var(--fs-dense);line-height:1.5;color:var(--a-ink);word-break:keep-all;max-height:min(70vh,32rem);overflow:auto;overscroll-behavior:contain;animation:authoring-proposal-in var(--dur-pop) var(--ease-out)}
+@keyframes authoring-proposal-in{from{opacity:.4;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.authoring-proposal-head{display:flex;align-items:center;gap:var(--sp-8);min-height:30px}
+.authoring-proposal-field{font-size:var(--fs-strong);font-weight:600;min-width:0;overflow-wrap:anywhere}
+.authoring-proposal-head .btn.icon{margin-left:auto}
+.authoring-proposal-chip{flex:none;padding:0 var(--sp-8);border:1px solid var(--n-border-strong);border-radius:var(--rad-pill);background:var(--a-window);font-size:var(--fs-caption);font-weight:600;line-height:18px;color:var(--n-ink-soft)}
+.authoring-proposal-source{margin:var(--sp-2) 0 var(--sp-8);font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.authoring-proposal-value{padding:var(--sp-6) var(--sp-10) var(--sp-8);border-radius:var(--rad-control);background:var(--a-window)}
+.authoring-proposal-text{font-family:var(--font-mono);font-size:var(--fs-body);overflow-wrap:anywhere}
+.authoring-proposal-format{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4) var(--sp-6);margin-top:var(--sp-4);font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.authoring-proposal-fmt{padding:0 var(--sp-8);border:1px solid color-mix(in srgb,var(--proposal-ink) 40%,transparent);border-radius:var(--rad-pill);background:var(--proposal-face);font-weight:600;line-height:18px;color:var(--a-ink);white-space:nowrap}
+.authoring-proposal-raw{flex-basis:100%}
+.authoring-proposal-same,.authoring-proposal-why{display:flex;align-items:flex-start;gap:var(--sp-6);margin:var(--sp-8) 0 0;font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.authoring-proposal-same b{font-weight:600;color:var(--a-ink)}
+.authoring-shell .authoring-proposal-same .icon,.authoring-shell .authoring-proposal-why .icon{flex:none;width:14px;height:14px;margin-top:2px}
+.authoring-proposal-same .icon{color:var(--proposal-ink)}
+.authoring-proposal-why{font-size:var(--fs-dense)}
+.authoring-proposal-note{margin:var(--sp-6) 0 0;font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.authoring-proposal-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-6);margin-top:var(--sp-10);padding-top:var(--sp-10);border-top:1px solid var(--a-border)}
+.authoring-proposal-actions .authoring-proposal-keep{margin-left:auto}
+@media(prefers-reduced-motion:reduce){.authoring-proposal-popover{animation:none}}
+@container authoring (max-width:52rem){.authoring-proposal-hint{display:none}.authoring-proposal-band .authoring-proposal-select{max-width:10rem}}
+@media(forced-colors:active){
+  .authoring-proposal-band,.authoring-proposal-popover{border-color:CanvasText}
+  .authoring-proposal-swatch{border-color:Highlight}
+  .authoring-proposal-swatch.held,.authoring-proposal-chip{border-color:GrayText}
+  .authoring-proposal-row[aria-expanded=true]{outline:2px solid Highlight;outline-offset:-2px}
+  .authoring-proposal-link{color:LinkText}
+  .authoring-document .cm-authoring-proposal{border-bottom-color:Highlight}
+  .authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:GrayText}
+  .authoring-document .cm-authoring-proposal-open{outline:2px solid Highlight;outline-offset:1px;box-shadow:none}
+  .authoring-document .cm-authoring-proposal-tag{forced-color-adjust:none;border-color:CanvasText;background:Canvas;color:CanvasText}
+  .authoring-proposal-fmt{border-color:CanvasText}
+  .authoring-proposal-band .btn[aria-disabled=true]{color:GrayText}
+}

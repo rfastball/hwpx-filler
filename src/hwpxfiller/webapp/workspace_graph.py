@@ -21,6 +21,7 @@ from ..external.template_files import TemplateFileStore
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..host.locations import default_dataset_pool_dir, default_jobs_dir, default_template_authority_dir
+from .authoring_proposal import PoolProposalData, pool_source_of
 from .onboarding import OnboardingController
 from .screen_authoring import AuthoringController
 from .screen_editor import EditorController
@@ -177,7 +178,11 @@ def build_graph(
     # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
     controllers = [
         AuthoringController(push, job_registry=job_registry,
-                            template_change=template_change),
+                            template_change=template_change,
+                            # 「데이터로 필드 찾기」(#1156) — 등록 데이터 풀과 「문서 작업」이 지금 쓰는 데이터.
+                            proposal_data=PoolProposalData(
+                                pool_registry, source_from_pool_item,
+                                current=lambda: pool_source_of(job_ctrl.data))),
         # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
         # 레지스트리는 편집기·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
         # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).

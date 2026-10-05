@@ -119,6 +119,12 @@ export const SCREEN_ACTIONS = {
     impact: { required: ["revision", "session_id"], optional: [] },
     prepare_apply: { required: ["job_name", "revision", "session_id"], optional: [] },
     apply_job: { required: ["change_token", "job_name", "revision", "session_id"], optional: [] },
+    propose_fields: { required: ["revision", "session_id"], optional: ["pool_key", "row", "sheet"] },
+    propose_make: { required: ["group_id", "revision", "session_id"], optional: ["spot_id"] },
+    propose_make_all: { required: ["revision", "session_id"], optional: [] },
+    propose_dismiss: { required: ["group_id", "revision", "session_id"], optional: [] },
+    propose_pick_column: { required: ["column", "group_id", "revision", "session_id"], optional: [] },
+    propose_off: { required: ["session_id"], optional: [] },
   },
   library: {
     set_view: { required: [], optional: ["view"] },

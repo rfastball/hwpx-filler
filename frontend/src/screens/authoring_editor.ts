@@ -141,7 +141,8 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
         const handle = mountLintpad({ host: host.current, doc: initial.content,
           contentId: `authoring-text-${item.id}`, ariaLabel: "TXT 템플릿 원문", authoring: true,
           onDocChanged: (content) => { if (!composing) controller.changed(item.id, content); },
-          onSelectionChanged: (selection) => { if (!composing) controller.selection(item.id, selection); },
+          // 캐럿이 제안 자리(#1156)에 서면 그 팝오버가 선다 — 판정(locate)과 같은 보고다.
+          onSelectionChanged: (selection) => { if (!composing) { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection); } },
           onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
           onRangePick: (offset) => controller.pickClick(item.id, { entry: "", paragraph: 0, offset, cell: false }),
           onCompositionChanged: (active) => { composing = active; if (!active) queueMicrotask(() => controller.changed(item.id, lintpadState(handle).text)); },
@@ -155,6 +156,8 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
             if (!editLintpad(handle, changes as { start: number; end: number; text: string }[])) throw new Error(IME_BUSY);
           },
           focus: async (target) => { if (target.start != null) navigateLintpad(handle, target.start, target.end ?? target.start); },
+          // TXT 에는 캐럿을 두고 뷰만 옮기는 길이 없다 — 캐럿을 그 자리 머리에 둔다(빈 선택이라 선택 옆 막대는 서지 않는다).
+          scrollTo: async (target) => { navigateLintpad(handle, target.start, target.start); return true; },
           rangePick: (state) => setLintpadRangePick(handle, state === false || state === null ? state : state.offset),
           command: async (command) => { lintpadCommand(handle, command); },
           state: () => { const state = lintpadState(handle); return { canUndo: state.canUndo, canRedo: state.canRedo }; },
@@ -168,7 +171,9 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
             for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
             // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
             updateLintpad(handle, { sourceDoc: analysis.source_text, spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
-              regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis) });
+              regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis),
+              // 「데이터로 필드 찾기」 제안(#1156)은 본문 표식 층 — 띠가 켜진 동안 모든 표시 방식에서 선다.
+              marks: controller.proposal.marks(item.id) });
           },
         };
         release = () => disposeLintpad(handle);
@@ -194,7 +199,9 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
             else renameShortcut(controller);
           },
           onChanged: (content) => controller.changed(item.id, content),
-          onSelectionChanged: (selection) => controller.selection(item.id, selection),
+          onSelectionChanged: (selection, caret) => { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection, caret); },
+          // 캐럿 줄만 옮겨 가면(편집면 스크롤) 문서에서 연 제안 팝오버가 따라가거나 숨는다(#1156).
+          onCaretRect: (caret) => controller.proposal.caretRect(item.id, caret),
           onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
           onRangePick: (point) => controller.pickClick(item.id, point),
           onError: (error) => controller.fail(error, "editor"), readOnly: false,
@@ -209,10 +216,12 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
         adapter.current = {
           flush: () => handle.flushChanges(),
           content: () => handle.content(), apply: (content, _edits, label, expectedContent) => handle.applySnapshot(content, label, expectedContent),
-          focus: (target) => handle.focus(target),
+          focus: (target) => handle.focus(target), scrollTo: (target) => handle.scrollTo(target),
           command: async (command) => { if (command === "undo") await handle.undo(); else if (command === "redo") await handle.redo(); else controller.update({ panel: "search" }); },
           // 문제 밑줄(IDE-08 P-08)은 TXT 와 같은 규칙이다 — Python 의 problems 를 그대로 넘기고 문서 모드에서도 선다.
-          decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null, problems: latest.current.problems || [] }), "editor"); },
+          // 「데이터로 필드 찾기」 제안 자리(#1156)도 같은 장식 호출에 싣는다 — 표지 상한은 보류·제안·문제 차례로 덜어 낸다.
+          decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null, problems: latest.current.problems || [],
+            proposals: controller.proposal.spots(item.id) }), "editor"); },
           zoom: (mode) => handle.setZoom(mode === "fit" ? "fit" : 100),
           rangePick: (state) => handle.rangePick(state),
         };
@@ -226,7 +235,7 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
     return () => { disposed = true; detach?.(); release?.(); adapter.current = null; };
   }, [controller, item.id]);
   // 장식은 분석이 바뀔 때만 다시 보낸다 — 같은 분석의 재전송(push)은 같은 revision 이다(UX-05).
-  useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id), controller.highlightOf(item.id)); }, [item.analysis?.revision ?? item.analysis, active]);
+  useEffect(() => { adapter.current?.decorate(item.analysis || {}, controller.mode(item.id), controller.highlightOf(item.id)); }, [item.analysis?.revision ?? item.analysis, active, controller.proposal.key(item)]);
   return h("div", { className: "authoring-document", hidden: !active, inert: !active, "aria-hidden": !active },
     h("div", { ref: host, className: "authoring-editor-host" }));
 }

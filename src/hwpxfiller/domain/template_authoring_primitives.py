@@ -50,6 +50,14 @@ REASON_NEED_IDENTIFIER = "항목이나 선택의 식별자를 입력하세요."
 REASON_NEED_NEW_IDENTIFIER = "항목이나 선택의 새 식별자를 입력하세요."
 
 
+#: 여러 이름의 필드를 한 문서 변형으로 만드는 명령(#1156 「모두 필드로」) — ``fields: [{"name", "ranges"}]``.
+CREATE_FIELDS = "create_fields"
+
+
+#: HWPX 문단에서 고른 범위 앞이나 안에 제어 요소가 있다 — 편집기와 문서의 글자 위치가 갈릴 수 있어 필드를 만들지 않는다.
+REASON_CONTROL_BEFORE = "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+
+
 class InvalidName(ValueError):
     """A name or identifier the grammar cannot carry — refused in place, not raised as an error (P-06).
 

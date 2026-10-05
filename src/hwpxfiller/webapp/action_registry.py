@@ -114,6 +114,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "impact": _schema("session_id revision"),
         "prepare_apply": _schema("session_id revision job_name"),
         "apply_job": _schema("session_id revision job_name change_token"),
+        # 「데이터로 필드 찾기」(#1156) — 판정은 Python 이 하고, 만들기는 돌려준 명령을 기존 미리보기→적용 사슬로 확정한다.
+        "propose_fields": _schema("session_id revision", "pool_key sheet row"),
+        "propose_make": _schema("session_id revision group_id", "spot_id"),
+        "propose_make_all": _schema("session_id revision"),
+        "propose_dismiss": _schema("session_id revision group_id"),
+        "propose_pick_column": _schema("session_id revision group_id column"),
+        "propose_off": _schema("session_id"),
     },
     # 「문서 작업」 전역 라이브러리(§19.6·§19.7) — 구 `home` 채널의 승계자(재작성 F2).
     # 좌 목록 관리 동사 중 **열린 세션의 정체와 결속된 것**(rename_job)은 여기 없다 —

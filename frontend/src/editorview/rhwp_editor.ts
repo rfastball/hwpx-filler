@@ -1,42 +1,28 @@
 import { createStudio } from "../../vendor/rhwp/editor/index.js";
+import { DECORATION_LIMIT, fitMarkers, markerAt, problemMarkers, proposalMarkers, studioCellPath, wireCellPath } from "./rhwp_marks.ts";
+import type { Marker, WireCellPath } from "./rhwp_marks.ts";
+export { DECORATION_LIMIT } from "./rhwp_marks.ts";
 
 type Obj = Record<string, unknown>;
-/** Table-cell coordinate on the Python wire (outermost table first); rhwp uses camelCase for the same entries. */
-type WireCellPath = Array<{ parent_paragraph: number; control: number; cell: number; paragraph: number }>;
-type StudioCellPath = Array<{ parentParagraph: number; control: number; cell: number; paragraph: number }>;
 type Selection = { entry: string; paragraph: number; start_paragraph: number; end_paragraph: number; start: number; end: number;
   cell_path?: WireCellPath };
 
-const CELL_PATH_LIMIT = 16;
 const isIndex = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
-
-/** `undefined` = body paragraph location; `null` = a cell_path is present but malformed. */
-function studioCellPath(place: Obj): StudioCellPath | null | undefined {
-  const raw = place.cell_path;
-  if (raw === undefined || raw === null) return undefined;
-  if (!Array.isArray(raw) || raw.length === 0 || raw.length > CELL_PATH_LIMIT) return null;
-  const path: StudioCellPath = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
-    const { parent_paragraph, control, cell, paragraph } = item as Obj;
-    if (![parent_paragraph, control, cell, paragraph].every(isIndex)) return null;
-    path.push({ parentParagraph: parent_paragraph as number, control: control as number, cell: cell as number, paragraph: paragraph as number });
-  }
-  return path;
-}
-
-function wireCellPath(path: StudioCellPath): WireCellPath {
-  return path.map((entry) => ({ parent_paragraph: entry.parentParagraph, control: entry.control, cell: entry.cell, paragraph: entry.paragraph }));
-}
 
 export type RhwpMountSpec = {
   host: HTMLElement; content: string; fileName: string; sectionEntries?: string[];
-  onChanged: (content: string) => void; onSelectionChanged: (selection: Selection | Obj) => void;
+  /** The caret/selection the Studio reports, with the caret line in host client coordinates when it is visible
+   *  (a proposal popover stands beside it, #1156). An empty object = no usable selection. */
+  onChanged: (content: string) => void; onSelectionChanged: (selection: Selection | Obj, caret?: HostLineRect | null) => void;
   /** The selection end (caret) line in host client coordinates, for UI placed beside the selection (IDE-08).
    *  Reported once a new non-empty selection settles (never while a pointer drag still extends it); null
    *  when the selection collapses or changes, the document is edited, or the reported line moves (scroll,
    *  zoom). The same selection is not re-reported after an edit or a move. */
   onSelectionRect?: (rect: HostLineRect | null) => void;
+  /** The caret (collapsed selection) line moved under an unchanged caret (scroll, zoom, relayout): its new line in
+   *  host client coordinates, or null when it left the frame. A UI anchored to the caret (#1156 proposal popover)
+   *  follows it or hides; the caret itself is not re-reported. */
+  onCaretRect?: (caret: HostLineRect | null) => void;
   onError: (error: unknown) => void; onShortcut?: (shortcut: RhwpShortcut) => void;
   /** Document right-click or keyboard menu key (Shift+F10, ContextMenu) inside the editor, in
    *  host client coordinates (the keyboard menu opens under the caret). Given = the host's menu
@@ -108,14 +94,6 @@ export type RhwpHandle = {
   dispose(): void;
 };
 
-/** Studio markers per setDecorations call (the SDK validator throws `invalid decoration count` above it). */
-export const DECORATION_LIMIT = 500;
-/** Studio marker label length (validator). A problem's label is its hover tooltip — Python's sentence. */
-const LABEL_LIMIT = 160;
-const PROBLEM_EMPHASIS: Record<string, 'strong' | 'subtle'> = { error: 'strong', warning: 'subtle' };
-type Marker = { kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
-  startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null; cellPath?: StudioCellPath };
-
 /** Trailing debounce for HWPX export after edits: a burst of change events costs one export. */
 export const EXPORT_DEBOUNCE_MS = 200;
 const SELECTION_POLL_MS = 300;
@@ -138,6 +116,19 @@ function encodeBase64(bytes: Uint8Array): string {
   return btoa(result);
 }
 
+/** A Studio selection range as the wire selection — null when it spans sections, names no known section, carries a
+ *  bad index, or has a table-cell path that cannot be read. Studio reports cellPath only when both edges share one
+ *  table cell; paragraphs are then cell-level. */
+function wireSelection(range: any, sectionEntries: readonly string[]): Selection | null {
+  const entry = range && range.start.section === range.end.section ? sectionEntries[range.start.section] : undefined;
+  const cellPath = range?.cellPath ? wireCellPath(range.cellPath) : undefined;
+  if (!entry || cellPath === null) return null;
+  const { start, end } = range;
+  const next: Selection = { entry, paragraph: start.paragraph, start_paragraph: start.paragraph,
+    end_paragraph: end.paragraph, start: start.charOffset, end: end.charOffset, ...(cellPath ? { cell_path: cellPath } : {}) };
+  return [start.paragraph, end.paragraph, next.start, next.end].every(isIndex) ? next : null;
+}
+
 /** The pinned SDK owns the iframe and MessageChannel; this module owns its lifetime. */
 export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const root = document.documentElement;
@@ -151,15 +142,15 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   studioUrl.searchParams.set("autosave", "off");
   const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"], width: FRAME_WIDTH,
     chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false }, ...(spec.title ? { title: spec.title } : {}) });
-  let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
+  let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "", caretLine = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
   let pendingChange: Promise<void> | null = null;
   // Debounced export: `scheduled` means a change arrived that no export has started for yet.
   let scheduled = false, exportTimer: number | undefined;
   const sectionEntries = spec.sectionEntries ?? [];
   let zoom: RhwpZoom = spec.zoom ?? 100;
-  // The dropped-problem note goes to the console once per mount (a developer signal, not user copy).
-  let problemCapNoted = false;
+  // A dropped-marker note goes to the console once per kind per mount (a developer signal, not user copy).
+  const capNoted = new Set<string>();
   try {
     await editor.setAppearance(appearance);
     if (spec.onContextMenu) await editor.setContextMenuForwarding(true);
@@ -233,24 +224,15 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const selection = async () => {
     if (disposed) return;
     const context = await editor.getSelectionContext();
-    const range = context.range;
-    const clear = () => { reportRect("", null); if (lastSelection) { lastSelection = ""; spec.onSelectionChanged({}); } };
-    if (!range || range.start.section !== range.end.section) { clear(); return; }
-    const { start, end } = range;
-    const entry = sectionEntries[start.section];
-    if (!entry) { clear(); return; }
-    const next: Selection = { entry, paragraph: start.paragraph, start_paragraph: start.paragraph,
-      end_paragraph: end.paragraph, start: start.charOffset, end: end.charOffset };
-    if (![start.paragraph, end.paragraph, next.start, next.end].every(isIndex)) { clear(); return; }
-    if (range.cellPath) {
-      // Studio reports cellPath only when both edges share one table cell; paragraphs are then cell-level.
-      if (range.cellPath.length === 0 || range.cellPath.length > CELL_PATH_LIMIT
-        || !range.cellPath.every((e) => [e.parentParagraph, e.control, e.cell, e.paragraph].every(isIndex))) { clear(); return; }
-      next.cell_path = wireCellPath(range.cellPath);
-    }
+    const next = wireSelection(context.range, sectionEntries);
+    if (!next) { reportRect("", null); if (lastSelection) { lastSelection = ""; spec.onSelectionChanged({}); } return; }
     const key = JSON.stringify(next);
-    if (key !== lastSelection) { lastSelection = key; spec.onSelectionChanged(next); }
     const collapsed = next.start_paragraph === next.end_paragraph && next.start === next.end;
+    // A caret polled mid-press has no line yet; the same caret is reported once more when its line is known (#1156).
+    const reported = `${key}${collapsed && !context.rect}`;
+    const line = collapsed ? JSON.stringify(context.rect ?? null) : "";
+    if (reported !== lastSelection) { lastSelection = reported; caretLine = line; spec.onSelectionChanged(next, visibleRect(context.rect)); }
+    else if (collapsed && line !== caretLine) { caretLine = line; spec.onCaretRect?.(visibleRect(context.rect)); }
     reportRect(collapsed || disposed ? "" : key, context.rect);
   };
   // Selection occurs inside the iframe; host-element pointer/key events cannot observe it.
@@ -414,17 +396,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       const region = highlight?.kind === "slot" || highlight?.kind === "option" || !!range;
       const lit = (kind: string, id: unknown, slotId?: unknown, index?: number) => !!highlight && highlight.kind === kind && highlight.id === id
         && (kind !== "option" || highlight.slot_id === slotId) && (kind !== "field" || highlight.index == null || highlight.index === index);
-      const marker = (kind: Marker["kind"], label: string, emphasis: 'subtle' | 'strong', place: Obj): Marker | null => {
-        const section = sectionEntries.indexOf(String(place.entry));
-        const startParagraph = place.paragraph ?? place.start_paragraph;
-        const endParagraph = place.end_paragraph ?? startParagraph;
-        const cellPath = studioCellPath(place);
-        if (section < 0 || !Number.isSafeInteger(startParagraph) || !Number.isSafeInteger(endParagraph) || cellPath === null) return null;
-        return { kind, label, emphasis, section, startParagraph: startParagraph as number,
-          startOffset: typeof place.start === "number" ? place.start : 0,
-          endParagraph: endParagraph as number, endOffset: typeof place.end === "number" ? place.end : null,
-          ...(cellPath ? { cellPath } : {}) };
-      };
+      const marker = (kind: Marker["kind"], label: string, emphasis: 'subtle' | 'strong', place: Obj) => markerAt(sectionEntries, kind, label, emphasis, place);
       const add = (kind: "field" | "slot" | "option", label: string, place: Obj, shown = true) => {
         if (!shown) return;
         const on = kind === "field" ? highlight?.kind === "field" : region && lit(kind, place.__id, place.__slot);
@@ -456,25 +428,16 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       // The preview range is one more marker only while the Studio's cap leaves room for it.
       const synthetic = range && marker(highlight?.marker === "option" ? "option" : "slot", "", 'strong', range);
       if (synthetic && markers.length < DECORATION_LIMIT) markers.push(synthetic);
-      const problems: Marker[] = [];
-      for (const item of Array.isArray(projection.problems) ? projection.problems : []) {
-        const problem = item && typeof item === "object" ? item as Obj : null;
-        const emphasis = problem ? PROBLEM_EMPHASIS[String(problem.severity)] : undefined;
-        if (!problem || !emphasis || !problem.location || typeof problem.location !== "object") continue;
-        const chars = Array.from(String(problem.message ?? ""));
-        const label = chars.length > LABEL_LIMIT ? `${chars.slice(0, LABEL_LIMIT - 1).join("")}…` : chars.join("");
-        const made = marker("problem", label, emphasis, problem.location as Obj);
-        if (made) problems.push(made);
-      }
-      const room = Math.max(0, DECORATION_LIMIT - markers.length);
-      if (problems.length > room && !problemCapNoted) {
-        problemCapNoted = true;
-        console.debug(`rhwp: ${problems.length - room} problem markers dropped (decoration cap ${DECORATION_LIMIT})`);
-      }
-      markers.push(...problems.slice(0, room));
+      // 「데이터로 필드 찾기」 제안(#1156)은 띠가 켜진 동안 모든 표시 방식에서 선다 — 넘치면 보류·제안·문제 차례로 덜어 낸다.
+      const fitted = fitMarkers(markers, { ...proposalMarkers(sectionEntries, projection.proposals), problems: problemMarkers(sectionEntries, projection.problems) },
+        (kind, count) => {
+          if (capNoted.has(kind)) return;
+          capNoted.add(kind);
+          console.debug(`rhwp: ${count} ${kind} markers dropped (decoration cap ${DECORATION_LIMIT})`);
+        });
       // Template mode labels only the field under the caret or pointer (§3.2: labels never hide text);
       // structure mode labels every boundary. A preview range takes every label down.
-      await editor.setDecorations(markers, { labels: documentMode || range ? "none" : projection.mode === "structure" ? "all" : "selected" });
+      await editor.setDecorations(fitted, { labels: documentMode || range ? "none" : projection.mode === "structure" ? "all" : "selected" });
     },
     async setReadOnly(value) {
       const next = value || compatibilityBlocked;

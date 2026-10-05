@@ -10,6 +10,7 @@ import { icon, coverageDot, kindGlyph } from "./icons.ts";
 import { treeKey, roveFocus } from "./authoring_a11y.ts";
 import type { TreeRow } from "./authoring_a11y.ts";
 import { shellShortcut } from "./authoring_editor.ts";
+import { EmptyFields, ProposalOutline } from "./authoring_proposal_view.ts";
 
 type TreeNode = { key: string; label: string; content: ReactNode[]; entry: Obj; kind?: string; highlight?: Obj; open?: boolean; children?: () => TreeNode[] };
 type TreeHandlers = { onSelect(entry: Obj, element: HTMLElement): void; onMenu(entry: Obj, element: HTMLElement, anchor: { x: number; y: number; top?: number }): void };
@@ -247,12 +248,14 @@ export function Outline({ controller, item, view, counts, onSelect, onMenu, onCo
       h("label", { className: "authoring-filter" }, icon("search"),
         h("input", { className: "field", type: "search", "aria-label": "구조 필터", value: query, onChange: (event: any) => setQuery(event.target.value),
           onKeyDown: (event: any) => { if (event.key === "Escape" && query && !event.nativeEvent?.isComposing) { event.preventDefault(); event.stopPropagation(); setQuery(""); } } }))),
+    // 「데이터로 필드 찾기」(#1156)의 제안·보류 묶음 — 띠가 켜진 동안 두 보기 위에 선다(꺼지면 아무것도 그리지 않는다).
+    h(ProposalOutline, { controller, item, view }),
     h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-structure-panel", "aria-labelledby": "authoring-outline-structure", hidden: tab !== "structure" },
       tree("structure", "authoring-outline-structure", structureNodes, current.structure),
       // 빈 상태 안내(NG-01)는 첫 행동인 필드 만들기 하나다: 필드도 항목도 없을 때만 선다. 필드가 있고 항목이 없으면 문장을 두지 않는다
       // (선택 기능이 없다는 사실은 알릴 일이 아니다 — 상시 힌트 기본 0). 필드·항목 유무는 Python 투영(analysis)을 읽기만 한다.
-      !filtering && !(analysis.slots || []).length && !fields.length && h("p", { className: "authoring-outline-empty" }, EMPTY_FIELDS)),
+      !filtering && !(analysis.slots || []).length && !fields.length && h(EmptyFields, { controller, item, text: EMPTY_FIELDS })),
     h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-fields-panel", "aria-labelledby": "authoring-outline-fields", hidden: tab !== "fields" },
       tree("fields", "authoring-outline-fields", fieldNodes, current.fields),
-      !filtering && !fields.length && h("p", { className: "authoring-outline-empty" }, EMPTY_FIELDS)));
+      !filtering && !fields.length && h(EmptyFields, { controller, item, text: EMPTY_FIELDS })));
 }
