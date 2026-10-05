@@ -283,10 +283,22 @@ class Authoring:
 
 
 def _open_practice_txt(walk: Walk) -> None:
-    """The lesson starts with the practice TXT open as its library template: '저장' writes it in place."""
+    """The user opens the practice TXT from the template list (#1146): new job → its row's ⋮ → '내용 편집'.
+
+    Nothing is open before that — the lesson never opens it silently. It opens as the library template, so '저장'
+    writes it in place.
+    """
     authoring = walk.app.controllers["authoring"]
+    txt = walk.asset("낙찰자 선정 및 계약체결 안내.txt")
+    assert not any(session.source_path == txt for session in authoring.sessions.values())
+    assert walk.beat()["id"] == "open_list" and walk.beat()["screen"] == "library"
+    walk.step("open_list", lambda: walk.send("editor", "new_session"))
+    assert walk.beat()["arg"] == "낙찰자 선정 및 계약체결 안내.txt"
+    walk.press("open_menu")
+    assert walk.beat()["arg"] == "edit"
+    walk.step("open_edit", lambda: walk.app.open_authoring_document(txt, True))
     session = authoring.sessions[authoring.active_id]
-    assert session.source_path == session.save_path == walk.asset("낙찰자 선정 및 계약체결 안내.txt")
+    assert session.source_path == session.save_path == txt
 
 
 def _named(name: str) -> dict:
@@ -316,13 +328,14 @@ def test_lesson_seven_makes_a_field_and_saves_after_the_trial(app):
 
 def test_lesson_eight_builds_an_item_with_two_choices(app):
     walk = Walk(app, "option_apply")
+    assert walk.beat()["entry_screen"] == "library"
+    walk.step("about", lambda: walk.send("tutorial", "next"))
     _open_practice_txt(walk)
     doc = Authoring(walk)
     text = doc.text()
     begin = text.index("\n3. ") + 1
     finish = text.index("\n", begin)
     assert text[finish:finish + 4] == "\n\n\n붙", "연습 서식에 항목 안 빈 줄이 깔리지 않았습니다"
-    walk.step("about", lambda: walk.send("tutorial", "next"))
     # The painted range runs from paragraph 3 to the start of the second empty line: gutter lines 13 to 15, as
     # the beat says (the item takes the paragraph and the empty line 14).
     assert walk.beat()["range"] == {"session_id": doc.sid, "start": begin, "end": finish + 2}
@@ -338,6 +351,9 @@ def test_lesson_eight_builds_an_item_with_two_choices(app):
     begin = text.index("\n3. ") + 1
     finish = text.index("\n", begin)
     assert walk.beat()["range"] == {"session_id": doc.sid, "start": begin, "end": finish}
+    # Whole lines (the break too) would make the choice apply at the first of the next beat's two Enters (#1146).
+    doc.select(begin, finish + 1)()
+    assert walk.beat()["id"] == "include_range"
     walk.step("include_range", doc.select(begin, finish))
     walk.press("include_create")
     walk.step("include_name", doc.apply(begin, finish, {"type": "create_option", **_named("안내포함")}, enter_twice=True))
@@ -367,9 +383,9 @@ def test_lesson_eight_builds_an_item_with_two_choices(app):
 
 def test_lesson_nine_applies_the_seeded_change_and_reviews_the_choice(app):
     walk = Walk(app, "change_apply")
-    doc = Authoring(walk)
     assert walk.ctx["job_name"] == "계약 안내 작업"
     _open_practice_txt(walk)
+    doc = Authoring(walk)
     assert app.controllers["job"].work.name == "계약 안내 작업"
     walk.step("impact", lambda: walk.send("authoring", "impact", doc.fence()))
     token = {}

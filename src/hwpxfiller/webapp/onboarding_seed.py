@@ -46,8 +46,6 @@ _JOBS = {
     "change_apply": ("계약 안내 작업", TXT_NAME, "original", "계약"),
 }
 
-#: Lessons that start with the practice TXT open in template authoring.
-_AUTHORING_LESSONS = ("field_trial", "option_apply", "change_apply")
 #: Lessons that choose data from the registered list with one press (#1127 decision 3).
 _POOL_LESSONS = {"first_hwpx", "contract_txt"}
 _POOL_SHEETS = ("공고", "계약")
@@ -92,9 +90,8 @@ def seed_after_switch(tutorial: Any, lesson_id: str) -> None:
         tutorial._job().dispatch("prefer_work", {"name": ctx["job_name"]})
         _rewrite_txt(ctx, lambda text: _PARAGRAPH.sub(
             lambda match: _SLOT_BLOCK.format(paragraph=match.group(0)), text, count=1))
-    if lesson_id in _AUTHORING_LESSONS:
-        # Opened as the library template it is: '저장' writes this practice file in place.
-        tutorial.controllers["authoring"].open_path(tutorial._asset(TXT_NAME), as_template=True)
+    # The authoring lessons no longer open the practice TXT here: their first beats have the user open it from the
+    # template list (#1146), the way '저장' then writes the library template in place.
     tutorial.switch.refresh()
 
 

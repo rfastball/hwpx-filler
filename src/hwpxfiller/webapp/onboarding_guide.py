@@ -10,10 +10,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..viewmodel.tutorial_lessons import UI_PRESS_EVENTS
-from .onboarding_match_authoring import guide_range
+from ..viewmodel.tutorial_lessons import BY_ID, UI_PRESS_EVENTS
+from .onboarding_match_authoring import guide_range, practice_template_open
 
-__all__ = ["advance_current", "guide_beat", "picker_hint", "observe_ui_press", "rewind_unmet_inputs"]
+__all__ = ["advance_current", "guide_beat", "picker_hint", "observe_ui_press", "rewind_unmet_inputs",
+           "rewind_unopened_template"]
+
+#: The first beat of opening the practice TXT from the template list (``tutorial_lessons._open_template``).
+_OPEN_TEMPLATE = "open_list"
 
 #: Editor inputs later editor beats stand on: (template file, data sheet). The beats that choose
 #: them are ``template`` and ``data`` in both lessons.
@@ -69,6 +73,20 @@ def advance_current(tutorial: Any, screen: str, action: str, payload: dict, resu
         return False
     context = tutorial._matches(event, screen, action, payload, result)
     return context is not None and tutorial.progress.observed(event, context=context)
+
+
+def rewind_unopened_template(tutorial: Any) -> bool:
+    """Back to opening the practice TXT once a template-authoring beat stands without it (#1146).
+
+    A lesson resumed after a restart, or a closed tab, leaves the authoring beats with no document to act on;
+    the user then opens it again the way the lesson taught instead of facing a beat that cannot pass.
+    """
+    progress = tutorial.progress
+    beat = progress.beat()
+    if beat is None or beat.screen != "authoring" or practice_template_open(tutorial):
+        return False
+    lesson = BY_ID[progress.selected]
+    return any(item.id == _OPEN_TEMPLATE for item in lesson.beats) and progress.rewind(_OPEN_TEMPLATE)
 
 
 def rewind_unmet_inputs(tutorial: Any) -> bool:
