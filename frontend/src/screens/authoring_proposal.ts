@@ -5,9 +5,15 @@
  * (`propose_fields`·`propose_make`·`propose_make_all`·`propose_dismiss`·`propose_off`)을 보내고 만든 결과를 편집기의
  * 기존 실행 취소 한 단위(편집기 `apply`)로 얹는 동작만 든다. 등급을 다시 매기거나 이유를 조립하지 않는다. */
 import type { LintpadMark } from "../editorview/txt_card_marks.ts";
-import type { AuthoringEditor } from "./authoring_controller.ts";
 
 type Obj = Record<string, any>;
+/** 이 기능이 쓰는 편집기 표면 — 저작 컨트롤러의 편집기 형 일부(컨트롤러를 가져오면 모듈 고리가 생긴다). */
+type ProposalEditor = {
+  content(): Promise<string>;
+  focus(target: Obj): Promise<void>;
+  command(command: "undo"): Promise<void>;
+  scrollTo?(target: Obj): Promise<boolean>;
+};
 
 /** 이 기능의 고정 문구(단추·표지) — 이름·수가 든 문장(출처 줄·같은 이름 필드 주석·「이 자리만」 단추 이름·만든 뒤 알림)은
  *  Python 이 묶음·결과에 실어 준다(#1156 문구 목록). */
@@ -225,7 +231,7 @@ export type ProposalHost = {
   dispatch(action: string, payload: Obj): Promise<Obj>;
   fenced(id: string, payload?: Obj): Obj;
   flush(id: string): Promise<void>;
-  editor(id: string): AuthoringEditor | undefined;
+  editor(id: string): ProposalEditor | undefined;
   /** 이 화면의 미리보기 적용 사슬(`applyPreview`) — 확정 직전 revision 재검사·편집기 한 단위·내용 갱신·실행 취소 표지. */
   applyPreview(prepared: Obj): Promise<unknown>;
   viewId(): string;
