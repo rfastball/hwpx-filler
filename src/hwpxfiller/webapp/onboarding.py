@@ -11,7 +11,7 @@ from pathlib import Path
 from copy import deepcopy
 from contextlib import nullcontext
 import threading
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from ..external import settings
@@ -248,9 +248,10 @@ class OnboardingController:
         elif action in {"pause", "skip"}:
             self.progress.pause()
         elif action == "set_entry_visible":
-            # 타입 검사·문안은 settings.save_tutorial_entry_visible 하나가 진다(confirm-or-alarm) —
-            # 여기서 다시 검사하면 사용자 새 문장이 하나 더 늘어난다(census #1147 교훈).
-            visible = payload.get("visible")
+            # 브리지는 타입을 보증하지 않는다(Any) — `cast`는 pyright 선언용이고, 실제 거절은
+            # settings.save_tutorial_entry_visible 하나가 진다(confirm-or-alarm). 여기서 다시
+            # 검사하면 사용자 새 문장이 하나 더 늘어난다(census #1147 교훈, 중복 검사 없음).
+            visible = cast(bool, payload.get("visible"))
             settings.save_tutorial_entry_visible(visible)
             self.progress.entry_visible = visible
         else:
