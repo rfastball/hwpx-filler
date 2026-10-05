@@ -46,7 +46,7 @@ UI_PRESS_EVENTS = frozenset({
 })
 
 #: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
-CURRICULUM = 3
+CURRICULUM = 4
 
 _NEW_JOB = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
 _TO_BINDING = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
@@ -115,6 +115,13 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("confirm_phone", "담당자 전화번호 연결 확인",
              "'담당자 전화번호'에는 '담당자전화' 열이 제안됐습니다. '제안'을 눌러 확인하세요.",
              "editor", "map-confirm", "notice_mapping_confirmed", arg="담당자 전화번호"),
+        Beat("date_format", "게시일시 표시형",
+             "'게시일시'는 공고서 머리에 적히는 날짜입니다. '게시일시'의 표시형에서 '날짜' 아래 "
+             "'표준(연·월)'을 고르세요.",
+             "editor", "map-format", "notice_date_format_set", arg="게시일시"),
+        Beat("date_confirm", "게시일시 연결 확인",
+             "표시형을 바꾼 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요.",
+             "editor", "map-confirm", "notice_date_confirmed", arg="게시일시"),
         Beat("to_filename", "이름·저장 단계로",
              "'다음 ▶'은 작업 이름과 문서 파일 이름을 정하는 단계로 넘어갑니다. 누르세요.",
              "editor", "editor-next", "editor_section_filename"),
