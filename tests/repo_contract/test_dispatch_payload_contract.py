@@ -186,7 +186,9 @@ def test_literal_frontend_payloads_match_the_registered_schema() -> None:
     # 남기면 추출기가 반쯤 죽어도 초록이 된다.
     # (U2 §2.3 정산: 데이터 선택 수동 「새로고침」 사망으로 `pool/refresh` 리터럴이 둘에서
     #  하나로 줄어 실측 69. 여는 경로의 호출은 그대로 산다.)
-    assert checked >= 69, f"리터럴 페이로드를 너무 적게 읽었습니다({checked}) — 추출기 stale?"
+    # (#1148 정산: 작업대가 맞추기 표 동사 7종을 걷어 그 리터럴 호출들이 workbench.ts 에서
+    #  사라진 뒤 실측 66 — 이 화면은 더 이상 연결을 편집하지 않는다.)
+    assert checked >= 66, f"리터럴 페이로드를 너무 적게 읽었습니다({checked}) — 추출기 stale?"
     assert not offenders, (
         "프런트 페이로드가 등록 스키마와 어긋납니다 — 실 브리지가 거절합니다:\n"
         + "\n".join(offenders)

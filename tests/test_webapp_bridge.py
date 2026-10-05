@@ -808,7 +808,7 @@ def test_new_job_from_data_starts_the_wizard_on_the_mounted_data(tmp_path, monke
     job.load_data_path(str(csv))
 
     # ② 미배선 사유는 링1 이 fail-closed 로 거절하고 그 거절이 그대로 올라온다.
-    bad = frontend.new_job_from_data({"entry_reason": "workbench_result"})
+    bad = frontend.new_job_from_data({"entry_reason": "schema_new_field"})
     assert isinstance(bad, str) and bad.startswith("ERROR:")
     assert editor.edit.data_path == ""            # 거절이면 세션은 그대로
 
@@ -918,6 +918,35 @@ def test_repair_entry_stands_the_editor_on_the_mounted_data(tmp_path, monkeypatc
     # 새로 자동확정한 연결은 아직 저장되지 않은 매핑 변경이므로 이탈 가드가 지킨다.
     assert editor.has_unsaved_work() is True and snap["dirty"] is True
     assert snap["context"]["entry_reason"] == "document_browser_repair"
+    # 「문서 만들기」의 세션은 이 왕복으로 흔들리지 않는다(데이터는 그 화면 소유).
+    assert job.data.path == str(csv)
+
+
+def test_workbench_result_entry_stands_the_editor_on_the_mounted_data(tmp_path, monkeypatch):
+    """#1148 — 작업대의 「연결 편집」도 「문서 만들기」가 마운트한 데이터를 들고 편집기에 선다.
+
+    판정 E 가 뒤집혀 작업대는 더 이상 필드 연결 표를 들지 않는다 — 연결을 고치려면
+    편집기로 나가야 하고, 그 왕복은 수리 진입(#878)과 **같은 인계 근거**를 쓴다: 인계가
+    없으면 편집기의 소스 어휘가 저장 매핑뿐이라 작업대가 보여 주던 열을 다시 못 본다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    editor = frontend.controllers["editor"]
+    _repairable_job(frontend, tmp_path)
+    csv = tmp_path / "발주.csv"
+    csv.write_text("부서,사업명\n총무과,책상\n회계과,복사기\n", encoding="utf-8")
+    job.load_data_path(str(csv))
+
+    out = frontend.open_job_in_editor("공고문", {
+        "entry_reason": "workbench_result",
+        "return_context": {"surface": "data"},
+    })
+    assert out == "공고문" and not (isinstance(out, str) and out.startswith("ERROR:"))
+
+    snap = editor.snapshot()
+    assert snap["data_path"] == str(csv) and snap["data_name"] == "발주"
+    assert snap["record_count"] == 2
+    assert snap["context"]["entry_reason"] == "workbench_result"
     # 「문서 만들기」의 세션은 이 왕복으로 흔들리지 않는다(데이터는 그 화면 소유).
     assert job.data.path == str(csv)
 

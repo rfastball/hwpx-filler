@@ -316,9 +316,10 @@ export function createAuthoringController(deps: Deps) {
     await applyRestore(id);
   }
 
-  async function open(path?: string) {
+  // 돌아갈 곳은 연 쪽이 정한다 — 편집기 목록이 기본이고, 작업대의 「템플릿 편집」은 「문서 만들기」로 돌아온다(#1148).
+  async function open(path?: string, returnTo = "editor") {
     await deps.runtime.loadInitial("authoring");
-    returnScreen = "editor";
+    returnScreen = returnTo;
     if (path) {
       const result = await invoke("open_authoring_document", path, true);
       if (!result) return;

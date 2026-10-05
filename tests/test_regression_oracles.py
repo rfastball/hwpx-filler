@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from hwpxfiller.host.native import debug
 import hwpxfiller.domain.inline as domain_inline
 from hwpxfiller.domain.inline import InlineDataSource
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
-from hwpxfiller.viewmodel.mapping_state import MappingModel, RowState
 from hwpxfiller.viewmodel.record_range import RecordRange, RecordRangeDraft
 from hwpxfiller.viewmodel.selection_state import SelectionModel
 from hwpxfiller.viewmodel.txt_card import card_text, gate_empty_fields
@@ -18,7 +15,6 @@ from hwpxfiller.webapp import screen_editor
 from hwpxfiller.webapp.app import WebFrontend
 from hwpxfiller.webapp.data_zone import JobDataSession
 from hwpxfiller.webapp.job_list import drift_note
-from hwpxfiller.webapp.mapping_verbs import MappingVerbsMixin
 
 
 class _RecordingController:
@@ -53,9 +49,8 @@ def test_gui_actions_cross_public_dispatch_and_validate_payload(tmp_path) -> Non
         ("job", "cancel_generation", {}),
         ("job", "filter_col_text", {"column": "기관", "text": "교육청"}),
         ("job", "filter_clear_col", {"column": "기관"}),
-        ("workbench", "revert_map", {"name": "수신"}),
-        ("workbench", "set_map_fmt", {"name": "일자", "code": "date"}),
-        ("workbench", "set_map_type", {"name": "금액", "type": "number"}),
+        ("workbench", "set_fullwidth", {"value": True}),
+        ("workbench", "copy_precheck", {}),
         ("workbench", "set_target_font", {"font": "함초롬바탕"}),
     )
     for screen, action, payload in cases:
@@ -148,27 +143,3 @@ def test_job_list_drift_note_only_reports_a_real_count_drift() -> None:
     assert drift_note(2, 3) == " · 확인 시점 2건과 다릅니다"
 
 
-class _MappingHarness(MappingVerbsMixin):
-    def __init__(self) -> None:
-        self.mapping = MappingModel(rows=[RowState("amount")])
-        self.edits = 0
-
-    def _map_source_fields(self) -> list[str]:
-        return ["amount_col"]
-
-    def _map_kind_of(self, source: str) -> str:
-        return "amount" if source == "amount_col" else ""
-
-    def _after_mapping_edit(self) -> None:
-        self.edits += 1
-
-
-def test_mapping_verbs_validate_source_and_preserve_edit_hook() -> None:
-    harness = _MappingHarness()
-    with pytest.raises(ValueError, match="데이터에 없는 열"):
-        harness._do_set_source({"name": "amount", "col": "missing"})
-
-    assert harness._do_set_source({"name": "amount", "col": "amount_col"}) is None
-    assert harness.mapping.rows[0].source == "amount_col"
-    assert harness.mapping.rows[0].type == "amount"
-    assert harness.edits == 1

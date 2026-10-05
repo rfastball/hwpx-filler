@@ -9,8 +9,8 @@ GUI·CLI 생성이 모두 managed 로 모였다. 이 파일은 그 결손류가 
 
 - 편집기 표시형 select(``set_display``) → 데이터 교체 이월 → 저장 → 다시 열기 → HWPX 생성
   (본문 글자와 파일 이름 토큰), 그리고 편집기 미리보기 == 산출물.
-- TXT 검토·복사 작업대의 유형·표시형 동사(``set_map_type`` → ``set_map_fmt``) → 기본 규칙 저장
-  → 봉인된 물질화로 복사한 글자 == 카드가 보인 글자.
+- TXT 검토·복사 작업대 — 저장된 매핑의 유형·표시형(연결 편집이 저장하는 그 값, #1148) →
+  봉인된 물질화로 복사한 글자 == 카드가 보인 글자.
 - CLI 프로파일(``type``·``fmt``) → managed 생성.
 
 기대값은 표시형 해석기(``format_engine.render``) 하나에서 얻는다 — 경로마다 기대를 따로 적으면
@@ -45,7 +45,6 @@ from hwpxfiller.external.seal_execution_plan_service import SealExecutionPlanSer
 from hwpxfiller.external.template_change import TemplateChangeCoordinator
 from hwpxfiller.host.locations import home_dir
 from hwpxfiller.viewmodel.mapping_state import RowState, display_options
-from hwpxfiller.webapp.action_registry import validate_dispatch
 from hwpxfiller.webapp.workspace_graph import _content_selection_reader, _txt_materialization_port
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
@@ -260,19 +259,21 @@ TXT_BODY = "\n".join(
 )
 
 
-def _send(controller, action: str, payload: dict):
-    return controller.dispatch(action, validate_dispatch(controller.name, action, payload))
+def _txt_work(tmp_path: Path, *, kind: str, code: str) -> "tuple[JobRegistry, SlotConfigurationProduct, SealExecutionPlanService]":
+    """실 store 세벌을 한 authority root 로 배선한다(앱 조립과 같은 포트).
 
-
-def _txt_work(tmp_path: Path):
-    """실 store 세벌을 한 authority root 로 배선한다(앱 조립과 같은 포트)."""
+    유형·표시형은 **저장된 매핑에 미리 싣는다**(#1148) — 작업대가 걷은 `set_map_type`·
+    `set_map_fmt`·「기본 규칙으로 저장」은 더 이상 없다. 연결을 고치는 축은 편집기로 나갔고
+    (「연결 편집」), 이 계약이 재는 것은 "저장된 규칙이 카드·복사본까지 간다"지 "작업대에서
+    규칙을 고칠 수 있다"가 아니다.
+    """
     root = tmp_path / "authority"
     template = tmp_path / "안내문.txt"
     template.write_text(TXT_BODY, encoding="utf-8", newline="\n")
     registry = JobRegistry(tmp_path / "jobs")
     registry.save(Job(name="안내문", template_path=str(template), mapping=MappingProfile(mappings=[
         FieldMapping(template_field="수신", source="수신처"),
-        FieldMapping(template_field="건명", source="값"),
+        FieldMapping(template_field="건명", source="값", type=kind, fmt=code),
     ]), binding_authority=JOB_MAPPING_AUTHORITY))
     slots = SlotConfigurationProduct(registry, root=root, clock=lambda: NOW)
     job = JobController(
@@ -297,45 +298,28 @@ def _txt_work(tmp_path: Path):
 
 @pytest.mark.parametrize(("kind", "code"), PRESETS, ids=_PRESET_IDS)
 def test_workbench_display_verbs_reach_the_copied_text(tmp_path, kind, code):
+    """저장된 유형·표시형이 작업대 카드와 복사본까지 같은 글자로 간다(#1148 재표현).
+
+    작업대는 연결을 편집하지 않으므로(판정 E 뒤집기) 유형·표시형은 「연결 편집」(편집기)이
+    저장하는 규칙이다 — 여기서는 그 결과(저장된 ``Job.mapping``)를 바로 연다.
+    """
     raw, expected = _raw(kind, code), _expected(kind, code)
-    registry, slots, seal = _txt_work(tmp_path)
+    registry, slots, seal = _txt_work(tmp_path, kind=kind, code=code)
 
-    def open_workbench() -> WorkbenchController:
-        controller = WorkbenchController(
-            registry, lambda s, snap: None, clock=lambda: NOW,
-            target_font=TargetFontSetting(),
-            content_selection=_content_selection_reader(slots, registry),
-            txt_materialization=_txt_materialization_port(registry, seal),
-        )
-        controller.open(registry.load("안내문"), [(0, {"수신처": "○○청", "값": raw})])
-        return controller
+    controller = WorkbenchController(
+        registry, lambda s, snap: None, clock=lambda: NOW,
+        target_font=TargetFontSetting(),
+        content_selection=_content_selection_reader(slots, registry),
+        txt_materialization=_txt_materialization_port(registry, seal),
+    )
+    controller.open(registry.load("안내문"), [(0, {"수신처": "○○청", "값": raw})])
+    card = controller.snapshot()["card"]
+    segment = next(s for s in card["segments"] if s["name"] == "건명")
+    assert segment["text"] == expected
 
-    controller = open_workbench()
-    # 표면이 보내는 두 발 그대로 — 유형이 먼저, 표시형이 다음(유형이 바뀌면 표시형은 기본).
-    _send(controller, "set_map_type", {"name": "건명", "type": kind})
-    _send(controller, "set_map_fmt", {"name": "건명", "code": code})
-    _send(controller, "set_confirmed", {"name": "건명", "value": True})
-    _send(controller, "set_confirmed", {"name": "수신", "value": True})
-    row = next(r for r in controller.snapshot()["rows"] if r["name"] == "건명")
-    assert (row["fmt_kind"], row["fmt_code"], row["value"]) == (kind, code, expected)
-
-    first = _send(controller, "save_rules", {})
-    if first.get("needs_confirm"):
-        first = _send(controller, "save_rules", {
-            "confirm": True, "confirmed_text": first["confirm_text"],
-        })
-    if (kind, code) == ("text", ""):
-        # 작업의 원래 규칙 그대로다 — 저장할 변경이 없다는 거절이 정답이다.
-        assert first == {"ok": False, "error": "저장할 변경이 없습니다."}
-    else:
-        assert first.get("ok") is True, first
-    saved = {m.template_field: (m.type, m.fmt) for m in registry.load("안내문").mapping.mappings}
-    assert saved["건명"] == (kind, code)
-
-    # 저장한 규칙으로 다시 연 작업대가 봉인된 물질화 bytes 를 복사한다 — 카드와 같은 글자.
-    reopened = open_workbench()
+    # 봉인된 물질화 bytes 를 복사한다 — 카드가 보인 글자와 같다(결정 17).
     written: "list[str]" = []
-    result = reopened.copy_to(reopened.copy_token(), written.append)
+    result = controller.copy_to(controller.copy_token(), written.append)
     assert result["copied"] is True, result
     assert written == [f"수신: ○○청\n값: {expected}\n끝.\n"]
 

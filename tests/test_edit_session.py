@@ -215,10 +215,30 @@ def test_new_work_entry_is_wired_and_the_rest_stay_fail_closed():
     assert ctx.entry_reason == "document_browser_new_work"
     assert ctx.to_dict()["evidence"] == {"데이터": "발주목록.xlsx"}
     # 남은 배제는 여전히 fail-closed — 해제는 한 줄씩, 그 표면을 짓는 슬라이스가 한다.
-    for still in ("schema_new_field", "schema_missing_field", "workbench_result"):
+    for still in ("schema_new_field", "schema_missing_field"):
         assert still in DEFERRED_ENTRY_REASONS
         with pytest.raises(ValueError, match="배선되지 않았습니다"):
             make_context("작업", entry_reason=still)
     # 미지 사유는 조용한 `voluntary` 강등이 아니라 loud 로 남는다(폴백 금지).
     with pytest.raises(ValueError, match="알 수 없는 편집 진입 사유"):
         make_context("작업", entry_reason="document_browser_whatever")
+
+
+def test_workbench_result_entry_is_live_and_data_anchored():
+    """판정 E 뒤집기(#1148) — 작업대의 「연결 편집」은 이제 열리는 왕복이다.
+
+    작업대 세션은 「문서 만들기」가 마운트한 데이터를 들고 선다(§13-13 고정 사본). 「연결
+    편집」이 편집기로 나가면 그 데이터를 다시 골라야 하는 일이 없어야 하므로
+    `workbench_result` 는 `document_browser_repair`·`document_browser_new_work` 와 같은
+    데이터-인계 사유다.
+    """
+    from hwpxfiller.viewmodel.edit_session import DATA_ANCHORED_ENTRY_REASONS
+
+    assert "workbench_result" not in DEFERRED_ENTRY_REASONS
+    assert "workbench_result" in LIVE_ENTRY_REASONS
+    assert "workbench_result" in DATA_ANCHORED_ENTRY_REASONS
+    ctx = make_context(
+        "작업", entry_reason="workbench_result", return_context={"surface": "data"},
+    )
+    assert ctx.entry_reason == "workbench_result"
+    assert ctx.return_context == {"surface": "data"}

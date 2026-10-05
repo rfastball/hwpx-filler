@@ -1,30 +1,27 @@
-/* Workbench behavior: settle-before-leave, guarded navigation, and late-bound ports. */
+/* Workbench behavior: settle-before-leave, guarded navigation, exit doors, and late-bound ports. */
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createWorkbenchController } from "../../frontend/src/screens/workbench.ts";
 import { Intent } from "../../frontend/js/intent.js";
-import { mapField, workbenchServerValues } from "../../frontend/src/screens/workbench_state.ts";
+import { workbenchServerValues } from "../../frontend/src/screens/workbench_state.ts";
 
 const WB_CHAIN = "workbench:session";   // 화면 내부 상수와 같은 값 — 정산 계약의 키
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-/** 공개 표면 — 셸이 부르는 둘 + React 화면·행동이 쓰는 나머지. */
+/** 공개 표면 — 셸이 부르는 둘 + React 화면·행동이 쓰는 나머지. 필드 연결 동사·「기본 규칙으로
+    저장」·결과 → 규칙 겨눔은 표와 함께 걷혔다(#1148) — 다시 생기면 여기서 붉어진다. */
 const SURFACE = [
-  "init", "leaveTo", "aimAt", "model", "draftModel",
-  "type", "focus", "compose", "commit", "commitValue", "bindColumn", "saveRules", "copyCard",
-  "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
-  "setConfirmed", "setMapType", "setMapFmt", "revertMap",
-  "sliceViewModel", "toggleSliceEditor", "isSliceEditorOpen", "slicePort",
+  "init", "leaveTo", "editBinding", "editTemplate", "model", "draftModel",
+  "copyCard", "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
   "guarded", "doc", "notify",
 ];
 
-/* dirty 경로용 최소 open 스냅샷 — 이탈 3택이 읽는 seam 을 실측하기 위한 값. */
-const OPEN_DIRTY = {
+/* 열린 세션의 최소 스냅샷 — 이탈·나가는 문이 읽는 seam 을 실측하기 위한 값. */
+const OPEN = {
   open: true, job_name: "작업A", mode_label: "TXT", revision: {},
-  dirty: { count: 2 }, target_font: "gulimche", can_save: true, save_block: "",
-  view: "card", notice: null, rows: [], source_fields: [], type_options: [], fmt_options: {},
-  total: 1, copied_count: 0,
+  target_font: "gulimche", template_path: "C:/tpl/작업A.txt",
+  view: "card", notice: null, total: 1, copied_count: 0,
   card: {
     segments: [], review_state: "todo", lint: {}, position: 0, index_map: [],
     queue_degenerate: true, can_prev: false, can_next: false, advance_after: false,
@@ -40,6 +37,7 @@ function harness(cfg) {
   const listeners = new Set();
   const counts = { subscribe: 0 };
   let snapshot = opts.snapshot ?? null;
+  let screen = "workbench";
 
   const model = {
     getSnapshot: () => snapshot,
@@ -50,9 +48,14 @@ function harness(cfg) {
     },
   };
   const client = {
-    async dispatch(screen, action, payload) {
-      log.push(["dispatch", screen, action, payload]);
-      const value = opts.onDispatch ? await opts.onDispatch(screen, action, payload) : {};
+    async dispatch(screenName, action, payload) {
+      log.push(["dispatch", screenName, action, payload]);
+      const value = opts.onDispatch ? await opts.onDispatch(screenName, action, payload) : {};
+      /* 실 백엔드의 close 는 세션을 비우는 푸시를 낸다 — 닫기 뒤 스냅샷은 빈 골격이다. */
+      if (action === "close") {
+        snapshot = { open: false };
+        for (const listener of [...listeners]) listener();
+      }
       return { ok: true, value };
     },
     async invoke(method, ...args) {
@@ -63,18 +66,37 @@ function harness(cfg) {
   };
   const modal = {
     async confirm(spec) { log.push(["modal.confirm", spec]); return opts.confirm?.(spec) ?? false; },
-    async choose(spec) { log.push(["modal.choose", spec]); return opts.choose?.(spec) ?? null; },
   };
-  const navigation = { go: (...args) => navigations.push(args) };
+  const navigation = {
+    go: (...args) => { navigations.push(args); screen = args[0]; },
+    currentScreen: () => screen,
+  };
+  /* 나가는 문 둘 — 실 포트처럼 성공하면 자기 화면으로 착지한다(`land`·`go("authoring")`). */
+  const ports = {
+    editorEntry: { current: () => ({
+      openGuarded: async (name, context) => {
+        log.push(["editorEntry.openGuarded", name, context]);
+        if (opts.editorFails) return false;
+        screen = "editor";
+        return true;
+      },
+    }) },
+    authoring: { current: () => ({
+      open: async (path, returnTo) => {
+        log.push(["authoring.open", path, returnTo]);
+        if (opts.authoringThrows) throw new Error("열 수 없는 템플릿입니다");
+        screen = "authoring";
+      },
+    }) },
+  };
   const controller = createWorkbenchController({
     doc: { getElementById: () => null },
     runtime: {
       model: () => model, loadInitial: async () => snapshot,
       refresh: async () => snapshot,
-      /* no-push 동사의 반환 스냅샷 착지 — 실 runtime 은 store 에 넣는다. */
       land: (_screen, value) => { snapshot = value; for (const listener of [...listeners]) listener(); },
     },
-    client, modal, chain: Intent, navigation,
+    client, modal, chain: Intent, navigation, ports,
     notify: (message) => notices.push(String(message)),
   });
   return {
@@ -90,7 +112,7 @@ test("공개 표면 — controller 키가 정확하고 leaveTo 는 셸 이탈 AP
   assert.equal(typeof createWorkbenchController, "function");
   const { controller } = harness();
   assert.deepEqual(Object.keys(controller), SURFACE);
-  for (const key of ["init", "leaveTo", "aimAt", "saveRules", "copyCard"]) {
+  for (const key of ["init", "leaveTo", "editBinding", "editTemplate", "copyCard"]) {
     assert.equal(typeof controller[key], "function", key);
   }
   /* 셸 facade 는 이 둘만 뽑아 간다(`bootstrap.js` 의 `WorkbenchScreen`). 표면이 여기서
@@ -102,7 +124,7 @@ test("공개 표면 — controller 키가 정확하고 leaveTo 는 셸 이탈 AP
 /* ================= 2. init 멱등(구성 시 한 번 구독) ================= */
 
 test("init 재호출 — 구독 추가 등록 0, 화면 model 은 runtime 이 준 그 객체", async () => {
-  const h = harness({ snapshot: OPEN_DIRTY });
+  const h = harness({ snapshot: OPEN });
   assert.equal(h.counts.subscribe, 1, "구독은 **구성 시** 한 번(init 이 아니다)");
   h.controller.init();
   h.controller.init();
@@ -111,7 +133,7 @@ test("init 재호출 — 구독 추가 등록 0, 화면 model 은 runtime 이 �
   assert.deepEqual(h.actions(), [], "이 화면은 initial 당김이 없다 — init 은 발신 0");
 
   /* push 는 같은 model 을 지난다 — React 화면과 controller 가 두 세계로 갈리지 않는다. */
-  const next = { ...OPEN_DIRTY, copied_count: 3 };
+  const next = { ...OPEN, copied_count: 3 };
   h.push(next);
   assert.equal(h.controller.model.getSnapshot(), next);
   assert.equal(h.controller.draftModel.getSnapshot().session, "wb:작업A",
@@ -122,7 +144,7 @@ test("init 재호출 — 구독 추가 등록 0, 화면 model 은 runtime 이 �
 
 test("leaveTo — 대기 중 발신을 정산한 **뒤에** leave_guard 를 읽는다(8R P1)", async () => {
   const h = harness({
-    snapshot: OPEN_DIRTY,
+    snapshot: OPEN,
     onDispatch: (_s, action) => (action === "leave_guard" ? { armed: false } : {}),
   });
   let release;
@@ -143,7 +165,7 @@ test("leaveTo — 대기 중 발신을 정산한 **뒤에** leave_guard 를 읽�
 test("leaveTo — 가드가 서면(armed·무변경) 확인을 거치고, 취소는 나가지 않는다", async () => {
   let confirmResult = false;
   const h = harness({
-    snapshot: { ...OPEN_DIRTY, dirty: { count: 0 } },
+    snapshot: OPEN,
     onDispatch: (_s, action) => (action === "leave_guard" ? { armed: true, lines: ["줄1", "줄2"] } : {}),
     confirm: () => confirmResult,
   });
@@ -161,48 +183,9 @@ test("leaveTo — 가드가 서면(armed·무변경) 확인을 거치고, 취소
   assert.deepEqual(h.navigations, [["job", { force: true }]]);
 });
 
-test("leaveTo — dirty 스냅샷이 있으면 3택으로 묻는다: stay 는 붙잡고 discard 는 나간다", async () => {
-  let answer = "stay";
-  const h = harness({
-    snapshot: OPEN_DIRTY,                     // dirty.count = 2 — 스냅샷→가드 seam 실측
-    onDispatch: (_s, action) => (action === "leave_guard" ? { armed: true, lines: ["미저장 2건"] } : {}),
-    choose: () => answer,
-  });
-  await h.controller.leaveTo("job");
-  const chosen = h.log.filter((row) => row[0] === "modal.choose");
-  assert.equal(chosen.length, 1, "dirty 면 confirm 이 아니라 choose 로 묻는다");
-  assert.deepEqual(chosen[0][1].choices.map((choice) => choice.value), ["save", "discard", "stay"]);
-  assert.deepEqual(h.actions(), ["leave_guard"], "stay 는 close 발신 0");
-  assert.deepEqual(h.navigations, [], "stay 는 이동 0");
-
-  answer = "discard";
-  await h.controller.leaveTo("job");
-  assert.deepEqual(h.actions(), ["leave_guard", "leave_guard", "close"], "discard 는 close 뒤 이동");
-  assert.deepEqual(h.navigations, [["job", { force: true }]]);
-});
-
-test("leaveTo — save 를 골랐는데 저장 확인이 취소되면 여전히 dirty 라 머문다(음성)", async () => {
-  const h = harness({
-    snapshot: OPEN_DIRTY,
-    onDispatch: (_s, action) => {
-      if (action === "leave_guard") return { armed: true, lines: ["미저장 2건"] };
-      if (action === "save_rules") return { needs_confirm: true, confirm_text: "덮어씁니다" };
-      return {};
-    },
-    choose: () => "save",
-    confirm: () => false,                     // 저장 확인 창에서 취소
-  });
-  await h.controller.leaveTo("job");
-  assert.deepEqual(h.actions(), ["leave_guard", "save_rules", "leave_guard"],
-    "저장이 취소되면 close 로 넘어가지 않고 가드를 다시 읽는다");
-  assert.deepEqual(h.navigations, [], "저장 취소 뒤 이동 0 — 확인 없는 폐기 금지");
-});
-
-/* ================= 4. 통로 객체째 · 항행 late-bound ================= */
-
 test("포트 교체 — client.dispatch 프로퍼티 교체·navigation.go 재배선이 다음 이탈에 보인다", async () => {
   const h = harness({
-    snapshot: { ...OPEN_DIRTY, dirty: { count: 0 } },
+    snapshot: OPEN,
     onDispatch: (_s, action) => (action === "leave_guard" ? { armed: false } : {}),
   });
   const swapped = [];
@@ -217,73 +200,88 @@ test("포트 교체 — client.dispatch 프로퍼티 교체·navigation.go 재�
 });
 
 test("손상된 HostResult 는 조용히 통과하지 않는다 — 이탈이 loud 로 멈춘다(음성)", async () => {
-  const h = harness({ snapshot: OPEN_DIRTY });
+  const h = harness({ snapshot: OPEN });
   h.client.dispatch = async () => ({ value: {} });   // ok 필드 없음
   await assert.rejects(() => h.controller.leaveTo("job"), /호스트 결과가 손상/);
   assert.deepEqual(h.navigations, [], "판독 실패 뒤 이동 0");
 });
 
+/* ================= 5. 나가는 문 — 「연결 편집」·「템플릿 편집」(#1148) ================= */
 
-/* ================= 가공(칩·팝오버) ================= */
-
-function slicedRow(slice) {
-  return {
-    name: "건명", source: "건명열", fmt_kind: "text", fmt_code: "", value: "R26", confirmed: false,
-    slice, slice_label: slice ? "‘-’ 앞까지" : "+ 가공", slice_enabled: true, slice_methods: [],
-  };
-}
-
-test("가공 문 — 커밋은 set_map_slice, 질의 둘은 이름으로 정체를 싣는다", async () => {
+test("연결 편집 — 가드 → close **뒤에** 편집기를 workbench_result 로 연다(복귀는 문서 만들기)", async () => {
   const h = harness({
-    snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] },
-    onDispatch: (_s, action) => (action === "preview_map_slice" ? { ok: true, rows: [] }
-      : action === "propose_map_slice" ? { ok: true, candidates: [], message: "" } : {}),
+    snapshot: OPEN,
+    onDispatch: (_s, action) => (action === "leave_guard" ? { armed: false } : {}),
   });
-  h.controller.init();
-  const port = h.controller.slicePort("건명");
-  assert.equal(await port.commit({ mode: "before", delimiter: "-", on_missing: "keep" }), true);
-  assert.equal(await port.commit(null), true);
-  assert.deepEqual(await port.preview(null), { ok: true, rows: [] });
-  await port.preview(2);
-  await port.propose(0, 0, 13);
-  const sent = h.log.filter((row) => row[0] === "dispatch").map((row) => [row[2], row[3]]);
-  assert.deepEqual(sent, [
-    ["set_map_slice", { name: "건명", slice: { mode: "before", delimiter: "-", on_missing: "keep" } }],
-    ["set_map_slice", { name: "건명", slice: null }],
-    ["preview_map_slice", { name: "건명", sample: null }],
-    ["preview_map_slice", { name: "건명", sample: 2 }],
-    ["propose_map_slice", { name: "건명", sample: 0, start: 0, end: 13 }],
-  ]);
+  await h.controller.editBinding();
+  assert.deepEqual(h.actions(), ["leave_guard", "close"], "같은 이탈 관문을 지난다");
+  const opened = h.log.filter((row) => row[0] === "editorEntry.openGuarded");
+  assert.deepEqual(opened, [["editorEntry.openGuarded", "작업A", {
+    entry_reason: "workbench_result", return_context: { surface: "data" },
+  }]], "작업 이름은 닫기 **전** 스냅샷에서 읽는다(닫기 푸시가 스냅샷을 비운다)");
+  const order = h.log.map((row) => (row[0] === "dispatch" ? row[2] : row[0]));
+  assert.ok(order.indexOf("close") < order.indexOf("editorEntry.openGuarded"), "세션을 닫은 뒤에 연다");
+  assert.deepEqual(h.navigations, [], "문이 열리면 셸 이동을 따로 하지 않는다(편집기가 착지한다)");
 });
 
-test("가공 문 — 거절은 알리고 커밋은 false, 질의는 거절로 돌려준다(삼키지 않는다)", async () => {
-  const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] } });
-  h.controller.init();
-  h.client.dispatch = async () => ({ ok: false, failure: { name: "ValueError", message: "구분자를 비울 수 없습니다" } });
-  const port = h.controller.slicePort("건명");
-  assert.equal(await port.commit({ mode: "before", delimiter: "" }), false);
-  await assert.rejects(() => port.preview(null));
-  assert.equal(h.notices.length, 2);
-  assert.ok(h.notices.every((text) => String(text).includes("구분자를 비울 수 없습니다")));
-});
-
-test("가공 팝오버 열림 — 한 번에 한 행, UI-local(발신 0), 닫기는 그 행만", () => {
-  const h = harness({ snapshot: { ...OPEN_DIRTY, rows: [slicedRow(null)] } });
-  assert.equal(h.controller.isSliceEditorOpen("건명"), false);
-  h.controller.toggleSliceEditor("건명");
-  assert.equal(h.controller.isSliceEditorOpen("건명"), true);
-  assert.equal(h.controller.slicePort("건명").open, true);
-  assert.equal(h.controller.sliceViewModel.getSnapshot(), "건명");
-  h.controller.slicePort("다른").close();
-  assert.equal(h.controller.isSliceEditorOpen("건명"), true, "다른 행의 닫기는 무동작");
-  h.controller.slicePort("건명").close();
-  assert.equal(h.controller.isSliceEditorOpen("건명"), false);
-  assert.deepEqual(h.actions(), []);
-});
-
-test("서버 값 — 가공은 행 축 초안이 아니다(팝오버가 자기 칸을 든다)", () => {
-  const values = workbenchServerValues({
-    rows: [slicedRow({ mode: "chars", start: 2, length: 3 })],
+test("템플릿 편집 — 스냅샷이 낸 경로를 저작 작업대로 열고, 돌아올 곳은 문서 만들기", async () => {
+  const h = harness({
+    snapshot: OPEN,
+    onDispatch: (_s, action) => (action === "leave_guard" ? { armed: false } : {}),
   });
-  assert.deepEqual(Object.keys(values).filter((key) => key.includes("slice")), []);
+  await h.controller.editTemplate();
+  assert.deepEqual(h.actions(), ["leave_guard", "close"]);
+  assert.deepEqual(h.log.filter((row) => row[0] === "authoring.open"),
+    [["authoring.open", "C:/tpl/작업A.txt", "job"]]);
+  assert.deepEqual(h.navigations, []);
+});
+
+test("나가는 문 — 가드가 서면 확인을 거치고, 취소하면 닫지도 열지도 않는다(음성)", async () => {
+  const h = harness({
+    snapshot: OPEN,
+    onDispatch: (_s, action) => (action === "leave_guard"
+      ? { armed: true, lines: ["복사 진행 1/3건 — 나가면 이 진행은 사라집니다."] } : {}),
+    confirm: () => false,
+  });
+  await h.controller.editBinding();
+  await h.controller.editTemplate();
+  assert.deepEqual(h.actions(), ["leave_guard", "leave_guard"], "취소 뒤 close 발신 0");
+  assert.equal(h.log.some((row) => row[0] === "editorEntry.openGuarded" || row[0] === "authoring.open"), false);
+  const spec = h.log.find((row) => row[0] === "modal.confirm")[1];
+  assert.equal(spec.body, "복사 진행 1/3건 — 나가면 이 진행은 사라집니다.", "가드 문안은 Python 이 낸 lines 그대로");
+});
+
+test("나가는 문 — 문이 열리지 않으면 빈 작업대에 남기지 않고 문서 만들기로 보낸다", async () => {
+  const failed = harness({
+    snapshot: OPEN, editorFails: true,
+    onDispatch: (_s, action) => (action === "leave_guard" ? { armed: false } : {}),
+  });
+  await failed.controller.editBinding();
+  assert.deepEqual(failed.navigations, [["job", { force: true }]], "거절(false) 뒤 복귀");
+
+  const thrown = harness({
+    snapshot: OPEN, authoringThrows: true,
+    onDispatch: (_s, action) => (action === "leave_guard" ? { armed: false } : {}),
+  });
+  await assert.rejects(() => thrown.controller.editTemplate(), /열 수 없는 템플릿/,
+    "여는 쪽의 실패는 삼키지 않는다(guarded 가 알린다)");
+  assert.deepEqual(thrown.navigations, [["job", { force: true }]], "예외여도 복귀");
+});
+
+/* ================= 6. 대상 글꼴 — 남은 초안 칸 하나 ================= */
+
+test("대상 글꼴 — 고른 값이 곧바로 보이고 set_target_font 한 발이 체인에 선다", async () => {
+  const h = harness({ snapshot: OPEN });
+  const pending = h.controller.setTargetFont("malgun");
+  const draft = h.controller.draftModel.getSnapshot();
+  assert.equal(draft.fields.targetFont.draftValue, "malgun", "응답 전에 고른 값을 그린다");
+  await pending;
+  assert.deepEqual(h.log.filter((row) => row[0] === "dispatch").map((row) => [row[2], row[3]]),
+    [["set_target_font", { font: "malgun" }]]);
+  assert.deepEqual(h.notices, []);
+});
+
+test("서버 값 — 작업대 초안의 서버 축은 대상 글꼴 하나다(연결 표 축 없음)", () => {
+  assert.deepEqual(workbenchServerValues({ target_font: "dotumche", rows: [{ name: "수신" }] }),
+    { targetFont: "dotumche" });
 });

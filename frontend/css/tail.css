@@ -30,19 +30,19 @@
 .undo-toast[hidden]{display:none}
 
 /* ---- 내부 스크롤포트 인벤토리(H-07) ----
-   캡+헤더 지속 표: .tblwrap(위저드 3벌), #wbMapPanel(작업대 좌 pane), .jobtbwrap.
-   캡 목록: .pool-list(고르기 열 — 세 인스턴스), .sheet-list, .colpanel .cp-vals. 이 여섯
+   캡+헤더 지속 표: .tblwrap(위저드 3벌), .jobtbwrap.
+   캡 목록: .pool-list(고르기 열 — 세 인스턴스), .sheet-list, .colpanel .cp-vals. 이 다섯
    종류만 이 계약의 내부 스크롤을 소유한다(구 .tpllist 는 마지막 소비자인 데이터 선택
    다이얼로그가 공용 열로 합류하며 걷혔고, 그 자리를 .pool-list 가 잇는다). stable gutter 로
    행 수 변화의 폭 점프를 막고, 경계에서 바깥 .wbody/.job-panel/.stage 로 휠·터치 스크롤이
    연쇄되지 않게 contain 한다. */
-.tblwrap,.jobtbwrap,#wbMapPanel,.poolcol .pool-list,.sheet-list,.colpanel .cp-vals{
+.tblwrap,.jobtbwrap,.poolcol .pool-list,.sheet-list,.colpanel .cp-vals{
   scrollbar-gutter:stable;overscroll-behavior:contain}
 
 
 /* TXT 검토·복사 작업대(v6 S7 · 재작성 F6) — 편집기와 같은 몰입 부류라 셸 규칙을 공유하고
-   (위 body.workbench-open) 본체만 2열이다. 좌 = 필드 연결(미저장 변경), 우 = 채운 모습/원문.
-   좁은 폭에서는 1열로 퇴화한다 — 두 pane 이 서로를 밀어 어느 쪽도 못 읽는 것보다 낫다. */
+   (위 body.workbench-open) 본체는 **한 열**이다(#1148): 복사할 본문이 화면의 중심이라 남는
+   폭과 높이를 모두 본문 카드가 받는다. 연결은 읽기만 하고, 고치는 문은 머리의 .wb-links 다. */
 .wb-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-4)}
 .wb-head{padding:0;border:0;background:none;align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-4)}
 .wb-head>.back{flex:none}
@@ -51,61 +51,31 @@
 .wb-stats{display:flex;gap:var(--sp-4);align-items:center;flex-wrap:wrap}
 .wb-stats span{font-size:var(--fs-caption);color:var(--a-muted)}
 .wb-stats strong{color:var(--a-ink);font-variant-numeric:tabular-nums}
-/* 두 pane 은 **끝단을 맞춘다**(U2 §2.2) — align-items:start 면 좌우가 각자 내용 높이로
-   서서 아래 끝이 어긋나고, 캡이 서로 다른 두 스크롤 표면이 층계처럼 읽힌다. */
-.wb-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);
-  gap:var(--sp-4);align-items:stretch}
-/* 1열 퇴화에서는 두 면이 **세로로 줄을 선다** — 남는 높이를 나눠 가질 수 없으므로 각자
-   내용 높이(캡 있음)로 서고 넘치면 본체가 스크롤한다. 두 면의 flex 되돌림은 아래 기본
-   규칙 **뒤에** 있어야 한다(같은 특정도면 나중이 이긴다 — 앞에 두면 flex-basis:0 이 그대로
-   남아 면이 min-height 로 접힌다). */
-@media (max-width:920px){.wb-body{grid-template-columns:minmax(0,1fr);
-  grid-auto-rows:max-content;overflow:auto}}
-@media (max-width:1400px){
-  html:is([data-font-scale="large"],[data-font-scale="larger"]) .wb-body{
-    grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;overflow:auto}
-}
-.wb-left,.wb-right{min-width:0;min-height:0;display:flex;flex-direction:column;gap:var(--sp-6)}
-.wb-left .zone-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-4)}
-/* 스크롤포트는 **남는 높이를 받는다** — 고정 캡이 아니다(리뷰 R1). 캡(420px)은 창이 낮아지면
-   .wb-body 를 넘쳐 뒤따르는 .wb-foot 이 마지막 매핑 행을 가로질러 그려졌다(6행·1180x640 에서
-   104px 침범, 10행·1180x760 에서 20px — 동봉 스크린샷 `12-workbench-review.png` 의 그 줄).
-   캡을 키우면 낮은 창에서 더 많이 가려지므로 **flex 로 가둔다**: 좌우가 같은 방식으로 남는
-   높이를 받으면 캡을 서로 맞춰 둘 필요 없이 끝단이 구조적으로 일치한다(수치 동기화 → 구조).
-   min-height 는 스크롤이 의미를 갖는 최소치 — 그 아래로는 본체가 스크롤한다. */
-#wbMapPanel{flex:1;min-height:120px;overflow:auto}
-/* 결과 → 규칙 겨눔(계약 §11) — 카드 조각을 누르면 소유 행이 선다. 강조는 **포커스 파생**이다:
-   WebView2의 table-row :focus 계산 편차를 피해 성공한 focus 수명만 .wb-aimed로 거울한다.
-   별 앱 상태는 없고 blur와 함께 사라진다. 프로그램 포커스(tabindex=-1)는 :focus-visible을
-   켜지 않으므로 표지는 여기서 낸다. */
-#wbMapPanel tbody tr:focus,#wbMapPanel tbody tr.wb-aimed{outline:none;background:var(--fb-fill-bg)}
-#wbMapPanel tbody tr:focus>td:first-child,#wbMapPanel tbody tr.wb-aimed>td:first-child{
-  box-shadow:inset 3px 0 0 var(--a-primary)}
+/* 나가는 문 둘은 머리의 **둘째 줄**에 선다 — 작업 이름·진행 수치와 한 줄에 섞이면 좁은 폭에서
+   수치 사이로 끼어들어 「어디로 가는 문인가」가 자리로 읽히지 않는다. */
+.wb-links{flex-basis:100%;display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
+/* 본체: 도구 막대 · 큐 점 · 본문 카드 · 린트가 세로로 서고, 남는 높이는 본문 카드가 받는다.
+   카드가 고정 캡이 아니라 flex 로 남는 높이를 받으므로 낮은 창에서도 뒤따르는 .wb-foot 을
+   가로질러 그리지 않는다(캡을 키우면 낮은 창에서 더 많이 가려진다 — 수치가 아니라 구조로). */
+.wb-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-6);min-width:0}
 .wb-toolbar{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
 .wb-toolbar #wbTargetFont{width:auto;flex:none}
 .wb-toolbar [data-wb-view][aria-pressed="true"]{background:var(--a-sel);border-color:var(--a-primary);color:var(--a-ink);font-weight:600}
 /* 큐 색인은 「기안」 점 표시와 같은 판을 쓴다(.wc-dots/.wc-dot 재사용). */
 .wb-dots{display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--sp-2);
-  max-height:min(96px,20vh);overflow-y:auto;scrollbar-gutter:stable}
+  max-height:min(96px,20vh);overflow-y:auto;scrollbar-gutter:stable;flex:none}
 .wb-dots[hidden]{display:none}
 .wb-toolbar .status{margin-left:auto}
-/* 본문은 대상 글꼴 선언을 따르는 미리보기 면이라 「기안」 카드와 같은 판을 쓴다.
-   높이는 좌 pane 의 #wbMapPanel 과 **같은 방식**으로 받는다(위 주석) — 캡을 맞추는 대신
-   둘 다 남는 높이를 받아 끝단이 어긋날 자리를 없앤다. */
+/* 본문은 대상 글꼴 선언을 따르는 미리보기 면이라 「기안」 카드와 같은 판을 쓴다. */
 .wb-preview{white-space:pre-wrap;word-break:break-word;background:var(--a-card);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-4);
   flex:1;min-height:180px;overflow:auto}
-/* 1열 퇴화의 높이 되돌림(위 .wb-body 미디어 규칙의 짝) — 두 면이 세로로 줄을 서면 나눠 가질
-   남는 높이가 없으므로 각자 캡을 들고, 본체가 스크롤한다. */
-@media (max-width:920px){#wbMapPanel,.wb-preview{flex:none;max-height:320px}}
+/* 좁은 창·큰 글꼴 배율 — 남는 높이가 카드 최소 높이보다 작아지면 본체가 스크롤해 카드에
+   닿게 한다(카드가 접혀 사라지지 않게). 한 열이라 카드에 캡을 따로 두지 않는다. */
+@media (max-width:920px){.wb-body{overflow:auto}}
 @media (max-width:1400px){
-  html:is([data-font-scale="large"],[data-font-scale="larger"]) #wbMapPanel,
-  html:is([data-font-scale="large"],[data-font-scale="larger"]) .wb-preview{flex:none;max-height:320px}
+  html:is([data-font-scale="large"],[data-font-scale="larger"]) .wb-body{overflow:auto}
 }
-/* 토큰 조각은 소유 규칙 행으로 가는 손잡이다 — 손가락 표지는 그 행동이 **있는 곳에만** 둔다
-   (같은 페인터를 쓰는 「기안」 카드에서는 눌러도 갈 곳이 없어 표지가 거짓말이 된다). */
-.wb-preview [data-token]{cursor:pointer}
-.wb-preview [data-token]:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
 .wb-foot{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap;
   border-top:1px solid var(--a-border);padding-top:var(--sp-6)}
 /* 이동·복사는 **한 묶음으로** 우측에 선다(U2 §2.2). 종전엔 margin-left:auto 가 「복사」에만

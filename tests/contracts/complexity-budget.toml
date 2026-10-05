@@ -323,9 +323,6 @@ function_complexity = 16
 [budget."frontend/src/screens/refresh_button.ts::RefreshButton.refresh"]
 function_complexity = 11
 
-[budget."frontend/src/screens/segment_view.ts::segmentNode"]
-function_complexity = 11
-
 [budget."frontend/src/screens/sheet_picker.ts::SheetPickerDialog"]
 function_complexity = 16
 
@@ -351,26 +348,17 @@ function_complexity = 24
 [budget."frontend/src/screens/slice_popover.ts::composeSliceSpec"]
 function_complexity = 15
 
-[budget."frontend/src/screens/workbench.ts::MapRow"]
-function_complexity = 19
-
 [budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
-function_complexity = 59
+function_complexity = 54
 
 [budget."frontend/src/screens/workbench.ts::createWorkbenchController.copyCard"]
-function_complexity = 11
-
-[budget."frontend/src/screens/workbench.ts::createWorkbenchController.leaveTo"]
-function_complexity = 15
-
-[budget."frontend/src/screens/workbench_state.ts::workbenchServerValues"]
 function_complexity = 11
 
 [budget."frontend/src/selftest/probes/boot_routing_overlay.js::createBootRoutingOverlayProbes.setup"]
 function_complexity = 23
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js"]
-module_statements = 2221
+module_statements = 2202
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::createEditorWorkbenchDataProbes.run"]
 function_complexity = 53
@@ -1362,14 +1350,11 @@ function_complexity = 14
 [budget."src/hwpxfiller/webapp/screen_template.py::TemplateController"]
 class_methods = 33
 
-[budget."src/hwpxfiller/webapp/screen_workbench.py"]
-module_statements = 387
-
 [budget."src/hwpxfiller/webapp/screen_workbench.py::WorkbenchController"]
-class_methods = 50
+class_methods = 37
 
 [budget."src/hwpxfiller/webapp/screen_workbench.py::WorkbenchController.snapshot"]
-function_complexity = 22
+function_complexity = 15
 
 [budget."src/hwpxfiller/webapp/screens.py::_pipeline_has_nara_source"]
 function_complexity = 11
@@ -1456,7 +1441,7 @@ module_statements = 1134
 function_complexity = 22
 
 [budget."tests/test_web_selftest_gate.py"]
-module_statements = 1314
+module_statements = 1311
 
 [budget."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
 class_methods = 83

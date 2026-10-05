@@ -254,7 +254,7 @@ export function bootProduct() {
     notify: (message) => window.alert(message),
   });
   const WorkbenchController = createWorkbenchController({
-    doc: document, runtime, client, modal: Modal, chain: Intent, navigation,
+    doc: document, runtime, client, modal: Modal, chain: Intent, navigation, ports: screenPorts,
     notify: (message) => window.alert(message),
   });
   /* #1136 — 튜토리얼 범위 단계가 고르라고 한 범위를 저작 편집면이 칠한다. 범위는 Python 투영 그대로다. */

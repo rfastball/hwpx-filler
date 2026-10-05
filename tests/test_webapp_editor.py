@@ -428,7 +428,7 @@ def test_new_draft_with_data_validates_before_it_destroys(tmp_path):
     ctrl.loader.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("set_name", {"name": "쓰던 작업"})
     with pytest.raises(ValueError, match="배선되지 않았습니다"):
-        ctrl.new_draft_with_data({"path": str(MULTI_SHEET)}, entry_reason="workbench_result")
+        ctrl.new_draft_with_data({"path": str(MULTI_SHEET)}, entry_reason="schema_new_field")
     assert ctrl.edit.job_name == "쓰던 작업"                    # 세션 생존
     assert ctrl.edit.template_path == str(TPL_COMPILED)
     assert ctrl.edit.data_path == ""                            # 새 데이터도 서지 않았다
