@@ -98,7 +98,8 @@ export type DialogHost = {
     missingText: string;
     returnFocus?: unknown;
   }): Promise<string>;
-  toastShow(message: string, undo: () => unknown): void;
+  /** `label` 은 되돌리는 단추의 이름(기본 「되돌리기」). */
+  toastShow(message: string, undo: () => unknown, label?: string): void;
   toastHide(): void;
 };
 

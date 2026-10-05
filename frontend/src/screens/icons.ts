@@ -29,9 +29,13 @@ const ICONS: Record<string, Part[]> = {
   trash: [path("M4 6h12M8 6V4h4v2M5.5 6l.8 10h7.4l.8-10M8.5 9v4.5M11.5 9v4.5")],
   search: [["circle", { cx: 8.5, cy: 8.5, r: 5 }], path("M12.3 12.3L16.5 16.5")],
   view: [path("M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"), ["circle", { cx: 10, cy: 10, r: 2.2 }]],
+  // 「데이터로 필드 찾기」(#1156): 띠 이름 앞의 표지(두 줄 + 점선 한 줄), 같은 값 여러 곳(겹친 두 상자), 보류 이유(원 안의 i).
+  find: [path("M4 5.5h12M4 10h8.5"), ["path", { d: "M4 14.5h12", strokeDasharray: "0.1 3" }]],
+  same: [["rect", { x: 3, y: 6, width: 9, height: 9, rx: 1.8 }], path("M8 3h7a2 2 0 0 1 2 2v7")],
+  info: [["circle", { cx: 10, cy: 10, r: 7 }], path("M10 9v5"), path("M10 6.2v.1")],
 };
 
-/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·확인 표지·펼침·실행 취소·다시 실행·삭제·찾기·내용 보기). */
+/** 동작 아이콘 하나(닫기·최대화·복원·더보기·화살표·확인 표지·펼침·실행 취소·다시 실행·삭제·찾기·내용 보기·데이터로 찾기·같은 값·안내). */
 export function icon(name: keyof typeof ICONS | string): ReactNode {
   return draw("icon", ICONS[name] || []);
 }

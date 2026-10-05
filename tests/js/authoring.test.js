@@ -1077,7 +1077,7 @@ test("IDE-02 (P-10): the palette groups unavailable commands by Python's reason 
   assert.ok(palette.includes('<div id="authoring-palette-cmd-rename_field" role="option" aria-selected="false" aria-disabled="true" aria-keyshortcuts="F2" class="authoring-palette-option"><span class="authoring-palette-label">필드 이름 변경</span><kbd class="authoring-key" aria-hidden="true">F2</kbd></div>'), "판정이 없는 명령은 사유 없이 흐리다");
   // 셸 동작(1부)은 키 학습 표면이다(L-50) — 자기를 여는 「명령」은 없고, 복사한 의미가 없으면 의미 붙여넣기는 서지 않는다.
   const labels = [...palette.matchAll(/<span class="authoring-palette-label">([^<]+)<\/span>/g)].map((match) => match[1]);
-  assert.deepEqual(labels.slice(0, 9), ["저장", "다른 이름으로 저장", "찾기", "결과 시험", "의미 복사", "이전 위치로", "다음 영역으로", "이전 영역으로", "문맥 메뉴"]);
+  assert.deepEqual(labels.slice(0, 10), ["저장", "다른 이름으로 저장", "찾기", "결과 시험", "의미 복사", "이전 위치로", "데이터로 필드 찾기…", "다음 영역으로", "이전 영역으로", "문맥 메뉴"]);
   assert.ok(!labels.includes("명령") && !labels.includes("의미 붙여넣기"));
   for (const [label, keys, aria] of [["저장", "Ctrl+S", "Control+S"], ["찾기", "Ctrl+F", "Control+F"], ["다음 영역으로", "F6", "F6"], ["이전 영역으로", "Shift+F6", "Shift+F6"], ["문맥 메뉴", "Shift+F10", "Shift+F10"]])
     assert.match(palette, new RegExp(`aria-keyshortcuts="${aria.replace("+", "[+]")}" class="authoring-palette-option( active)?"><span class="authoring-palette-label">${label}</span><kbd class="authoring-key" aria-hidden="true">${keys.replace("+", "[+]")}</kbd>`), label);

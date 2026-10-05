@@ -4,7 +4,7 @@
    백엔드 .trash에 30일 남으므로 앱 종료가 곧 즉시 영구 삭제는 아니다). */
 import { overlayDialogHost } from "../src/overlay/instance.ts";
 
-function show(message, callback) {
+function show(message, callback, label) {
   const host = overlayDialogHost();
   if (host === null) {
     // host 부재(부팅 창·마운트 실패)에 어포던스를 조용히 삼키지 않는다 — 삭제는 이미
@@ -13,7 +13,7 @@ function show(message, callback) {
     window.alert(message);
     return;
   }
-  host.toastShow(message, callback);
+  host.toastShow(message, callback, label);
 }
 
 function hide() {
