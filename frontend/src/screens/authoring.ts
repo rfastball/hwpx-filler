@@ -15,6 +15,7 @@ import { renderAuthoringFooter } from "./authoring_footer.ts";
 import { renderAuthoringOverlays } from "./authoring_overlays.ts";
 import { shellMenuActions } from "./authoring_shell_actions.ts";
 import { MODES, liveState, menuAnchor } from "./authoring_shell_state.ts";
+import { ProposalBand, ProposalPopover } from "./authoring_proposal_view.ts";
 export { saveLabel, readinessText, liveState } from "./authoring_shell_state.ts";
 
 export { crumbs, problemSeverities } from "./authoring_outline.ts";
@@ -361,6 +362,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
       h("div", { className: "authoring-empty-actions" }, button("문서 열기", act(controller.openFile), { className: "btn primary" }), button("새 TXT", act(controller.create), { className: "btn" }))),
     // 도구 막대(§3.1): 한 줄, 줄바꿈 없음 — 넘치면 가로 스크롤. 보조 패널을 여는 동사는 하단 독의 탭으로 옮겼다.
     renderAuthoringToolbar({ controller, item, view, act, toolbarKey, setToolbarKey, undoDisabled, redoDisabled, readOnly, creates, rove, pick, menuToggle, menuButton, trialShown, openDock }),
+    // 「데이터로 필드 찾기」 띠(#1156) — 도구 막대 아래 이름 붙은 구획. 꺼져 있으면 서지 않는다.
+    h(ProposalBand, { controller, item, view }),
     renderAuthoringBody({ tabs, item, view, snapshot, outlineOpen, setOutlineOpen, controller, counts, chooseFromOutline, outlineMenu, contextMenu, layout, zoom, select, shellInput, returnFocus }),
     // 하단 독(§3.1·APG tabs): 보조 패널은 한 번에 한 탭만 보인다. 탭 줄은 늘 남아 닫은 뒤에도 다시 열 길이 된다.
     // ←→·Home·End 로 탭을 옮기고 Enter·Space 로 펼치면 그 패널의 첫 제어로 간다.
@@ -376,6 +379,8 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
           iconButton(view.dockMax ? "restore" : "maximize", view.dockMax ? "복원" : "최대화", () => controller.update({ dockMax: !view.dockMax })),
           iconButton("close", "닫기", closeDock))),
       dock.active && h("div", { className: "authoring-dock-panel", id: "authoring-dock-panel", role: "tabpanel", tabIndex: -1, "aria-labelledby": `authoring-dock-tab-${dock.active}` }, dockContent(dock.active))),
+    // 제안 팝오버(#1156) — 셸 층의 비모달 대화상자. 문서 자리·구조 패널 줄 곁에 선다.
+    h(ProposalPopover, { controller, item, view }),
     ...renderAuthoringOverlays({ controller, item, view, menuRef, menuReason, fileActions, moreActions, commandTable, readOnly, menuEditor, pick, openPalette, barShown, barRef, barItems, setBarAnchor, paletteTable, paletteActions, closePalette }),
     // 상태 막대: 줄마다 바뀌는 상태라 live region 이 아니다(읽기는 위의 단일 live region 이 전이 때만 한다).
     renderAuthoringFooter({ item, controller, liveNow, openDock, zoom }),

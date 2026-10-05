@@ -156,6 +156,9 @@ function makeExecutor(args: {
   };
 }
 
+/** 알림의 기본 행동 이름 — 부르는 쪽이 제 표면의 이름(저작 작업대는 「실행 취소」)을 넘길 수 있다. */
+const UNDO_LABEL = "되돌리기";
+
 function setText(node: HTMLElement | null, text: string): void {
   if (node !== null) node.textContent = text;
 }
@@ -354,7 +357,7 @@ function dialogSkeletons(refs: {
       className: "undo-toast", role: "status", "aria-live": "polite", hidden: true,
     },
     el("span", { id: "undoToastText" }),
-    el("button", { className: "btn sm", id: "undoToastBtn" }, "되돌리기")),
+    el("button", { className: "btn sm", id: "undoToastBtn" }, UNDO_LABEL)),
   ];
 }
 
@@ -502,8 +505,9 @@ export function createOverlayDialogController(args: {
         track: trackDialog,
       });
     },
-    toastShow(message, undo) {
+    toastShow(message, undo, label = UNDO_LABEL) {
       setText(toastText, message);
+      setText(toastButton, label);
       undoAction = undo;
       roots.toast.hidden = false;
       if (toastTimer !== null) clearTimeout(toastTimer);

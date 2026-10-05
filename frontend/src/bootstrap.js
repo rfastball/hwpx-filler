@@ -259,7 +259,7 @@ export function bootProduct() {
   });
   /* #1136 — 튜토리얼 범위 단계가 고르라고 한 범위를 저작 편집면이 칠한다. 범위는 Python 투영 그대로다. */
   const AuthoringController = followBeatRange(runtime.model("tutorial"),
-    createAuthoringController({ runtime, client, modal: Modal, navigation }));
+    createAuthoringController({ runtime, client, modal: Modal, navigation, dataPicker: DataPicker, undo: UndoToast }));
   screenPorts.authoring.bind(AuthoringController);
   /* R4-03 — 실행·결과 표면의 단일 owner. legacy `screens/job.js` 는 이 커밋에서 사라지므로
      `createJobRunAdapter` 를 거치는 임시 fan-out 도 함께 은퇴한다(port 를 직접 결속한다). */

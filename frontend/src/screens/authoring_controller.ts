@@ -3,6 +3,8 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { errorText } from "./authoring_a11y.ts";
 import { guideFeed } from "./authoring_guide.ts";
 import { authoringHost } from "./authoring_host.ts";
+import { problemNote } from "./authoring_outline_model.ts";
+import { createProposal } from "./authoring_proposal.ts";
 
 type Obj = Record<string, any>;
 export type AuthoringEditor = {
@@ -23,6 +25,8 @@ export type AuthoringEditor = {
   zoom?(mode: "fit" | "fixed"): Promise<void>;
   /** 편집기 history 의 현재 깊이. 없으면(HWPX) 표면은 두 버튼을 그대로 켜 둔다. */
   state?(): { canUndo: boolean; canRedo: boolean };
+  /** 그 자리로 편집면을 옮긴다(구조 패널의 제안 줄, #1156) — HWPX 는 캐럿·초점을 두고 뷰만, TXT 는 캐럿을 자리 머리에 둔다. */
+  scrollTo?(target: Obj): Promise<boolean>;
 };
 /** 의미 명령 → 표시 이름. 표면의 버튼·팔레트와 실행 취소 표지가 같은 이름을 쓴다. */
 export const COMMANDS: [string, string][] = [
@@ -89,21 +93,10 @@ type Deps = {
   runtime: ScreenRuntime;
   modal: { confirm(spec: Obj): Promise<boolean>; choose(spec: Obj): Promise<string | null>; prompt(spec: Obj): Promise<string | null> };
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
+  /** 「데이터로 필드 찾기」(#1156)가 데이터가 없을 때 이끄는 기존 데이터 선택 창과, 만든 뒤의 되돌리기 알림. 없으면 그 길만 선다. */
+  dataPicker?: { open(options: Obj): Promise<string | null> };
+  undo?: { show(message: string, undo: () => unknown, label?: string): void };
 };
-
-/** 위치 줄 메시지(IDE-05)의 내용 — locate 가 판정한 `problems_here`(문제 목록 순번) 가운데 첫 문제의 심각도와 Python 문장.
- *  겹침은 Python 이 판정했다. 여기서는 순번으로 문제를 찾을 뿐이다. `source: "problem"` 은 캐럿이 옮길 때 이 메모를
- *  다음 판정까지 남겨 둘지(깜박임 없이) 가르는 표지다. */
-export function problemNote(problems: Obj[] | undefined, here: unknown): { message: string; severity?: "error" | "warning"; source: "problem" } | null {
-  if (!Array.isArray(here)) return null;
-  for (const index of here) {
-    const problem = typeof index === "number" ? problems?.[index] : undefined;
-    if (!problem?.message) continue;
-    const severity = problem.severity === "error" || problem.severity === "warning" ? problem.severity : undefined;
-    return { message: String(problem.message), ...(severity ? { severity } : {}), source: "problem" };
-  }
-  return null;
-}
 
 /** 편집기 선택 좌표만 남긴다 — 선택 대상 객체(이름·종류 등)가 섞인 뷰 선택을 편집기 좌표 모양으로 되돌린다. */
 const COORDINATE_KEYS = ["start", "end", "entry", "paragraph", "start_paragraph", "end_paragraph", "cell_path"];
@@ -309,7 +302,7 @@ export function createAuthoringController(deps: Deps) {
     const restore = activated.restore ?? current.restore;
     // 범위 고르기는 그 문서의 편집면에서만 뜻이 있다 — 문서를 옮기면 떠나는 편집면의 고르기를 끄고, 새 뷰는 접혀 있다.
     if (viewId && view.rangePick) void Promise.resolve(editors.get(viewId)?.rangePick?.(false)).catch(() => undefined);
-    view = { ...(known || restoredView(restore)), rangePick: null };
+    view = { ...(known || restoredView(restore)), rangePick: null, proposalOpen: null };
     if (!known && (restore?.mode || restore?.selection)) pendingRestore.set(id, { selection: restore.selection || null });
     update({
       values: { ...(current.values || {}) }, selectedOptions: { ...(current.selected || {}) } });
@@ -731,6 +724,9 @@ export function createAuthoringController(deps: Deps) {
   }
 
   return {
+    // 「데이터로 필드 찾기」(#1156) — 다섯 액션과 띠·팝오버 상태. 만든 결과는 이 화면의 편집 사슬(편집기 apply → 내용 갱신)을 탄다.
+    proposal: createProposal({ dispatch, fenced, flush, editor: (id) => editors.get(id), viewId: () => viewId, tab, view: () => view, update, changed,
+      revision, pending: (id) => buffers.has(id), redecorate, scheduleTrial, dataPicker: deps.dataPicker, toast: deps.undo }),
     model, viewModel: { getSnapshot: () => view, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } },
     snapshot, tab, update, guarded, fail, announce, note, changed, flush, flushAll, activate, open, openFile, save, close, leaveTo,
     closeState: () => invoke("close_guard_state"),

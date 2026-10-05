@@ -18,7 +18,7 @@ function_statements = 59
 function_complexity = 14
 
 [budget."frontend/src/editorview/rhwp_editor.ts"]
-module_statements = 403
+module_statements = 368
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp"]
 function_complexity = 38
@@ -34,8 +34,7 @@ function_complexity = 13
 function_complexity = 14
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.setDecorations"]
-function_complexity = 54
-function_statements = 51
+function_complexity = 41
 
 [budget."frontend/src/editorview/txt_lintpad.ts"]
 module_statements = 427
@@ -75,7 +74,7 @@ function_complexity = 23
 function_complexity = { value = 22, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 편집면·속성 배치에서 문서별 본문과 패널 표시 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
 
 [budget."frontend/src/screens/authoring_controller.ts"]
-module_statements = 657
+module_statements = 649
 
 [budget."frontend/src/screens/authoring_controller.ts::createAuthoringController"]
 function_statements = 78
@@ -1381,10 +1380,7 @@ function_complexity = 13
 module_statements = 1787
 
 [budget."tests/js/authoring_render.test.js"]
-module_statements = 1562
-
-[budget."tests/js/authoring_render.test.js::matchesCompound"]
-function_complexity = 21
+module_statements = 1308
 
 [budget."tests/js/n06_editor.test.js"]
 module_statements = 1135
