@@ -97,12 +97,17 @@ def _section(section: str) -> Matcher:
 
 
 # ------------------------------------------------------------------ binding rows
+def _row_matches(row: Any, source: str, kind: str, fmt: "str | None") -> bool:
+    """`_confirmed` 의 행별 판정만 떼어낸 조건(복잡도 예산 분리)."""
+    return bool(row and row.confirmed and (not source or row.source == source)
+                and (not kind or row.type == kind) and (fmt is None or row.fmt == fmt))
+
+
 def _confirmed(field: str, source: str = "", kind: str = "", fmt: str | None = None) -> Matcher:
     def match(tutorial: Any, obs: Observation) -> dict | None:
         row = _rows(tutorial).get(field)
-        return {} if (_on(obs, "set_confirmed") and _lesson_inputs(tutorial) and row and row.confirmed
-                      and (not source or row.source == source) and (not kind or row.type == kind)
-                      and (fmt is None or row.fmt == fmt)) else None
+        return {} if (_on(obs, "set_confirmed") and _lesson_inputs(tutorial)
+                      and _row_matches(row, source, kind, fmt)) else None
     return match
 
 
