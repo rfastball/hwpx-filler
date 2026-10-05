@@ -41,12 +41,13 @@
 
 
 /* TXT 검토·복사 작업대(v6 S7 · 재작성 F6) — 편집기와 같은 몰입 부류라 셸 규칙을 공유하고
-   (위 body.workbench-open) 본체는 **가운데 읽기 열 하나**다(#1148). 열 폭은 rem 이라 글자 배율을
-   따르고, 내용에 맞춰 줄지 않는 **고정 폭**이다 — 행마다 「복사」·「다음」 자리가 움직이지 않고,
+   (위 body.workbench-open) 본체는 **가운데 읽기 열 하나**다(#1148). 열 폭은 본문 카드 글자
+   크기로 잰 **전각 50자 줄 길이**(+카드 안 여백·테두리)라 글자 배율을 따르고, 내용에 맞춰 줄지
+   않는 **고정 폭**이다 — 줄 끝과 「복사」 사이를 비우지 않고, 행마다 「복사」·「다음」 자리가 움직이지 않고,
    발의 오른끝(복사)이 본문 카드의 오른끝 바로 아래에 선다. 열보다 좁은 창에서는 100% 다.
    리듬: 묶음 안은 촘촘히(sp-4~8), 묶음 사이는 넉넉히(sp-16). */
 .wb-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-16);
-  width:min(100%,60rem);margin-inline:auto}
+  width:min(100%,calc(50 * var(--fs-body) + 2 * var(--sp-24) + 2px));margin-inline:auto}
 /* 머리는 한 띠 — 왼쪽은 돌아가기·작업 이름, 오른쪽은 판본과 화면 밖으로 나가는 문 둘. */
 .wb-head{padding:0;border:0;background:none;align-items:center;flex-wrap:wrap;
   gap:var(--sp-8) var(--sp-16);margin:0}
