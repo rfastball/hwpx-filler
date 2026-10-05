@@ -95,12 +95,24 @@ export function createRevealer(scroll: Reveal): (key: string) => Reveal {
 
 /** The first visible anchor inside `root`, as the box its clipping ancestors and the viewport leave visible;
  *  null when it is absent or scrolled wholly out of sight. `reveal` runs before measuring. */
-export function measureTarget(root: ParentNode, selector: string | null, viewport: Viewport, reveal?: Reveal): Target | null {
+export function measureTarget(root: ParentNode, selector: string | null, viewport: Viewport, reveal?: Reveal, span = false): Target | null {
   const element = visibleElement(root, selector);
   if (!element) return null;
   reveal?.(element);
-  const rect = visibleRect(element.getBoundingClientRect(), clipBoxes(element), viewport);
-  return rect ? { rect, radius: cornerRadius(element) } : null;
+  const rect = visibleRect(span ? spanBox(root, selector!, element) : element.getBoundingClientRect(), clipBoxes(element), viewport);
+  return rect ? { rect, radius: span ? 0 : cornerRadius(element) } : null;
+}
+
+/** Union box of every visible match: a painted text range is one element per line (#1136). */
+function spanBox(root: ParentNode, selector: string, first: HTMLElement): Box {
+  let { left, top, right, bottom } = first.getBoundingClientRect();
+  for (const element of root.querySelectorAll<HTMLElement>(selector)) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || element.closest("[hidden], [inert], .hidden")) continue;
+    left = Math.min(left, rect.left); top = Math.min(top, rect.top);
+    right = Math.max(right, rect.right); bottom = Math.max(bottom, rect.bottom);
+  }
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
 }
 
 export function sameTarget(a: Target | null, b: Target | null): boolean {

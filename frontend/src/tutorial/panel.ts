@@ -3,7 +3,7 @@ import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, 
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { icon } from "../screens/icons.ts";
-import { anchorSelector } from "./anchors.ts";
+import { SPAN_ANCHORS, anchorSelector } from "./anchors.ts";
 import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchBoxedPress, watchLayout, watchMissedPress } from "./spotlight.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
@@ -17,6 +17,8 @@ export type TutorialBeat = {
   id: string; title: string; body: string; mode: "explain" | "action" | "finish";
   screen: string | null; entry_screen?: string | null; target: string | null; arg?: string; press?: boolean;
   placement: "top" | "right" | "bottom" | "left" | "center"; can_next: boolean;
+  /** Range beats (`authoring-range`): the text range the host resolved; the template editor paints it. */
+  range?: { session_id: string; start: number; end: number } | null;
 };
 export type TutorialSnapshot = {
   kind: "tutorial-lessons/v1";
@@ -27,12 +29,12 @@ export type TutorialSnapshot = {
   stages?: readonly { id: string; title: string; status: "done" | "current" | "pending" }[];
   beat: TutorialBeat | null;
   show_result?: boolean;
-  result?: null | { title: string; body: string; count: number; screen: string; target: string; documents: readonly { name: string; path: string; kind: string }[]; actions: readonly { label: string; target: string }[]; next_scenario_id?: string; next_scenario_label?: string };
+  result?: null | { title: string; body: string; count: number; screen: string; target: string; documents: readonly { name: string; path: string; kind: string }[]; next_scenario_id?: string };
   recovery: { title: string; body: string } | null;
   resources: { ready: boolean; summary: string; files?: readonly { name: string; path: string; kind: string }[] };
   copy: {
     start: string; later: string; pause: string; resume: string; skip: string;
-    restart: string; next: string; cleanup: string; reset: string;
+    restart: string; next: string; next_lesson: string; cleanup: string; reset: string;
     open_tutorial: string; close: string; choose_scenario: string; reset_confirm: string; cleanup_confirm: string;
     practice: string; exit: string; return: string;
   };
@@ -50,18 +52,6 @@ export type TutorialPorts = {
 };
 
 const noHost = () => null;
-
-/** Finale result action. On another screen the card is dismissed only after navigation succeeds — a cancelled leave
- *  guard or a failed dispatch keeps the result summary on screen. On the result's own screen it reveals the target. */
-export async function runResultAction(resultScreen: string, screen: string | null,
-  steps: { navigate(): Promise<boolean>; reveal(): void; dismiss(): void }): Promise<void> {
-  if (resultScreen !== screen) {
-    if (await steps.navigate()) steps.dismiss();
-    return;
-  }
-  steps.dismiss();
-  steps.reveal();
-}
 
 export function lessonAction(item: Lesson, snapshot: TutorialSnapshot): string {
   if (item.completed) return "restart";
@@ -272,18 +262,18 @@ export function TutorialLessons(props: LessonControls): ReactNode {
 /** Visible box of the current anchor inside `root` (a dialog) or the document. A changed anchor — a new beat key or
  *  a replaced element — is scrolled into view once; later re-measures only follow the layout and never scroll
  *  against the user. A box scrolled wholly out of sight measures null, which offers the existing way back. */
-function useAnchorBox(doc: Document, root: Element | null, selector: string | null, key: string, deps: readonly unknown[]): Target | null {
+function useAnchorBox(doc: Document, root: Element | null, selector: string | null, key: string, span: boolean, deps: readonly unknown[]): Target | null {
   const [found, setFound] = useState<Target | null>(null);
   const [reveal] = useState(() => createRevealer(scrollAnchor));
   useLayoutEffect(() => {
     if (!selector) { setFound(null); return undefined; }
     const measure = () => {
-      const next = measureTarget(root ?? doc, selector, viewportOf(doc), reveal(key));
+      const next = measureTarget(root ?? doc, selector, viewportOf(doc), reveal(key), span);
       setFound((before) => sameTarget(before, next) ? before : next);
     };
     measure();
     return watchLayout(doc, measure);
-  }, [doc, root, selector, key, reveal, ...deps]);
+  }, [doc, root, selector, key, reveal, span, ...deps]);
   return found;
 }
 
@@ -306,6 +296,34 @@ function usePressReport(ports: TutorialPorts, snapshot: TutorialSnapshot | null,
       void Promise.resolve(ports.dispatch("observe_ui", fact)).catch((error) => ports.alarm(String(error)));
     });
   }, [ports, key]);
+}
+
+/** A painted text range (#1136) is one element per line: the live beat's box is then their union. */
+function spansLines(beat: TutorialBeat | null, target: string | null, beatSelector: string | null): boolean {
+  return !!beat && target === beatSelector && SPAN_ANCHORS.has(beat.target ?? "");
+}
+
+type FinaleProps = {
+  result: NonNullable<TutorialSnapshot["result"]>; copy: TutorialSnapshot["copy"]; pending: boolean;
+  position: CoachPlacement | null; next: (() => void) | null; exit: ReactNode; close(): void;
+};
+
+/** Lesson-complete card. Two ways on (#1136): the next lesson (never named on the button) or leaving practice; the
+ *  last lesson only leaves. Outside practice there is nothing to leave, so the card only closes. */
+function TutorialFinale(props: FinaleProps): ReactNode {
+  const { result, copy } = props;
+  return h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
+    style: props.position ? { left: props.position.x, top: props.position.y } : undefined },
+  h("div", { className: "tutorial-fin-fan", "aria-hidden": true }, ...result.documents.slice(0, 3).map((document, index) =>
+    h("div", { key: document.path, className: `tutorial-fin-doc tutorial-fin-doc-${index}` },
+      h("span", { className: "tutorial-fin-lines" }), h("span", null, document.kind)))),
+  h("div", { className: "tutorial-fin-count" }, h("strong", null, String(result.count)), h("span", null, result.documents.length ? "문서" : "완료")),
+  h("h2", null, result.title), h("p", null, result.body),
+  result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
+  h("div", { className: "tutorial-actions" },
+    props.next ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: props.pending,
+      onClick: props.next }, copy.next_lesson) : null,
+    props.exit ?? h("button", { type: "button", className: "btn sm", onClick: props.close }, copy.close)));
 }
 
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
@@ -345,7 +363,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beatSelector
     : result && result.screen === screen ? anchorSelector(result.target) : null;
   usePressReport(ports, snapshot, screen, beatSelector);
-  const found = useAnchorBox(ports.doc, dialogHost, target, `${beat?.id}|${target}`, [screen, open]);
+  const found = useAnchorBox(ports.doc, dialogHost, target, `${beat?.id}|${target}`, spansLines(beat, target, beatSelector), [screen, open]);
   const resultHeight = useElementHeight(ports.doc, "tutorialFinale", 330, [result?.title, found]);
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
@@ -391,7 +409,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const entry = ports.doc.getElementById("tutorialEntrySlot");
   if (!entry) return null;
   const label = snapshot?.copy.open_tutorial ?? "튜토리얼";
-  const exitButton = (id?: string) => practice ? h("button", { id, className: "btn sm tutorial-exit", type: "button", disabled: pending,
+  const exitButton = (id?: string, primary = false) => practice ? h("button", { id, className: primary ? "btn primary sm tutorial-exit" : "btn sm tutorial-exit", type: "button", disabled: pending,
     onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
   const hud = h("div", { className: "tutorial-hud" },
     h("button", { id: "tutorialOpen", className: "tutorial-hud-pill", type: "button", "aria-label": label,
@@ -421,27 +439,9 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
       h("p", null, snapshot.recovery?.body ?? selected?.title),
       h("button", { id: "tutorialResume", className: "btn primary sm", type: "button", disabled: pending,
         onClick: () => void act("resume") }, snapshot.copy.resume)) : null,
-    resultShown && result ? h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
-      style: resultPosition ? { left: resultPosition.x, top: resultPosition.y } : undefined },
-      h("div", { className: "tutorial-fin-fan", "aria-hidden": true }, ...result.documents.slice(0, 3).map((document, index) =>
-        h("div", { key: document.path, className: `tutorial-fin-doc tutorial-fin-doc-${index}` },
-          h("span", { className: "tutorial-fin-lines" }), h("span", null, document.kind)))),
-      h("div", { className: "tutorial-fin-count" }, h("strong", null, String(result.count)), h("span", null, result.documents.length ? "문서" : "완료")),
-      h("h2", null, result.title), h("p", null, result.body),
-      result.documents.length ? h("ul", { className: "tutorial-fin-files" }, ...result.documents.map((document) => h("li", { key: document.path, title: document.path }, document.name))) : null,
-      h("div", { className: "tutorial-actions" }, ...result.actions.map((action) => h("button", { key: action.target,
-        type: "button", className: "btn sm", onClick: () => void runResultAction(result.screen, screen, {
-          navigate: () => act("navigate", { screen: result.screen }),
-          reveal: () => {
-            const element = visibleElement(ports.doc, anchorSelector(action.target));
-            element?.scrollIntoView({ block: "center", behavior: "instant" });
-            element?.focus({ preventScroll: true });
-          },
-          dismiss: () => setResultDismissed(true),
-        }) }, action.label)), nextLesson ? h("button", { id: "tutorialNextCourse", type: "button", className: "btn primary sm", disabled: pending,
-          onClick: () => void chooseLesson(nextLesson) }, result.next_scenario_label ?? nextLesson.title) : null,
-        h("button", { type: "button", className: nextLesson ? "btn sm" : "btn primary sm", onClick: () => { setResultDismissed(true); setOpen(true); } }, snapshot!.copy.choose_scenario),
-        exitButton())) : null,
+    resultShown && result ? h(TutorialFinale, { result, copy: snapshot!.copy, pending, position: resultPosition,
+      next: nextLesson ? () => void chooseLesson(nextLesson) : null, exit: exitButton(undefined, !nextLesson),
+      close: () => setResultDismissed(true) }) : null,
     shown && beat ? h(TutorialGuide, { beat, copy: snapshot!.copy, found, dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
       step: selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "",
       overlayBusy, pending, exit: exitButton("tutorialDialogExit"),

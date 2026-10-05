@@ -101,35 +101,20 @@ def test_lesson_one_walks_single_actions_to_three_documents(app, tmp_path):
         assert walk.send("editor", "save")["ok"]
         walk.send("job", "prefer_work", {"name": app.controllers["editor"].edit.job_name or walk.ctx["job_name"]})
     walk.step("save", save_and_open)
-    walk.step("memo_filter", lambda: walk.send("job", "filter_panel", {"column": "메모"}))
-    walk.step("filter", lambda: walk.send("job", "filter_col_text", {"column": "메모", "text": "소상공인"}))
+    # The practice home seeded the saved filter '소상공인' on the registered sheet: one chip press.
+    chips = [preset["name"] for preset in app.controllers["job"].data.filter.presets]
+    assert chips == ["소상공인"], chips
+    assert walk.beat()["target"] == "filter-chip" and walk.beat()["arg"] == "소상공인"
+    walk.step("filter", lambda: walk.send("job", "toggle_filter_preset", {"name": "소상공인"}))
     walk.step("rows", lambda: walk.send("job", "set_all"))
+    assert set(app.controllers["job"].data.selected_indices()) == {0, 1, 2}
     walk.step("qualification", lambda: walk.option("입찰참가자격", "소기업·소상공인"))
     walk.step("method", lambda: walk.option("낙찰자 결정방법", "고시 미만"))
     pick_output_folder(app.controllers["job"], tmp_path / "out")
     walk.step("generate", lambda: app.generate("job"))
     walk.step("result", lambda: walk.send("job", "artifact_open", {"ordinal": 0}))
     result = walk.finished()
-    assert result["count"] == 3 and result["next_scenario_id"] == "repeat_hwpx"
-
-
-def test_lesson_two_reopens_the_seeded_job_and_filters_by_value_list(app, tmp_path):
-    walk = Walk(app, "repeat_hwpx")
-    assert walk.ctx["job_name"] == "공고서 작업"
-    walk.step("pick_job", lambda: walk.send("library", "select_work", {"name": "공고서 작업"}))
-    walk.step("use_job", lambda: walk.send("job", "prefer_work", {"name": "공고서 작업"}))
-    walk.step("memo_filter", lambda: walk.send("job", "filter_panel", {"column": "메모"}))
-    walk.step("values_off", lambda: walk.send("job", "filter_col_values", {"column": "메모", "values": []}))
-    value = "포함할 내용: 중·소기업 / 고시 미만"
-    assert walk.beat()["arg"] == value
-    walk.step("filter", lambda: walk.send("job", "filter_col_values", {"column": "메모", "values": [value]}))
-    walk.step("rows", lambda: walk.send("job", "set_all"))
-    walk.step("qualification", lambda: walk.option("입찰참가자격", "중·소기업"))
-    walk.step("method", lambda: walk.option("낙찰자 결정방법", "고시 미만"))
-    walk.step("names", lambda: walk.send("tutorial", "next"))
-    pick_output_folder(app.controllers["job"], tmp_path / "out")
-    walk.step("generate", lambda: app.generate("job"))
-    assert walk.finished()["count"] == 3
+    assert result["count"] == 3 and result["next_scenario_id"] == "contract_txt"
 
 
 def test_lesson_three_contract_txt_copies_two_rows(app, monkeypatch):
@@ -295,6 +280,7 @@ def test_lesson_seven_makes_a_field_and_saves_after_the_trial(app):
     _open_practice_txt(walk)
     doc = Authoring(walk)
     at = doc.text().index("10일")
+    assert walk.beat()["range"] == {"session_id": doc.sid, "start": at, "end": at + 3}
     walk.step("range", doc.select(at, at + 3))
     walk.press("create")
     walk.step("name", doc.apply(at, at + 3, {"type": "create_field", **_named("재배정기한")}))
@@ -318,17 +304,28 @@ def test_lesson_eight_builds_an_item_with_two_choices(app):
     begin = text.index("\n3. ") + 1
     finish = text.index("\n", begin)
     assert text[finish:finish + 4] == "\n\n\n붙", "연습 서식에 항목 안 빈 줄이 깔리지 않았습니다"
+    walk.step("about", lambda: walk.send("tutorial", "next"))
+    # The painted range runs from paragraph 3 to the start of the second empty line: gutter lines 13 to 15, as
+    # the beat says (the item takes the paragraph and the empty line 14).
+    assert walk.beat()["range"] == {"session_id": doc.sid, "start": begin, "end": finish + 2}
+    assert (text.count("\n", 0, begin) + 1, text.count("\n", 0, finish + 2) + 1) == (13, 15)
+    assert "13~15번 줄" in walk.beat()["body"]
+    # Stopping on line 14 leaves the empty line out of the item: not this beat's range.
+    doc.select(begin, finish + 1)()
+    assert walk.beat()["id"] == "item_range"
     walk.step("item_range", doc.select(begin, finish + 2))
     walk.press("item_create")
     walk.step("item_name", doc.apply(begin, finish + 2, {"type": "create_slot", **_named("예산재배정")}))
     text = doc.text()
     begin = text.index("\n3. ") + 1
     finish = text.index("\n", begin)
+    assert walk.beat()["range"] == {"session_id": doc.sid, "start": begin, "end": finish}
     walk.step("include_range", doc.select(begin, finish))
     walk.press("include_create")
     walk.step("include_name", doc.apply(begin, finish, {"type": "create_option", **_named("안내포함")}, enter_twice=True))
     text = doc.text()
     blank = text.index("{{/선택}}\n") + len("{{/선택}}\n")
+    assert walk.beat()["range"] == {"session_id": doc.sid, "start": blank, "end": blank}
     walk.step("omit_range", doc.select(blank, blank))
     walk.press("omit_create")
     walk.step("omit_name", doc.apply(blank, blank, {"type": "create_option", **_named("안내생략")}, enter_twice=True))

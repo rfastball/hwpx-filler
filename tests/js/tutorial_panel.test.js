@@ -11,12 +11,12 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, pressFact, runResultAction } from "../../frontend/src/tutorial/panel.ts";
-import { ANCHORS, anchorSelector } from "../../frontend/src/tutorial/anchors.ts";
+import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, pressFact } from "../../frontend/src/tutorial/panel.ts";
+import { ANCHORS, SPAN_ANCHORS, anchorSelector } from "../../frontend/src/tutorial/anchors.ts";
 import { createRevealer, measureTarget, placeCoach, pressMissesTarget, spotFrame, visibleRect, watchBoxedPress, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
 
-const ids = ["first_hwpx", "repeat_hwpx", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
-const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
+const ids = ["first_hwpx", "change_apply", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
+const copy = Object.fromEntries(["start", "later", "pause", "resume", "skip", "restart", "next", "next_lesson", "cleanup", "cleanup_confirm", "reset", "reset_confirm", "open_tutorial", "close", "choose_scenario", "practice", "exit", "return"].map((key) => [key, `COPY:${key}`]));
 
 function snapshot(overrides = {}) {
   return {
@@ -89,13 +89,23 @@ test("completed lessons restart while a paused current lesson resumes", () => {
   assert.equal(lessonAction(snap.scenarios[0], snap), "resume");
   assert.equal(lessonAction({ ...snap.scenarios[0], completed: true }, snap), "restart");
   assert.equal(lessonAction(snap.scenarios[1], snap), "select");
-  const result = { title: "첫 문서 완료", body: "결과를 확인하세요.", count: 3, screen: "job", target: "results", documents: [], actions: [] };
-  const next = render(snapshot({ show_result: true, result: { ...result, next_scenario_id: "repeat_hwpx", next_scenario_label: "저장한 작업 다시 쓰기" } }));
-  assert.match(next, /id="tutorialNextCourse"/);
-  assert.match(next, /저장한 작업 다시 쓰기/);
-  const last = render(snapshot({ show_result: true, result }));
-  assert.doesNotMatch(last, /id="tutorialNextCourse"/);
-  assert.match(last, /COPY:choose_scenario/);
+});
+
+test("the finale card offers only the next practice and leaving practice; the last lesson only leaves", () => {
+  // #1136: no '결과 확인', no '과정 고르기', and the next lesson is not named on its button.
+  const result = { title: "첫 문서 완료", body: "결과를 확인하세요.", count: 3, screen: "job", target: "results", documents: [] };
+  const practice = { active: true, return_screen: "job" };
+  const buttons = (html) => [...html.matchAll(/<section id="tutorialFinale".*?<\/section>/gs)].flatMap((card) =>
+    [...card[0].matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]));
+  const next = render(snapshot({ practice, show_result: true, result: { ...result, next_scenario_id: "change_apply" } }));
+  assert.deepEqual(buttons(next), ["COPY:next_lesson", "COPY:exit"]);
+  assert.match(next, /id="tutorialNextCourse" type="button" class="btn primary sm"/);
+  assert.doesNotMatch(next, /과정 2|COPY:choose_scenario/);
+  const last = render(snapshot({ practice, show_result: true, result }));
+  assert.deepEqual(buttons(last), ["COPY:exit"]);
+  assert.match(last, /class="btn primary sm tutorial-exit"[^>]*>COPY:exit/);
+  // Outside practice there is nothing to leave: the card only closes.
+  assert.deepEqual(buttons(render(snapshot({ show_result: true, result }))), ["COPY:close"]);
 });
 
 test("a beat keeps its own words on another screen and offers only the way back to its screen", () => {
@@ -124,7 +134,9 @@ test("relevant modal contains the guide and exit without another modal or click 
 test("semantic anchors resolve to real controls and coach flips/clamps to viewport", () => {
   assert.equal(anchorSelector("new-job"), "#libraryNewWork");
   assert.equal(anchorSelector("row-selection"), "#jobSelAll", "C7: never the first of a wider list");
-  assert.equal(anchorSelector("column-filter", "메모"), "#jobTableHead .fico[data-col='메모']");
+  assert.equal(anchorSelector("filter-chip", "소상공인"), "#jobFilterChips button[data-preset='소상공인']");
+  assert.equal(anchorSelector("authoring-range"), "#authoring-canvas .cm-tutorial-range");
+  assert.deepEqual([...SPAN_ANCHORS], ["authoring-range"]);
   assert.equal(anchorSelector("map-confirm", "담당자 전화번호"),
     "#editor-body table.map tr[data-field='담당자 전화번호'] button[data-act='row-confirm']");
   assert.equal(anchorSelector("library-row", "it's"), "#libraryList button[data-work='it\\'s']");
@@ -179,11 +191,11 @@ test("open panel features the recommended lesson with the only primary action an
 });
 
 test("paused current lesson resumes from its step; completed rows reveal restart", () => {
-  const snap = snapshot({ paused: true, scenario_id: "repeat_hwpx" });
+  const snap = snapshot({ paused: true, scenario_id: "change_apply" });
   snap.scenarios[0] = { ...snap.scenarios[0], completed: true, checkpoint: 3 };
   snap.scenarios[1] = { ...snap.scenarios[1], checkpoint: 2 };
   snap.scenarios[3] = { ...snap.scenarios[3], checkpoint: 1 };
-  assert.equal(featuredLesson(snap)?.id, "repeat_hwpx");
+  assert.equal(featuredLesson(snap)?.id, "change_apply");
   const html = lessons(snap);
   assert.match(html, /tutorialFeaturedTitle">과정 2</);
   assert.match(html, /tutorial-progress">2\/3</);
@@ -266,27 +278,6 @@ test("a paused re-run of a completed lesson resumes from the featured block inst
   assert.doesNotMatch(html, /COPY:pause|COPY:skip/);
   assert.equal(count(html, /과정 3</g), 1);
   assert.deepEqual(press(snap, "tutorialContinue"), [["resume", "contract_txt"]]);
-});
-
-test("finale result action dismisses the card only after navigation succeeds; on its own screen it reveals the target", async () => {
-  const trace = (navigated) => {
-    const calls = [];
-    return { calls, steps: {
-      navigate: async () => { calls.push("navigate"); if (navigated instanceof Error) throw navigated; return navigated; },
-      reveal: () => calls.push("reveal"), dismiss: () => calls.push("dismiss") } };
-  };
-  const cancelled = trace(false);
-  await runResultAction("job", "library", cancelled.steps);
-  assert.deepEqual(cancelled.calls, ["navigate"], "취소된 이탈·실패한 dispatch 는 결과 카드를 남긴다");
-  const moved = trace(true);
-  await runResultAction("job", "library", moved.steps);
-  assert.deepEqual(moved.calls, ["navigate", "dismiss"]);
-  const here = trace(true);
-  await runResultAction("job", "job", here.steps);
-  assert.deepEqual(here.calls, ["dismiss", "reveal"], "같은 화면은 이동 없이 대상으로 간다");
-  const failed = trace(new Error("dispatch failed"));
-  await assert.rejects(runResultAction("job", "library", failed.steps));
-  assert.deepEqual(failed.calls, ["navigate"]);
 });
 
 const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
@@ -455,6 +446,17 @@ test("a target inside a scroll container is measured as its visible part, and as
   assert.deepEqual(measureTarget(popover.root, "#pop", screenSize).rect, box(300, 470, 40, 22), "a fixed popover escapes the scroller");
   const absolute = anchorIn(box(300, 470, 40, 22), [table, { rect: box(0, 60, 1200, 740), style: { position: "relative", overflowY: "hidden" } }], { position: "absolute" });
   assert.deepEqual(measureTarget(absolute.root, "#abs", screenSize).rect, box(300, 470, 40, 22), "a static scroller is not an absolute box's container");
+});
+
+test("a painted text range is boxed as the union of its lines, clipped like any anchor (#1136)", () => {
+  const table = scroller(box(40, 120, 500, 300));
+  const lines = [box(60, 300, 400, 20), box(60, 320, 400, 20), box(60, 340, 400, 20)].map((rect) => anchorIn(rect, [table]).element);
+  const root = { querySelectorAll: () => lines };
+  assert.deepEqual(measureTarget(root, ".cm-tutorial-range", screenSize, undefined, true).rect, box(60, 300, 400, 60));
+  assert.deepEqual(measureTarget(root, ".cm-tutorial-range", screenSize).rect, box(60, 300, 400, 20), "a control is still its first match");
+  const lower = [box(60, 400, 400, 20), box(60, 420, 400, 20)].map((rect) => anchorIn(rect, [table]).element);
+  assert.deepEqual(measureTarget({ querySelectorAll: () => lower }, ".r", screenSize, undefined, true).rect, box(60, 400, 400, 20),
+    "the part below the scroller's fold is not boxed");
 });
 
 test("a changed anchor is scrolled into view once; re-measures never scroll against the user", () => {

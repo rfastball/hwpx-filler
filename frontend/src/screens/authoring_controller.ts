@@ -2,6 +2,7 @@ import type { BridgeClient } from "../runtime/client.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import { errorText } from "./authoring_a11y.ts";
+import { guideFeed } from "./authoring_guide.ts";
 
 type Obj = Record<string, any>;
 export type AuthoringEditor = {
@@ -44,7 +45,6 @@ export const AUTHORING_COPY = {
 /** 확대 값: 「폭 맞춤」(HWPX 기본) 또는 고정 배율(%). */
 export type Zoom = "fit" | number;
 export const DEFAULT_ZOOM: Zoom = "fit";
-const FIELD_COMMANDS = ["rename_field", "relink_field", "unset_field"];
 
 /** 미리보기 동안 편집면이 칠할 대상(IDE-06 P-16). 범위 명령은 Python 이 준 실제 포함 범위(`included_location`)를
  *  이름표 없는 합성 표지로(`marker` 는 그 표지의 종류), 필드 명령은 그 필드의 사용 위치 — 필드 전체·전체 이름 변경은
@@ -54,7 +54,7 @@ export function previewHighlight(preview: Obj | null | undefined, command: Obj |
   const location = preview.included_location;
   if (location && typeof location === "object")
     return { kind: "range", location, marker: command.type === "create_option" || (command.type !== "create_slot" && command.kind === "option") ? "option" : "slot" };
-  if (!FIELD_COMMANDS.includes(command.type)) return null;
+  if (!["rename_field", "relink_field", "unset_field"].includes(command.type)) return null;
   const name = command.old_name || command.name;
   if (!name) return null;
   if (command.type === "rename_field" || Array.isArray(command.occurrences)) return { kind: "field", id: name };
@@ -798,6 +798,8 @@ export function createAuthoringController(deps: Deps) {
     /** 구조 트리 줄이 가리키는 범위를 편집면에서 강조한다(UX-09) — null 이면 걷는다. 선택·초점은 옮기지 않는다.
      *  미리보기가 서 있으면 걷은 자리에 미리보기 대상의 강조가 돌아온다(IDE-06 P-16). */
     highlight(target: Obj | null) { hovered = target; redecorate(); },
+    // 튜토리얼 범위 단계가 고르라고 한 범위(#1136) — `guide`·`guideOf`. 바뀐 탭의 편집기에만 장식을 다시 보낸다.
+    ...guideFeed((id) => editors.get(id)?.decorate(tab(id).analysis || {}, views.get(id)?.mode || "template", currentHighlight(id))),
     checkExternal: async () => { for (const item of snapshot().tabs || []) await dispatch("check_external", { session_id: item.id }); },
     reload: async () => { const id = snapshot().active_id; await flush(id); if (await deps.modal.confirm({ title: "외부 파일 다시 열기", body: "현재 문서의 미저장 변경을 버리고 외부 파일을 엽니다.", confirmLabel: "다시 열기", danger: true })) await restored(await dispatch("reload", fenced(id, { force: true }))); },
     compareExternal: async () => {

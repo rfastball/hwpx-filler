@@ -42,6 +42,8 @@ export type LintpadSpan = {
   region?: string;
   role?: string;
   paired?: boolean;
+  /** `"highlight"` 줄 강조의 모양(클래스) — 없으면 구조 트리 강조(`cm-authoring-highlight`)다. */
+  className?: string;
 };
 
 /** 이름표 표시 방식 — HWPX 편집면(`rhwp_editor.ts` `setDecorations` 의 `labels`)과 같은 어휘다.
@@ -119,6 +121,8 @@ const VIEWS = new WeakMap<LintpadHandle, EditorView>();
 const SPAN_CLASS: Record<string, string> = {
   field: "cm-txtField",
   marker: "cm-txtMarker",
+  // 튜토리얼이 고르라고 한 한 줄 안의 글자(#1136) — 이름표가 아닌 원문 위 강조다.
+  guide: "cm-tutorial-range",
 };
 
 /** 문서 표시(`labels: "none"`)의 이름표 — 색 없이 이름만 조용히 선다(HWPX 문서 표시에 표지가 없는 것과 같은 자리). */
@@ -263,7 +267,8 @@ function decorate(state: EditorState, spans: readonly LintpadSpan[], labels: Lin
     // 구조 트리가 가리키는 범위(UX-09)는 그 범위가 닿는 줄 전체에 선다 — 필드 표지와 겹쳐도 마크가 아니라 줄 장식이다.
     const first = state.doc.lineAt(clamp(span.start)).number;
     const last = state.doc.lineAt(clamp(Math.max(span.start, span.end - 1))).number;
-    for (let number = first; number <= last; number++) ranges.push(Decoration.line({ class: "cm-authoring-highlight" }).range(state.doc.line(number).from));
+    // 줄 강조의 모양은 호출자가 고를 수 있다(튜토리얼 범위 #1136 은 `cm-tutorial-range`) — 없으면 구조 트리 강조다.
+    for (let number = first; number <= last; number++) ranges.push(Decoration.line({ class: span.className || "cm-authoring-highlight" }).range(state.doc.line(number).from));
   }
   return { deco: Decoration.set(ranges, true), atoms: Decoration.set(atoms, true) };
 }

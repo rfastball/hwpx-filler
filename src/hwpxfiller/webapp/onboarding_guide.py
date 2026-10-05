@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..viewmodel.tutorial_lessons import UI_PRESS_EVENTS
+from .onboarding_match_authoring import guide_range
 
 __all__ = ["advance_current", "guide_beat", "picker_hint", "observe_ui_press", "rewind_unmet_inputs"]
 
@@ -23,10 +24,14 @@ _EDITOR_INPUTS = {
 
 
 def guide_beat(tutorial: Any, beat: dict) -> None:
-    """Resolve the anchor parameter the curriculum names symbolically (seeded pool keys)."""
+    """Resolve what the curriculum names symbolically: seeded pool keys, and the text range a range beat paints
+    on the open practice document (``range``; the web only draws it)."""
     arg = beat.get("arg") or ""
     if arg.startswith("pool:"):
         beat["arg"] = tutorial._context().get("pool_keys", {}).get(arg[len("pool:"):], "")
+    if beat.get("target") == "authoring-range":
+        current = tutorial.progress.beat()
+        beat["range"] = guide_range(tutorial, current.event if current else None)
 
 
 def picker_hint(tutorial: Any, kind: str, screen: str) -> str:

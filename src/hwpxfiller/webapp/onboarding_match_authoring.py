@@ -8,12 +8,13 @@ reads which lines of the practice document the offsets cover.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from ..domain.template_authoring_primitives import from_utf16, to_utf16
 from ..external.tutorial_practice import fingerprint
 from .onboarding_match_editor import Matcher, Observation
 
-__all__ = ["AUTHORING_MATCHERS"]
+__all__ = ["AUTHORING_MATCHERS", "guide_range"]
 
 TXT = "낙찰자 선정 및 계약체결 안내.txt"
 SLOT, INCLUDE, OMIT = "예산재배정", "안내포함", "안내생략"
@@ -45,10 +46,12 @@ def _range(tutorial: Any, obs: Observation) -> tuple[str, int, int] | None:
     selection = obs.payload.get("selection")
     if session is None or not isinstance(selection, dict):
         return None
-    start, end = selection.get("start"), selection.get("end")
-    if type(start) is not int or type(end) is not int or not 0 <= start <= end:
+    text = session.content.decode("utf-8")
+    try:  # the editor speaks UTF-16 units; the document is read in code points
+        start, end = from_utf16(text, selection.get("start")), from_utf16(text, selection.get("end"))
+    except ValueError:
         return None
-    return session.content.decode("utf-8"), start, end
+    return (text, start, end) if start <= end else None
 
 
 def _paragraph(text: str) -> tuple[int, int]:
@@ -57,39 +60,91 @@ def _paragraph(text: str) -> tuple[int, int]:
     return begin, (text.index("\n", begin) if begin >= 0 else -1)
 
 
+def _in_item(text: str, begin: int) -> bool:
+    """Paragraph 3 sits directly inside the item (the line above is its opening marker), not in a choice."""
+    return begin > 0 and text[:begin - 1].rsplit("\n", 1)[-1].startswith(f"{{{{#항목 {SLOT} ")
+
+
+def _field_target(text: str) -> tuple[int, int] | None:
+    at = text.find("10일")
+    return (at, at + 3) if at >= 0 else None
+
+
+def _item_target(text: str) -> tuple[int, int] | None:
+    """Paragraph 3 and the empty line below it, up to the start of the second empty line."""
+    begin, finish = _paragraph(text)
+    return (begin, finish + 2) if begin >= 0 and text[finish:finish + 3] == "\n\n\n" else None
+
+
+def _include_target(text: str) -> tuple[int, int] | None:
+    begin, finish = _paragraph(text)
+    return (begin, finish) if _in_item(text, begin) else None
+
+
+def _omit_target(text: str) -> tuple[int, int] | None:
+    if _CLOSE_OPTION not in text:
+        return None
+    blank = text.index(_CLOSE_OPTION) + len(_CLOSE_OPTION)
+    return (blank, blank) if text[blank:].startswith("\n{{/항목}}") else None
+
+
+#: The exact range each range beat asks for. The guide paints it on the editor and boxes it; the
+#: matchers below accept a natural selection of it.
+_TARGETS: dict[str, Callable[[str], tuple[int, int] | None]] = {
+    "field_range_selected": _field_target,
+    "item_range_selected": _item_target,
+    "include_range_selected": _include_target,
+    "omit_range_selected": _omit_target,
+}
+
+
+def guide_range(tutorial: Any, event: str | None) -> dict | None:
+    """The current range beat's target in the open practice document, as editor (UTF-16) offsets."""
+    target = _TARGETS.get(event or "")
+    authoring = tutorial.controllers["authoring"]
+    session = authoring.sessions.get(authoring.active_id)
+    if target is None or session is None or session.media != "txt" or session.source_path != tutorial._asset(TXT):
+        return None
+    text = session.content.decode("utf-8")
+    found = target(text)
+    return None if found is None else {"session_id": authoring.active_id,
+                                       "start": to_utf16(text, found[0]), "end": to_utf16(text, found[1])}
+
+
 def _field_range(tutorial: Any, obs: Observation) -> dict | None:
     picked = _range(tutorial, obs)
     return {} if picked and picked[0][picked[1]:picked[2]].strip() == "10일" else None
 
 
 def _item_range(tutorial: Any, obs: Observation) -> dict | None:
-    """From paragraph 3 to the start of the second empty line below it: the paragraph and one empty line."""
+    """A drag over the painted lines: from the paragraph's first character to anywhere on the second empty line
+    below it (blanks on either end allowed). Stopping on the first empty line would leave it out of the item."""
     picked = _range(tutorial, obs)
-    if picked is None:
+    target = _item_target(picked[0]) if picked else None
+    if picked is None or target is None:
         return None
     text, start, end = picked
-    begin, finish = _paragraph(text)
-    return {} if begin >= 0 and begin <= start <= finish and text[finish:finish + 3] == "\n\n\n" and end == finish + 2 else None
+    head, tail = text[target[0]:start], text[target[1]:end]
+    return {} if (target[0] <= start and not head.strip() and "\n" not in head
+                  and target[1] <= end and not tail.strip() and "\n" not in tail) else None
 
 
 def _include_range(tutorial: Any, obs: Observation) -> dict | None:
     picked = _range(tutorial, obs)
-    if picked is None:
+    target = _include_target(picked[0]) if picked else None
+    if picked is None or target is None:
         return None
-    text, start, end = picked
-    begin, finish = _paragraph(text)
-    # Directly inside the item (the line above is its opening marker), not yet inside a choice.
-    inside = begin > 0 and text[:begin - 1].rsplit("\n", 1)[-1].startswith(f"{{{{#항목 {SLOT} ")
-    return {} if inside and begin <= start < end <= finish + 1 else None
+    _text, start, end = picked
+    return {} if target[0] <= start < end <= target[1] + 1 else None
 
 
 def _omit_range(tutorial: Any, obs: Observation) -> dict | None:
     picked = _range(tutorial, obs)
-    if picked is None or _CLOSE_OPTION not in picked[0]:
+    target = _omit_target(picked[0]) if picked else None
+    if picked is None or target is None:
         return None
-    text, start, end = picked
-    blank = text.index(_CLOSE_OPTION) + len(_CLOSE_OPTION)
-    return {} if text[blank:].startswith("\n{{/항목}}") and start == blank and end in {blank, blank + 1} else None
+    _text, start, end = picked
+    return {} if start == target[0] and end in {target[0], target[0] + 1} else None
 
 
 # ------------------------------------------------------------------ structure

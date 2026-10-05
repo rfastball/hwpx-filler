@@ -27,10 +27,7 @@ export const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   "dialog-confirm": "#confirmModalOk",
   "sheet-check": "#sheetList input[data-sheet='{arg}']",
   "sheet-import": "#sheetImport",
-  "column-filter": "#jobTableHead .fico[data-col='{arg}']",
-  "column-text": ".react-colpanel input[data-ctext]",
-  "column-all": ".react-colpanel input[data-val-all]",
-  "column-value": ".react-colpanel input[data-val='{arg}']",
+  "filter-chip": "#jobFilterChips button[data-preset='{arg}']",
   "row-selection": "#jobSelAll",
   "slot-options": "#jobContentSelectionZone .cs-options[aria-label='{arg}']",
   "delivery-plan": "#jobDeliveryZone",
@@ -44,7 +41,7 @@ export const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   "wb-blank": "#wbCard .seg-blank[data-token='{arg}']",
   "wb-declared": "#wbMapPanel tr[data-name='{arg}'] .mapval-declared",
   "txt-review": "#wbCard",
-  "authoring-canvas": "#authoring-canvas",
+  "authoring-range": "#authoring-canvas .cm-tutorial-range",
   "create-command": ".authoring-toolbar button[data-rove='{arg}']",
   "property-name": "[data-guide='property-name']",
   "trial-toggle": ".authoring-toolbar-end button[aria-pressed]",
@@ -69,3 +66,7 @@ export function anchorSelector(key: string | null, arg = ""): string | null {
   if (!selector.includes("{arg}")) return selector;
   return arg ? selector.split("{arg}").join(quoted(arg)) : null;
 }
+
+/** Anchors that box a painted text range rather than one control: the range spans several elements (one per
+ *  line), so the box is the union of every visible match. */
+export const SPAN_ANCHORS: ReadonlySet<string> = new Set(["authoring-range"]);
