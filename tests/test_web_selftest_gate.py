@@ -954,7 +954,7 @@ class TestWebSelftestGate:
         필드를 읽는다. 정적 계약은 조각의 존재만 보고, 여기서 잡는 것은 ①행이 실제로
         **그려지는가**(hidden 요소 click 함정 회피 — `offsetParent`) ②「내용 보기」가 실제로
         백엔드를 쏘고 면이 뜨는가 ③관찰이 서지 않은 두 상태가 **다른 문안**을 받는가 ④관찰이 선
-        면이 원료를 받아 실 rhwp 보기 전용 렌더러에 싣고, 렌더러가 열지 못하면 거절을 말하는가다(#1138).
+        면이 원료를 청하고, 원료가 거절되면 렌더러 대신 그 거절을 말하는가다(#1138).
         """
         j = selftest_result["job_result"]
         assert j.get("error") is None, f"결과 3태 프로브 예외: {j.get('error')!r}"
@@ -977,11 +977,11 @@ class TestWebSelftestGate:
         # 무결성 실패와 준비 안 됨은 **다른 문장**이다(#775 교훈 · #820 §3).
         assert a["mismatch_differs_from_absent"], (a["absent_title"], a["mismatch_title"])
         assert "안착 기록과 다르다" in a["mismatch_detail"], a
-        # ④ 관찰이 선 판 — 원료를 요청하고 실 rhwp 에 싣는다. HWPX 가 아닌 원료는 렌더러가 열지
-        # 못하고, 면은 빈 문서·텍스트 투영으로 접지 않고 거절을 말한다(#1138).
+        # ④ 관찰이 선 판 — 원료를 청한다. 열린 뒤 원료가 거절되면 면은 빈 렌더러·텍스트 투영으로
+        # 접지 않고 그 거절을 말한다(#1138).
         assert a["content_requested"], a
         assert a["observed_doc_state"] == "failed" and a["observed_doc_hidden"], a
-        assert a["render_failed_status"] == "ARTIFACT_RENDER_FAILED", a
+        assert a["render_failed_status"] == "ARTIFACT_FILE_MISSING", a
         assert a["render_failed_title"] not in ("", "(자리 없음)") and a["render_failed_detail"], a
         assert a["text_projection_absent"], a
         assert a["observed_save_enabled"], a
