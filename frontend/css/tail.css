@@ -48,15 +48,20 @@
    리듬: 묶음 안은 촘촘히(sp-4~8), 묶음 사이는 넉넉히(sp-16). */
 .wb-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-16);
   width:min(100%,calc(50 * var(--fs-body) + 2 * var(--sp-24) + 2px));margin-inline:auto}
-/* 머리는 한 띠 — 왼쪽은 돌아가기·작업 이름, 오른쪽은 판본과 화면 밖으로 나가는 문 둘. */
-.wb-head{padding:0;border:0;background:none;align-items:center;flex-wrap:wrap;
-  gap:var(--sp-8) var(--sp-16);margin:0}
-.wb-head>.back{flex:none}
-.wb-head>.wb-title{flex:1 1 18rem;min-width:min(100%,18rem)}
+/* 머리 — 도구 줄(돌아가기 · 판본과 화면 밖으로 나가는 문 둘) 아래 작업 이름. */
+.wb-head{padding:0;border:0;background:none;margin:0;display:grid;align-items:center;
+  grid-template-columns:auto 1fr;grid-template-areas:"back links" "title title";gap:var(--sp-8) var(--sp-16)}
+/* 읽기 열은 본문 줄 길이라 좁다 — 한 줄에 다 세우면 문 둘이 혼자 둘째 줄로 떨어진다. 그래서 위는
+   돌아가기↔문의 **도구 줄**, 아래는 작업 이름이 열 폭을 다 쓴다. 초점을 받는 것은 도구 줄뿐이라
+   초점 순서(돌아가기→문)는 보이는 순서와 같다. 조용한 단추의 안쪽 여백만큼 바깥으로 당겨 화살표와
+   마지막 문의 글자가 열의 양 끝선에 맞는다. */
+.wb-head>.back{grid-area:back;justify-self:start;margin-inline-start:calc(-1 * var(--sp-10))}
+.wb-head>.wb-title{grid-area:title;min-width:0}
 .wb-head .eyebrow{font-size:var(--fs-caption);color:var(--a-muted);margin:0;letter-spacing:.02em}
 /* 나가는 문은 진행 수치와 **다른 묶음**이다 — 수치는 본문 위 큐 줄에 서므로 좁은 폭에서 줄이
    꺾여도 문이 수치 사이로 끼어들지 않는다(「어디로 가는 문인가」가 자리로 읽힌다). */
-.wb-links{display:flex;gap:var(--sp-4);align-items:center;flex-wrap:wrap;flex:none;margin-left:auto}
+.wb-links{grid-area:links;display:flex;gap:var(--sp-4);align-items:center;flex-wrap:wrap;
+  justify-content:flex-end;margin-inline-end:calc(-1 * var(--sp-10))}
 .wb-links #wbRevision{background:none;padding:0 var(--sp-4);font-size:var(--fs-caption);
   color:var(--a-muted);font-variant-numeric:tabular-nums}
 /* 본체: 큐 줄 · 도구 막대 · 본문 카드 · 린트가 세로로 서고, 남는 높이는 본문 카드가 받는다.
