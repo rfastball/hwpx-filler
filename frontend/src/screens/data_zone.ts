@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 
 import { roveFocus } from "./authoring_a11y.ts";
 import { icon } from "./icons.ts";
+import { ColumnValues, useColumnPanel } from "./job_column_panel.ts";
 
 type Obj = Record<string, any>;
 
@@ -80,17 +81,15 @@ function ColumnPanel(props: {
   column: string;
   data: Obj | null;
   close(): void;
+  onEdit(): void;
   rootRef: { current: HTMLElement | null };
 }): ReactNode {
-  const { controller, column, data, close, rootRef } = props;
+  const { controller, column, data, close, onEdit, rootRef } = props;
   if (data === null) return h("div", { className: "colpanel react-colpanel", "aria-busy": "true", ref: rootRef },
     h("div", { className: "cp-head" }, h("span", null, `'${column}' 필터`),
       h("button", { "data-act": "panel-close", onClick: close, "aria-label": "닫기" }, "✕")),
     h("div", { className: "cp-sec cp-loading", role: "status" }, "불러오는 중…"));
-  const checked = data.checked as string[] | null;
-  const allOn = checked === null;
   const isRange = data.kind === "amount" || data.kind === "date";
-  const values = data.options || [];
   return h("div", { className: "colpanel react-colpanel", ref: rootRef },
     h("div", { className: "cp-head" }, h("span", null, `'${column}' 필터`),
       h("button", { "data-act": "panel-close", onClick: close, "aria-label": "닫기" }, "✕")),
@@ -117,23 +116,8 @@ function ColumnPanel(props: {
       : h("div", { className: "cp-sec" }, h("span", { className: "cp-cap" }, "부분일치 검색(자모)"),
         h("input", { className: "field", "data-ctext": true, "data-busy-lock": true,
           defaultValue: data.text || "", onInput: (event: Obj) => controller.scheduleColumnText(column, event.currentTarget.value) })),
-    h("div", { className: "cp-sec" }, h("span", { className: "cp-cap" }, "값 선택(같은 열 안은 OR)"),
-      h("div", { className: "cp-vals" },
-        h("label", null, h("input", { type: "checkbox", "data-val-all": true, defaultChecked: allOn,
-          onChange: (event: Obj) => {
-            // 값 칸(비제어)을 「(전체)」에 맞춰 세운다 — 켜진 채 남으면 다음 누름이 고른 값을 끄는 쪽으로 뒤집힌다.
-            event.currentTarget.closest(".cp-vals").querySelectorAll("input[data-val]")
-              .forEach((box: HTMLInputElement) => (box.checked = event.currentTarget.checked));
-            void controller.zone("filter_col_values", { column, values: event.currentTarget.checked ? null : [] });
-          } }), h("b", null, "(전체)")),
-        ...values.map((value: string) => h("label", { key: value },
-          h("input", { type: "checkbox", "data-val": value, "data-busy-lock": true,
-            defaultChecked: allOn || checked?.includes(value),
-            onChange: (event: Obj) => {
-              const boxes = [...(event.currentTarget.closest(".cp-vals") as HTMLElement).querySelectorAll<HTMLInputElement>("input[data-val]")];
-              const on = boxes.filter((box) => box.checked).map((box) => box.dataset.val || "");
-              void controller.zone("filter_col_values", { column, values: on.length === boxes.length ? null : on });
-            } }), value === "" ? "(빈값)" : value)))),
+    // 「값 선택」 — 목록·체크는 Python 답 그대로, 열린 채 필터가 바뀌면 다시 물은 답으로 맞춘다(#1137).
+    h(ColumnValues as any, { controller, column, data, onEdit }),
     h("div", { className: "cp-acts" },
       h("button", { className: "btn sm", "data-act": "col-clear", "data-busy-lock": true,
         onClick: () => { void controller.zone("filter_clear_col", { column }); } }, "이 열 조건 지우기"),
@@ -1105,11 +1089,14 @@ export function JobDataZone(props: {
   const filter = snapshot.filter || { active: false, search: "", columns: [] };
   const table = snapshot.table || { columns: [], rows: [], visible_count: 0, hidden_selected: [], hidden_columns: [] };
   const [query, setQuery] = useState(String(filter.search || ""));
-  const [panel, setPanel] = useState<{ column: string; data: Obj | null } | null>(null);
   // 팝오버는 **누른 자리** 아래에 선다(U4 계열1-9). 트리거는 ref 로 든다 — 상태에 넣으면
   // 배치 한 번에 재렌더가 한 번 더 붙는다.
   const panelRoot = useRef<HTMLElement | null>(null);
   const panelTrigger = useRef<HTMLElement | null>(null);
+  // 열 머리 패널 — 열기·열린 채 다시 묻기·값 누름 표지(job_column_panel.ts). 여는 순간 빌더를 닫는다.
+  const { panel, setPanel, open: openPanel, edited: markPanelEdit } = useColumnPanel(
+    controller, snapshot, panelTrigger, () => setBuilder(null),
+  );
   // 필터 빌더(「+ 필터」·칩 메뉴 「고치기」) — 열 머리 패널과 같은 배치·같은 트리거 ref 규칙.
   const [builder, setBuilder] = useState<BuilderSpec | null>(null);
   const builderRoot = useRef<HTMLElement | null>(null);
@@ -1155,20 +1142,6 @@ export function JobDataZone(props: {
       if (changed) setSelectionRevision((revision) => revision + 1);
       controller.notify(`선택을 바꾸지 못했습니다: ${String(error)}`);
     });
-  }
-
-  async function openPanel(column: string, trigger: HTMLElement | null): Promise<void> {
-    if (panel?.column === column) { setPanel(null); return; }
-    setBuilder(null);
-    panelTrigger.current = trigger;
-    setPanel({ column, data: null });
-    try {
-      const data = await controller.zone("filter_panel", { column }, true);
-      setPanel((current) => current?.column === column ? { column, data } : current);
-    } catch (error) {
-      controller.notify(`필터를 불러오지 못했습니다: ${String(error)}`);
-      setPanel(null);
-    }
   }
 
   // 그린 **뒤** 재는 것이 계약이다 — `Popover.place` 는 실제 렌더 크기로 viewport clamp·
@@ -1406,7 +1379,7 @@ export function JobDataZone(props: {
       panel
         ? h(ColumnPanel as any, {
           controller, column: panel.column, data: panel.data, close: () => setPanel(null),
-          rootRef: panelRoot,
+          onEdit: markPanelEdit, rootRef: panelRoot,
         })
         : null,
       // 열 머리 패널과 같은 자리(`position:fixed` 부유 면) — 스크롤 표·칩 줄의 overflow 에 잘리지 않는다.
