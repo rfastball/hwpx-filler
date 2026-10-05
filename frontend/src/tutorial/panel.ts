@@ -350,18 +350,22 @@ type FinaleProps = {
 
 type Flight = FinaleState & { from: Record<string, string | number> };
 
-/** Fan documents leave the result panel (the result anchor, measured as the card opens) small and land one by
- *  one; the count follows each landing (playFinale). A first render already shows the end state, so nothing
- *  depends on the timers to tell the truth. */
-function useFinaleFlight(doc: Document, fan: RefObject<HTMLDivElement | null>, origin: string | null, docs: number, key: string): Flight {
-  const [flight, setFlight] = useState<Flight>({ arrived: docs, counted: docs, from: {} });
+/** Fan documents leave the result panel (the result anchor) small and land one by one; the count follows each
+ *  landing (playFinale). The start is re-aimed whenever the card moves (`place`), so a card placed after its first
+ *  frame still sends them from the panel. A first render already shows the end state, so nothing depends on the
+ *  timers to tell the truth. */
+function useFinaleFlight(doc: Document, fan: RefObject<HTMLDivElement | null>, origin: string | null, docs: number, key: string, place: string): Flight {
+  const [flight, setFlight] = useState<FinaleState>({ arrived: docs, counted: docs });
+  const [from, setFrom] = useState<Flight["from"]>({});
   useLayoutEffect(() => {
     const offset = flyFrom(visibleElement(doc, origin)?.getBoundingClientRect() ?? null, fan.current?.getBoundingClientRect() ?? null);
-    const from = { opacity: 0, "--fly-x": `${offset.x}px`, "--fly-y": `${offset.y}px`, "--fly-s": FLY_SCALE };
-    setFlight({ arrived: 0, counted: 0, from });
-    return playFinale(clockOf(doc), docs, prefersReducedMotion(doc), (state) => setFlight({ ...state, from }));
+    setFrom({ opacity: 0, "--fly-x": `${offset.x}px`, "--fly-y": `${offset.y}px`, "--fly-s": FLY_SCALE });
+  }, [doc, origin, key, place]);
+  useLayoutEffect(() => {
+    setFlight({ arrived: 0, counted: 0 });
+    return playFinale(clockOf(doc), docs, prefersReducedMotion(doc), setFlight);
   }, [doc, docs, key]);
-  return flight;
+  return { ...flight, from };
 }
 
 /** Lesson-complete card. Two ways on (#1136): the next lesson (never named on the button) or leaving practice; the
@@ -370,7 +374,8 @@ function TutorialFinale(props: FinaleProps): ReactNode {
   const { result, copy } = props;
   const fan = useRef<HTMLDivElement>(null);
   const documents = result.documents.slice(0, 3);
-  const flight = useFinaleFlight(props.doc, fan, anchorSelector(result.target), documents.length, `${result.title}|${result.count}`);
+  const flight = useFinaleFlight(props.doc, fan, anchorSelector(result.target), documents.length, `${result.title}|${result.count}`,
+    `${props.position?.x},${props.position?.y}`);
   return h("section", { id: "tutorialFinale", className: "tutorial-finale", role: "region", "aria-label": result.title,
     style: props.position ? { left: props.position.x, top: props.position.y } : undefined },
   h("div", { ref: fan, className: "tutorial-fin-fan", "aria-hidden": true }, ...documents.map((document, index) =>
