@@ -34,18 +34,15 @@ export async function probeCardEdit(ctx, stubBridgeCall) {
   try {
     const content = doc.querySelector("#wbCard .cm-content");
     const hole = doc.querySelector('#wbCard .seg-blank[data-token="비고"]');
-    const line = hole && hole.closest(".cm-line");
-    const text = line && Array.prototype.find.call(line.childNodes, (node) => node.nodeType === 3);
-    /* 초점을 먼저 주고 편집면이 제 선택을 되돌려 놓은 **뒤에** 캐럿을 둔다 — 순서가 바뀌면 편집면이
-       초점 복원으로 캐럿을 문서 머리에 되돌려 글자가 엉뚱한 자리에 들어간다. */
+    /* 캐럿은 **편집면의 누르기 경로**로 둔다 — 표지 왼쪽 끝을 누르면 편집면이 그 자리를 선택으로
+       세운다. DOM 선택을 직접 바꾸는 길은 창이 OS 초점을 쥐지 않았을 때 편집면이 읽지 않는다
+       (사용자 데스크톱의 초점을 빼앗지 않고 잰다). */
     content.focus();
-    await ctx.sleep(60);
-    const range = doc.createRange();
-    range.setStart(text, text.length);
-    range.collapse(true);
-    const picked = doc.getSelection();
-    picked.removeAllRanges();
-    picked.addRange(range);
+    const box = hole.getBoundingClientRect();
+    const at = { bubbles: true, cancelable: true, button: 0, buttons: 1, view: ctx.win,
+      clientX: box.left + 1, clientY: box.top + box.height / 2 };
+    hole.dispatchEvent(new ctx.win.MouseEvent("mousedown", at));
+    ctx.win.dispatchEvent(new ctx.win.MouseEvent("mouseup", { ...at, buttons: 0 }));
     await ctx.sleep(80);
     doc.execCommand("insertText", false, "없음");
     await ctx.sleep(30);
