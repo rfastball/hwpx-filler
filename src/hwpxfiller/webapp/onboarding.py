@@ -11,7 +11,7 @@ from pathlib import Path
 from copy import deepcopy
 from contextlib import nullcontext
 import threading
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from ..external import settings
@@ -23,8 +23,10 @@ from .onboarding_guide import (
 )
 from .onboarding_match_results import match_event
 from .onboarding_practice import (
-    NO_RETURN_SCREEN, capture_return, note_practice_save, practice_resources, restore_screen, start_fresh,
+    NO_RETURN_SCREEN, capture_return, merge_practice_snapshot, note_practice_save, practice_resources,
+    restore_screen, start_fresh,
 )
+from .onboarding_settings import reset_progress, set_entry_visible
 
 
 def first_launch_candidate(home: Path) -> bool:
@@ -108,11 +110,7 @@ class OnboardingController:
         snap["resources"] = {"ready": ready, "summary": f"{summary} {notice}".strip(), "files": files}
         reason = self._recovery or (None if ready or not self.progress.selected else summary)
         snap["recovery"] = {"title": "연습 파일을 확인하세요", "body": reason} if reason else None
-        practice_active = self._return_context is not None
-        snap["practice"] = {"active": practice_active,
-                            "return_screen": self._return_context.get("screen") if self._return_context else None}
-        # HUD stays up mid-practice even with the toggle off (#1147); only the invitation stays toggle-only.
-        snap["entry"]["visible"] = snap["entry"]["visible"] or practice_active
+        merge_practice_snapshot(self, snap)
         if snap["beat"]:
             guide_beat(self, snap["beat"])
         return snap
@@ -237,23 +235,13 @@ class OnboardingController:
         elif action == "next":
             self._next()
         elif action == "reset_progress":
-            if payload.get("confirm") is not True:
-                raise ValueError("모든 학습 기록을 지울지 확인하세요.")
-            entry_visible = self.progress.entry_visible
-            self.progress = LessonProgress({"version": 1, "invite_seen": True})
-            self.progress.entry_visible = entry_visible
-            self._recovery = None
+            reset_progress(self, payload)
         elif action == "later":
             self.progress.later()
         elif action in {"pause", "skip"}:
             self.progress.pause()
         elif action == "set_entry_visible":
-            # 브리지는 타입을 보증하지 않는다(Any) — `cast`는 pyright 선언용이고, 실제 거절은
-            # settings.save_tutorial_entry_visible 하나가 진다(confirm-or-alarm). 여기서 다시
-            # 검사하면 사용자 새 문장이 하나 더 늘어난다(census #1147 교훈, 중복 검사 없음).
-            visible = cast(bool, payload.get("visible"))
-            settings.save_tutorial_entry_visible(visible)
-            self.progress.entry_visible = visible
+            set_entry_visible(self, payload)
         else:
             raise ValueError(f"알 수 없는 tutorial 액션: {action!r}")
         self._persist()

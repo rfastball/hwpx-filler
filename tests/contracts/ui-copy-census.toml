@@ -3542,10 +3542,6 @@ text = "과정을 다시 고르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "모든 학습 기록을 지울지 확인하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "안내 진행을 확인하지 못했습니다: {}. 작업 결과는 보존됐습니다. 튜토리얼에서 다시 확인하세요."
 
 [[sentence]]
@@ -3635,6 +3631,10 @@ text = "연습 파일을 먼저 준비하세요."
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_seed.py"
 text = "이 과정용 연습 작업 '{}'을 준비했습니다. 다른 과정의 완료 기록은 바꾸지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_settings.py"
+text = "모든 학습 기록을 지울지 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_authoring.py"

@@ -431,6 +431,19 @@ function TutorialHud(props: HudProps): ReactNode {
       }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), props.exit);
 }
 
+/** 설정의 「튜토리얼 버튼 표시」 토글(#1147) — HUD·열린 패널을 백엔드가 낸 최종값
+ *  그대로 따른다(연습 중이면 토글과 무관하게 true). 여기서 다시 판정하지 않는다. */
+function useHudVisible(snapshot: TutorialSnapshot | null, close: () => void): boolean {
+  const visible = snapshot?.entry?.visible !== false;
+  useEffect(() => { if (!visible) close(); }, [visible]);
+  return visible;
+}
+
+/** 열린 과정 목록 패널을 그릴지 — HUD 숨김(#1147)·초대 카드·overlay 점유를 한데 묻는다. */
+function lessonsPanelOpen(hudVisible: boolean, open: boolean, snapshot: TutorialSnapshot | null, overlayBusy: boolean): boolean {
+  return hudVisible && open && !!snapshot && !snapshot.invitation.visible && !overlayBusy;
+}
+
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const raw = useSyncExternalStore(ports.model.subscribe, ports.model.getSnapshot, ports.model.getSnapshot);
   const snapshot = readSnapshot(raw);
@@ -455,10 +468,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     finally { setPending(false); }
   }, [pending, ports]);
 
-  // 설정 토글이 꺼지면 HUD·열린 패널을 모두 숨긴다(#1147). 값은 백엔드가 낸 최종값
-  // 그대로 따른다(연습 중이면 토글과 무관하게 true) — 여기서 다시 판정하지 않는다.
-  const hudVisible = snapshot?.entry?.visible !== false;
-  useEffect(() => { if (!hudVisible) setOpen(false); }, [hudVisible]);
+  const hudVisible = useHudVisible(snapshot, () => setOpen(false));
 
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
   const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
@@ -523,7 +533,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     hudVisible
       ? (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry)
       : null,
-    hudVisible && open && snapshot && !snapshot.invitation.visible && !overlayBusy ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+    lessonsPanelOpen(hudVisible, open, snapshot, overlayBusy) ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },

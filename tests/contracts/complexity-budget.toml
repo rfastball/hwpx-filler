@@ -326,9 +326,6 @@ function_complexity = 11
 [budget."frontend/src/screens/segment_view.ts::segmentNode"]
 function_complexity = 11
 
-[budget."frontend/src/screens/settings_sheet.ts::SettingsSheet"]
-function_complexity = 11
-
 [budget."frontend/src/screens/sheet_picker.ts::SheetPickerDialog"]
 function_complexity = 16
 
@@ -424,7 +421,7 @@ function_complexity = 11
 function_complexity = 37
 
 [budget."frontend/src/tutorial/panel.ts::TutorialPanel"]
-function_complexity = 48
+function_complexity = 46
 
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]
 function_complexity = 29
@@ -1001,7 +998,7 @@ function_complexity = 16
 function_complexity = 15
 
 [budget."src/hwpxfiller/external/settings.py"]
-module_statements = 334
+module_statements = { value = 342, override = "#1147", reason = "튜토리얼 버튼 표시 토글 두 함수(load/save_tutorial_entry_visible) 추가 — 기존 tutorial 중첩 버킷 접근자 묶음과 같은 자리가 계약(같은 전역 경로·판독-보존-쓰기)이라 지금 쪼개면 그 묶음을 흩어 놓는다. module 분리는 별도 이슈로 다룬다." }
 
 [budget."src/hwpxfiller/external/settings.py::load_last_data_source"]
 function_complexity = 16
@@ -1143,7 +1140,7 @@ module_statements = 389
 class_methods = 43
 
 [budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.snapshot"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."src/hwpxfiller/viewmodel/tutorial_state.py::TutorialViewModel"]
 class_methods = 25
@@ -1262,7 +1259,7 @@ function_complexity = 14
 function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/product_api.py::preferences_outcome"]
 function_complexity = 16

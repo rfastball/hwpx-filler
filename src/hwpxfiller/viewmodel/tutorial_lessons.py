@@ -451,6 +451,10 @@ class LessonProgress:
             self.record(self.selected)["context"].update(context)
         return self._advance()
 
+    def _invite_visible(self) -> bool:
+        """첫 안내 카드 — 첫 실행·미열람·토글 켜짐(#1147) 셋을 모두 요구한다."""
+        return self.first_launch and not self.invite_seen and self.entry_visible
+
     def snapshot(self) -> dict:
         beat = self.beat() if self.active else None
         selected_lesson = BY_ID.get(self.selected) if self.selected else None
@@ -463,7 +467,7 @@ class LessonProgress:
         return {
             "kind": "tutorial-lessons/v1",
             "invitation": {
-                "visible": self.first_launch and not self.invite_seen and self.entry_visible,
+                "visible": self._invite_visible(),
                 "title": "문서나르미 첫 안내",
                 "body": "예제 서식과 데이터로 첫 문서를 만드세요. 시작할 때 연습 사본을 준비합니다.",
             },

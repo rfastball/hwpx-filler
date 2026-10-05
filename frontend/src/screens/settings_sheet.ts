@@ -243,6 +243,16 @@ export type OutputFolderView = {
 /** 서식 폴더 행이 그리는 값 — 저장 폴더와 같은 성분(둘 다 링0 도출의 투영이다). */
 export type TemplatesRootView = OutputFolderView;
 
+/** 저장 폴더·서식 폴더 공용 — backend 도출 투영의 네 칸을 같은 형상으로 뽑는다(중복 제거). */
+function folderRowView(zone: Obj, busy: boolean): OutputFolderView {
+  return {
+    directory: String(zone.directory || ""),
+    sourceLabel: String(zone.source_label || ""),
+    notice: String(zone.notice || ""),
+    busy,
+  };
+}
+
 export function SettingsSheet(props: {
   theme: SettingsThemePort;
   personalization: SettingsPersonalizationPort;
@@ -261,24 +271,13 @@ export function SettingsSheet(props: {
      저장소 판독이라 그것을 그대로 스냅샷 함수로 쓴다(파생 객체를 만들면 매 호출이 새 참조가
      돼 useSyncExternalStore 가 무한 재렌더에 든다). */
   const runState = useSyncExternalStore(job.subscribe, job.getRun, job.getRun);
-  const folder = ((runState.lastFull || {}).output_folder || {}) as Obj;
-  const outputFolder: OutputFolderView = {
-    directory: String(folder.directory || ""),
-    sourceLabel: String(folder.source_label || ""),
-    notice: String(folder.notice || ""),
-    busy: runState.running === true,
-  };
+  const busy = runState.running === true;
+  const outputFolder = folderRowView(((runState.lastFull || {}).output_folder || {}) as Obj, busy);
   /* 서식 폴더도 같은 규율이다 — tpl 채널의 `templates_root` 존을 그대로 판독한다. */
   const tplState = useSyncExternalStore(
     templates.subscribe, templates.getSnapshot, templates.getSnapshot,
   );
-  const root = ((tplState || {}).templates_root || {}) as Obj;
-  const templatesRoot: TemplatesRootView = {
-    directory: String(root.directory || ""),
-    sourceLabel: String(root.source_label || ""),
-    notice: String(root.notice || ""),
-    busy: runState.running === true,
-  };
+  const templatesRoot = folderRowView(((tplState || {}).templates_root || {}) as Obj, busy);
   /* 튜토리얼 버튼 표시 토글(#1147) — `tutorial` 채널 스냅샷의 `entry.visible`을 그대로
      읽는다(판정은 백엔드). 첫 당김 전·판독 실패는 기본 표시(백엔드 기본값과 같다). */
   const tutorialState = useSyncExternalStore(

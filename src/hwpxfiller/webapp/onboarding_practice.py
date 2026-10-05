@@ -13,8 +13,8 @@ from typing import Any
 from ..external.tutorial_practice import ORIGINALS, fingerprint
 from .onboarding_seed import DERIVED, TXT_NAME, seed_after_switch, seed_before_switch
 
-__all__ = ["NO_RETURN_SCREEN", "capture_return", "note_practice_save", "practice_resources", "restore_screen",
-           "start_fresh"]
+__all__ = ["NO_RETURN_SCREEN", "capture_return", "merge_practice_snapshot", "note_practice_save",
+           "practice_resources", "restore_screen", "start_fresh"]
 
 NO_RETURN_SCREEN = "돌아갈 화면을 확인할 수 없습니다."
 
@@ -141,3 +141,15 @@ def _reopen_workbench(tutorial: Any, row) -> tuple[str, str]:
     if index is not None:
         tutorial._workbench().dispatch("set_current", {"index": index})
     return "workbench", ""
+
+
+def merge_practice_snapshot(tutorial: Any, snap: dict) -> None:
+    """Fold the live practice zone and the entry-visible override (#1147) into one snapshot.
+
+    The HUD stays up mid-practice even with the settings toggle off; only the first-launch
+    invitation (``snap["entry"]`` set before this call) stays toggle-only.
+    """
+    practice_active = tutorial._return_context is not None
+    snap["practice"] = {"active": practice_active,
+                        "return_screen": tutorial._return_context.get("screen") if practice_active else None}
+    snap["entry"]["visible"] = snap["entry"]["visible"] or practice_active
