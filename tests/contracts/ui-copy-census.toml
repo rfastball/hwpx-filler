@@ -2457,6 +2457,10 @@ text = "항목 {}개를 전부 구간 표기로 되돌립니다. 되돌린 뒤: 
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'{}' 줄 끝의 '⋮'은 이 템플릿에 쓰는 명령을 엽니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "'⋯'에는 연결 표 전체에 쓰는 명령이 있습니다. 누르세요."
 
 [[sentence]]
@@ -2494,6 +2498,10 @@ text = "'기존 작업에 적용'을 누르면 '계약 안내 작업'이 바뀐 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "'낙찰자 결정방법'에서 '고시 미만'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'내용 편집'은 이 템플릿을 템플릿 저작 화면에서 엽니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
@@ -2645,11 +2653,11 @@ text = "'포함할 내용'의 '예산재배정'에서 '안내포함'을 고르�
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'표시 이름'에 안내생략을 적고 Enter 키를 두 번 누르세요."
+text = "'표시 이름'에 안내생략을 적고 Enter 키를 누르세요. 단추에 Enter 표시가 나오면 한 번 더 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'표시 이름'에 안내포함을 적고 Enter 키를 두 번 누르세요."
+text = "'표시 이름'에 안내포함을 적고 Enter 키를 누르세요. 단추에 Enter 표시가 나오면 한 번 더 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
@@ -2686,6 +2694,10 @@ text = "'항목으로 만들기'는 고른 줄을 하나의 '항목'으로 묶�
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'＋ 새 작업'의 '고르기' 단계에는 서식 폴더의 템플릿 목록이 있습니다. 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"

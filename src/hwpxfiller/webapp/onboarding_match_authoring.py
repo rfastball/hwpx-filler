@@ -145,15 +145,12 @@ def _item_range(tutorial: Any, obs: Observation) -> dict | None:
 
 
 def _include_range(tutorial: Any, obs: Observation) -> dict | None:
-    """Any piece of paragraph 3 short of its line break. A choice made of whole lines (the break too: a triple click,
-    a drag onto the line below) applies at the first Enter, so the next beat's second Enter would land in the editor
-    over the selected choice and replace it (#1146)."""
     picked = _range(tutorial, obs)
     target = _include_target(picked[0]) if picked else None
     if picked is None or target is None:
         return None
     _text, start, end = picked
-    return {} if target[0] <= start < end <= target[1] else None
+    return {} if target[0] <= start < end <= target[1] + 1 else None
 
 
 def _omit_range(tutorial: Any, obs: Observation) -> dict | None:

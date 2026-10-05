@@ -351,9 +351,6 @@ def test_lesson_eight_builds_an_item_with_two_choices(app):
     begin = text.index("\n3. ") + 1
     finish = text.index("\n", begin)
     assert walk.beat()["range"] == {"session_id": doc.sid, "start": begin, "end": finish}
-    # Whole lines (the break too) would make the choice apply at the first of the next beat's two Enters (#1146).
-    doc.select(begin, finish + 1)()
-    assert walk.beat()["id"] == "include_range"
     walk.step("include_range", doc.select(begin, finish))
     walk.press("include_create")
     walk.step("include_name", doc.apply(begin, finish, {"type": "create_option", **_named("안내포함")}, enter_twice=True))

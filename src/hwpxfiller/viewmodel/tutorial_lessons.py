@@ -293,12 +293,14 @@ LESSONS: tuple[Lesson, ...] = (
              "authoring", "authoring-range", "include_range_selected"),
         _create("include_create", "선택으로 만들기", "'선택으로 만들기'는 고른 줄을 이 '항목'의 '선택' 하나로 만듭니다. 누르세요.",
                 "create_option"),
-        Beat("include_name", "'안내포함' 이름", "'표시 이름'에 안내포함을 적고 Enter 키를 두 번 누르세요.",
+        # A choice of whole lines applies at the first Enter; any other first shows its effect and the button then
+        # carries the Enter key. A fixed "press Enter twice" sent the second Enter into the editor over the new choice.
+        Beat("include_name", "'안내포함' 이름", "'표시 이름'에 안내포함을 적고 Enter 키를 누르세요. 단추에 Enter 표시가 나오면 한 번 더 누르세요.",
              "authoring", "property-name", "option_created"),
         Beat("omit_range", "빈 줄 고르기", "색으로 표시한 '항목' 안의 빈 줄을 누르세요. 문단을 뺄 때 이 줄이 대신 들어갑니다.",
              "authoring", "authoring-range", "omit_range_selected"),
         _create("omit_create", "선택으로 만들기", "'선택으로 만들기'를 누르세요.", "create_option"),
-        Beat("omit_name", "'안내생략' 이름", "'표시 이름'에 안내생략을 적고 Enter 키를 두 번 누르세요.",
+        Beat("omit_name", "'안내생략' 이름", "'표시 이름'에 안내생략을 적고 Enter 키를 누르세요. 단추에 Enter 표시가 나오면 한 번 더 누르세요.",
              "authoring", "property-name", "practice_options_created"),
         _trial_open(),
         Beat("fill", "빈 시험 칸 채우기", "'필드 이름 사용'은 비어 있는 시험 칸을 필드 이름으로 채웁니다. 누르세요.",
