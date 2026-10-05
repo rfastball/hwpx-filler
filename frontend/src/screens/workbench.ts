@@ -393,6 +393,46 @@ function EditedMark(props: { controller: WorkbenchController; card: Obj }): Reac
     }, "원래대로"));
 }
 
+/** 큐 점 색인 — 큐 줄의 가운데 칸. 점 하나가 탭 정지 하나(로빙)이고 화살표·Home/End 로 옮긴다.
+ *
+ *  1건이면 순회할 곳이 없어 큐 장치가 숨는다(퇴화 승계) — 정보가 없어서지 장식이라서가 아니다. */
+function QueueDots(props: { controller: WorkbenchController; card: Obj; degenerate: boolean }): ReactNode {
+  const { controller, card, degenerate } = props;
+  return h("div", {
+    className: "wb-dots", id: "wbDots", role: "group", "aria-label": "큐 진행 표시",
+    hidden: degenerate,
+    onFocus: (event: Obj) => {
+      const target = (event.target as Element).closest(".wc-dot") as HTMLButtonElement | null;
+      if (!target) return;
+      const previous = event.currentTarget.querySelector('.wc-dot[tabindex="0"]') as HTMLButtonElement | null;
+      if (previous && previous !== target) previous.tabIndex = -1;
+      target.tabIndex = 0;
+    },
+    onKeyDown: (event: Obj) => {
+      const buttons = Array.from(event.currentTarget.querySelectorAll(".wc-dot")) as HTMLButtonElement[];
+      const index = buttons.indexOf(event.target as HTMLButtonElement);
+      if (index < 0) return;
+      const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+        : event.key === "ArrowRight" || event.key === "ArrowDown" ? index + 1
+          : event.key === "ArrowLeft" || event.key === "ArrowUp" ? index - 1 : -1;
+      if (next < 0 || next >= buttons.length) return;
+      event.preventDefault();
+      buttons[next].focus();
+    },
+  }, ...(degenerate ? [] : ((card.index_map || []) as Obj[]).map((dot) => {
+    const label = DOT_STATE_LABEL[dot.state] || dot.state;
+    const why = label + (dot.recheck ? " · 다시 확인 필요" : "");
+    return h("button", {
+      className: `wc-dot ${dot.state}${dot.recheck ? " gap" : ""}`, type: "button",
+      "data-i": dot.index, key: String(dot.index),
+      tabIndex: dot.state === "current" ? 0 : -1,
+      "aria-current": dot.state === "current" ? "step" : undefined,
+      "aria-label": `${dot.row}행 ${why}`, title: `${dot.row}행 · ${why}`,
+      onClick: () => controller.guarded(() => controller.setCurrent(Number(dot.index))),
+    });
+  })));
+}
+
 export function WorkbenchScreen(props: { controller: WorkbenchController }): ReactNode {
   const { controller } = props;
   const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
@@ -417,7 +457,7 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
     /* 세션 없음 — 화면은 라우팅 가드가 막는다. 골격은 그대로 두고 값만 비운다. */
     return h("div", { className: "wb-shell" },
       h("button", {
-        className: "btn sm back", id: "wbBack", type: "button",
+        className: "btn sm quiet back", id: "wbBack", type: "button",
         onClick: () => controller.guarded(() => controller.leaveTo("job")),
       }, "← 문서 만들기로 돌아가기"));
   }
@@ -436,30 +476,30 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
         ? ` (빈 값: ${lastCopy.empty_fields.join(", ")})` : "")
       + (lastCopy.stamp_error ? ` — 최근 사용 기록은 실패했습니다: ${lastCopy.stamp_error}` : "")
     : (card.source_row ? `원본 ${card.source_row}행` : "");
+  /* 한 읽기 열(.wb-shell)에 머리 → 큐 줄 → 본문 판(도구 막대 + 카드) → 린트 → 발이 선다 —
+     DOM 순서가 곧 보이는 순서(초점 순서)다. 판정·문구는 그대로이고 자리만 정한다. */
   return h("div", { className: "wb-shell" },
     h("header", { className: "scr-head wb-head" },
       h("button", {
-        className: "btn sm back", id: "wbBack", type: "button",
+        className: "btn sm quiet back", id: "wbBack", type: "button",
         onClick: () => controller.guarded(() => controller.leaveTo("job")),
       }, "← 문서 만들기로 돌아가기"),
-      h("div", null,
+      h("div", { className: "wb-title" },
         h("p", { className: "eyebrow", id: "wbMode" }, snapshot.mode_label || ""),
         h("h1", { id: "wbTitle" }, snapshot.job_name || "검토·복사"),
         h("p", { className: "sub" }, "선택 당시 표시순서로 고정된 항목만 검토합니다.")),
-      h("div", { className: "wb-stats" },
-        h("span", null, "작업점 ", h("strong", { id: "wbPosition" }, `${position} / ${total}`)),
-        h("span", null, "복사 완료 ", h("strong", { id: "wbCopied" }, `${snapshot.copied_count || 0} / ${total}`)),
-        h("span", { className: "status", id: "wbRevision", "data-level": "idle" },
-          `템플릿 r${revision.template || 0} · 연결 r${revision.binding || 0}`)),
       /* 화면 밖으로 나가는 문 둘 — 이 화면은 연결을 읽기만 한다(#1148). 템플릿 문은 스냅샷이
-         여는 파일을 낼 때만 선다(경로를 웹이 짓지 않는다). */
+         여는 파일을 낼 때만 선다(경로를 웹이 짓지 않는다). 판본은 두 문이 여는 것의 판이라
+         문 곁에 선다 — 진행 수치는 본문 위 큐 줄이 따로 든다. */
       h("div", { className: "wb-links" },
+        h("span", { className: "status", id: "wbRevision", "data-level": "idle" },
+          `템플릿 r${revision.template || 0} · 연결 r${revision.binding || 0}`),
         h("button", {
-          className: "btn sm", id: "wbEditBinding", type: "button",
+          className: "btn sm quiet", id: "wbEditBinding", type: "button",
           onClick: () => controller.guarded(() => controller.editBinding()),
         }, "연결 편집"),
         snapshot.template_path ? h("button", {
-          className: "btn sm", id: "wbEditTemplate", type: "button",
+          className: "btn sm quiet", id: "wbEditTemplate", type: "button",
           onClick: () => controller.guarded(() => controller.editTemplate()),
         }, "템플릿 편집") : null)),
     h("div", {
@@ -467,6 +507,14 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
       role: "status", style: { display: notice && notice.text ? "" : "none" },
     }, notice && notice.text ? notice.text : ""),
     h("section", { className: "wb-body" },
+      /* 큐 줄 — 작업점 · 점 색인 · 복사 완료가 한 줄에 모여 본문 바로 위에 선다. */
+      h("div", { className: "wb-queue" },
+        h("span", { className: "wb-count" }, "작업점 ", h("strong", { id: "wbPosition" }, `${position} / ${total}`)),
+        h(QueueDots as any, { controller, card, degenerate }),
+        h("span", { className: "wb-count wb-count-end" },
+          "복사 완료 ", h("strong", { id: "wbCopied" }, `${snapshot.copied_count || 0} / ${total}`))),
+      /* 도구 막대는 카드의 머리 띠로 붙는다 — 그래도 카드의 **형제**다(카드 글자 되읽기에 섞이지
+         않게, 카드가 본체의 남는 높이를 직접 받게). */
       h("div", { className: "wb-toolbar", role: "group", "aria-label": "본문 보기" },
         ...[["filled", "채운 모습"], ["raw", "원문"]].map(([view, label]) => h("button", {
           className: "btn sm", type: "button", "data-wb-view": view, key: view,
@@ -486,40 +534,6 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
         h("option", { value: "malgun" }, "맑은고딕")),
         h("span", { className: "status", id: "wbReview", "data-level": review[1] }, review[0]),
         h(EditedMark as any, { controller, card })),
-      /* 1건이면 순회할 곳이 없어 큐 장치가 숨는다(퇴화 승계) — 정보가 없어서지 장식이라서가 아니다. */
-      h("div", {
-        className: "wb-dots", id: "wbDots", role: "group", "aria-label": "큐 진행 표시",
-        hidden: degenerate,
-        onFocus: (event: Obj) => {
-          const target = (event.target as Element).closest(".wc-dot") as HTMLButtonElement | null;
-          if (!target) return;
-          const previous = event.currentTarget.querySelector('.wc-dot[tabindex="0"]') as HTMLButtonElement | null;
-          if (previous && previous !== target) previous.tabIndex = -1;
-          target.tabIndex = 0;
-        },
-        onKeyDown: (event: Obj) => {
-          const buttons = Array.from(event.currentTarget.querySelectorAll(".wc-dot")) as HTMLButtonElement[];
-          const index = buttons.indexOf(event.target as HTMLButtonElement);
-          if (index < 0) return;
-          const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
-            : event.key === "ArrowRight" || event.key === "ArrowDown" ? index + 1
-              : event.key === "ArrowLeft" || event.key === "ArrowUp" ? index - 1 : -1;
-          if (next < 0 || next >= buttons.length) return;
-          event.preventDefault();
-          buttons[next].focus();
-        },
-      }, ...(degenerate ? [] : ((card.index_map || []) as Obj[]).map((dot) => {
-        const label = DOT_STATE_LABEL[dot.state] || dot.state;
-        const why = label + (dot.recheck ? " · 다시 확인 필요" : "");
-        return h("button", {
-          className: `wc-dot ${dot.state}${dot.recheck ? " gap" : ""}`, type: "button",
-          "data-i": dot.index, key: String(dot.index),
-          tabIndex: dot.state === "current" ? 0 : -1,
-          "aria-current": dot.state === "current" ? "step" : undefined,
-          "aria-label": `${dot.row}행 ${why}`, title: `${dot.row}행 · ${why}`,
-          onClick: () => controller.guarded(() => controller.setCurrent(Number(dot.index))),
-        });
-      }))),
       h("article", {
         className: `wb-preview wc-render f-${snapshot.target_font || "gulimche"}`,
         id: "wbCard", "data-preserve-scroll": true,
