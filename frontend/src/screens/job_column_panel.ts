@@ -63,11 +63,17 @@ export function syncColumnPanel(root: PanelRoot | null, data: Obj, typing: boole
   if (text && !typing && text !== text.ownerDocument?.activeElement) text.value = String(data.text || "");
 }
 
+/** 늦게 도착한 실패가 지금 열린 패널과 같은 열일 때만 참 — 다른 열을 연 뒤(또는 패널을 닫은 뒤) 도착한
+ *  옛 실패는 통보·패널 닫기 어느 쪽도 하지 않는다(#1139, 성공 답의 `current?.column === column` 과 같은 결). */
+export function shouldReportPanelFailure(panel: PanelState, column: string): boolean {
+  return panel?.column === column;
+}
+
 /** 다시 묻기의 순서 규칙 — `edited()` 뒤에 도착한, 그 전에 보낸 물음의 답은 버린다. */
 export function createPanelRefresher(deps: {
   fetch(column: string): Promise<Obj>;
   apply(column: string, data: Obj): void;
-  fail(error: unknown): void;
+  fail(column: string, error: unknown): void;
 }) {
   let edits = 0;
   return {
@@ -76,7 +82,7 @@ export function createPanelRefresher(deps: {
       const mine = edits;
       deps.fetch(column).then(
         (data) => { if (mine === edits) deps.apply(column, data); },
-        (error) => deps.fail(error),
+        (error) => deps.fail(column, error),
       );
     },
   };
@@ -122,14 +128,25 @@ export function useColumnPanel(
   controller: PanelController, snapshot: Obj, trigger: { current: HTMLElement | null }, onOpen: () => void,
 ) {
   const [panel, setPanel] = useState<PanelState>(null);
+  const panelRef = useRef<PanelState>(panel);
+  const setPanelTracked = (next: PanelState | ((current: PanelState) => PanelState)) => {
+    setPanel((current) => {
+      const value = typeof next === "function" ? (next as (current: PanelState) => PanelState)(current) : next;
+      panelRef.current = value;
+      return value;
+    });
+  };
   const refresher = useRef<ReturnType<typeof createPanelRefresher> | null>(null);
-  const fail = (error: unknown) => {
+  /** 늦게 도착한 실패는 그 자리의 패널이 여전히 그 열일 때만 통보하고 닫는다(#1139 — 다른 열을
+   *  연 뒤 도착한 실패가 그 패널을 닫지 않도록). */
+  const fail = (column: string, error: unknown) => {
+    if (!shouldReportPanelFailure(panelRef.current, column)) return;
     controller.notify(`필터를 불러오지 못했습니다: ${String(error)}`);
-    setPanel(null);
+    setPanelTracked(null);
   };
   refresher.current ??= createPanelRefresher({
     fetch: (column) => controller.zone("filter_panel", { column }),
-    apply: (column, data) => setPanel((current) => current?.column === column && current.data !== null ? { column, data } : current),
+    apply: (column, data) => setPanelTracked((current) => current?.column === column && current.data !== null ? { column, data } : current),
     fail,
   });
   const revision = `${snapshot.zone_epoch}|${snapshot.filter?.definition}`;
@@ -142,18 +159,18 @@ export function useColumnPanel(
   }, [revision, loaded]);
 
   async function open(column: string, from: HTMLElement | null): Promise<void> {
-    if (panel?.column === column) { setPanel(null); return; }
+    if (panel?.column === column) { setPanelTracked(null); return; }
     onOpen();
     trigger.current = from;
     seen.current = revision;  // 여는 물음이 답할 정의 — 기다리는 사이 바뀌면 도착 뒤 다시 묻는다
-    setPanel({ column, data: null });
+    setPanelTracked({ column, data: null });
     try {
       const data = await controller.zone("filter_panel", { column }, true);
-      setPanel((current) => current?.column === column ? { column, data } : current);
+      setPanelTracked((current) => current?.column === column ? { column, data } : current);
     } catch (error) {
-      fail(error);
+      fail(column, error);
     }
   }
 
-  return { panel, setPanel, open, edited: refresher.current.edited };
+  return { panel, setPanel: setPanelTracked, open, edited: refresher.current.edited };
 }
