@@ -13,12 +13,13 @@ from .onboarding_match_editor import EDITOR_MATCHERS, Matcher, Observation
 
 __all__ = ["MATCHERS", "match_event"]
 
-#: Rows the notice lessons pick, by lesson.
-_REQUIRED_ROWS = {"first_hwpx": {0, 1, 2}, "repeat_hwpx": {3, 4, 5}}
+#: Rows the notice lesson picks, by lesson.
+_REQUIRED_ROWS = {"first_hwpx": {0, 1, 2}}
+#: The saved filter the practice home seeds for the notice lesson (:mod:`.onboarding_seed`).
+_PRESET = "소상공인"
 #: lesson → (slot the single-option beat sets, the option it must hold).
 _SLOT_CHOICE = {
     "first_hwpx": ("입찰참가자격", "소기업·소상공인"),
-    "repeat_hwpx": ("입찰참가자격", "중·소기업"),
     "change_apply": ("예산재배정", "안내포함"),
 }
 
@@ -75,19 +76,12 @@ def _visible(job: Any) -> set:
     return set(job.data.filter.visible_indices(records)) if job.data.filter else set(range(len(records)))
 
 
-def _memo_opened(tutorial: Any, obs: Observation) -> dict | None:
-    return {} if _job_on(tutorial, obs, "filter_panel") and obs.payload.get("column") == "메모" else None
-
-
-def _memo_cleared(tutorial: Any, obs: Observation) -> dict | None:
-    return {} if (_job_on(tutorial, obs, "filter_col_values") and obs.payload.get("column") == "메모"
-                  and obs.payload.get("values") == []) else None
-
-
 def _filtered(tutorial: Any, obs: Observation) -> dict | None:
+    """The seeded saved filter switched on, leaving exactly the lesson's rows on the table."""
     required = _REQUIRED_ROWS.get(tutorial.progress.selected or "")
-    return {} if (obs.screen == "job" and obs.action.startswith("filter_") and _same_job(tutorial)
-                  and obs.payload.get("column") == "메모" and _visible(tutorial._job()) == required) else None
+    result = obs.result if isinstance(obs.result, dict) else {}
+    return {} if (_job_on(tutorial, obs, "toggle_filter_preset") and obs.payload.get("name") == _PRESET
+                  and result.get("active") is True and _visible(tutorial._job()) == required) else None
 
 
 def _picked_rows(tutorial: Any, obs: Observation) -> dict | None:
@@ -145,17 +139,12 @@ def _named_after(documents: list[dict], identifiers: set) -> bool:
     return all(any(identifier in doc["name"] for doc in documents) for identifier in identifiers)
 
 
-def _generated(final: bool) -> Matcher:
-    def match(tutorial: Any, obs: Observation) -> dict | None:
-        documents = _generated_documents(tutorial, obs)
-        if documents is None:
-            return None
-        _ctx(tutorial)["generated"] = documents
-        if final:
-            tutorial._finish_result("다시 만든 문서 3건", "새 행의 입찰공고번호로 문서를 만들었습니다.",
-                                    "job", "results", documents)
-        return {}
-    return match
+def _generated(tutorial: Any, obs: Observation) -> dict | None:
+    documents = _generated_documents(tutorial, obs)
+    if documents is None:
+        return None
+    _ctx(tutorial)["generated"] = documents
+    return {}
 
 
 def _result_opened(tutorial: Any, obs: Observation) -> dict | None:
@@ -229,18 +218,12 @@ MATCHERS: dict[str, Matcher] = {
     "library_job_selected": _library_selected,
     "job_opened": _job_opened,
     "derived_reopened": _derived_reopened,
-    "memo_filter_opened": _memo_opened,
-    "memo_values_cleared": _memo_cleared,
     "notice_first_filtered": _filtered,
-    "notice_second_filtered": _filtered,
     "notice_first_rows": _picked_rows,
-    "notice_second_rows": _picked_rows,
     "rows_selected": _all_rows,
     "slot_option_chosen": _slot_chosen,
     "notice_first_options": _notice_options,
-    "notice_second_options": _notice_options,
-    "notice_first_generated": _generated(final=False),
-    "notice_second_generated": _generated(final=True),
+    "notice_first_generated": _generated,
     "notice_result_opened": _result_opened,
     "txt_workbench_opened": _bench_opened,
     "blank_observed": _blank_observed,

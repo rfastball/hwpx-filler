@@ -346,10 +346,8 @@ class OnboardingController:
                        documents: list[dict], *, count: int | None = None) -> None:
         self.progress.result = {"screen": screen, "target": target, "title": title,
                                 "body": body, "count": len(documents) if count is None else count,
-                                "documents": documents,
-                                "actions": [{"label": "결과 확인", "target": target}]}
+                                "documents": documents}
         lessons = list(BY_ID)
         if self.progress.selected in lessons and lessons.index(self.progress.selected) + 1 < len(lessons):
             next_id = lessons[lessons.index(self.progress.selected) + 1]
             self.progress.result["next_scenario_id"] = next_id
-            self.progress.result["next_scenario_label"] = BY_ID[next_id].title

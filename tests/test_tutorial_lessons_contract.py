@@ -79,6 +79,26 @@ def test_an_older_curriculum_keeps_completion_but_restarts_position():
     assert LessonProgress().progress()["curriculum"] == CURRICULUM
 
 
+def test_records_of_a_removed_lesson_are_ignored_and_other_completion_is_kept():
+    # '저장한 작업으로 다시 만들기'(repeat_hwpx) was removed in #1136; its stored record and selection are dropped.
+    stored = {"version": 1, "curriculum": CURRICULUM, "selected": "repeat_hwpx",
+              "records": {"repeat_hwpx": {"checkpoint": 3, "completed": True, "context": {"home": "x"}},
+                          "contract_txt": {"checkpoint": 2, "completed": True, "context": {}}}}
+    progress = LessonProgress(stored)
+    assert "repeat_hwpx" not in BY_ID and progress.selected is None
+    assert set(progress.records) == {"contract_txt"} and progress.record("contract_txt")["completed"]
+    snap = progress.snapshot()
+    assert [item["id"] for item in snap["scenarios"]] == [lesson.id for lesson in LESSONS]
+    assert "repeat_hwpx" not in progress.progress()["records"]
+
+
+def test_every_range_beat_names_a_range_the_guide_can_paint():
+    from hwpxfiller.webapp.onboarding_match_authoring import _TARGETS
+
+    ranged = {beat.event for _lesson, beat in _beats() if beat.target == "authoring-range"}
+    assert ranged and ranged == set(_TARGETS), ranged
+
+
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     from hwpxfiller.webapp.app import WebFrontend
@@ -138,18 +158,19 @@ def test_a_changed_editor_input_returns_to_the_beat_that_chose_it(app):
 
 def test_one_command_completes_at_most_one_beat(app):
     tutorial = app.controllers["tutorial"]
-    app.dispatch("tutorial", "select", {"scenario_id": "repeat_hwpx"})
+    app.dispatch("tutorial", "select", {"scenario_id": "blank_values"})
+    name = tutorial._context()["job_name"]
     # select_work is this beat's command; the next beat (use the job) needs its own press.
-    app.dispatch("library", "select_work", {"name": "공고서 작업"})
-    assert tutorial.progress.record("repeat_hwpx")["checkpoint"] == 1
-    app.dispatch("job", "prefer_work", {"name": "공고서 작업"})
-    app.dispatch("job", "prefer_work", {"name": "공고서 작업"})
-    assert tutorial.progress.record("repeat_hwpx")["checkpoint"] == 2
+    app.dispatch("library", "select_work", {"name": name})
+    assert tutorial.progress.record("blank_values")["checkpoint"] == 1
+    app.dispatch("job", "prefer_work", {"name": name})
+    app.dispatch("job", "prefer_work", {"name": name})
+    assert tutorial.progress.record("blank_values")["checkpoint"] == 2
 
 
 def test_seeded_names_are_fixed_and_lessons_one_and_three_register_both_sheets(app):
     tutorial = app.controllers["tutorial"]
-    expected_jobs = {"repeat_hwpx": "공고서 작업", "replace_data": "공고서 작업",
+    expected_jobs = {"replace_data": "공고서 작업",
                      "purchase_txt": "구매추진 안내 작업", "blank_values": "계약 안내 작업(빈 칸)",
                      "change_apply": "계약 안내 작업"}
     for lesson, name in expected_jobs.items():

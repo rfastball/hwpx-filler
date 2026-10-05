@@ -34,7 +34,6 @@ DERIVED = {
 
 #: lesson → (job name, template, data: original or the derived copy, sheet).
 _JOBS = {
-    "repeat_hwpx": ("공고서 작업", HWPX_NAME, "original", "공고"),
     "replace_data": ("공고서 작업", HWPX_NAME, "original", "공고"),
     "purchase_txt": ("구매추진 안내 작업", PURCHASE_NAME, "original", "공고"),
     "blank_values": ("계약 안내 작업(빈 칸)", TXT_NAME, "derived", "계약"),
@@ -46,6 +45,9 @@ _AUTHORING_LESSONS = ("field_trial", "option_apply", "change_apply")
 #: Lessons that choose data from the registered list with one press (#1127 decision 3).
 _POOL_LESSONS = {"first_hwpx", "contract_txt"}
 _POOL_SHEETS = ("공고", "계약")
+#: lesson → sheet → saved filters on that registered sheet: the notice lesson presses one chip
+#: instead of finding the 메모 column off to the right of the table (#1136).
+_POOL_FILTERS = {"first_hwpx": {"공고": [{"name": "소상공인", "state": {"columns": {"메모": {"text": "소상공인"}}}}]}}
 
 _SOURCE_OVERRIDES = {"낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화", "대표계약업체": "계약상대자"}
 _PARAGRAPH = re.compile(r"^3\. .*$", re.MULTILINE)
@@ -65,9 +67,11 @@ def seed_before_switch(tutorial: Any, lesson_id: str, home: Path) -> None:
     if lesson_id in _POOL_LESSONS:
         # Same home layout as the practice graph's registry (``datasets/``), written before it assembles.
         registry = DatasetPoolRegistry(home / "datasets")
+        filters = _POOL_FILTERS.get(lesson_id, {})
         ctx["pool_keys"] = {sheet: registry.add(DatasetReference(
             name=Path(DATA_NAME).stem, kind="excel",
-            opts={"path": tutorial._asset(DATA_NAME), "sheet": sheet, "header_row": 1}))
+            opts={"path": tutorial._asset(DATA_NAME), "sheet": sheet, "header_row": 1},
+            filters=filters.get(sheet, [])))
             for sheet in _POOL_SHEETS}
 
 

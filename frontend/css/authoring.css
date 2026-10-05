@@ -419,6 +419,8 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 /* 범위 고르기의 고무줄 범위 — 선택처럼 칠하되 점선 테두리로 아직 고르지 않은 범위임을 가른다. */
 .authoring-document .cm-authoring-rangepick{background:var(--a-sel);outline:1px dashed var(--a-primary)}
 .authoring-document .cm-authoring-rangepick-line{box-shadow:inset 3px 0 0 var(--a-primary)}
+/* 튜토리얼 범위 단계가 고르라고 한 범위(#1136) — 옅은 면과 왼쪽 막대. 실제 선택(브라우저 선택 색)은 그 위에 그대로 보인다. */
+.authoring-document .cm-tutorial-range{background:color-mix(in srgb,var(--a-primary) 10%,transparent);box-shadow:inset 3px 0 0 var(--a-primary)}
 @media(forced-colors:active){
   .authoring-tree [role=treeitem][data-kind=slot]>[role=group],.authoring-tree [role=group]>[role=treeitem][data-kind=option]{border-left-color:CanvasText}
   .authoring-outline-tab[aria-selected=true],.authoring-tab[aria-selected=true]{border-bottom-color:Highlight}
@@ -432,6 +434,7 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-document .cm-authoring-problem-error,.authoring-document .cm-authoring-problem-warning{text-decoration-color:CanvasText}
   .authoring-document .cm-authoring-pair{outline:1px dashed CanvasText;outline-offset:-1px}
   .authoring-document .cm-authoring-rangepick{outline:1px dashed Highlight}
+  .authoring-document .cm-tutorial-range{outline:2px dashed Highlight;outline-offset:-2px}
   /* 범위 막대는 그림자라 강제 색상에서 사라진다 — 실선(항목)·점선(선택) 왼쪽 테두리가 대신 선다. */
   .authoring-document .cm-txtRegion-slot{border-left:3px solid CanvasText}
   .authoring-document .cm-txtRegion-slot.cm-txtRegion-option{border-left-style:dashed}

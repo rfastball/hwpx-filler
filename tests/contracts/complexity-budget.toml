@@ -430,7 +430,7 @@ function_complexity = 11
 function_complexity = 38
 
 [budget."frontend/src/tutorial/panel.ts::TutorialPanel"]
-function_complexity = 62
+function_complexity = 57
 function_statements = 53
 
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]

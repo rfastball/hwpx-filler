@@ -154,3 +154,19 @@ test("FB-03: TXT name tags speak the HWPX editor's colours — semantic tokens e
   const editor = readFileSync(new URL("../../frontend/css/editor.css", import.meta.url), "utf8");
   for (const kind of ["field", "slot", "option"]) assert.match(editor, new RegExp(`var\\(--a-sem-${kind}\\)`));
 });
+
+test("#1136: the tutorial's range paints whole lines or just the characters within one line, never a token", () => {
+  const doc = "가\n3. 문단입니다\n\n\n붙임";
+  const begin = doc.indexOf("3."), finish = doc.indexOf("\n", begin);
+  const painted = (spans) => lintpadDecorations(doc, { spans }).filter((item) => item.className === "cm-tutorial-range")
+    .map(({ from, to }) => [from, to]);
+  // Line paint: a line highlight with the tutorial's class, lines 2 to 4 (its end is the last character's line).
+  assert.deepEqual(painted([{ kind: "highlight", className: "cm-tutorial-range", start: begin, end: finish + 3 }]),
+    [[begin, begin], [finish + 1, finish + 1], [finish + 2, finish + 2]]);
+  // Without a class it stays the outline highlight.
+  assert.equal(lintpadDecorations(doc, { spans: [{ kind: "highlight", start: begin, end: finish }] })[0].className, "cm-authoring-highlight");
+  // Character paint: a mark over just those characters, never hidden behind a tag or made atomic.
+  const word = doc.indexOf("문단");
+  assert.deepEqual(painted([{ kind: "guide", start: word, end: word + 2 }]), [[word, word + 2]]);
+  assert.deepEqual(lintpadDecorations(doc, { spans: [{ kind: "guide", start: word, end: word + 2 }] }).atoms, []);
+});

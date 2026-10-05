@@ -4,6 +4,7 @@ import { mountRhwp } from "../editorview/rhwp_editor.ts";
 import type { AuthoringController, AuthoringEditor, Zoom } from "./authoring_controller.ts";
 import { focusRequest, renameShortcut } from "./authoring_commands.ts";
 import { txtProblemMarks, markerPairs } from "./authoring_outline_model.ts";
+import { guideSpans } from "./authoring_guide.ts";
 import type { Obj, Props } from "./authoring_primitives.ts";
 
 const IME_BUSY = "한글 조합을 마친 뒤 다시 실행하세요.";
@@ -160,7 +161,9 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
           decorate: (analysis, mode, highlight) => {
             // 이름표(FB-03)는 모든 표시에서 원문 표기를 대신한다 — 표시 방식은 HWPX 편집면의 labels 어휘다(문서 none·템플릿
             // selected·이름표 all). 항목·선택 범위 막대는 Python 배치(placements) 그대로다.
-            const spans = [...(analysis.spans || [])];
+            // 튜토리얼 범위 단계(#1136)가 고르라고 한 범위 — Python 좌표 그대로 칠한다(판정은 Python 이 한다).
+            const guide = controller.guideOf(item.id);
+            const spans = guide ? guideSpans(analysis.spans || [], analysis.source_text || "", guide) : [...(analysis.spans || [])];
             // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
             for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
             // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.

@@ -124,8 +124,8 @@ def test_tutorial_round_trip_leaves_user_environment_byte_identical(tmp_path, mo
     assert "내 서식" not in _listed(app.controllers["tpl"])
     assert "물품 구매입찰 공고" in _listed(app.controllers["tpl"])
     _first_hwpx_round(app)
-    tutorial.dispatch("select", {"scenario_id": "repeat_hwpx"})
-    tutorial.dispatch("restart", {"scenario_id": "repeat_hwpx"})
+    tutorial.dispatch("select", {"scenario_id": "blank_values"})
+    tutorial.dispatch("restart", {"scenario_id": "blank_values"})
     app.controllers["job"].set_output_folder(str(tmp_path / "연습 결과"))
     assert tutorial.dispatch("exit", {})["ok"]
 
@@ -206,12 +206,12 @@ def test_crash_in_practice_boots_into_user_environment_and_resumes(tmp_path, mon
     home = tmp_path / "home"
     monkeypatch.setenv("HWPXFILLER_HOME", str(home))
     first = WebFrontend()
-    first.dispatch("tutorial", "select", {"scenario_id": "repeat_hwpx"})
+    first.dispatch("tutorial", "select", {"scenario_id": "blank_values"})
     tutorial = first.controllers["tutorial"]
     tutorial.dispatch("pause", {})
     lesson_home = tutorial._context()["home"]
     job_name = tutorial._context()["job_name"]
-    tutorial.progress.record("repeat_hwpx")["checkpoint"] = 1
+    tutorial.progress.record("blank_values")["checkpoint"] = 1
     tutorial._persist()
     assert locations.workspace_home() == Path(lesson_home)
     # 프로세스가 죽은 자리: 메모리 값(활성 작업 공간)은 사라지고 디스크만 남는다.
@@ -324,7 +324,7 @@ def test_lesson_seeding_failure_leaves_progress_and_workspace_unchanged(tmp_path
 
     monkeypatch.setattr(onboarding_practice, "seed_before_switch", broken_seed)
     with pytest.raises(ValueError, match="seed failed"):
-        tutorial.dispatch("select", {"scenario_id": "repeat_hwpx"})
+        tutorial.dispatch("select", {"scenario_id": "blank_values"})
     assert tutorial.progress.progress() == before
     assert locations.workspace_home() == home
     assert all(app.controllers[name] is controller for name, controller in user.items())

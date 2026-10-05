@@ -88,6 +88,7 @@ import { createScreenRuntime } from "./screens/runtime.ts";
 import { expectHostValue } from "./screens/runtime.ts";
 import { overlayEngine } from "./overlay/instance.ts";
 import { closeTutorialOverlays, createTutorialSession } from "./tutorial/session.ts";
+import { followBeatRange } from "./tutorial/range.ts";
 import { createScreenPorts } from "./screens/ports.ts";
 import { createServiceHandoffPorts } from "./ports/service_handoff.ts";
 import {
@@ -256,7 +257,9 @@ export function bootProduct() {
     doc: document, runtime, client, modal: Modal, chain: Intent, navigation,
     notify: (message) => window.alert(message),
   });
-  const AuthoringController = createAuthoringController({ runtime, client, modal: Modal, navigation });
+  /* #1136 — 튜토리얼 범위 단계가 고르라고 한 범위를 저작 편집면이 칠한다. 범위는 Python 투영 그대로다. */
+  const AuthoringController = followBeatRange(runtime.model("tutorial"),
+    createAuthoringController({ runtime, client, modal: Modal, navigation }));
   screenPorts.authoring.bind(AuthoringController);
   /* R4-03 — 실행·결과 표면의 단일 owner. legacy `screens/job.js` 는 이 커밋에서 사라지므로
      `createJobRunAdapter` 를 거치는 임시 fan-out 도 함께 은퇴한다(port 를 직접 결속한다). */

@@ -1,4 +1,4 @@
-"""Nine short onboarding lessons and their persistent guidance position.
+"""Eight short onboarding lessons and their persistent guidance position.
 
 One beat is one boxed control and one user action (#1127). Explanation beats use ``next``.
 Action beats advance from a verified product event supplied by the tutorial controller, or —
@@ -46,13 +46,12 @@ UI_PRESS_EVENTS = frozenset({
 })
 
 #: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
-CURRICULUM = 2
+CURRICULUM = 3
 
 _NEW_JOB = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
 _TO_BINDING = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
 _PICK_JOB = "'문서 작업' 목록에는 저장한 작업이 모여 있습니다. '{name}'을 누르세요."
 _USE_JOB = "'문서 만들기에서 사용'은 이 작업과 연결된 데이터를 문서 만들기 화면에 엽니다. 누르세요."
-_MEMO_FILTER = "열 이름 옆 '▾'는 그 열의 값으로 행을 거르는 필터입니다. '메모' 열의 '▾'를 누르세요."
 _VISIBLE_ROWS = "'보이는 행 모두 선택' 칸은 필터로 남은 행만 한꺼번에 고릅니다. 누르세요."
 _ALL_ROWS = "표 머리의 '전체 선택' 칸은 표의 행을 한꺼번에 고릅니다. 눌러서 {what}을 고르세요."
 _OPEN_WORKBENCH = "'검토·복사 시작'은 고른 행의 채운 문장을 한 건씩 보여 주는 작업대를 엽니다. 누르세요."
@@ -62,7 +61,6 @@ _SAVE_TEMPLATE = "'저장'은 바꾼 서식을 파일에 씁니다. 누르세요
 _OPTIONS_HELP = "'포함할 내용'은 문서마다 넣을 문단을 고르는 자리입니다. "
 _METHOD = "'낙찰자 결정방법'에서 '고시 미만'을 고르세요."
 _TXT = "낙찰자 선정 및 계약체결 안내.txt"
-_VALUE_MID = "포함할 내용: 중·소기업 / 고시 미만"
 
 
 def _new_job() -> Beat:
@@ -80,11 +78,6 @@ def _pick_job(name: str) -> Beat:
 
 def _use_job() -> Beat:
     return Beat("use_job", "문서 만들기에서 열기", _USE_JOB, "library", "library-use", "job_opened")
-
-
-def _memo_filter() -> Beat:
-    return Beat("memo_filter", "메모 열 필터 열기", _MEMO_FILTER, "job", "column-filter", "memo_filter_opened",
-                arg="메모")
 
 
 def _all_rows(what: str) -> Beat:
@@ -129,10 +122,9 @@ LESSONS: tuple[Lesson, ...] = (
              "'문서 파일 이름'은 만들 파일마다 붙는 이름 규칙입니다. 칸을 구매입찰공고-{{입찰공고번호}}로 바꾸고 Tab 키를 누르세요.",
              "editor", "filename-pattern", "notice_pattern_set"),
         Beat("save", "저장하고 열기", _SAVE_OPEN, "editor", "save-and-open", "notice_job_saved"),
-        _memo_filter(),
         Beat("filter", "소상공인 행만 남기기",
-             "'부분일치 검색'에 적은 글자가 든 행만 표에 남습니다. 소상공인을 적으세요.",
-             "job", "column-text", "notice_first_filtered"),
+             "'소상공인'은 메모에 소상공인이 든 행만 남기는 저장한 필터입니다. 누르세요.",
+             "job", "filter-chip", "notice_first_filtered", arg="소상공인"),
         Beat("rows", "보이는 3행 고르기", _VISIBLE_ROWS, "job", "row-selection", "notice_first_rows"),
         Beat("qualification", "입찰참가자격 고르기",
              _OPTIONS_HELP + "'입찰참가자격'에서 '소기업·소상공인'을 고르세요.",
@@ -144,28 +136,6 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("result", "만든 문서 열어 보기",
              "'만든 문서'에는 이번에 만든 파일이 이름과 함께 놓입니다. 첫 문서의 '내용 보기'를 누르세요.",
              "job", "result-open", "notice_result_opened"),
-    )),
-    Lesson("repeat_hwpx", "저장한 작업으로 다시 만들기",
-           "저장해 둔 공고서 작업을 열어 다른 3행과 다른 포함할 내용으로 공고서를 다시 만듭니다.", (
-        _pick_job("공고서 작업"),
-        _use_job(),
-        _memo_filter(),
-        Beat("values_off", "값 선택 모두 해제",
-             "'값 선택'은 체크한 값이 든 행만 표에 남깁니다. '(전체)'를 눌러 체크를 모두 지우세요.",
-             "job", "column-all", "memo_values_cleared"),
-        Beat("filter", "중·소기업 행만 남기기", f"'{_VALUE_MID}'에 체크하세요.",
-             "job", "column-value", "notice_second_filtered", arg=_VALUE_MID),
-        Beat("rows", "보이는 3행 고르기", _VISIBLE_ROWS, "job", "row-selection", "notice_second_rows"),
-        Beat("qualification", "입찰참가자격 바꾸기",
-             _OPTIONS_HELP + "'입찰참가자격'에서 '중·소기업'을 고르세요.",
-             "job", "slot-options", "slot_option_chosen", arg="입찰참가자격"),
-        Beat("method", "낙찰자 결정방법 고르기", _METHOD, "job", "slot-options", "notice_second_options",
-             arg="낙찰자 결정방법"),
-        Beat("names", "만들 파일 이름 확인",
-             "'생성 예정 문서'는 만들 파일의 이름을 미리 보여 줍니다. 이름마다 R26BK99000004-000 같은 입찰공고번호가 들어갔는지 확인하고 '다음'을 누르세요.",
-             "job", "delivery-plan"),
-        Beat("generate", "다시 만들기", "'문서 만들기'는 고른 3행으로 공고서 3건을 만듭니다. 누르세요.",
-             "job", "generate", "notice_second_generated"),
     )),
     Lesson("contract_txt", "안내문 문장 복사하기",
            "계약 데이터로 채운 안내 문장을 행마다 확인하고, 기안에 붙여 넣을 수 있게 복사합니다.", (
@@ -271,7 +241,7 @@ LESSONS: tuple[Lesson, ...] = (
            "안내문의 문구를 데이터가 들어갈 필드로 바꾸고, 시험값으로 결과를 확인한 뒤 저장합니다.", (
         Beat("range", "바꿀 문구 고르기",
              "본문에서 끌어 고른 문구가 필드로 바뀔 자리입니다. 3번 문단의 '10일'을 끌어 고르세요.",
-             "authoring", "authoring-canvas", "field_range_selected", entry_screen="authoring"),
+             "authoring", "authoring-range", "field_range_selected", entry_screen="authoring"),
         _create("create", "필드로 만들기", "'필드로 만들기'는 고른 문구를 데이터가 들어갈 자리로 바꿉니다. 누르세요.",
                 "create_field"),
         Beat("name", "필드 이름 적기", "'필드 이름'은 데이터 열과 연결할 이름입니다. 재배정기한을 적고 Enter 키를 누르세요.",
@@ -283,24 +253,27 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("save", "서식 저장", _SAVE_TEMPLATE, "authoring", "save-template", "field_practice_saved"),
     )),
     Lesson("option_apply", "넣거나 뺄 문단 만들기",
-           "문단을 문서마다 넣거나 뺄 수 있는 항목으로 만들고, 두 선택을 시험한 뒤 서식을 저장합니다.", (
-        Beat("item_range", "문단 고르기",
-             "항목은 문서마다 넣거나 뺄 수 있는 문단 묶음입니다. 3번 문단 첫 글자부터 그 아래 두 번째 빈 줄까지 끌어 고르세요.",
-             "authoring", "authoring-canvas", "item_range_selected", entry_screen="authoring"),
-        _create("item_create", "항목으로 만들기", "'항목으로 만들기'는 고른 줄을 하나의 항목으로 묶습니다. 누르세요.",
+           "문단을 문서마다 넣거나 뺄 수 있는 '항목'으로 만들고, 두 '선택'을 시험한 뒤 서식을 저장합니다.", (
+        Beat("about", "이 연습에서 할 일",
+             "안내문의 3번 문단을 '항목'으로 묶고, 문단을 넣는 '선택'과 빼는 '선택'을 만듭니다. "
+             "그러면 문서마다 이 문단을 넣을지 뺄지 고를 수 있습니다. '다음'을 누르세요.",
+             None, None, entry_screen="authoring"),
+        Beat("item_range", "문단 고르기", "색으로 표시한 13~15번 줄을 끝까지 끌어 고르세요.",
+             "authoring", "authoring-range", "item_range_selected", entry_screen="authoring"),
+        _create("item_create", "항목으로 만들기", "'항목으로 만들기'는 고른 줄을 하나의 '항목'으로 묶습니다. 누르세요.",
                 "create_slot"),
         Beat("item_name", "항목 이름 적기",
-             "'표시 이름'은 문서 만들기에서 보일 항목 이름입니다. 예산재배정을 적고 Enter 키를 누르세요.",
+             "'표시 이름'은 문서 만들기에서 보일 '항목' 이름입니다. 예산재배정을 적고 Enter 키를 누르세요.",
              "authoring", "property-name", "practice_item_created"),
         Beat("include_range", "넣을 문단 고르기",
-             "선택은 항목 안에서 문서마다 고를 수 있는 내용입니다. 항목 안의 3번 문단을 끌어 고르세요.",
-             "authoring", "authoring-canvas", "include_range_selected"),
-        _create("include_create", "선택으로 만들기", "'선택으로 만들기'는 고른 줄을 이 항목의 선택 하나로 만듭니다. 누르세요.",
+             "'선택'은 '항목' 안에서 문서마다 고를 수 있는 내용입니다. 색으로 표시한 3번 문단을 끌어 고르세요.",
+             "authoring", "authoring-range", "include_range_selected"),
+        _create("include_create", "선택으로 만들기", "'선택으로 만들기'는 고른 줄을 이 '항목'의 '선택' 하나로 만듭니다. 누르세요.",
                 "create_option"),
         Beat("include_name", "'안내포함' 이름", "'표시 이름'에 안내포함을 적고 Enter 키를 두 번 누르세요.",
              "authoring", "property-name", "option_created"),
-        Beat("omit_range", "빈 줄 고르기", "항목 안의 빈 줄을 누르세요. 문단을 뺄 때 이 줄이 대신 들어갑니다.",
-             "authoring", "authoring-canvas", "omit_range_selected"),
+        Beat("omit_range", "빈 줄 고르기", "색으로 표시한 '항목' 안의 빈 줄을 누르세요. 문단을 뺄 때 이 줄이 대신 들어갑니다.",
+             "authoring", "authoring-range", "omit_range_selected"),
         _create("omit_create", "선택으로 만들기", "'선택으로 만들기'를 누르세요.", "create_option"),
         Beat("omit_name", "'안내생략' 이름", "'표시 이름'에 안내생략을 적고 Enter 키를 두 번 누르세요.",
              "authoring", "property-name", "practice_options_created"),
@@ -314,7 +287,7 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("save", "서식 저장", _SAVE_TEMPLATE, "authoring", "save-template", "option_practice_saved"),
     )),
     Lesson("change_apply", "바뀐 서식을 작업에 적용하기",
-           "항목을 더한 서식을 저장한 작업에 적용하고, 문서 만들기에서 그 항목을 골라 채운 문장을 확인합니다.", (
+           "'항목'을 더한 서식을 저장한 작업에 적용하고, 문서 만들기에서 그 '항목'을 골라 채운 문장을 확인합니다.", (
         Beat("impact", "변경 영향 열기",
              "'변경 영향·작업 적용'은 이 서식을 쓰는 저장한 작업에 바뀐 점을 반영하는 패널입니다. 누르세요.",
              "authoring", "impact-tab", "impact_tab_opened", entry_screen="authoring"),
@@ -491,7 +464,7 @@ class LessonProgress:
             "copy": {
                 "start": "예제로 시작", "later": "나중에", "pause": "안내 일시정지",
                 "resume": "계속하기", "skip": "건너뛰기", "restart": "처음부터 안내",
-                "next": "다음",
+                "next": "다음", "next_lesson": "다음 연습",
                 "cleanup": "연습 파일 정리", "reset": "학습 기록 초기화",
                 "cleanup_confirm": "아래 목록에서 삭제로 표시한 연습 사본만 지웁니다. 수정한 파일과 작업이 참조하는 파일은 그대로 둡니다.",
                 "reset_confirm": "모든 과정의 학습 위치와 완료 기록을 지웁니다. 연습 파일, 사용자 파일, 저장한 작업과 생성 결과는 그대로 둡니다.",
@@ -514,4 +487,6 @@ def _beat_view(beat: Beat) -> dict:
         "press": beat.event in UI_PRESS_EVENTS,
         "placement": beat.placement,
         "can_next": beat.event is None,
+        #: Range beats: the text range the guide resolves on the open practice document.
+        "range": None,
     }
