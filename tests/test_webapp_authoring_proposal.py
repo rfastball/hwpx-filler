@@ -121,12 +121,14 @@ def test_proposal_uses_the_job_data_and_the_best_row(tmp_path: Path) -> None:
     assert view["data"]["rows"] == [{"index": 1, "label": "1행", "hint": "찾은 값 1개"},
                                     {"index": 2, "label": "2행", "hint": "찾은 값이 가장 많은 행 · 4개"}]
     assert view["data"]["rows_note"] == ""
-    assert view["counts"] == {"proposal": 3, "held": 1}
+    assert view["counts"] == {"proposal": 4, "held": 0}
     price = group(view, "추정가격")
     assert price["binding"] == {"type": "amount", "fmt": "{:,}", "label": "숫자"}
     assert price["value"] == "170,309,180원" and price["spots"][0]["entry"] == "Contents/section0.xml"
     judge = group(view, "낙찰자결정방법")
-    assert judge["kind"] == "held" and judge["only_label"] == "표 칸 1곳만 필드로"
+    # 라벨 자리가 있는 묶음은 늘 제안이다 — 문장 속 3곳은 빼고 표 칸 1곳만 싣는다.
+    assert (judge["kind"], judge["only_label"], judge["count_text"]) == ("proposal", None, "라벨 옆 1곳만")
+    assert judge["note"] == "라벨 ‘낙찰자결정방법’ 옆 1곳만 골랐습니다. 다른 3곳은 라벨이 없어 고르지 않았습니다."
     assert view["missing"] == [{"column": "계약방법", "reason": "문서에서 같은 값을 찾지 못했습니다."}]
     # 행을 바꾸면 그 행의 값으로 다시 짓는다 — 데이터는 다시 읽지 않는다.
     first = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0, "row": 1})
@@ -214,13 +216,13 @@ def test_the_draft_is_recorded_only_for_the_previewed_content(tmp_path: Path) ->
     assert session.proposal_pending is None
 
 
-def test_only_the_label_cell_of_a_held_group(tmp_path: Path) -> None:
+def test_one_label_cell_spot_makes_a_cell_field(tmp_path: Path) -> None:
     ctrl = controller(tmp_path, Port())
     sid = hwpx_session(ctrl, *NOTICE)
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     judge = group(view, "낙찰자결정방법")
     made = ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": judge["id"],
-                                          "spot_id": judge["only"]})
+                                          "spot_id": judge["spots"][0]["id"]})
     assert "ranges" not in made["command"] and made["command"]["cell_path"]
     with pytest.raises(ValueError, match="고른 위치"):
         ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": judge["id"], "spot_id": "x"})
@@ -233,14 +235,14 @@ def test_make_all_is_one_document_change(tmp_path: Path) -> None:
     sid = hwpx_session(ctrl, *NOTICE)
     ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     made = ctrl.dispatch("propose_make_all", {"session_id": sid, "revision": 0})
-    assert made["command"]["type"] == "create_fields" and len(made["command"]["fields"]) == 3
-    assert made["toast"] == "필드 3개를 만들고 연결 초안에 열과 표시형을 넣었습니다."
+    assert made["command"]["type"] == "create_fields" and len(made["command"]["fields"]) == 4
+    assert made["toast"] == "필드 4개를 만들고 연결 초안에 열과 표시형을 넣었습니다."
     assert made["label"] == "필드로 만들기" and made["confirm"] == "none"
-    assert sorted(made["field_delta"]["added_fields"]) == ["공고명", "수요기관", "추정가격"]
+    assert sorted(made["field_delta"]["added_fields"]) == ["공고명", "낙찰자결정방법", "수요기관", "추정가격"]
     ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": made["content"]})
     session = ctrl.sessions[sid]
-    assert sorted(session.proposal_bindings) == ["공고명", "수요기관", "추정가격"]
-    assert tab(ctrl, sid)["proposal"]["counts"] == {"proposal": 0, "held": 1}
+    assert sorted(session.proposal_bindings) == ["공고명", "낙찰자결정방법", "수요기관", "추정가격"]
+    assert tab(ctrl, sid)["proposal"]["counts"] == {"proposal": 0, "held": 0}
     with pytest.raises(ValueError, match="남은 제안이 없습니다."):
         ctrl.dispatch("propose_make_all", {"session_id": sid, "revision": 1})
 
@@ -250,7 +252,7 @@ def test_dismiss_survives_a_new_revision_and_off_forgets_everything(tmp_path: Pa
     sid = hwpx_session(ctrl, *NOTICE)
     view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
     kept = ctrl.dispatch("propose_dismiss", {"session_id": sid, "revision": 0, "group_id": group(view, "공고명")["id"]})
-    assert "공고명" not in {item["column"] for item in kept["groups"]} and kept["counts"]["proposal"] == 2
+    assert "공고명" not in {item["column"] for item in kept["groups"]} and kept["counts"]["proposal"] == 3
     made = ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": group(view, "수요기관")["id"]})
     ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": made["content"]})
     assert "공고명" not in {item["column"] for item in tab(ctrl, sid)["proposal"]["groups"]}
@@ -361,7 +363,7 @@ def test_python_owns_the_popover_sentences(tmp_path: Path) -> None:
     price = group(view, "추정가격")
     assert price["source_text"] == "2행 ‘추정가격’ 열과 같은 값입니다."
     assert (price["links_note"], price["only_label"]) == ("", None)
-    assert group(view, "낙찰자결정방법")["only_label"] == "표 칸 1곳만 필드로"
+    assert group(view, "낙찰자결정방법")["only_label"] is None  # 제안 묶음 자리 1곳 — 묶음을 만드는 것과 같다
     # 한 자리만 만든 뒤 남은 같은 값 자리는 같은 이름 필드에 더해진다 — 그 한 줄도 Python 문장이다.
     ctrl2 = controller(tmp_path, Port())
     sid2 = hwpx_session(ctrl2, *NOTICE, p("청사 보안 장비 구매"))

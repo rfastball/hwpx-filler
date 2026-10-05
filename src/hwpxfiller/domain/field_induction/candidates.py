@@ -2,7 +2,9 @@
 
 열마다 쓸 수 있는 표시 형식 프로그램의 글자를 문단 평문에서 찾는다. 낱말 경계를 지키는 자리만 남긴다:
 숫자는 다른 숫자에 붙지 않아야 하고(``2026000``·``12,026`` 속 ``2026`` 은 아니다), 라틴 글자는 다른
-라틴 글자에 붙지 않아야 한다. 한글은 조사가 바로 붙으므로(``한국상사귀하``) 경계를 보지 않는다.
+라틴 글자에 붙지 않아야 한다. 점 날짜(``2026. 10. 19.``)의 한 토막은 자리가 아니다 — 연·월(``2026. 10.``)이
+날짜에 이어지거나 짧은 수가 연도 뒤 토막에서 시작하면 붙은 것이다. 한글은 조사가 바로 붙으므로
+(``한국상사귀하``) 경계를 보지 않는다.
 이미 필드 값인 구간은 후보가 아니다. 마스킹은 문단마다 겹치지 않는 자리를 가장 긴 것부터 고른다 —
 같은 구간을 내는 프로그램들은 함께 남는다(선택이 아니라 모호함이다).
 
@@ -11,10 +13,16 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from .transforms import renderings
+from .transforms import Transform, renderings
+
+# 점 날짜 안의 토막 — 구간 뒤에 날짜 토막이 이어지거나(「2026. 10.」+「 19.」), 구간이 연도 뒤의 월·일
+# 토막에서 시작한다(「2026. ⟦10⟧. 19.」). 날짜 뒤의 시각(「2026. 7. 15. ⟦09:00⟧」)은 제 자리일 수 있다.
+_DATE_CONTINUES = re.compile(r" \d{1,2}\.")
+_DATE_BEFORE = re.compile(r"\d{4}\. (?:\d{1,2}\. )?$")
 
 
 @dataclass(frozen=True)
@@ -80,9 +88,18 @@ def _latin_glued(text: str, outer: int) -> bool:
     return 0 <= outer < len(text) and (_is_latin(text[outer]) or text[outer].isdigit())
 
 
+def _inside_dot_date(text: str, start: int, end: int) -> bool:
+    """구간이 점 날짜의 토막이다 — 뒤에 날짜 토막이 이어지거나 연도 뒤 월·일 자리에서 시작한다."""
+    if text[end - 1] == "." and _DATE_CONTINUES.match(text, end):
+        return True
+    return text[start].isdigit() and _DATE_BEFORE.search(text, 0, start) is not None
+
+
 def boundary_ok(text: str, start: int, end: int) -> bool:
     """``text[start:end]`` 가 낱말 경계를 지키는가(엔진 ``boundary_ok``)."""
     first, last = text[start], text[end - 1]
+    if _inside_dot_date(text, start, end):
+        return False
     if first.isdigit() and _digit_glued(text, start - 1, -1):
         return False
     if last.isdigit() and _digit_glued(text, end, 1):
@@ -90,6 +107,15 @@ def boundary_ok(text: str, start: int, end: int) -> bool:
     if _is_latin(first) and _latin_glued(text, start - 1):
         return False
     return not (_is_latin(last) and _latin_glued(text, end))
+
+
+def _is_hangul(ch: str) -> bool:
+    return "가" <= ch <= "힣"
+
+
+def hangul_bounded(text: str, start: int, end: int) -> bool:
+    """구간 양쪽 글자가 한글이 아니다 — 짧은 값(「대」)이 낱말(「대표」·「부대」) 속에 있지 않다."""
+    return not (start > 0 and _is_hangul(text[start - 1])) and not (end < len(text) and _is_hangul(text[end]))
 
 
 def _inside_field(paragraph: ParagraphText, start: int, end: int) -> bool:
@@ -109,15 +135,23 @@ def occurrences(paragraph: ParagraphText, rendered: str) -> list[tuple[int, int]
     return found
 
 
+def _column_candidates(paragraphs: Sequence[ParagraphText], column: str,
+                       programs: Sequence[tuple[Transform, str]]) -> list[Candidate]:
+    return [Candidate(column, transform.id, rendered, index, lo, hi)
+            for transform, rendered in programs for index, paragraph in enumerate(paragraphs)
+            for lo, hi in occurrences(paragraph, rendered)]
+
+
 def find_candidates(paragraphs: Sequence[ParagraphText], row: Mapping[str, str | None]) -> list[Candidate]:
+    """열마다 후보. 부분 프로그램(연·월)은 그 열의 온전한 글자가 문서에 없을 때만 찾는다 — 같은 달의 다른
+    날짜 열이 모두 같은 연·월 글자를 내므로, 이미 제 날짜가 보이는 열은 그 글자의 출처로 보지 않는다."""
     out: list[Candidate] = []
     for column, value in row.items():
         if not value:
             continue  # 빈 값(None·"")은 증거가 없다
-        for transform, rendered in renderings(value):
-            for index, paragraph in enumerate(paragraphs):
-                out.extend(Candidate(column, transform.id, rendered, index, lo, hi)
-                           for lo, hi in occurrences(paragraph, rendered))
+        programs = renderings(value)
+        whole = _column_candidates(paragraphs, column, [item for item in programs if not item[0].partial])
+        out.extend(whole or _column_candidates(paragraphs, column, [item for item in programs if item[0].partial]))
     return out
 
 
@@ -134,6 +168,10 @@ def mask(candidates: Sequence[Candidate]) -> list[Slot]:
         kept.append(Slot(paragraph, start, end, by_span[(paragraph, start, end)]))
     kept.sort(key=lambda slot: (slot.paragraph, slot.start))
     return kept
+
+
+#: 구체성 문턱 — 이보다 낮은 글자(짧은 수·한두 글자 낱말)는 「짧은 값」이다.
+SPECIFIC = 0.75
 
 
 def specificity(rendered: str) -> float:

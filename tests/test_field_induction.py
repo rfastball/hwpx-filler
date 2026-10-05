@@ -20,6 +20,7 @@ from hwpxfiller.domain.field_induction.candidates import (
 from hwpxfiller.domain.field_induction.labels import (
     CUE_FIXED,
     CUE_GENERIC,
+    CUE_REPEAT,
     data_cue,
     extract_label,
     glued_left,
@@ -28,13 +29,15 @@ from hwpxfiller.domain.field_induction.labels import (
     label_matches,
     leading_marker,
     name_overlap,
+    names_literally,
     normalize_label,
     raw_label,
     slot_elsewhere,
     static_cue,
     strip_markers,
+    word_windows,
 )
-from hwpxfiller.domain.field_induction.grading import REASON_PROSE_ONCE, note_short
+from hwpxfiller.domain.field_induction.grading import REASON_PROSE_ONCE, note_prose, note_short
 from hwpxfiller.domain.field_induction.proposal import field_name, note_for, propose
 from hwpxfiller.domain.field_induction.transforms import TRANSFORMS, renderings
 from hwpxfiller.domain.format_engine import render as product_render
@@ -108,8 +111,9 @@ def test_binding_labels_come_from_the_product_preset_table() -> None:
     assert TRANSFORMS["number_grouping"].binding() == {"type": "amount", "fmt": "{:,}", "label": "숫자"}
 
 
-def test_note_short_and_reason_prose_once_texts() -> None:
+def test_note_short_note_prose_and_reason_prose_once_texts() -> None:
     assert note_short("수량:", 1, 2) == "라벨 ‘수량:’ 옆 1곳만 골랐습니다. 다른 2곳은 라벨이 없어 고르지 않았습니다."
+    assert note_prose(4, 3) == "값만 있는 자리 4곳을 골랐습니다. 문장 속 3곳은 고르지 않았습니다."
     assert REASON_PROSE_ONCE == "문장 속 자리입니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
 
 
@@ -218,15 +222,19 @@ def test_static_cues() -> None:
 def test_genericity_and_one_value_one_slot() -> None:
     prefixes = ["수요기관: ", "관련 문의는 ", "(", "각 지방", "근거: ", "서약서 "]
     assert slot_elsewhere("관련 문의는 ", repeats=6, prefixes=prefixes)
-    assert static_cue("관련 문의는 ", "조달청", " 콜센터로", repeats=6, prefixes=prefixes) == CUE_FIXED
+    # 「한 값 한 자리」는 약한 단서다 — 묶음을 보류하지 않고 문장 속 자리만 뺀다.
+    assert static_cue("관련 문의는 ", "조달청", " 콜센터로", repeats=6, prefixes=prefixes) == CUE_REPEAT
     assert not slot_elsewhere("관련 문의는 ", repeats=3, prefixes=prefixes)  # 진짜 반복 값(2~4번)
     assert not slot_elsewhere("수요기관: ", repeats=6, prefixes=prefixes)  # 라벨 자리 그 자체
 
 
 def test_data_cues_and_glue() -> None:
-    assert data_cue("042-481-1234", "")
-    assert data_cue("김다온", " 주무관 (042)") and data_cue("양문석 준위", "")
-    assert not data_cue("김다온", "에게") and not data_cue("화생방과", "")
+    assert data_cue("", "042-481-1234", "")
+    assert data_cue("", "김다온", " 주무관 (042)") and data_cue("", "양문석 준위", "")
+    assert not data_cue("", "김다온", "에게") and not data_cue("", "화생방과", "")
+    assert not data_cue("주무관 ", "홍길동", " (☎ 042)")  # 직함이 앞에 오는 이름은 양식에 박힌 줄일 수 있다
+    assert data_cue("조달청 물품공고 제", "R26BK99000001-000", "호")  # 번호 틀 「제…호」
+    assert not data_cue("제", "12", "조")
     assert glued_left("제", "R26") and not glued_left("", "R26") and not glued_left("번호 ", "R26")
 
 
@@ -280,12 +288,13 @@ def mockup_paragraphs() -> list[ParagraphText]:
     return body[:14] + cells + body[14:]
 
 
-def test_mockup_notice_has_nine_proposals_two_held_and_a_label_only_short_value() -> None:
+def test_mockup_notice_has_ten_proposals_and_one_held() -> None:
     result = propose(mockup_paragraphs(), MOCKUP_ROW, list(MOCKUP_ROW))
     groups = groups_by_column(result)
-    assert (result.count("proposal"), result.count("held")) == (9, 2)
+    assert (result.count("proposal"), result.count("held")) == (10, 1)
     assert {column for column, group in groups.items() if group.kind == "proposal"} == {
-        "입찰공고번호", "공고명", "추정가격", "수량", "납품장소", "입찰마감일시", "개찰일시", "계약방법", "담당자"}
+        "입찰공고번호", "공고명", "추정가격", "수량", "납품장소", "입찰마감일시", "개찰일시", "계약방법", "담당자",
+        "낙찰자결정방법"}
     number = groups["입찰공고번호"]
     assert len(number.spots) == 2 and note_for(number) == [
         {"name": "현행공고", "note": "‘현행공고’ 열도 같은 값입니다."}]
@@ -295,15 +304,17 @@ def test_mockup_notice_has_nine_proposals_two_held_and_a_label_only_short_value(
         "170,309,180원", "170309180", "number_grouping", "170,309,180")
     assert price.spots[0].where == "1. 나"
     quantity = groups["수량"]
-    assert len(quantity.spots) == 1 and quantity.count_text == "라벨 옆 1곳만"
-    assert quantity.note == "라벨 ‘수량:’ 옆 1곳만 골랐습니다. 다른 2곳은 라벨이 없어 고르지 않았습니다."
+    # 점 날짜(「2026. 9. 12.」)의 토막 「12」는 자리가 아니다 — 라벨 자리 하나뿐이라 뺀 자리도 없다.
+    assert len(quantity.spots) == 1 and (quantity.note, quantity.count_text) == ("", "1곳")
     assert groups["입찰마감일시"].transform == "datetime_dot_spaced"
     method = groups["계약방법"]
     # 표 칸 라벨 자리 하나 — 규정 문장(「…할 수 있습니다」) 속 반복은 싣지 않는다.
     assert [spot.where for spot in method.spots] == ["표 칸, 2. 라"]
     judge = groups["낙찰자결정방법"]
-    assert judge.kind == "held" and judge.reason == "같은 값이 다른 곳에도 3번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다."
-    assert judge.only == judge.spots[0].id and judge.count_text == "4곳"
+    # 라벨 자리가 있는 묶음은 늘 제안이다 — 문장 속 3곳은 빼고 그 사실을 한 문장으로 단다.
+    assert (judge.kind, judge.only, judge.count_text) == ("proposal", None, "라벨 옆 1곳만")
+    assert [spot.where for spot in judge.spots] == ["표 칸, 2. 라"]
+    assert judge.note == "라벨 ‘낙찰자결정방법’ 옆 1곳만 골랐습니다. 다른 3곳은 라벨이 없어 고르지 않았습니다."
     bidding = groups["입찰방식"]
     assert bidding.kind == "held"
     assert bidding.reason == "같은 값 2곳이 모두 문장 속에 있어 일반 낱말로 보입니다."
@@ -333,7 +344,12 @@ def test_unlabelled_values_by_place() -> None:
     alone = propose(doc("정부대전청사 3동"), {"장소": "정부대전청사 3동"}, ["장소"])
     assert alone.groups[0].kind == "proposal"
     many = propose(doc("정부대전청사 3동", "정부대전청사 3동", "정부대전청사 3동"), {"장소": "정부대전청사 3동"}, ["장소"])
-    assert many.groups[0].reason == "같은 값이 3곳에 나옵니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
+    assert many.groups[0].kind == "proposal" and len(many.groups[0].spots) == 3 and not many.groups[0].note
+    mixed = propose(doc("정부대전청사 3동", "이번 사업은 정부대전청사 3동 이전을 위한 구매입니다"),
+                    {"장소": "정부대전청사 3동"}, ["장소"])
+    (group,) = mixed.groups
+    assert (group.kind, [spot.paragraph for spot in group.spots]) == ("proposal", [0])
+    assert group.note == "값만 있는 자리 1곳을 골랐습니다. 문장 속 1곳은 고르지 않았습니다." and group.count_text == "1곳"
     phone = propose(doc("문의는 담당 부서(042-481-1234)로 연락 바람"), {"전화": "042-481-1234"}, ["전화"])
     assert phone.groups[0].kind == "proposal"  # 전화번호는 자료 단서(엔진 G3)
 
@@ -417,8 +433,107 @@ def test_label_extraction_edges() -> None:
 def test_long_prose_repeats_and_cells_without_a_label_neighbour() -> None:
     paragraphs = doc("수요기관: 조달청", *["조달청 안내 문장입니다" for _ in range(55)])
     (group,) = propose(paragraphs, {"수요기관": "조달청"}, ["수요기관"]).groups
-    assert group.kind == "held" and group.reason.startswith("같은 값이 다른 곳에도 55번")
+    assert (group.kind, len(group.spots), group.count_text) == ("proposal", 1, "라벨 옆 1곳만")
+    assert group.note == "라벨 ‘수요기관:’ 옆 1곳만 골랐습니다. 다른 55곳은 라벨이 없어 고르지 않았습니다."
     cells = [ParagraphText("a", "1,234,567", 10, cell=CellRef("t", 0, 0)),
              ParagraphText("b", "1,234,567", 10, cell=CellRef("t", 0, 1))]
     (group,) = propose(cells, {"금액": "1234567"}, ["금액"]).groups
     assert group.value == "1,234,567" and group.kind == "proposal" and len(group.spots) == 2
+
+
+# ------------------------------------------------------------------ rules v2 (인식률: 누름틀을 걷은 문서에서 자리 복원)
+def test_year_month_program_and_its_product_binding() -> None:
+    out = {t.id: text for t, text in renderings("2026/10/12 09:00:00")}
+    assert out["date_dot_ym"] == "2026. 10."  # 제품 ym 은 시각을 붙이지 않는다 — 일시 값도 받는다
+    assert TRANSFORMS["date_dot_ym"].binding() == {"type": "date", "fmt": "ym", "label": "표준(연·월)"}
+    assert TRANSFORMS["date_dot_ym"].partial and not TRANSFORMS["date_dot"].partial
+
+
+def test_year_month_is_a_candidate_only_when_the_whole_date_is_absent() -> None:
+    row = {"게시일시": "2026-10-12 09:00", "개찰일시": "2026-10-21 11:00"}
+    paragraphs = doc("입찰에 부치고자 다음과 같이 공고합니다.        2026. 10.", "개찰일시: 2026. 10. 21. 11:00")
+    found = {(candidate.column, candidate.transform) for candidate in find_candidates(paragraphs, row)}
+    assert ("게시일시", "date_dot_ym") in found and ("개찰일시", "date_dot_ym") not in found
+    assert not find_candidates(doc("개찰일시: 2026. 10. 21. 11:00"), {"게시일시": "2026-10-12"})
+    groups = groups_by_column(propose(paragraphs, row, list(row)))
+    # 줄 끝에 정렬된 값은 값만 있는 자리다
+    assert (groups["게시일시"].kind, groups["게시일시"].transform) == ("proposal", "date_dot_ym")
+
+
+def test_dot_date_pieces_are_not_slots_but_a_time_after_a_date_is() -> None:
+    text = "2026. 10. 19. 10:00"
+    assert not boundary_ok(text, 6, 8) and not boundary_ok(text, 10, 12)  # 월·일 토막
+    assert not boundary_ok(text, 0, 9)  # 연·월 뒤에 일이 이어진다
+    assert boundary_ok(text, 14, 19)  # 날짜 뒤 시각은 제 자리일 수 있다
+    assert boundary_ok("1. 2026. 10.", 3, 12) and boundary_ok("가. 12 대", 3, 5)
+
+
+def test_contact_line_values_are_value_only_once_the_other_values_are_masked() -> None:
+    paragraphs = doc("   - 조달청 구매사업국 국방물자구매과 주무관 홍길동 (☎ 042-000-0000)",
+                     " ②  수요기관 연락처: 육군 한빛보급부대 물자관리과 홍길동 (☎ 042-000-1001) ")
+    row = {"수요기관": "육군 한빛보급부대", "담당부서": "물자관리과", "담당자": "홍길동", "전화": "042-000-1001"}
+    groups = groups_by_column(propose(paragraphs, row, list(row)))
+    assert {column: group.kind for column, group in groups.items()} == dict.fromkeys(row, "proposal")
+    person = groups["담당자"]
+    # 직함이 앞에 오는 조달청 담당자 줄의 이름은 양식에 박힌 글자일 수 있다 — 싣지 않는다.
+    assert [spot.paragraph for spot in person.spots] == [1]
+    assert person.note == "값만 있는 자리 1곳을 골랐습니다. 문장 속 1곳은 고르지 않았습니다."
+    assert [spot.paragraph for spot in groups["담당부서"].spots] == [1]
+
+
+def test_number_frame_and_a_parenthetical_name_after_another_value() -> None:
+    paragraphs = doc("조달청 물품공고 제R26BK99000001-000호",
+                     "1) 시스템에 세부품명번호 10자리 9901000101(전동드릴)를 등록한 자",
+                     " 품          명:  전동드릴")
+    row = {"공고번호": "R26BK99000001-000", "세부품명": "전동드릴", "세부품명번호": "9901000101"}
+    groups = groups_by_column(propose(paragraphs, row, list(row)))
+    assert {column: group.kind for column, group in groups.items()} == dict.fromkeys(row, "proposal")
+    # 「제…호」 번호 틀 안의 값은 낱말 가운데가 아니고, 「번호(이름)」의 이름은 값에 붙은 풀이다.
+    assert [spot.paragraph for spot in groups["세부품명"].spots] == [1, 2] and not groups["세부품명"].note
+    assert [spot.paragraph for spot in groups["세부품명번호"].spots] == [1]
+
+
+def test_word_windows_and_literal_label_names() -> None:
+    assert word_windows("시스템에 세부품명번호 10자리") == ["10자리", "세부품명번호 10자리", "시스템에 세부품명번호 10자리"]
+    assert word_windows("") == []
+    assert names_literally("품명및수량", "세부품명") and names_literally("수요기관연락처", "수요기관")
+    assert not names_literally("입찰방식", "입찰방법") and not names_literally("", "x")
+    # 쌍점 라벨과 자리 사이에 다른 값이 있어도 바로 앞 낱말이 열을 부를 수 있다.
+    result = propose(doc("세부품명: 선박용 소화기  (품명번호 1234567890)"), {"세부품명번호": "1234567890"}, ["세부품명번호"])
+    assert result.groups[0].kind == "proposal"
+
+
+def test_the_label_cell_above_names_the_column_when_the_left_one_does_not() -> None:
+    cells = [ParagraphText("a", "구분", 3, cell=CellRef("t", 0, 0)), ParagraphText("b", "품명", 3, cell=CellRef("t", 0, 1)),
+             ParagraphText("c", "동등이상 물품", 8, cell=CellRef("t", 1, 0)),
+             ParagraphText("d", "전동드릴", 5, cell=CellRef("t", 1, 1))]
+    (group,) = propose(cells, {"세부품명": "전동드릴", "비고": "전동드릴"}, ["세부품명", "비고"]).groups
+    assert (group.kind, group.column, group.others) == ("proposal", "세부품명", ["비고"])
+
+
+def test_a_synonym_label_is_another_item_when_the_column_name_labels_a_spot() -> None:
+    paragraphs = doc(" 입  찰  방  법:  전자입찰", " ① 입찰방식: 전자입찰(국내입찰)", "1) 전자입찰서")
+    (group,) = propose(paragraphs, {"입찰방법": "전자입찰"}, ["입찰방법"]).groups
+    assert [spot.paragraph for spot in group.spots] == [0]
+    assert group.note == "라벨 ‘입 찰 방 법:’ 옆 1곳만 골랐습니다. 다른 2곳은 라벨이 없어 고르지 않았습니다."
+    alone = propose(doc(" ① 입찰방식: 전자입찰(국내입찰)"), {"입찰방법": "전자입찰"}, ["입찰방법"])
+    assert alone.groups[0].kind == "proposal"  # 열 이름 라벨이 없으면 동의어 라벨이 이 열의 것이다
+    # 한글로 끝나는 값 뒤에 한글이 붙으면 낱말의 일부다(「전자입찰서」).
+    word = propose(doc("1) 전자입찰서"), {"입찰방법": "전자입찰"}, ["입찰방법"])
+    assert word.groups[0].reason == REASON_PROSE_ONCE
+
+
+def test_short_values_take_value_only_spots_outside_words() -> None:
+    paragraphs = doc(" 수 량 및 단 위:  40 대", " -전동드릴 / 40 대", "대한민국 대표 대학", "총 40 대를 구매")
+    row = {"수량": "40", "단위": "대", "품명": "전동드릴"}  # 같은 줄의 다른 값(품명)은 가리고 본다
+    groups = groups_by_column(propose(paragraphs, row, list(row)))
+    assert [spot.paragraph for spot in groups["수량"].spots] == [0, 1]
+    assert groups["수량"].note == "값만 있는 자리 2곳을 골랐습니다. 문장 속 1곳은 고르지 않았습니다."
+    assert [spot.paragraph for spot in groups["단위"].spots] == [0, 1]
+
+
+def test_blank_date_frame_numbers_are_fixed_wording() -> None:
+    assert static_cue("", "20", "  .   .   .", repeats=1, prefixes=()) == CUE_FIXED
+    assert static_cue("", "20", "  년   월   일", repeats=1, prefixes=()) == CUE_FIXED
+    (group,) = propose(doc("수량: 20", "20  .   .   ."), {"수량": "20"}, ["수량"]).groups
+    assert [spot.paragraph for spot in group.spots] == [0] and group.count_text == "라벨 옆 1곳만"

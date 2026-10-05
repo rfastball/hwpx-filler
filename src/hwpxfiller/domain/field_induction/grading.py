@@ -1,33 +1,33 @@
 """묶음(같은 값의 자리들) 하나의 등급 — 제안·보류·짧은 값, 그리고 사람에게 보일 문장.
 
-규칙(계약 「등급과 판정」):
+규칙(계약 「등급과 판정」 v2). 자리는 넷으로 가른다 — **라벨 자리**(자리 앞 라벨이 열을 부르고, 낱말
+가운데가 아니고, 고정 문구 단서가 없다), **값만 있는 자리**(줄·칸에 값만 있거나 — 같은 문단의 다른 후보
+값은 가리고 본다 — 전화번호·직함 앞 이름·「제…호」 번호 틀·다른 값 뒤 괄호 풀이 같은 자료 단서),
+**고정 문구 자리**(따옴표 제목·인용 법령·일반·당위 문장 안), **문장 속 자리**(그 밖).
+다른 곳의 라벨 자리를 산문에서 되풀이하는 「한 값 한 자리」는 약한 단서라 자리를 보류하지 않는다.
 
-1. **제안** — (a) 라벨 자리가 있다: 자리 앞 라벨이 후보 열 하나만 부르고, 낱말 가운데가 아니고, 고정 문구
-   단서가 없다. 라벨 자리 밖 출현이 3곳 이상이면 「한 값 한 자리」로 보류한다.
-   (b) 라벨이 없다: 구체성 ≥ 0.75, 출현 ≤ 2, 고정 문구 단서 없음, 열 하나, 그리고 문장 속이 아닌 자리가
-   있거나(줄·칸에 값만) 전화번호·직함 앞 이름 같은 자료 단서가 있다.
-2. **보류** — 제안이 아닌 묶음. 이유 한 문장이 늘 붙는다.
-3. **짧은 값**(구체성 < 0.75) — 라벨 옆 자리만 제안하고 나머지 출현은 어디에도 넣지 않는다.
+1. **제안** — (a) 라벨 자리가 있으면(열이 정해진다) 늘 제안한다. 라벨 자리와 값만 있는 자리를 싣고
+   문장 속·고정 문구 자리는 뺀다. 열 이름을 글자 그대로 담은 라벨이 있으면 동의어·글자쌍으로만 열을 부르는
+   다른 라벨의 자리(「입찰방법:」이 있는 문서의 「입찰방식:」)는 다른 항목이라 뺀다.
+   (b) 라벨이 없고 열이 하나면: 고정 문구 단서가 있으면 보류, 아니면 값만
+   있는 자리가 하나라도 있을 때 그 자리만 싣는다(문장 속 자리는 뺀다).
+   어느 쪽이든 뺀 자리가 있으면 몇 곳을 왜 뺐는지 한 문장을 단다.
+2. **보류** — 제안이 아닌 묶음(같은 값의 열이 여럿인데 라벨이 하나를 가리키지 않음, 고정 문구, 문장 속
+   자리뿐). 이유 한 문장이 늘 붙는다.
+3. **짧은 값**(구체성 < 0.75) — 라벨 자리가 없으면 묶음을 내지 않는다. 있으면 라벨 자리와, 값만 있고
+   양쪽이 한글이 아닌 자리(「대표」의 「대」가 아닌 「40 대」의 「대」)를 싣는다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from .candidates import specificity
+from .candidates import SPECIFIC, specificity
 from .evidence import SpotEvidence
-
-SPECIFIC = 0.75
-ONE_SLOT_OUTSIDE = 3
-NO_LABEL_MAX = 2
 
 KIND_PROPOSAL = "proposal"
 KIND_HELD = "held"
-
-
-def reason_one_slot(outside: int) -> str:
-    return f"같은 값이 다른 곳에도 {outside}번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다."
 
 
 def reason_prose_repeats(count: int) -> str:
@@ -44,13 +44,14 @@ REASON_BAD_NAME = "열 이름을 필드 이름으로 쓸 수 없습니다. 문�
 REASON_TIE = "값이 같은 열이 여럿입니다. 연결할 열을 고르세요."
 
 
-def reason_many(count: int) -> str:
-    """계약 밖 추가 문장 — 라벨 없이 3곳 이상, 그중 문장 밖 자리도 있을 때(보고서에 전문·사유)."""
-    return f"같은 값이 {count}곳에 나옵니다. 문서마다 바뀌는 값인지 데이터 행 하나로는 알 수 없습니다."
-
-
 def note_short(label: str, chosen: int, others: int) -> str:
+    """싣는 자리가 라벨 자리뿐이고 뺀 자리가 있을 때."""
     return f"라벨 ‘{label}’ 옆 {chosen}곳만 골랐습니다. 다른 {others}곳은 라벨이 없어 고르지 않았습니다."
+
+
+def note_prose(chosen: int, others: int) -> str:
+    """값만 있는 자리를 (라벨 자리와 함께) 싣고 문장 속 자리를 뺐을 때."""
+    return f"값만 있는 자리 {chosen}곳을 골랐습니다. 문장 속 {others}곳은 고르지 않았습니다."
 
 
 def count_short(chosen: int) -> str:
@@ -76,7 +77,6 @@ class Grade:
     reason: str = ""
     note: str = ""
     count_text: str = ""
-    only: SpotEvidence | None = None
 
 
 def _resolve_column(columns: Sequence[str], spots: Sequence[SpotEvidence],
@@ -113,50 +113,55 @@ def grade(columns: Sequence[str], spots: Sequence[SpotEvidence], pick: str | Non
                                         reason=REASON_TIE)
     others = [other for other in columns if other != column]
     if short:
-        return _grade_short(column, others, labelled, spots)
+        return _offer(column, others, labelled, spots, _short_alone) if labelled else None
     if labelled:
-        return _grade_labelled(column, others, labelled, spots)
+        return _offer(column, others, labelled, spots, _alone)
     return _grade_unlabelled(column, others, spots)
 
 
-def _grade_short(column: str, others: list[str], labelled: list[SpotEvidence],
-                 spots: Sequence[SpotEvidence]) -> Grade | None:
-    if not labelled:
-        return None
-    outside = len(spots) - len(labelled)
-    note = note_short(labelled[0].label, len(labelled), outside) if outside else ""
-    count = count_short(len(labelled)) if outside else count_spots(len(labelled))
-    return Grade(KIND_PROPOSAL, column, others, list(labelled), note=note, count_text=count)
+def _foreign(column: str, labelled: Sequence[SpotEvidence]) -> Callable[[SpotEvidence], bool]:
+    """다른 항목의 라벨 자리 — 열 이름을 글자 그대로 담은 라벨 자리가 있으면, 동의어·글자쌍으로만 이 열을
+    부르는 라벨(「입찰방법:」이 있는 문서의 「입찰방식: 전자입찰(국내입찰)」)은 다른 항목의 것이다."""
+    if not any(column in spot.literal for spot in labelled):
+        return lambda _spot: False
+    return lambda spot: column in spot.matched and column not in spot.literal
 
 
-def _grade_labelled(column: str, others: list[str], labelled: list[SpotEvidence],
-                    spots: Sequence[SpotEvidence]) -> Grade:
-    outside = len(spots) - len(labelled)
-    if outside >= ONE_SLOT_OUTSIDE:
-        return Grade(KIND_HELD, column, others, list(spots), reason=reason_one_slot(outside),
-                     only=labelled[0])
-    # 라벨 자리 밖의 출현 중 고정 문구 단서가 있는 자리(규정 문장·따옴표 제목 안)는 싣지 않는다(엔진 G1).
-    kept = [spot for spot in spots if spot in labelled or spot.cue is None]
-    return Grade(KIND_PROPOSAL, column, others, kept)
+def _alone(spot: SpotEvidence) -> bool:
+    """라벨 자리 밖에서 실을 자리 — 값만 있는 자리(고정 문구 단서 없음)."""
+    return spot.anchored and not (spot.fixed or spot.generic)
 
 
-def _unlabelled_reason(spots: Sequence[SpotEvidence]) -> str:
-    """라벨 없는 묶음의 보류 이유 — 빈 문자열이면 보류할 까닭이 없다(제안)."""
-    if any(spot.generic for spot in spots):
-        return REASON_GENERIC
-    if any(spot.cue for spot in spots):
-        return REASON_FIXED
-    if len(spots) <= NO_LABEL_MAX and any(spot.standalone or spot.data for spot in spots):
-        return ""
-    return _prose_reason(spots)
+def _short_alone(spot: SpotEvidence) -> bool:
+    """짧은 값이 라벨 자리 밖에서 실을 자리 — 줄·칸에 값만 있고 양쪽이 한글이 아니다."""
+    return spot.standalone and spot.bounded and not spot.glued and not (spot.fixed or spot.generic)
 
 
-def _prose_reason(spots: Sequence[SpotEvidence]) -> str:
-    if any(spot.standalone for spot in spots):
-        return reason_many(len(spots))
-    return REASON_PROSE_ONCE if len(spots) == 1 else reason_prose_repeats(len(spots))
+def _offer(column: str, others: list[str], labelled: Sequence[SpotEvidence], spots: Sequence[SpotEvidence],
+           alone: Callable[[SpotEvidence], bool]) -> Grade:
+    """제안 — 라벨 자리와 ``alone`` 자리를 문서 차례로 싣고, 뺀 자리가 있으면 그 문장을 단다.
+
+    자리 수 문구는 라벨 자리만 실었을 때만 여기서 짓는다(「라벨 옆 n곳만」) — 그 밖은 만들 수 있는 자리 수다.
+    """
+    foreign = _foreign(column, labelled)
+    labelled = [spot for spot in labelled if not foreign(spot)]
+    kept = [spot for spot in spots if not foreign(spot) and (spot in labelled or alone(spot))]
+    left_out = len(spots) - len(kept)
+    if not left_out:
+        return Grade(KIND_PROPOSAL, column, others, kept)
+    if all(spot in labelled for spot in kept):
+        return Grade(KIND_PROPOSAL, column, others, kept, note=note_short(labelled[0].label, len(kept), left_out),
+                     count_text=count_short(len(kept)))
+    return Grade(KIND_PROPOSAL, column, others, kept, note=note_prose(len(kept), left_out))
 
 
 def _grade_unlabelled(column: str, others: list[str], spots: Sequence[SpotEvidence]) -> Grade:
-    reason = _unlabelled_reason(spots)
-    return Grade(KIND_HELD if reason else KIND_PROPOSAL, column, others, list(spots), reason=reason)
+    """라벨 없는 묶음 — 고정 문구면 보류, 값만 있는 자리가 있으면 그 자리만 제안, 아니면 문장 속이라 보류."""
+    if any(spot.generic for spot in spots):
+        return Grade(KIND_HELD, column, others, list(spots), reason=REASON_GENERIC)
+    if any(spot.fixed for spot in spots):
+        return Grade(KIND_HELD, column, others, list(spots), reason=REASON_FIXED)
+    if any(spot.anchored for spot in spots):
+        return _offer(column, others, (), spots, _alone)
+    reason = REASON_PROSE_ONCE if len(spots) == 1 else reason_prose_repeats(len(spots))
+    return Grade(KIND_HELD, column, others, list(spots), reason=reason)
