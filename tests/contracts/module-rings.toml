@@ -69,6 +69,18 @@ source_write_set = ["src/hwpxcore/text_extract.py"]
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
+module = "hwpxcore.text_model"
+target = "DOMAIN"
+source_write_set = ["src/hwpxcore/text_model.py"]
+oracle_nodeid = "tests/test_extract_synthetic.py"
+
+[[unit]]
+module = "hwpxcore.shape_text"
+target = "DOMAIN"
+source_write_set = ["src/hwpxcore/shape_text.py"]
+oracle_nodeid = "tests/test_extract_synthetic.py"
+
+[[unit]]
 module = "hwpxfiller"
 target = "RETIRE"
 source_write_set = ["src/hwpxfiller/__init__.py"]
