@@ -283,9 +283,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         #  #957 이후 차단이 아니라 표식이라 동의 사건 자체가 없다.)
     },
     # TXT 검토·복사 작업대(v6 S7 · 계약 §11, 재작성 F6) — 데이터 존이 **없다**: 데이터·범위
-    # 선택은 「문서 만들기」가 끝내고 여기는 고정 사본을 받는다(§13-13). 필드 연결 동사는
-    # 「기안」 맞추기 표와 같은 이름이다 — 같은 판정(MappingModel)을 부르므로 어휘를 갈라
-    # 두면 그 자체가 드리프트다.
+    # 선택은 「문서 만들기」가 끝내고 여기는 고정 사본을 받는다(§13-13). 필드 연결 동사도
+    # 없다(#1148): 연결은 읽기만 하고, 고치는 일은 편집기(「연결 편집」)가 진다.
     "workbench": {
         "step": _schema("delta"),
         "set_current": _schema("index"),
@@ -293,27 +292,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_view": _schema(optional="view"),
         "set_target_font": _schema(optional="font"),
         "set_fullwidth": _schema("value"),
-        # 맞추기 동사 7종은 「기안」과 **같은 규약**이다(F6 3R — 공용 MappingVerbsMixin).
-        # 정체는 **토큰 이름**이다: 행 index 는 템플릿을 다시 읽으면 흔들리지만 이름은 그
-        # 표의 안정 식별자이고, 없는 이름은 `index_of` 가 시끄럽게 거절한다.
-        "set_source": _schema("name", "col confirm"),
-        "set_map_value": _schema("name", "text"),
-        "set_map_fmt": _schema("name", "code"),
-        "set_map_slice": _schema("name", "slice"),
-        # 「가공」 편집 칸의 무변이 질의 — 편집기 `preview_slice`·`propose_slice` 와 같은 몸통.
-        "preview_map_slice": _schema("name", "sample"),
-        "propose_map_slice": _schema("name sample start end"),
-        "set_map_type": _schema("name type"),
-        "set_confirmed": _schema("name value"),
-        "revert_map": _schema("name"),
         "copy_precheck": _schema(),
-        # 「기본 규칙으로 저장…」(§11) — 확인 왕복. 이 저장은 **다음 실행부터의 기본 규칙**을
-        # 바꾸므로(override 없음, 지도 §10.14) dirty 필드를 전부 나열한 뒤에만 성사된다.
-        # `confirmed_text` = 사용자가 **본 문안 그대로**(「기안으로 저장」·에디터 덮어쓰기와
-        # 같은 관용구): 백엔드가 잠금 안에서 문안을 다시 지어 대조하므로, 모달이 열린 사이
-        # 대상이 바뀌면 새 문안으로 다시 묻는다. 불리언 플래그로는 「이 상황을 확인했다」와
-        # 「어떤 상황을 확인했다」가 구별되지 않는다(1R P2).
-        "save_rules": _schema(optional="confirm confirmed_text"),
         "leave_guard": _schema(),
         "close": _schema(),
     },

@@ -58,7 +58,8 @@
  *                             행(row_*) 거울 · `gone_control_disables` · `row_value_survives_push`.
  *   · workbench             : `prev_disabled=false`/`next_disabled=true` ↔ 큐 퇴화
  *                             `degen_prev=='none'`/`degen_adv=='none'` · `card_fill`/`card_blank` ·
- *                             `leave_calls == [leave_guard, close]`.
+ *                             `leave_calls == [leave_guard, close]` · 템플릿 문 `template_link`
+ *                             ↔ 경로 없는 스냅샷의 `template_link_absent`.
  *   · data_picker           : `use_active_enabled` ↔ `use_archived_disabled` ·
  *                             `browse_pin_visible`(계산 스타일 + offsetParent 실가시성) ·
  *                             `register_gone` · `dupes_shown`.
@@ -110,7 +111,6 @@ const CLICK_SITES_WITHOUT_VISIBILITY = Object.freeze([
   "editor_discard_immediate: 「변경 버리기」",
   "data_picker: 「이 데이터 고정」 · 「찾아보기」(뒤이어 browse_pin_visible 이 가시성을 잰다)",
   "data_sheet: ⤢ 트리거 · 면 닫기",
-  "workbench: 결과 조각(data-token)",
 ]);
 
 /* ────────────────────────── 공용 조각 ────────────────────────── */
@@ -2314,9 +2314,10 @@ export function createEditorWorkbenchDataProbes() {
     },
 
     /* ── workbench (app.py:3371 상수 · 3814 호출) ─────────────────────────────
-       TXT 검토·복사 작업대(재작성 F6 PR-A). 정적 계약이 못 보는 셋: ①몰입 셸(상단 2탭 은닉)이
+       TXT 검토·복사 작업대(재작성 F6 PR-A). 정적 계약이 못 보는 넷: ①몰입 셸(상단 2탭 은닉)이
        실제로 걸리는가 ②큐 퇴화가 큐 장치 3종을 실제로 감추는가 ③이탈이 **가드를 지나** 화면을
-       바꾸는가(발신 순서까지). */
+       바꾸는가(발신 순서까지) ④복사할 본문이 화면 폭을 받는가(#1148 — 필드 연결 표가 걷힌
+       뒤 카드가 본체 폭을 다 쓰는지, 실렌더 기하로). */
     {
       name: "workbench",
       keys: ["workbench"],
@@ -2342,24 +2343,7 @@ export function createEditorWorkbenchDataProbes() {
           notice: { text: "", level: "muted" },
           total: 3, copied_count: 1, is_complete: false,
           revision: { template: 1, binding: 4 },
-          source_fields: ["수신", "사업명"],
-          fmt_options: { text: [{ code: "plain", label: "그대로" }] },
-          type_options: [{ code: "text", label: "텍스트" }],
-          rows: [
-            {
-              name: "수신", state: "fill", source: "수신", own: "auto", manual: false,
-              value: "회계과", fmt_kind: "text", fmt_code: "plain", suggest: "",
-              can_revert: false, confirmed: true, blank_declared: false,
-              auto_confirmation_label: "자동확정 · 이름 일치",
-            },
-            {
-              name: "비고", state: "blank", source: "", own: "", manual: false, value: "",
-              fmt_kind: "text", fmt_code: "plain", suggest: "", can_revert: false,
-              confirmed: true, blank_declared: true,
-            },
-          ],
-          dirty: { count: 1, fields: [{ name: "수신" }], pending: false },
-          can_save: true, save_block: "",
+          template_path: "C:/probe/발주요청_기안.txt",
           guard: { armed: true, lines: ["복사 진행 1/3건 — 나가면 이 진행은 사라집니다."] },
           card: {
             index: 0, has_current: true, queue_degenerate: false, position: 0, source_row: 7,
@@ -2387,20 +2371,16 @@ export function createEditorWorkbenchDataProbes() {
           out.position = textOf(byId(ctx, "wbPosition"));
           out.copied = textOf(byId(ctx, "wbCopied"));
           out.revision = textOf(byId(ctx, "wbRevision"));
-          out.dirty_note = textOf(byId(ctx, "wbDirtyNote"));
           out.review = textOf(byId(ctx, "wbReview"));
-          out.map_rows = ctx.doc.querySelectorAll("#wbMapPanel tbody tr").length;
-          out.owner_source_same_line = (() => {
-            const pair = ctx.doc.querySelector("#wbMapPanel .mapsrc-primary");
-            const dot = pair?.querySelector(".own");
-            const select = pair?.querySelector("select");
-            return !!dot && !!select
-              && Math.abs(dot.getBoundingClientRect().top + dot.getBoundingClientRect().height / 2
-                - (select.getBoundingClientRect().top + select.getBoundingClientRect().height / 2)) <= 2;
+          /* 나가는 문 둘(#1148) — 연결 표는 없고, 문은 머리에 선다. */
+          out.map_panel = !!byId(ctx, "wbMapPanel");
+          out.binding_link = textOf(byId(ctx, "wbEditBinding"));
+          out.template_link = textOf(byId(ctx, "wbEditTemplate"));
+          /* 본문이 화면의 중심 — 카드가 본체 폭을 다 받는다(옛 2열에서는 약 43%였다). */
+          out.card_width_ratio = (function () {
+            const body = ctx.doc.querySelector(".wb-body").getBoundingClientRect();
+            return Math.round(byId(ctx, "wbCard").getBoundingClientRect().width / body.width * 100) / 100;
           })();
-          out.exact_badge = textOf(ctx.doc.querySelector("#wbMapPanel .map-auto-exact")).trim();
-          out.exact_checked = !!ctx.doc.querySelector('#wbMapPanel [data-name="수신"].mapck:checked');
-          out.declared = ctx.doc.querySelectorAll("#wbMapPanel .mapval-declared").length;
           out.card_fill = ctx.doc.querySelectorAll("#wbCard .seg-fill").length;
           out.card_blank = ctx.doc.querySelectorAll("#wbCard .seg-blank").length;
           out.lint_shown = byId(ctx, "wbLint").style.display !== "none";
@@ -2428,33 +2408,9 @@ export function createEditorWorkbenchDataProbes() {
           out.font_width = byId(ctx, "wbTargetFont").getBoundingClientRect().width;
           out.prev_disabled = byId(ctx, "wbPrev").disabled;
           out.next_disabled = byId(ctx, "wbNext").disabled;
-          out.save_enabled = !byId(ctx, "wbSaveRules").disabled;
-          /* 결과 → 규칙(계약 §11) — 조각이 토큰 신원을 지고 나가고, 누르면 소유 행이 선다.
-             정적으로는 조각도 표도 다 있어 통과한다: 둘을 잇는 길만 없는 상태가 여기서만 잡힌다. */
+          /* 조각은 토큰 신원(data-token)을 지되 손잡이가 아니다 — 겨눌 연결 표가 없다(#1148).
+             튜토리얼 앵커(`wb-blank`·`wb-declared`)가 이 신원으로 본문 조각을 가리킨다. */
           out.card_tokens = ctx.doc.querySelectorAll("#wbCard [data-token]").length;
-          (function () {
-            const s = ctx.doc.querySelector('#wbCard [data-token="수신"]');
-            if (s) s.click();
-          })();
-          out.aim_row = (function () {
-            const a = ctx.doc.activeElement;
-            return a && a.tagName === "TR" ? (a.getAttribute("data-name") || "") : "";
-          })();
-          /* 강조는 CSS 파생이라 **실 스타일 계산**까지 봐야 참이다 — 표 클래스가 스타일시트와
-             어긋나 있으면(구 `maptable`) 배선은 멀쩡한데 선 행이 아무 표지도 못 받는다. */
-          out.aim_marked = (function () {
-            const a = ctx.doc.activeElement;
-            if (!a || a.tagName !== "TR" || !a.cells.length) return "";
-            return styleOf(ctx, a.cells[0]).boxShadow;
-          })();
-          (function () {
-            const segment = ctx.doc.querySelector('#wbCard [data-token="수신"]');
-            segment.focus();
-            segment.dispatchEvent(new ctx.doc.defaultView.KeyboardEvent("keydown", {
-              key: "Enter", bubbles: true,
-            }));
-          })();
-          out.keyboard_aim_row = ctx.doc.activeElement?.getAttribute("data-name");
           out.token_role = ctx.doc.querySelector('#wbCard [data-token="수신"]').getAttribute("role");
           const root = ctx.doc.documentElement;
           const scaleBefore = root.getAttribute("data-font-scale");
@@ -2512,6 +2468,10 @@ export function createEditorWorkbenchDataProbes() {
           await ctx.sleep(120);
           out.degen_prev = displayOf(ctx, byId(ctx, "wbPrev"));
           out.degen_adv = displayOf(ctx, ctx.doc.querySelector(".wb-adv"));
+          /* 템플릿 문은 스냅샷이 여는 파일을 낼 때만 선다 — 경로를 웹이 짓지 않는다. */
+          ctx.push("workbench", Object.assign({}, snap, { template_path: "" }));
+          await ctx.sleep(120);
+          out.template_link_absent = !byId(ctx, "wbEditTemplate");
           /* 이탈이 가드를 지나는가 — Nav.go 가 위임하고, 위임이 발신 순서를 지키는지. */
           const calls = [];
           const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {

@@ -802,11 +802,9 @@ def run(ctx: ScenarioContext) -> dict:
     s.click_sel("#jobGenBtn", what="검토·복사 시작(오류 연습)")
     s.wait(
         "document.querySelector('#scr-workbench.on') !== null"
-        " && (document.getElementById('wbCard')||{textContent:''}).textContent.includes('빈 값')"
-        " && (document.getElementById('wbMapPanel')||{textContent:''}).textContent"
-        ".includes('담당연락처')",
+        " && document.querySelector(\"#wbCard .seg-blank[data-token='담당연락처']\") !== null",
         "작업대 〈빈 값〉 표면",
-        requires=["#scr-workbench", "#wbCard", "#wbMapPanel"],
+        requires=["#scr-workbench", "#wbCard"],
     )
     seen["empty_value_surfaced"] = True
     ctx.shoot("workbench-empty-value")

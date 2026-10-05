@@ -82,7 +82,7 @@ table.map .srccell .btn.icon{flex:none;font-size:var(--fs-dense);line-height:1}
 /* 배지는 줄지 않는다 — 좁은 칸에서 눌려 두 줄이 되면 행 높이가 행마다 갈리고, 그 갈림은
    실렌더 기하 단언(`editor_binding`)에서만 드러난다. */
 table.map .srccell .badge{flex:none}
-/* 「가공」 칸 — 칩 하나(연결 표 `.map`·작업대 표 `.dmap` 공용). 걸린 가공은 채운 칩이 문장으로,
+/* 「가공」 칸 — 칩 하나(연결 표 `.map`). 걸린 가공은 채운 칩이 문장으로,
    없으면 점선 칩 「+ 가공」 이다. 문장이 길어도 칸을 밀지 않고 말줄임(전문은 title). */
 .slicecell{display:flex;min-width:0}
 .slicechip{font:inherit;font-size:var(--fs-dense);max-width:100%;min-height:24px;box-sizing:border-box;

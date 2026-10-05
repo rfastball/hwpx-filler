@@ -279,18 +279,8 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `close` | — | — |
 | `copy_precheck` | — | — |
 | `leave_guard` | — | — |
-| `preview_map_slice` | `name` | `sample` |
-| `propose_map_slice` | `name`, `sample`, `start`, `end` | — |
-| `revert_map` | `name` | — |
-| `save_rules` | — | `confirm`, `confirmed_text` |
-| `set_confirmed` | `name`, `value` | — |
 | `set_current` | `index` | — |
 | `set_fullwidth` | `value` | — |
-| `set_map_fmt` | `name` | `code` |
-| `set_map_slice` | `name` | `slice` |
-| `set_map_type` | `name`, `type` | — |
-| `set_map_value` | `name` | `text` |
-| `set_source` | `name` | `col`, `confirm` |
 | `set_target_font` | — | `font` |
 | `set_view` | — | `view` |
 | `step` | `delta` | — |

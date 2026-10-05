@@ -381,12 +381,6 @@ source_write_set = ["src/hwpxfiller/webapp/managed_run_result.py"]
 oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
-module = "hwpxfiller.webapp.mapping_verbs"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/mapping_verbs.py"]
-oracle_kind = "structural"
-
-[[unit]]
 module = "hwpxfiller.webapp.output_folder_zone"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/output_folder_zone.py"]

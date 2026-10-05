@@ -119,6 +119,7 @@ LIVE_ENTRY_REASONS = frozenset(
         "output_result",
         "document_browser_repair",
         "document_browser_new_work",
+        "workbench_result",
     }
 )
 
@@ -135,10 +136,14 @@ LIVE_ENTRY_REASONS = frozenset(
 #: 든 화면에서 **그 데이터에 열을 붙이러** 가는 왕복이다. 인계가 없으면 편집기의 소스 어휘가
 #: 저장 매핑이 참조하던 키뿐이라(§ ``profile_source_vocabulary``) 새 필드에 붙일 열이 아예
 #: 없고, 사람이 같은 파일을 한 번 더 고르게 된다.
+#:
+#: ``workbench_result`` 가 든 근거(#1148): 검토·복사 작업대의 「연결 편집」도 「문서 만들기」가
+#: 마운트한 그 데이터로 본 카드를 고치러 가는 왕복이라 같은 인계가 필요하다.
 DATA_ANCHORED_ENTRY_REASONS = frozenset(
     {
         "document_browser_new_work",
         "document_browser_repair",
+        "workbench_result",
     }
 )
 
@@ -147,10 +152,9 @@ DATA_ANCHORED_ENTRY_REASONS = frozenset(
 DEFERRED_ENTRY_REASONS = {
     "schema_new_field": "새 데이터 열 제안 표면이 아직 없다(계약 §7)",
     "schema_missing_field": "필수 누락 제안 표면이 아직 없다(계약 §7)",
-    # **영구 배제**(지도 §10.15.13 판정 E — 미배선이 아니라 설계다): 작업대는 인라인 필드
-    # 연결 편집을 승계했으므로 편집기로 나가는 deep-link 를 갖지 않는다. 자기 화면 안에서
-    # 겨눈다(wbMapPanel 착지). 이 줄을 지우려는 슬라이스는 그 판정을 먼저 뒤집어야 한다.
-    "workbench_result": "작업대는 편집기로 나가지 않는다(판정 E — 인라인 편집 승계)",
+    # (`workbench_result` 줄은 #1148 이 지웠다 — 사용자 결정으로 판정 E 를 뒤집었다: 작업대는
+    #  필드 연결 표를 걷고 「연결 편집」으로 편집기에 나간다. 복귀처는 「문서 만들기」다 —
+    #  작업대 세션은 나갈 때 닫히므로 돌아갈 세션이 없다.)
     # (`document_browser_new_work` 줄은 #349 가 지웠다 — 이 표의 규율대로 "그 표면을 짓는
     #  슬라이스가 자기 줄을 지운다". 발신자는 후보 줄의 「이 데이터로 새 작업」과 문서 탐색
     #  확인 필요 행 둘이고, 착지는 `EditorController.new_draft_with_data` 하나다.)

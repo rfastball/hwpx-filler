@@ -3,18 +3,18 @@
 「문서 만들기」에서 TXT 작업을 고르고 실행하면 여기 온다. 데이터·범위 선택은 **저쪽이**
 끝내고, 이 화면은 그 결과를 **고정 사본**으로 받아 레코드 하나씩 검토·복사한다.
 
-**왜 별도 화면인가**(지도 §10.15 판정 E, F7 편집기 승격과 같은 근거): 좌 pane 의 필드 연결
-편집은 저장 전까지 미저장 변경이고, 그 이탈 처분이 성립하려면 **나가는 경로가 셀 수 있어야**
-한다. 「문서 만들기」 안에 살면 상단 탭·다른 컨트롤이 처분 미확정 이탈구가 되고 가드의
-완전성이 표면 수에 비례한다.
+**왜 별도 화면인가**: 복사 진행은 세션과 함께 사라지는 상태이고, 그 이탈 처분이 성립하려면
+**나가는 경로가 셀 수 있어야** 한다. 「문서 만들기」 안에 살면 상단 탭·다른 컨트롤이 처분
+미확정 이탈구가 되고 가드의 완전성이 표면 수에 비례한다.
 
 **세션은 진입 시 고정 사본이다**(§13-13·§18.11-25). 표시순 투영을 통과한 OrderedSelection 의
 복사본을 뜨고, 이후 「문서 만들기」의 검색·필터·정렬·선택 변화가 현재 작업점 순서를 바꾸지
 않는다. 그래서 여기엔 데이터 존이 없다 — 데이터를 바꾸려면 나갔다 다시 들어온다.
 
-**좌 pane 은 override 가 아니다**(판정 H). 편집은 저장 전까지 미저장 변경일 뿐이고 착지점은
-「기본 규칙으로 저장…」 하나다. 거래 모델은 편집기와 **같은** :class:`EditSession`
-(section=`binding`)을 쓴다 — patch 를 두 벌 지으면 같은 상태에 어휘가 둘이 된다.
+**연결은 읽기만 한다**(#1148 —지도 §10.15 판정 E 의 뒤집기). 이 화면은 필드 연결 표를 들지
+않는다: 복사할 본문이 화면의 중심이고, 연결 문제는 「연결 편집」(편집기 연결 표)과 「템플릿
+편집」(저작 작업대)으로 나가 저장해 푼다. 그래서 이 세션에는 저장할 규칙 변경이 생기지 않고,
+이탈 가드가 세는 것은 복사 진행과 다시 확인할 항목뿐이다.
 
 **경계**: 실제 클립보드 쓰기는 브리지(:meth:`HwpxFillerApi.copy_clipboard`)가 한다. 이
 컨트롤러는 시안의 mock 완료 사건이 아니라 **실제 복사**의 앞뒤(게이트·큐 전진·완료 노트)를
@@ -22,7 +22,6 @@
 """
 from __future__ import annotations
 
-import hashlib
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -30,32 +29,19 @@ from datetime import datetime
 from pathlib import Path
 
 from ..application.jobs import stamp_run_completion
-from ..domain.format_engine import presets as format_presets
 from ..domain.job import Job, work_mode
 from ..external.job_store import JobRegistry
-from ..domain.mapping import TYPES, MappingProfile
 from ..domain.text_render import RenderReport, template_fields
 from ..domain.text_structure import project_selected_text, scan_text_structure
-from ..viewmodel.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..viewmodel.filter_state import sniff_column_kinds
-from ..viewmodel.mapping_state import AUTO_CONFIRM_EXACT_LABEL, MappingModel, slice_projection
+from ..viewmodel.mapping_state import MappingModel
 from ..viewmodel.selection_state import SelectionModel
-from ..viewmodel.slice_assist import slice_query
 from ..viewmodel.txt_card import card_text, gate_empty_fields, render_card
 from ..viewmodel.tutorial_state import Milestone
 from ..viewmodel.txt_queue import TxtQueueModel
 from ..viewmodel.work_mode import WORK_MODE_TEXT, work_mode_label
-from .mapping_verbs import MappingVerbsMixin
 from .screens import PushSink, TutorialSink, unwired_tutorial
 from ..external.settings import is_proportional_font, load_draft_target_font, save_draft_target_font
-
-#: 표시형 프리셋·유형 선택지 — 「기안」·편집기와 **같은 표**(format_engine)에서 뽑는다.
-#: 세 표면이 표시형을 달리 부르면 저장 왕복에서 어휘가 갈린다.
-_FMT_OPTIONS = {
-    t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES
-}
-_TYPE_LABEL = {"text": "텍스트", "date": "날짜", "amount": "금액"}
-_TYPE_OPTIONS = [{"code": t, "label": _TYPE_LABEL[t]} for t in ("text", "date", "amount")]
 
 #: 레코드 검토 상태(§11 마지막 줄) — 복사했더라도 규칙이 바뀌면 **다시 확인 필요**다.
 REVIEW_TODO = "todo"
@@ -75,11 +61,13 @@ COPY_BLOCK_MATERIALIZATION_UNAVAILABLE = (
 
 #: 화면이 보여 준 문장과 봉인된 실행 결과가 갈렸을 때의 차단 사유(S10-04 #861).
 #: **보이는 것 = 복사되는 것**(결정 17)이 이 화면의 계약이라, 두 문장이 다르면 조용히 한쪽을
-#: 내보내지 않고 복사하지 않는다. 갈리는 원인은 둘뿐이다: 아직 저장하지 않은 연결 편집(봉인은
-#: 저장된 규칙을 쓴다)과 전각 정렬(표시 전용 치환이라 봉인된 실행에 없다).
+#: 내보내지 않고 복사하지 않는다. 이 화면이 연결을 편집하지 않게 된 뒤(#1148) 남는 원인은
+#: 전각 정렬(표시 전용 치환이라 봉인된 실행에 없다) 하나다. 저장된 연결 밖의 카드 연결(저장
+#: 프로파일에 없는 필드의 자동 확정)은 여기까지 오지 않는다 — 봉인이 먼저 그 필드를
+#: ``ACTIVE_FIELD_UNBOUND`` 로 거절하고, 그 사유가 그대로 복사 결과에 실린다.
 COPY_BLOCK_MATERIALIZATION_DIVERGED = (
     "화면에 보이는 문장과 실제로 만들어진 문서가 다릅니다. "
-    "「기본 규칙으로 저장」으로 연결을 확정하거나 전각 정렬을 끈 뒤 다시 복사하세요."
+    "전각 정렬을 끈 뒤 다시 복사하세요."
 )
 
 #: 선택을 조회하지 못했을 때의 상시 재진술. 조용히 원문으로 접지 않는다(복사는 어차피 차단).
@@ -87,13 +75,6 @@ SELECTION_UNAVAILABLE_NOTE = (
     "포함할 내용을 불러오지 못해 템플릿 원문 그대로 보여 줍니다. "
     "'문서 만들기'에서 템플릿을 다시 확인하세요."
 )
-
-
-def _row_own(row) -> str:
-    """맞추기 행의 소유권 — ``man`` 상수 / ``auto`` 결속 열 / ``""`` 무결속(「기안」과 같은 어휘)."""
-    if row.type == "const":
-        return "man"
-    return "auto" if row.source else ""
 
 
 class TargetFontSetting:
@@ -120,7 +101,7 @@ class TargetFontSetting:
         self._value = font
 
 
-class WorkbenchController(MappingVerbsMixin):
+class WorkbenchController:
     """검토·복사 작업대의 세션 소유자 — 화면 하나에 세션 하나(동시 다중 없음)."""
 
     name = "workbench"
@@ -200,7 +181,6 @@ class WorkbenchController(MappingVerbsMixin):
         self.mapping: "MappingModel | None" = None
         self.selection = SelectionModel(0)
         self.queue = TxtQueueModel(self.selection)
-        self.session: "EditSession | None" = None
         self.view = "filled"
         self._advance_after = False
         self._fullwidth = False
@@ -210,12 +190,10 @@ class WorkbenchController(MappingVerbsMixin):
         # 찍으면 durable 쓰기가 복사 수만큼 늘고, 기록되는 사실은 첫 건과 똑같다.
         self._stamped = False
         # 복사 시점의 **규칙 지문**(행 index → 지문). 검토 상태는 이 값과 지금 지문의 **차이**로
-        # 파생한다(2R P2). 종전에는 저장 **사건**이 `_review` 집합을 채웠는데, 그러면 사건
-        # 밖의 변화(그냥 매핑을 고친 것)를 못 본다 — 카드는 이미 다른 문장을 보여 주는데
-        # 배지는 「복사 완료」라고 말하는 창이 열린다. 사건을 세지 말고 **조건을 재라**.
+        # 파생한다(2R P2). 사건을 세면 사건 밖의 변화(전각 정렬을 켠 것)를 못 본다 — 카드는
+        # 이미 다른 문장을 보여 주는데 배지는 「복사 완료」라고 말하는 창이 열린다. 사건을
+        # 세지 말고 **조건을 재라**.
         self._copied_rules: "dict[int, str]" = {}
-        self.notice_text = ""
-        self.notice_level = "muted"
 
     def open(self, job: Job, rows: "list[tuple[int, dict]]") -> None:
         """세션 개시 — 고정 사본을 뜬다. ``rows`` = (원본 행 index, 레코드) 표시순.
@@ -262,9 +240,6 @@ class WorkbenchController(MappingVerbsMixin):
             # 여기서 다시 고르는 축을 만들면 같은 결정을 두 표면이 내리게 된다.
             self.selection = SelectionModel(len(records))
             self.queue = TxtQueueModel(self.selection)
-            self.session = EditSession(
-                context=EditContext(work=job.name), base=job, section=SECTION_BINDING,
-            )
             self._push()
 
     def _project_selection(self, job: Job, text: str) -> "tuple[str, str, int]":
@@ -310,9 +285,6 @@ class WorkbenchController(MappingVerbsMixin):
     def _push(self) -> None:
         self._push_sink(self.name, self.snapshot())
 
-    def _set_notice(self, text: str, level: str = "ok") -> None:
-        self.notice_text, self.notice_level = text, level
-
     # ------------------------------------------------------------- 파생
     def _display_pos(self) -> int:
         """작업점의 표시 서수(0-기반, 없으면 -1) — 자리·순회 경계가 **같은 값**을 쓴다.
@@ -330,52 +302,6 @@ class WorkbenchController(MappingVerbsMixin):
         if cur is None or not (0 <= cur < len(self.records)):
             return {}
         return self.records[cur]
-
-    def _profile_over(self, base: Job) -> "MappingProfile":
-        """모델이 낸 프로파일 + **이 템플릿에 없는 필드의 기존 매핑**을 그대로 승계한다.
-
-        맞추기 표의 행은 **지금 템플릿의 토큰**에서만 나므로(`template_fields`), 저장된
-        프로파일에 그 뒤 사라진·이름이 바뀐 토큰의 매핑이 남아 있으면 모델은 그 행을 아예
-        모른다. 그대로 `to_profile()` 을 쓰면 그 매핑들이 **없어지는 것**이 되어, 아무것도
-        건드리지 않은 채 들어온 화면이 「저장하지 않은 변경 1건」을 띄우고 이탈 가드가 무장한다
-        — 사용자가 한 적 없는 편집이다. 「저장하고 나가기」를 고르면 그 편집이 진짜로 일어나
-        매핑이 영구히 지워진다.
-
-        **이 화면은 자기가 편집하지 않는 것을 지우지 않는다**(`_do_save_rules` 가 그룹·태그·
-        완주 스탬프를 디스크 최신값으로 승계하는 것과 같은 규율). 사라진 토큰의 정리는
-        템플릿 축의 일이고 그 축을 가진 표면(편집기)이 진다.
-        """
-        assert self.mapping is not None
-        profile = self.mapping.to_profile(base.name)
-        known = {r.template_field for r in self.mapping.rows}
-        carried = [m for m in base.mapping.mappings if m.template_field not in known]
-        if not carried:
-            return profile
-        return replace(profile, mappings=list(profile.mappings) + carried)
-
-    def _draft_job(self) -> "Job | None":
-        """지금 화면이 그리는 규칙의 Job 형상 — 판본 대조·저장 대상의 단일 성형.
-
-        매핑만 갈아 끼운다: 작업대는 템플릿도 파일 이름도 건드리지 않으므로(§3.2 — TXT 엔
-        파일 이름 규칙 자체가 없다) 그 축을 성형에 넣으면 없는 변경을 만들어 낸다.
-        """
-        if self.base_job is None or self.mapping is None:
-            return None
-        return replace(self.base_job, mapping=self._profile_over(self.base_job))
-
-    def _changed_fields(self) -> "list[dict]":
-        """저장하면 달라지는 필드 목록 — 「기본 규칙으로 저장」 확인이 **전부 나열**한다(§11)."""
-        draft = self._draft_job()
-        if draft is None or self.session is None:
-            return []
-        changes = self.session.changes(draft).get(SECTION_BINDING, {})
-        return [{"name": name, **axes} for name, axes in changes.items()]
-
-    def _pending_binding(self) -> bool:
-        """확정하지 않은 매핑 편집이 있는가 — 저장되진 않지만 **버려지면 사라진다**."""
-        if self.mapping is None:
-            return False
-        return any(r.touched and not r.confirmed for r in self.mapping.rows)
 
     def _rules_signature(self) -> str:
         """지금 카드를 만드는 규칙의 지문 — **보이는 문장을 바꾸는 것 전부**를 담는다.
@@ -413,18 +339,14 @@ class WorkbenchController(MappingVerbsMixin):
         )
 
     def _notice(self) -> dict:
-        """스냅샷 알림 — **사건 노트**(변이 1회분)와 **상시 사실**을 한 채널로 낸다.
+        """스냅샷 알림 — 이 세션 내내 참인 **상시 사실**(투영 실패 사유)을 낸다.
 
-        투영 실패는 사건이 아니라 이 세션 내내 참인 사실이라, `dispatch` 가 매 변이마다 비우는
-        `notice_text` 에만 실으면 다음 타건에 사유가 증발한다(그러면 화면은 원문을 그리면서
-        아무 말도 하지 않는다). 그래서 파생으로 낸다 — 방금 일어난 사건이 우선이고, 없으면
-        상시 사실이 자리를 지킨다.
+        사건 노트를 내던 유일한 발신자(「기본 규칙으로 저장」 성공 배너)는 연결 편집과 함께
+        이 화면을 떠났다(#1148). 투영 실패는 사건이 아니라 상태라 파생으로 낸다.
         """
-        if self.notice_text:
-            return {"text": self.notice_text, "level": self.notice_level}
         if self._selection_note:
             return {"text": self._selection_note, "level": "warn"}
-        return {"text": "", "level": self.notice_level}
+        return {"text": "", "level": "muted"}
 
     # ------------------------------------------------------------- 스냅샷
     def snapshot(self) -> dict:
@@ -439,49 +361,17 @@ class WorkbenchController(MappingVerbsMixin):
         if not self.is_open or self.mapping is None:
             # 세션 없음 = 빈 골격. 표면은 이 상태에서 화면을 세우지 않는다(라우팅 가드).
             base.update({
-                "card": None, "rows": [], "source_fields": [], "dirty": {"count": 0, "fields": []},
-                "can_save": False, "save_block": "", "guard": {"armed": False, "lines": []},
+                "card": None, "template_path": "", "guard": {"armed": False, "lines": []},
                 "revision": {"template": 0, "binding": 0}, "total": 0, "copied_count": 0,
             })
             return base
 
-        record = self._current_record()
-        # 「오늘 날짜」의 기준 시각은 **스냅샷당 1회**다(RC-02 확장): 카드 렌더와 행 표가
-        # 각자 찍으면 같은 화면 안에서 두 시각이 서고, 하위-일 서식에서 눈에 보인다.
-        now = self._clock()
         rendered = render_card(
-            self._card_text, self.mapping, record, fullwidth=self._fullwidth, now=now
+            self._card_text, self.mapping, self._current_record(),
+            fullwidth=self._fullwidth, now=self._clock(),
         )
-        # 행 값은 프로파일 1회 적용을 공유한다(행마다 재적용하면 시각도 값도 갈린다).
-        row_values = self.mapping.live_profile().apply(record, now=now)
         report = rendered.report
         cur = self.queue.current
-        missing_set, empty_set = set(report.missing_fields), set(report.empty_fields)
-        suggestions = self.mapping.suggestions()
-        rows = [
-            {
-                "name": r.template_field,
-                "state": ("missing" if r.template_field in missing_set
-                          else ("blank" if r.template_field in empty_set else "fill")),
-                "source": r.source,
-                "own": _row_own(r),
-                "manual": r.type == "const",
-                "value": row_values.get(r.template_field, ""),
-                "fmt_kind": r.type,
-                "fmt_code": r.fmt,
-                # 가공(v4) — 명세·요약 라벨·손잡이 술어는 링1 이 낸다(`row_projection` 과 같은 출처).
-                **slice_projection(r),
-                "suggest": suggestions.get(r.template_field, ""),
-                "can_revert": r.type == "const" and bool(r.source),
-                "confirmed": r.confirmed,
-                "auto_confirmation_label": AUTO_CONFIRM_EXACT_LABEL if r.auto_confirmed_exact else "",
-                # 「비운다」 선언 = **확정된 빈 고정값** — 게이트가 빼는 집합
-                # (`declared_empty_fields`)과 같은 술어여야 표지와 게이트가 갈리지 않는다.
-                "blank_declared": r.confirmed and r.is_declared_empty(),
-            }
-            for r in self.mapping.rows
-        ]
-        changed = self._changed_fields()
         total = len(self.records)
         # 큐 퇴화(승계 — 「기안」 결정 8): 1건이면 순회할 곳이 없어 큐 장치 3종을 숨긴다.
         card = {
@@ -535,20 +425,13 @@ class WorkbenchController(MappingVerbsMixin):
         }
         base.update({
             "card": card,
-            "rows": rows,
-            "source_fields": list(self.records[0].keys()) if self.records else [],
-            "fmt_options": _FMT_OPTIONS,
-            "type_options": _TYPE_OPTIONS,
             "total": total,
             "copied_count": self.queue.copied_count(),
             "is_complete": self.queue.is_complete(),
             "fullwidth": self._fullwidth,
-            # 저장하지 않은 변경 — v6 배지 「이번 작업에만 적용 중」은 사망했다(판정 H):
-            # override 가 없으므로 그 배지가 말할 상태가 없다.
-            "dirty": {"count": len(changed), "fields": changed,
-                      "pending": self._pending_binding()},
-            "can_save": bool(changed) and not self._save_block(),
-            "save_block": self._save_block(),
+            # 「템플릿 편집」이 여는 파일 — 진입 때 읽은 그 템플릿이다(#1148). 연결 편집은
+            # 작업 이름(`job_name`)으로 연다. 이 화면은 연결을 편집하지 않으므로 둘 다 나가는 문이다.
+            "template_path": self.base_job.template_path if self.base_job else "",
             "revision": {
                 "template": self.base_job.template_revision if self.base_job else 0,
                 "binding": self.base_job.binding_revision if self.base_job else 0,
@@ -563,12 +446,6 @@ class WorkbenchController(MappingVerbsMixin):
 
         segments, _ = render_segments(self.template_text, {})
         return [{"text": s.text, "kind": s.kind, "name": s.name} for s in segments]
-
-    def _save_block(self) -> str:
-        """저장 차단 사유(없으면 ``""``) — 확정하지 않은 편집이 있으면 먼저 확정한다."""
-        if self._pending_binding():
-            return "확정하지 않은 편집이 있습니다. 각 행의 확정 열을 켠 뒤 저장하세요."
-        return ""
 
     def _copy_block(self) -> str:
         """복사 차단 사유(없으면 ``""``) — 「보이는 것 = 복사되는 것」의 술어(결정 17).
@@ -600,16 +477,11 @@ class WorkbenchController(MappingVerbsMixin):
         """액션 1건 — **핸들러가 선언한 표식을 읽는다**(「기안」·「문서 만들기」와 같은 규약).
 
         표식을 안 읽으면 그것을 붙인 자리가 조용히 죽는다: `is_query` 는 무변이 질의라
-        재렌더할 것이 없고(복사 사전확인이 모달 직전에 표 전체를 다시 짓는다), `is_no_push`
-        는 **포커스된 입력을 서버 푸시가 재구성하지 못하게** 붙인 표식인데 무조건 push 가
-        바로 그 재구성을 일으킨다(IME 조합·캐럿이 왕복마다 끊긴다).
+        재렌더할 것이 없다(복사 사전확인이 모달 직전에 화면 전체를 다시 짓지 않게).
 
-        변이 동작은 **직전 왕복의 재진술 둘을 무효화한다**(「기안」 dispatch 승계):
-        ①복사 완료 노트 — 작업점이 옮겨지면 그 문장은 **다른 카드**의 사실이 된다(지금 카드가
-        이미 복사된 것으로 읽혀 붙여넣기를 건너뛴다). ②저장 성공 배너 — 저장 시점의 상태를
-        서술하는데, 그 뒤 편집이 오면 옆의 「저장하지 않은 변경 N건」과 동시에 서서 화면이 두
-        말을 한다. 둘 다 **핸들러 앞에서** 지운다: `_do_save_rules` 는 자기 성공 문안을 바로
-        그 자리에 남기므로, 뒤에서 지우면 저장이 아무 말도 못 하게 된다.
+        변이 동작은 **직전 왕복의 복사 완료 노트를 무효화한다**(「기안」 dispatch 승계):
+        작업점이 옮겨지면 그 문장은 **다른 카드**의 사실이 된다(지금 카드가 이미 복사된
+        것으로 읽혀 붙여넣기를 건너뛴다).
 
         **모든 액션이 세션 잠금 안이다**(6R P1). 변이는 진행 중인 복사 거래의 렌더와
         `note_copied` 사이로 끼어들 수 없어야 하고(끼어들면 옛 카드의 문자열을 새 작업점의
@@ -623,10 +495,7 @@ class WorkbenchController(MappingVerbsMixin):
             if getattr(handler, "is_query", False):
                 return handler(payload)
             self._last_copy = None
-            self.notice_text, self.notice_level = "", "muted"
             result = handler(payload)
-            if getattr(handler, "is_no_push", False):
-                return result   # 반환 스냅샷으로 JS 가 겨냥 패치(맞추기 표 재구성 금지)
             self._push()
             return result
 
@@ -657,47 +526,6 @@ class WorkbenchController(MappingVerbsMixin):
 
     def _do_set_fullwidth(self, p: dict) -> None:
         self._fullwidth = bool(p["value"])
-
-    # ---- 필드 연결(좌 pane) — 동사 7종은 :class:`MappingVerbsMixin` 소유(F6 3R).
-    # 손으로 다시 짜다 규약이 갈렸던 자리다(표시형이 이름 API 에 index 를 넘겨 **전부**
-    # 터졌고, 되돌리기는 스니핑 유형을 잃었고, 결속은 직접 입력 값을 무확인 덮었다).
-    # 여기 남는 것은 그 동사들이 쓰는 **훅** 둘뿐이다.
-    def _map_source_fields(self) -> "list[str]":
-        """결속 후보 열 — 고정 사본의 열 집합(세션 동안 불변)."""
-        return list(self.records[0].keys()) if self.records else []
-
-    def _map_kind_of(self, source: str) -> str:
-        """결속 대상 열의 스니핑 유형(없으면 ``""``) — 되돌리기·결속이 함께 쓴다."""
-        if not source:
-            return ""
-        return sniff_column_kinds(self.records).get(source, "")
-
-    # ---- 「가공」 편집 칸의 무변이 질의 — 편집기 `preview_slice`·`propose_slice` 와 같은 몸통.
-    def _slice_query(self, kind: str, p: dict) -> dict:
-        self._require_open()
-        assert self.mapping is not None  # 열린 세션은 연결 모델을 든다(`_require_open`)
-        row = self.mapping.rows[self.mapping.index_of(p["name"])]
-        return slice_query(
-            kind,
-            field=row.template_field,
-            source=row.source,
-            spec=row.slice,
-            enabled=row.slice_enabled(),
-            records=self.records,
-            payload=p,
-        )
-
-    def _do_preview_map_slice(self, p: dict) -> dict:
-        """불러온 행 미리보기 — 행마다 원본·남긴 자리·결과·상태와 예시 값."""
-        return self._slice_query("preview", p)
-
-    _do_preview_map_slice.is_query = True  # type: ignore[attr-defined]
-
-    def _do_propose_map_slice(self, p: dict) -> dict:
-        """예시 값에서 끌어 고른 부분을 재현하는 방식 후보 — 좋은 것부터."""
-        return self._slice_query("propose", p)
-
-    _do_propose_map_slice.is_query = True  # type: ignore[attr-defined]
 
     # ---- 복사 게이트(브리지가 클립보드를 쓰기 전에 묻는다)
     def _do_copy_precheck(self, p: dict) -> dict:
@@ -730,102 +558,13 @@ class WorkbenchController(MappingVerbsMixin):
         cur = self.queue.current
         return "" if cur is None else f"{cur}|{self._rules_signature()}"
 
-    # ---- 기본 규칙으로 저장(§11) — 착지점은 이것 하나(override 없음, 판정 H)
-    def _save_confirm_text(self, current: Job, changed: "list[dict]") -> str:
-        """확인 문안을 **잠금 안에서 지금** 성형한다 — 이 문자열이 곧 확인의 정체다.
-
-        무엇이 문안에 들어가야 하는지의 기준은 하나다: **그 값이 달라지면 사용자가 다시
-        확인해야 하는가.** 그래서 dirty 필드 전부(§11 "영구 저장 확인에는 모든 dirty 필드를
-        나열한다")와, 외부 변경이 있으면 그 **버전**까지 못박는다. 이름만 든 문안은 버전
-        불가지라 모달이 열린 사이 또 다른 외부 버전으로 바뀌어도 대조를 통과한다(#273).
-        """
-        names = ", ".join(c["name"] for c in changed)
-        base = (
-            f"다음 항목의 연결·표시가 이 작업의 기본 규칙이 됩니다: {names}\n"
-            "이미 복사한 항목은 다시 확인이 필요해집니다."
-        )
-        if self.base_job is None:
-            return base
-        if (self.registry.content_fingerprint(current)
-                == self.registry.content_fingerprint(self.base_job)):
-            return base
-        digest = hashlib.sha256(
-            self.registry.content_fingerprint(current).encode("utf-8")
-        ).hexdigest()[:8]
-        return (
-            f"열어 둔 사이 작업 '{current.name}' 이(가) 다른 곳에서 바뀌었습니다"
-            f" (현재 내용 #{digest}).\n지금 저장하면 그 변경 위에 아래 연결을 덮어씁니다.\n\n"
-            + base
-        )
-
-    def _do_save_rules(self, p: dict) -> dict:
-        """확인한 patch 만 Binding 판본에 저장하고 **같은 작업점**으로 돌아온다(§11).
-
-        확인 왕복을 거치는 이유는 이 저장이 **다음 실행부터의 기본 규칙**을 바꾸기 때문이다 —
-        이 세션에만 듣는 조정이 아니다(override 는 짓지 않았다). 그래서 확인 문안이 dirty
-        필드를 **전부** 나열한다: 무엇이 영구히 달라지는지 세지 않고 누르게 하지 않는다.
-
-        **읽기-수정-쓰기 전 구간이 잠금 안이다**(에디터·「기안」 저장과 같은 규율). 작업대
-        세션은 오래 열려 있어 진입 시점에 읽은 Job 이 특히 낡기 쉽다 — 잠금 밖에서 저장하면
-        그사이 다른 표면이 바꾼 그룹·태그·완주 스탬프를 되돌린다(lost update). 그래서 잠금
-        안에서 **지금 디스크를 다시 읽고** 그 위에 매핑만 얹는다.
-
-        **확인은 `confirmed_text` 왕복이다**(1R P1·P2 근본 조치 — 「기안으로 저장」·에디터
-        덮어쓰기 게이트와 **같은 관용구**). 문안을 **잠금 안에서 지금** 성형해 사용자가 확인한
-        문안과 대조하고, 다르면 새 문안으로 다시 묻는다. 불리언 2개(`confirm`+`confirm_drift`)로
-        짰던 첫 판은 두 가지를 동시에 틀렸다: ①새 어휘라 dispatch 스키마 등록을 빠뜨려 실
-        브리지에서 저장이 **한 번도 성사되지 않았고** ②불리언은 「사용자가 **이** 상황을
-        확인했다」와 「**어떤** 상황을 확인했다」를 구별하지 못해 클라이언트가 드리프트를
-        미리 승인해 버렸다. 문안 대조는 그 구별을 **구조로** 만든다 — 상황이 바뀌면 문안이
-        바뀌고, 바뀐 문안은 대조에서 걸린다(리뷰 5c 6R P1 / 273 이 세운 규율의 승계).
-        """
-        self._require_open()
-        block = self._save_block()
-        if block:
-            return {"ok": False, "error": block}
-        changed = self._changed_fields()
-        if not changed:
-            return {"ok": False, "error": "저장할 변경이 없습니다."}
-        assert self.base_job is not None and self.mapping is not None
-        with self.registry.write_lock():
-            try:
-                current = self.registry.load(self.base_job.name)
-            except (FileNotFoundError, ValueError):
-                return {"ok": False, "error": (
-                    f"작업 '{self.base_job.name}' 을(를) 더는 읽을 수 없습니다"
-                    " — 다른 곳에서 지웠거나 파일이 손상됐습니다.")}
-            gate_text = self._save_confirm_text(current, changed)
-            if not p.get("confirm") or p.get("confirmed_text", "") != gate_text:
-                return {"ok": False, "needs_confirm": True, "confirm_text": gate_text}
-            # 지금 읽은 것 위에 **매핑만** 얹는다 — 그룹·태그·완주 스탬프 같은 이 화면이
-            # 편집하지 않는 필드는 디스크의 최신값을 그대로 승계한다.
-            draft = replace(current, mapping=self._profile_over(current))
-            self.registry.save(draft, allow_overwrite=True)
-            saved = self.registry.load(draft.name)  # 판본은 저장이 정산(advance_revisions)
-        self.base_job = saved
-        self.session = EditSession(
-            context=EditContext(work=saved.name), base=saved, section=SECTION_BINDING,
-        )
-        # 「이미 복사한 레코드는 다시 확인 필요」(§11 마지막 줄)를 여기서 **세우지 않는다** —
-        # 그 판정은 복사 시점 지문과의 차이에서 파생된다(2R P2). 저장은 규칙을 바꾸지 않고
-        # (바뀐 건 이미 편집 때다) 영속시킬 뿐이라, 여기서 집합을 다시 칠하면 같은 상태에
-        # 판정 주체가 둘이 된다. 큐 진행(복사 이력)도 그대로 둔다: 무엇을 이미 붙여넣었는지는
-        # 여전히 사실이고, 갈린 것은 「확인했는가」다.
-        recheck = sum(
-            1 for i in self._copied_rules if self._review_state(i) == REVIEW_RECHECK
-        )
-        self._set_notice(
-            f"기본 규칙을 저장했습니다 · 연결 r{saved.binding_revision}"
-            + (f" · 복사한 {recheck}건은 다시 확인이 필요합니다" if recheck else ""),
-        )
-        return {"ok": True, "binding_revision": saved.binding_revision}
-
-    # ---- 이탈 가드(T3 승계) — 복사 진행·미저장 변경을 열거한다
+    # ---- 이탈 가드(T3 승계) — 복사 진행·다시 확인 대기를 열거한다
     def leave_guard(self) -> dict:
         """이탈 시 잃는 것의 **열거**. 문안은 웹이 짓되 집합은 여기가 낸다.
 
-        가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고 = 거짓말). 그래서 복사
-        진행과 미저장 변경을 **따로** 센다 — 둘은 다른 사실이고 처방도 다르다.
+        가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고 = 거짓말). 이 화면은 연결을
+        편집하지 않으므로(#1148) 잃는 것은 세션의 진행 사실 둘 — 복사 진행과 다시 확인 대기 —
+        뿐이고, 둘은 다른 사실이라 **따로** 센다.
         """
         if not self.is_open:
             return {"armed": False, "lines": []}
@@ -833,8 +572,8 @@ class WorkbenchController(MappingVerbsMixin):
         copied, total = self.queue.copied_count(), len(self.records)
         if 0 < copied < total:
             lines.append(f"복사 진행 {copied}/{total}건 — 나가면 이 진행은 사라집니다.")
-        # **다시 확인 대기도 미완이다**(5R P2). 전건을 복사한 뒤 규칙을 고쳐 저장하면 복사
-        # 진행(=total)도 미저장 변경도 없지만, 그 문서들은 **지금 규칙의 산출물이 아니다** —
+        # **다시 확인 대기도 미완이다**(5R P2). 전건을 복사한 뒤 전각 정렬을 바꾸면 복사
+        # 진행(=total)은 끝났지만, 그 문서들은 **지금 규칙의 산출물이 아니다** —
         # 다시 복사해야 한다는 사실이 세션과 함께 사라지면 사용자는 낡은 문서를 붙여넣은 채
         # 끝난다. 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고도, 과소경고도 아니게).
         recheck = sum(
@@ -844,12 +583,6 @@ class WorkbenchController(MappingVerbsMixin):
             lines.append(
                 f"규칙이 바뀌어 다시 확인해야 하는 항목 {recheck}건 — 나가면 그 표시가 사라집니다."
             )
-        changed = self._changed_fields()
-        if changed:
-            names = ", ".join(c["name"] for c in changed)
-            lines.append(f"저장하지 않은 필드 연결 변경 {len(changed)}건: {names}")
-        if self._pending_binding():
-            lines.append("확정하지 않은 편집이 있습니다.")
         return {"armed": bool(lines), "lines": lines}
 
     def close_guard_reason(self) -> str:
@@ -863,7 +596,7 @@ class WorkbenchController(MappingVerbsMixin):
         """
         with self._state_lock:
             return (
-                "검토·복사 작업대의 미저장 연결 변경 또는 복사 진행"
+                "검토·복사 작업대의 복사 진행"
                 if self.leave_guard()["armed"] else ""
             )
 
@@ -917,7 +650,7 @@ class WorkbenchController(MappingVerbsMixin):
         때문에 토큰 대조에서 걸린다 — 조용한 오복사 대신 stale 재진술이 나간다.
 
         **왜 복사끼리 잠그는 것으로도 부족했나**(6R P1): 잠금은 잠금을 잡는 쪽끼리만
-        배제한다. 복사만 잠그면 「다음」·매핑 편집·이탈은 그대로 임계구역 **안으로** 들어와,
+        배제한다. 복사만 잠그면 「다음」·보기 전환·이탈은 그대로 임계구역 **안으로** 들어와,
         렌더와 :meth:`note_copied` 사이에서 작업점을 옮기거나(옛 카드의 문자열이 새 작업점의
         복사 완료로 찍힌다) 세션을 비운다(이미 성공한 복사가 `mapping is None` 에서 터진다).
         그래서 잠금의 정의를 「복사 거래」에서 **「세션 상태 전이」**로 넓혔다 —

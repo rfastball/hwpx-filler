@@ -13,11 +13,10 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytest
-
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.text_slice import text_slice_from_payload
 from hwpxfiller.domain.text_structure import scan_text_structure
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -263,10 +262,20 @@ def test_sliced_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> N
     """가공(field-binding/v4)이 걸린 연결도 봉인된 산출이 카드와 같은 글자다.
 
     카드는 편집 중 Mapping(``value_for``)으로, 복사는 봉인된 판본(record validation)으로 렌더한다.
-    가공을 판본이 싣지 못하면 둘이 갈려 복사가 「보이는 것 ≠ 복사되는 것」으로 막힌다. 가공은
-    작업대 동사(`set_map_slice`)로 걸고 「기본 규칙으로 저장」과 같은 저장 사건을 거친다.
+    가공을 판본이 싣지 못하면 둘이 갈려 복사가 「보이는 것 ≠ 복사되는 것」으로 막힌다. 작업대는
+    더 이상 가공을 걸지 않으므로(#1148) 저장된 Job 매핑에 가공을 직접 실어 연다 — 「연결 편집」
+    (편집기)이 저장하는 그 값과 같은 자리다.
     """
     harness = _Harness(tmp_path, SLOT_BODY)
+
+    def sliced_title(job) -> None:
+        for item in job.mapping.mappings:
+            if item.template_field == "건명":
+                item.slice = text_slice_from_payload(
+                    {"mode": "split", "delimiter": "-", "index": 1}
+                )
+
+    harness.registry.mutate("안내문", sliced_title)
     harness.choose("첨부", "계약서")
     record = {**RECORD, "건명": "R26BK09017075-000"}
     controller = WorkbenchController(
@@ -276,25 +285,9 @@ def test_sliced_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> N
         txt_materialization=_txt_materialization_port(harness.registry, harness.seal),
     )
     controller.open(harness.registry.load("안내문"), [(0, record)])
-    controller.dispatch(
-        "set_map_slice",
-        {"name": "건명", "slice": {"mode": "split", "delimiter": "-", "index": 1}},
-    )
-    row = next(r for r in controller.snapshot()["rows"] if r["name"] == "건명")
-    assert row["value"] == "R26BK09017075"
-    assert row["slice_label"] == "‘-’로 나눈 조각 중 첫째" and row["slice_enabled"] is True
-    with pytest.raises(ValueError, match="구분자를 비울 수 없습니다"):
-        controller.dispatch(
-            "set_map_slice", {"name": "건명", "slice": {"mode": "split", "delimiter": "", "index": 1}}
-        )
-    controller.dispatch("set_confirmed", {"name": "건명", "value": True})
-    saved = controller.dispatch("save_rules", {})
-    assert saved["needs_confirm"] is True  # 기본 규칙 저장은 본 문안 그대로 확인받는다(§11)
-    saved = controller.dispatch(
-        "save_rules", {"confirm": True, "confirmed_text": saved["confirm_text"]}
-    )
-    stored = {m.template_field: m for m in harness.registry.load("안내문").mapping.mappings}
-    assert stored["건명"].slice is not None, saved
+    card = controller.snapshot()["card"]
+    segment = next(s for s in card["segments"] if s["name"] == "건명")
+    assert segment["text"] == "R26BK09017075"
 
     written: "list[str]" = []
     result = controller.copy_to(controller.copy_token(), written.append)
@@ -307,6 +300,15 @@ def test_sliced_mapping_copies_the_same_text_the_card_shows(tmp_path: Path) -> N
 def test_v5_new_mode_slice_copies_the_same_text_the_card_shows(tmp_path: Path) -> None:
     """v5 새 방식(‘앞까지’)도 v4 시절과 같은 규율 — 봉인된 산출이 카드와 같은 글자다."""
     harness = _Harness(tmp_path, SLOT_BODY)
+
+    def sliced_title(job) -> None:
+        for item in job.mapping.mappings:
+            if item.template_field == "건명":
+                item.slice = text_slice_from_payload(
+                    {"mode": "before", "delimiter": "-", "on_missing": "keep"}
+                )
+
+    harness.registry.mutate("안내문", sliced_title)
     harness.choose("첨부", "계약서")
     record = {**RECORD, "건명": "R26BK09017075-000"}
     controller = WorkbenchController(
@@ -316,20 +318,9 @@ def test_v5_new_mode_slice_copies_the_same_text_the_card_shows(tmp_path: Path) -
         txt_materialization=_txt_materialization_port(harness.registry, harness.seal),
     )
     controller.open(harness.registry.load("안내문"), [(0, record)])
-    controller.dispatch(
-        "set_map_slice",
-        {"name": "건명", "slice": {"mode": "before", "delimiter": "-", "on_missing": "keep"}},
-    )
-    row = next(r for r in controller.snapshot()["rows"] if r["name"] == "건명")
-    assert row["value"] == "R26BK09017075"
-    assert row["slice_label"] == "‘-’ 앞까지" and row["slice_enabled"] is True
-    controller.dispatch("set_confirmed", {"name": "건명", "value": True})
-    saved = controller.dispatch("save_rules", {})
-    saved = controller.dispatch(
-        "save_rules", {"confirm": True, "confirmed_text": saved["confirm_text"]}
-    )
-    stored = {m.template_field: m for m in harness.registry.load("안내문").mapping.mappings}
-    assert stored["건명"].slice is not None, saved
+    card = controller.snapshot()["card"]
+    segment = next(s for s in card["segments"] if s["name"] == "건명")
+    assert segment["text"] == "R26BK09017075"
 
     written: "list[str]" = []
     result = controller.copy_to(controller.copy_token(), written.append)
