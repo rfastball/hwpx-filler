@@ -16,6 +16,7 @@ function harness(handler = () => ({}), modal = {}, invoked = () => null) {
     { id: "b", name: "b.txt", path: "b.txt", revision: 0, values: {}, selected: {} },
   ] };
   const calls = [];
+  const pushed = new Set();
   const client = {
     async dispatch(_screen, action, payload) {
       calls.push({ action, ...payload });
@@ -26,11 +27,13 @@ function harness(handler = () => ({}), modal = {}, invoked = () => null) {
     async invoke(method, ...args) { calls.push({ method, args }); return { ok: true, value: await invoked(method, args, snapshot) }; },
   };
   const controller = createAuthoringController({ client,
-    runtime: { model: () => ({ getSnapshot: () => snapshot, subscribe: () => () => {} }), loadInitial: async () => {} },
+    runtime: { model: () => ({ getSnapshot: () => snapshot, subscribe: (listener) => { pushed.add(listener); return () => pushed.delete(listener); } }), loadInitial: async () => {} },
     modal: { choose: async () => "save", prompt: async () => null, confirm: async () => true, ...modal },
     navigation: { go() {}, refresh: async () => {} },
   });
-  return { controller, calls, snapshot };
+  /** Python 의 관측 푸시 — 스냅샷을 바꾼 뒤 구독자를 부른다. */
+  const push = (patch = {}) => { Object.assign(snapshot, patch); pushed.forEach((listener) => listener()); };
+  return { controller, calls, snapshot, push };
 }
 
 test("typing during an in-flight update drains the newest content with the returned revision", async () => {
@@ -99,6 +102,35 @@ test("tabs retain their display mode and selection without editing documents", a
   assert.equal(controller.viewModel.getSnapshot().mode, "structure");
   assert.deepEqual(controller.viewModel.getSnapshot().selection, { start: 4, end: 9 });
   assert.equal(calls.some((call) => call.action === "update"), false);
+});
+
+test("a document Python made active on its own becomes this screen's view, so the editor's selection is located (#1146)", async () => {
+  // The tutorial opens its practice TXT backend-side and the window only navigates here: no activate() came from this
+  // screen. Before #1146 every selection report of that editor was dropped (no locate), so a range beat never passed.
+  const { controller, calls, push } = harness();
+  push({ active_id: "b" });
+  await new Promise(setImmediate);
+  assert.deepEqual(calls.filter((call) => call.action === "activate").map((call) => call.session_id), ["b"]);
+  controller.selection("b", { start: 1, end: 3 });
+  await new Promise(setImmediate);
+  assert.deepEqual(calls.filter((call) => call.action === "locate").map((call) => [call.session_id, call.selection]), [["b", { start: 1, end: 3 }]]);
+  push({});
+  await new Promise(setImmediate);
+  assert.equal(calls.filter((call) => call.action === "activate").length, 1, "an already followed document is not activated again");
+});
+
+test("a push during this screen's own opening is not followed a second time", async () => {
+  let pushNow = () => {};
+  const { controller, calls, push } = harness(() => ({}), {}, (method, _args, snapshot) => {
+    if (method !== "open_authoring_document") return null;
+    snapshot.tabs.push({ id: "c", name: "c.txt", path: "c.txt", revision: 0, values: {}, selected: {} });
+    pushNow();
+    return { session_id: "c", revision: 0 };
+  });
+  pushNow = () => push({ active_id: "c" });
+  await controller.open("c.txt");
+  await new Promise(setImmediate);
+  assert.deepEqual(calls.filter((call) => call.action === "activate").map((call) => call.session_id), ["c"]);
 });
 
 test("late semantic location results cannot replace the newer canvas selection", async () => {
