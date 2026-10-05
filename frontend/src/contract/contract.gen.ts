@@ -225,6 +225,8 @@ export const SCREEN_ACTIONS = {
     set_target_font: { required: [], optional: ["font"] },
     set_fullwidth: { required: ["value"], optional: [] },
     copy_precheck: { required: [], optional: [] },
+    set_card_text: { required: ["index", "text"], optional: [] },
+    revert_card: { required: ["index"], optional: [] },
     leave_guard: { required: [], optional: [] },
     close: { required: [], optional: [] },
   },

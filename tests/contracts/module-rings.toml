@@ -249,6 +249,12 @@ source_write_set = ["src/hwpxfiller/viewmodel/txt_card.py"]
 oracle_kind = "structural"
 
 [[unit]]
+module = "hwpxfiller.viewmodel.txt_card_edit"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/viewmodel/txt_card_edit.py"]
+oracle_nodeid = "tests/test_txt_card_edit.py"
+
+[[unit]]
 module = "hwpxfiller.viewmodel.txt_queue"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/txt_queue.py"]

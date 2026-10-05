@@ -293,6 +293,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_target_font": _schema(optional="font"),
         "set_fullwidth": _schema("value"),
         "copy_precheck": _schema(),
+        # 본문 임시 편집(#1148 PR B) — 그 행 복사본만 바꾼다(템플릿·데이터·연결 불변). 정체는
+        # 행 `index` 다: 늦게 도착한 편집이 그사이 옮긴 작업점의 남의 행에 붙지 않게.
+        "set_card_text": _schema("index text"),
+        "revert_card": _schema("index"),
         "leave_guard": _schema(),
         "close": _schema(),
     },

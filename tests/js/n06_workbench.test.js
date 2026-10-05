@@ -1,5 +1,5 @@
 /* Workbench behavior: settle-before-leave, guarded navigation, exit doors, and late-bound ports. */
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
 import { createWorkbenchController } from "../../frontend/src/screens/workbench.ts";
@@ -13,7 +13,8 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
     저장」·결과 → 규칙 겨눔은 표와 함께 걷혔다(#1148) — 다시 생기면 여기서 붉어진다. */
 const SURFACE = [
   "init", "leaveTo", "editBinding", "editTemplate", "model", "draftModel",
-  "copyCard", "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
+  "copyCard", "editCard", "setComposing", "revertCard",
+  "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
   "guarded", "doc", "notify",
 ];
 
@@ -284,4 +285,60 @@ test("대상 글꼴 — 고른 값이 곧바로 보이고 set_target_font 한 �
 test("서버 값 — 작업대 초안의 서버 축은 대상 글꼴 하나다(연결 표 축 없음)", () => {
   assert.deepEqual(workbenchServerValues({ target_font: "dotumche", rows: [{ name: "수신" }] }),
     { targetFont: "dotumche" });
+});
+
+/* ================= 7. 본문 임시 편집(#1148 PR B) ================= */
+
+const sentEdits = (h) => h.log.filter((row) => row[0] === "dispatch")
+  .map((row) => [row[2], row[3]]);
+
+test("편집 — 친 글자는 쉼 뒤 한 번만 보내고, 한글 조합 중에는 미룬다", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const h = harness({ snapshot: OPEN });
+    h.controller.editCard(0, "가");
+    h.controller.editCard(0, "가나");
+    mock.timers.tick(249);
+    assert.deepEqual(sentEdits(h), [], "쉼 전에는 보내지 않는다");
+    mock.timers.tick(1);
+    await tick();
+    assert.deepEqual(sentEdits(h), [["set_card_text", { index: 0, text: "가나" }]], "마지막 전문 한 번");
+
+    h.controller.setComposing(true);
+    h.controller.editCard(0, "가나다");
+    mock.timers.tick(1000);
+    await tick();
+    assert.equal(sentEdits(h).length, 1, "조합 중에는 보내지 않는다");
+    h.controller.setComposing(false);
+    mock.timers.tick(250);
+    await tick();
+    assert.deepEqual(sentEdits(h)[1], ["set_card_text", { index: 0, text: "가나다" }], "조합이 끝난 뒤 보낸다");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("편집 — 이동·복사·이탈은 미뤄 둔 편집을 **먼저** 체인에 세운다(남의 행에 붙지 않게 index 를 싣는다)", async () => {
+  const h = harness({
+    snapshot: OPEN,
+    onDispatch: (_s, action) => (action === "copy_precheck" ? { token: "t", missing_fields: [], empty_fields: [] }
+      : action === "leave_guard" ? { armed: false } : {}),
+  });
+  h.controller.editCard(0, "고친 본문");
+  await h.controller.step(1);
+  assert.deepEqual(h.actions(), ["set_card_text", "step"], "편집이 이동보다 먼저 착지한다");
+  h.controller.editCard(1, "둘째 행");
+  await h.controller.copyCard();
+  assert.deepEqual(h.actions().slice(2), ["set_card_text", "copy_precheck"], "복사 사전확인 전에 편집을 정산한다");
+  assert.deepEqual(h.log.find((row) => row[0] === "invoke"), ["invoke", "copy_clipboard", "workbench", "t"]);
+  h.controller.editCard(1, "또 고침");
+  await h.controller.leaveTo("job");
+  assert.deepEqual(h.actions().slice(4), ["set_card_text", "leave_guard", "close"], "이탈 가드도 편집 뒤에 묻는다");
+});
+
+test("원래대로 — 그 행에 미뤄 둔 편집은 버리고 revert_card 한 발", async () => {
+  const h = harness({ snapshot: OPEN });
+  h.controller.editCard(0, "버릴 글자");
+  await h.controller.revertCard(0);
+  assert.deepEqual(sentEdits(h), [["revert_card", { index: 0 }]], "버린 편집을 보내지 않는다");
 });

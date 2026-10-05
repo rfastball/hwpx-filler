@@ -279,6 +279,8 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `close` | — | — |
 | `copy_precheck` | — | — |
 | `leave_guard` | — | — |
+| `revert_card` | `index` | — |
+| `set_card_text` | `index`, `text` | — |
 | `set_current` | `index` | — |
 | `set_fullwidth` | `value` | — |
 | `set_target_font` | — | `font` |

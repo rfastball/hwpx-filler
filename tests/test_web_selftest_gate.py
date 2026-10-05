@@ -2792,8 +2792,9 @@ class TestWebSelftestGate:
         assert w["template_link_absent"] is True, "경로 없는 스냅샷에 템플릿 문이 섰습니다."
         # 본문이 화면의 중심 — 카드가 본체 폭을 다 받는다(옛 2열 우 pane 은 약 0.43).
         assert w["card_width_ratio"] >= 0.95, f"본문 카드가 본체 폭을 못 받습니다: {w['card_width_ratio']!r}"
-        # 본문: 채움 표지 삼분이 공용 SegView 계약대로 그려진다.
-        assert w["card_fill"] == 1 and w["card_blank"] == 1
+        # 본문 편집면(#1148 PR B): 값 칠·〈빈 값〉·〈비워 둠〉이 Python 표식대로 갈려 선다.
+        assert (w["card_fill"], w["card_blank"], w["card_blank_label"], w["card_declared"],
+                w["card_editable"]) == (1, 1, "〈빈 값〉", "〈비워 둠〉", "true"), w
         assert w["lint_shown"] is True
         # 린트 처방(전각 치환)이 **손잡이로** 서 있는가 — 승계는 표지가 아니라 행동까지다.
         assert w["lint_action"] == "on:전각으로 바꾸기", w["lint_action"]
@@ -2814,8 +2815,17 @@ class TestWebSelftestGate:
         )
         # 조각은 토큰 신원(data-token)을 지되 손잡이가 아니다 — 겨눌 연결 표가 걷혔다(#1148,
         # 지도 §10.15 판정 E 의 뒤집기). 신원은 튜토리얼 앵커가 본문 조각을 가리키는 축이다.
-        assert w["card_tokens"] == 2, f"조각이 토큰 신원을 안 지고 나갑니다: {w['card_tokens']}"
+        assert w["card_tokens"] == 3, f"조각이 토큰 신원을 안 지고 나갑니다: {w['card_tokens']}"
         assert w["token_role"] is None, f"조각이 갈 곳 없는 손잡이로 섰습니다: {w['token_role']!r}"
+        # 임시 편집 — 빈 자리에 친 글자가 그 자리의 값이 되고(표지가 걷히고 값 칠이 하나 는다),
+        # 쉼 뒤에 그 행 index 와 전문이 한 번 나간다. 조합 중에는 보류하고 조합이 끝난 뒤 보낸다.
+        assert w["edit"] == {
+            "hole_gone": True, "filled_marks": 2, "sent_before_pause": 0,
+            "sent_after_pause": ['set_card_text:{"index":0,"text":"수신: 회계과\\n비고: 없음\\n단위: "}'],
+            "sent_while_composing": 1,  # 조합 중에는 보내지 않는다
+            "sent_after_compose": '{"index":0,"text":"수신: 회계과\\n비고: 없음함\\n단위: "}',
+            "focus_kept": True,
+        }, w["edit"]
         assert w["narrow_larger"]["width"] <= 760 and w["narrow_larger"]["body_height"] > 100, w
         assert w["narrow_larger"]["scrolls"] and w["narrow_larger"]["card_reachable"], w
         # 큐 퇴화 — 1건이면 이전/다음·자동 전진이 사라진다.

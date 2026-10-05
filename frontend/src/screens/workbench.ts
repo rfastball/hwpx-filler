@@ -9,6 +9,11 @@
    작업대)이 화면 밖으로 나가서 한다. 빈 값은 본문 안의 〈빈 값〉 표식과 복사 전 확인이 계속
    드러낸다.
 
+   **본문은 그 행 복사본의 임시 편집기다**(#1148 PR B). CodeMirror 편집면(`txt_lintpad.ts` — vendor 를
+   아는 유일한 파일)을 빌려 쓰고, 친 글자는 행별로 Python 세션에 맡긴다. 〈빈 값〉·〈비워 둠〉 표지와
+   값 칠의 자리·채움 여부는 Python 이 낸 표식(`card.marks`)을 그대로 그린다 — 여기서 다시 가르지
+   않는다. 복사는 편집기에 보이는 글자 그대로다(대조·쓰기 판정은 Python 의 복사 거래).
+
    지키는 순서 계약 셋:
 
    - 이 화면의 상태는 하나라 **체인도 하나**다(`WB_CHAIN`). 축별로 가르면 「글꼴을 고르고
@@ -17,14 +22,16 @@
      쓴 상태다.
    - 복사는 사전확인이 본 **그 카드**의 토큰을 실어 보낸다. 그사이 작업점이 옮겨졌으면 백엔드가
      stale 로 돌려주고, 확인하지 않은 카드가 클립보드로 나가지 않는다. */
-import { createElement, useEffect, useSyncExternalStore } from "react";
+import { Fragment, createElement, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
+import { disposeLintpad, mountLintpad, updateLintpad } from "../editorview/txt_lintpad.ts";
+import type { LintpadHandle } from "../editorview/txt_lintpad.ts";
+import type { LintpadMark } from "../editorview/txt_card_marks.ts";
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ScreenPorts } from "./ports.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
-import { SegmentView } from "./segment_view.ts";
 import { TARGET_FONT_FIELD, workbenchServerValues, workbenchSession } from "./workbench_state.ts";
 import {
   emptyDraft, ingestSnapshot, issueToken, settle, typeInto, valueOf,
@@ -69,6 +76,27 @@ const REVIEW_TEXT: Record<string, [string, string]> = {
 const DOT_STATE_LABEL: Record<string, string> = {
   current: "작업 중", copied: "복사 완료", uncopied: "대기",
 };
+/** 친 글자를 Python 에 맡기기까지의 쉼 — 타건마다 왕복하지 않되, 이동·복사·이탈은 먼저 정산한다. */
+const EDIT_DELAY_MS = 250;
+/** 표식 종류 → 칠(제품 CSS `.wc-render .seg-*`). 종류의 판정은 Python 이 낸다. */
+const MARK_CLASS: Record<string, string> = {
+  fill: "seg-fill", blank: "seg-blank", declared: "seg-declared", missing: "seg-missing",
+};
+/** 길이 0 표식의 표지 문구 — 빈 값(데이터가 빈 칸)과 비워 둠(일부러 비운 선언)을 가른다. */
+const HOLE_LABEL: Record<string, string> = { blank: "〈빈 값〉", declared: "〈비워 둠〉" };
+
+/** Python 표식 → 편집면 표식. 빈 자리에 글자를 치면 그 범위는 값 칠로 바뀐다. */
+export function cardMarks(marks: readonly Obj[] | null | undefined): LintpadMark[] {
+  return (marks || []).map((mark) => {
+    const kind = String(mark.kind);
+    const hole = HOLE_LABEL[kind];
+    return {
+      start: Number(mark.start), end: Number(mark.end), className: MARK_CLASS[kind] || "",
+      token: String(mark.name || ""),
+      ...(hole ? { label: hole, filledClassName: MARK_CLASS.fill } : {}),
+    };
+  });
+}
 
 export function createWorkbenchController(deps: WorkbenchControllerDeps) {
   const model = deps.runtime.model<Obj | null>(SCREEN);
@@ -120,6 +148,53 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
     }
   }
 
+  /* ---- 본문 임시 편집 — 친 글자는 쉼 뒤에 한 번, 한글 조합이 끝난 뒤에 보낸다 ---- */
+  let pendingEdit: { index: number; text: string } | null = null;
+  let editTimer: ReturnType<typeof setTimeout> | undefined;
+  let composing = false;
+
+  /** 미뤄 둔 편집을 지금 체인에 세운다 — 이동·복사·이탈·되돌리기가 먼저 부른다. */
+  function flushEdit(): Promise<unknown> {
+    clearTimeout(editTimer);
+    const edit = pendingEdit;
+    pendingEdit = null;
+    if (edit === null) return Promise.resolve();
+    return sendWb("set_card_text", { index: edit.index, text: edit.text })
+      .catch((error) => deps.notify(String((error as Obj)?.message || error)));
+  }
+
+  function scheduleEdit(): void {
+    clearTimeout(editTimer);
+    editTimer = setTimeout(() => { void flushEdit(); }, EDIT_DELAY_MS);
+  }
+
+  /** 편집면이 친 결과(전문). 정체는 그 문서가 선 행 `index` 다 — 작업점이 아니다. */
+  function editCard(index: number, text: string): void {
+    pendingEdit = { index, text };
+    if (!composing) scheduleEdit();
+  }
+
+  function setComposing(on: boolean): void {
+    composing = on;
+    if (!on && pendingEdit !== null) scheduleEdit();
+  }
+
+  /** 「원래대로」 — 그 행에 미뤄 둔 편집은 버리고 원문으로 되돌린다. */
+  async function revertCard(index: number): Promise<void> {
+    if (pendingEdit !== null && pendingEdit.index === index) {
+      clearTimeout(editTimer);
+      pendingEdit = null;
+    }
+    await flushEdit();
+    await sendWb("revert_card", { index });
+  }
+
+  /** 상태를 옮기는 동작 앞에 미뤄 둔 편집을 정산한다(체인 순서가 곧 착지 순서다). */
+  function afterEdit<T>(send: () => Promise<T>): Promise<T> {
+    void flushEdit();
+    return send();
+  }
+
   /** 대상 글꼴 — 고른 값을 곧바로 보이고(초안), 응답이 그 값을 확정하거나 되돌린다. */
   async function setTargetFont(font: string): Promise<void> {
     draft = typeInto(draft, TARGET_FONT_FIELD, font);
@@ -141,7 +216,8 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
   }
 
   async function copyCard(): Promise<void> {
-    /* 방금 보낸 이동·보기가 아직 날아가는 중일 수 있다 — 착지한 **뒤에** 무엇을 복사할지 묻는다. */
+    /* 방금 친 글자·이동·보기가 아직 날아가는 중일 수 있다 — 착지한 **뒤에** 무엇을 복사할지 묻는다. */
+    void flushEdit();
     await deps.chain.settle(WB_CHAIN);
     const pre = await dispatch(SCREEN, "copy_precheck", {});
     const blockers: string[] = [];
@@ -172,6 +248,7 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
    *
    *  가드가 「잃을 것 없음」이라고 답하려면 **대기 중인 발신까지** 세고 답해야 한다. */
   async function confirmLeave(): Promise<boolean> {
+    void flushEdit();
     await deps.chain.settle(WB_CHAIN);
     const guard = await dispatch(SCREEN, "leave_guard", {});
     if (!guard || !guard.armed) return true;
@@ -237,12 +314,15 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
       },
     },
     copyCard,
-    step: (delta: number): Promise<Obj> => sendWb("step", { delta }),
-    setCurrent: (index: number): Promise<Obj> => sendWb("set_current", { index }),
-    setView: (view: string): Promise<Obj> => sendWb("set_view", { view }),
+    editCard,
+    setComposing,
+    revertCard,
+    step: (delta: number): Promise<Obj> => afterEdit(() => sendWb("step", { delta })),
+    setCurrent: (index: number): Promise<Obj> => afterEdit(() => sendWb("set_current", { index })),
+    setView: (view: string): Promise<Obj> => afterEdit(() => sendWb("set_view", { view })),
     setTargetFont,
     toggleAdvance: (value: boolean): Promise<Obj> => sendWb("toggle_advance", { value }),
-    setFullwidth: (value: boolean): Promise<Obj> => sendWb("set_fullwidth", { value }),
+    setFullwidth: (value: boolean): Promise<Obj> => afterEdit(() => sendWb("set_fullwidth", { value })),
     guarded,
     doc: deps.doc,
     notify: deps.notify,
@@ -253,6 +333,64 @@ export type WorkbenchController = ReturnType<typeof createWorkbenchController>;
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
+}
+
+/** 본문 편집면 — 그 행 복사본의 임시 편집기. 원문 보기는 읽기 전용이다.
+ *
+ *  문서를 **갈아 끼우는** 것은 `text_key` 가 바뀔 때뿐이다(행·보기·전각·되돌리기). 편집 왕복의
+ *  메아리(같은 키)는 표식만 얹는다 — 문서를 다시 넣으면 캐럿이 튀고 조합 중인 글자가 끊긴다.
+ *  표식은 지금 문서가 Python 이 본 그 문서일 때만 받는다(`sourceDoc`); 그사이 더 친 글자가
+ *  있으면 편집면이 들고 있는 표식을 변경에 따라 옮겨 둔다. */
+function CardEditor(props: { controller: WorkbenchController; card: Obj; readOnly: boolean }): ReactNode {
+  const { controller, card, readOnly } = props;
+  const host = useRef<HTMLDivElement | null>(null);
+  const handle = useRef<LintpadHandle | null>(null);
+  const shownKey = useRef("");
+  const docIndex = useRef<number>(Number(card.index));
+  const applying = useRef(false);
+  useEffect(() => {
+    if (host.current === null) return undefined;
+    shownKey.current = "";
+    const mounted = mountLintpad({
+      host: host.current, doc: String(card.text || ""), contentId: "wbCardText",
+      ariaLabel: "복사할 본문", readOnly,
+      onDocChanged: (text) => {
+        if (!applying.current && !readOnly) controller.editCard(docIndex.current, text);
+      },
+      onCompositionChanged: (on) => controller.setComposing(on),
+    });
+    handle.current = mounted;
+    return () => { handle.current = null; disposeLintpad(mounted); };
+  // 편집 가능 여부는 마운트 때 정해진다(보기 전환이 다시 세운다).
+  }, [controller, readOnly]);
+  useEffect(() => {
+    const mounted = handle.current;
+    if (mounted === null) return;
+    const text = String(card.text || "");
+    const key = String(card.text_key || "");
+    const marks = cardMarks(card.marks);
+    if (shownKey.current !== key) {
+      shownKey.current = key;
+      docIndex.current = Number(card.index);
+      applying.current = true;
+      try { updateLintpad(mounted, { doc: text, sourceDoc: text, marks }); } finally { applying.current = false; }
+    } else {
+      updateLintpad(mounted, { sourceDoc: text, marks });
+    }
+  }, [card.text, card.text_key, card.marks, card.index]);
+  return h("div", { className: "wb-editor", ref: host });
+}
+
+/** 이 행 복사본을 고쳤다 — 표지와 되돌리는 손잡이가 한 벌이다(판정은 Python `edited`). */
+function EditedMark(props: { controller: WorkbenchController; card: Obj }): ReactNode {
+  const { controller, card } = props;
+  if (!card.edited) return null;
+  return createElement(Fragment, null,
+    h("span", { className: "status", id: "wbEdited", "data-level": "warn" }, "수정됨"),
+    h("button", {
+      className: "btn sm", id: "wbRevert", type: "button",
+      onClick: () => controller.guarded(() => controller.revertCard(Number(card.index))),
+    }, "원래대로"));
 }
 
 export function WorkbenchScreen(props: { controller: WorkbenchController }): ReactNode {
@@ -346,7 +484,8 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
         h("option", { value: "gulimche" }, "굴림체"),
         h("option", { value: "dotumche" }, "돋움체"),
         h("option", { value: "malgun" }, "맑은고딕")),
-        h("span", { className: "status", id: "wbReview", "data-level": review[1] }, review[0])),
+        h("span", { className: "status", id: "wbReview", "data-level": review[1] }, review[0]),
+        h(EditedMark as any, { controller, card })),
       /* 1건이면 순회할 곳이 없어 큐 장치가 숨는다(퇴화 승계) — 정보가 없어서지 장식이라서가 아니다. */
       h("div", {
         className: "wb-dots", id: "wbDots", role: "group", "aria-label": "큐 진행 표시",
@@ -384,7 +523,9 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
       h("article", {
         className: `wb-preview wc-render f-${snapshot.target_font || "gulimche"}`,
         id: "wbCard", "data-preserve-scroll": true,
-      }, h(SegmentView as any, { segments: card.segments || [] })),
+      }, h(CardEditor as any, {
+        key: String(snapshot.view), controller, card, readOnly: snapshot.view !== "filled",
+      })),
       /* 린트는 **표지 + 행동**이 한 벌이다 — 경고만 두면 문제를 통보받고 손잡이는 없다. */
       h("p", { className: "muted", id: "wbLint", style: { display: lint.active ? "" : "none" } },
         lint.applied

@@ -241,12 +241,14 @@ def test_lesson_six_compares_the_blank_marker_with_a_declared_blank(app):
     walk.step("use_job", lambda: walk.send("job", "prefer_work", {"name": "계약 안내 작업(빈 칸)"}))
     walk.step("rows", lambda: walk.send("job", "set_all"))
     walk.step("workbench", lambda: walk.send("job", "open_workbench"))
-    # #1148 — 작업대는 더 이상 맞추기 표(`rows`)를 들지 않는다. 같은 구분(데이터-빈 값 대
-    # 비움 확정)은 이제 카드 세그먼트와 복사 전 게이트가 공유하는 `empty_fields` 에서 읽는다
+    # #1148 PR B — 작업대는 더 이상 맞추기 표(`rows`)도 세그먼트도 들지 않는다. 본문 표식
+    # (`marks`)의 kind 가 그 구분을 직접 말한다: 비움 확정은 `declared`, 데이터 칸이 빈
+    # 것은 `blank` — 둘 다 본문엔 〈빈 값〉으로 같이 보이지만(길이 0 구간) 게이트는 다르다
     # (`gate_empty_fields` 가 `declared_empty_fields` 를 뺀다 — 결정 12).
     card = app.controllers["workbench"].snapshot()["card"]
-    segment_names = {s["name"] for s in card["segments"] if s["kind"] == "blank"}
-    assert "단위" in segment_names and "계약보증금" in segment_names    # 본문엔 둘 다 〈빈 값〉
+    marks_by_name = {m["name"]: m for m in card["marks"]}
+    assert marks_by_name["단위"]["kind"] == "declared"
+    assert marks_by_name["계약보증금"]["kind"] == "blank"
     assert "단위" not in card["empty_fields"]       # 비움 확정은 복사 전 게이트에서 빠진다
     assert "계약보증금" in card["empty_fields"]     # 데이터 칸이 빈 것은 그대로 걸린다
     walk.step("blank", lambda: walk.send("tutorial", "next"))

@@ -65,11 +65,18 @@
 .wb-dots{display:flex;flex-wrap:wrap;align-content:flex-start;gap:var(--sp-2);
   max-height:min(96px,20vh);overflow-y:auto;scrollbar-gutter:stable;flex:none}
 .wb-dots[hidden]{display:none}
-.wb-toolbar .status{margin-left:auto}
+.wb-toolbar #wbReview{margin-left:auto}
 /* 본문은 대상 글꼴 선언을 따르는 미리보기 면이라 「기안」 카드와 같은 판을 쓴다. */
 .wb-preview{white-space:pre-wrap;word-break:break-word;background:var(--a-card);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-4);
   flex:1;min-height:180px;overflow:auto}
+/* 본문 편집면(#1148 PR B) — CodeMirror 는 제 글꼴·줄 간격·여백을 갖고 오지만 이 면은 **대상 글꼴
+   선언**(.wc-render.f-*)과 카드 줄 간격을 따른다. 높이는 내용만큼 자라고 스크롤은 카드(#wbCard)가 진다. */
+.wb-preview .wb-editor{min-height:100%}
+.wb-preview .cm-editor .cm-scroller{font-family:inherit;line-height:inherit;overflow:visible}
+.wb-preview .cm-editor .cm-content{padding:0;white-space:pre-wrap}
+.wb-preview .cm-editor{min-height:100%;background:transparent}
+.wb-preview .cm-editor.cm-focused{outline:2px solid var(--a-primary);outline-offset:2px}
 /* 좁은 창·큰 글꼴 배율 — 남는 높이가 카드 최소 높이보다 작아지면 본체가 스크롤해 카드에
    닿게 한다(카드가 접혀 사라지지 않게). 한 열이라 카드에 캡을 따로 두지 않는다. */
 @media (max-width:920px){.wb-body{overflow:auto}}

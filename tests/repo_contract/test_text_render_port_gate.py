@@ -7,7 +7,8 @@ slot-bearing TXT 의 산출물은 이제 **Sealed Plan 이 정한 물질화**를
 그래서 「누가 치환을 직접 부를 수 있는가」를 이 계약이 못박는다. 열거된 자리는 전부 **구간
 표기와 무관한 축**이거나(토큰 미리보기·원문 보기·slotless 복사) **물질화 코어 자신**이다:
 
-- 정의 모듈과 그 링1 래퍼(:mod:`hwpxfiller.viewmodel.txt_card`)
+- 정의 모듈과 그 링1 래퍼(:mod:`hwpxfiller.viewmodel.txt_card`,
+  :mod:`hwpxfiller.viewmodel.txt_card_edit` — 작업대 본문 표식·행별 임시 편집, #1148 PR B)
 - TXT materializer — 치환의 단일 원천을 소비하는 정당한 주체
 - 작업대(:mod:`hwpxfiller.webapp.screen_workbench`) — 원문 보기와 slotless 카드
 - 편집 세션(:mod:`hwpxfiller.webapp.editor_session`) — 토큰 **미리보기**(빈 레코드), 문서를
@@ -46,6 +47,10 @@ ALLOWED_MODULES = frozenset(
         # 정의와 링1 래퍼
         "src/hwpxfiller/domain/text_render.py",
         "src/hwpxfiller/viewmodel/txt_card.py",
+        # 작업대 본문 표식·행별 임시 편집(#1148 PR B) — 같은 렌더 세그먼트를 읽어 표식을
+        # 내고 원문 보기(raw_card)를 그리는 링1 짝 모듈. 치환 자체를 다시 하지 않는다 —
+        # 세그먼트를 한 번 더 걷어 좌표만 낸다(txt_card.py 와 같은 소비 축).
+        "src/hwpxfiller/viewmodel/txt_card_edit.py",
         # 물질화 코어 — 치환의 단일 원천을 소비하는 정당한 주체
         "src/hwpxfiller/external/text_materialization_conformance.py",
         # 표시 표면(원문 보기·카드·토큰 미리보기)

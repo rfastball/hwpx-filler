@@ -33,6 +33,17 @@ def _send(ctrl: WorkbenchController, action: str, payload: "dict | None" = None)
     return ctrl.dispatch(action, checked)
 
 
+def _view(ctrl: WorkbenchController):
+    """`WorkbenchController.render()`(PR A)가 돌려주던 ``(text, report)`` 의 후계.
+
+    PR B(#1148)는 ``render()`` 를 걷고 작업점 1건의 판정을 ``_card_view(index)`` 로 좁혔다
+    (행별 임시 편집을 얹기 때문에 「지금 작업점」이 곧 「그 편집의 주인」이다). 브리지는
+    ``copy_to`` 안에서 이 판정을 직접 쓰므로 테스트도 같은 자리를 부른다 — `note_copied` 가
+    받는 것은 더 이상 렌더 리포트가 아니라 이 `CardView` 다.
+    """
+    return ctrl._card_view(ctrl.queue.current)
+
+
 def _job(tmp_path: Path, *, name: str = "발주요청_기안") -> Job:
     tpl = tmp_path / "발주요청_기안.txt"
     tpl.write_text("수신: {{수신}}\n건명: {{건명}}", encoding="utf-8")
@@ -99,7 +110,7 @@ def test_open_takes_a_frozen_copy_that_outside_changes_cannot_touch(tmp_path):
     rows.append((9, {"부서": "새 행", "사업명": "새 사업"}))
     snap = ctrl.snapshot()
     assert snap["total"] == 2             # 사본이라 새 행이 들어오지 않는다
-    assert "회계과" in "".join(s["text"] for s in snap["card"]["segments"])
+    assert "회계과" in snap["card"]["text"]
     assert ctrl.source_rows == [3, 1]     # 1-based 원본 행 번호(표시순 그대로)
     assert ctrl.snapshot()["card"]["source_row"] == 3
 
@@ -118,28 +129,26 @@ def test_copy_keeps_the_work_point_unless_advance_is_on(tmp_path):
     """복사해도 작업점은 그 카드에 머문다(조용한 이동 금지) — 전진은 opt-in."""
     ctrl, _, _ = _open(tmp_path)
     start = ctrl.queue.current
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.queue.current == start
     _send(ctrl, "toggle_advance", {"value": True})
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.queue.current != start
 
 
 def test_card_and_clipboard_take_the_same_path(tmp_path):
-    """카드 세그먼트 이어붙임 = 클립보드 텍스트(결정 17 — 링1 공유 통로)."""
+    """카드 본문 = 클립보드 텍스트(결정 17 — 링1 공유 통로)."""
     ctrl, _, _ = _open(tmp_path)
-    text, _ = ctrl.render()
-    assert text == "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
+    assert _view(ctrl).text == ctrl.snapshot()["card"]["text"]
     _send(ctrl, "set_fullwidth", {"value": True})
-    text2, _ = ctrl.render()
-    assert text2 == "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
+    assert _view(ctrl).text == ctrl.snapshot()["card"]["text"]
 
 
 def test_raw_view_shows_tokens_without_filling_them(tmp_path):
     """원문 보기(§11) — 토큰을 채우지 않는다. 미지 보기 값은 fail-closed."""
     ctrl, _, _ = _open(tmp_path)
     _send(ctrl, "set_view", {"view": "raw"})
-    raw = "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
+    raw = ctrl.snapshot()["card"]["text"]
     assert "{{수신}}" in raw and "회계과" not in raw
     with pytest.raises(ValueError):
         _send(ctrl, "set_view", {"view": "엉뚱"})
@@ -168,8 +177,9 @@ def test_copy_gate_excludes_declared_empty_constants(tmp_path):
     reg.mutate(job.name, declare_blank)
     ctrl.open(reg.load(job.name), [(0, {"부서": "총무과", "사업명": ""})])
     card = ctrl.snapshot()["card"]
-    segment = next(s for s in card["segments"] if s["name"] == "건명")
-    assert segment["text"] == "" and "건명" not in card["empty_fields"]
+    mark = next(m for m in card["marks"] if m["name"] == "건명")
+    assert mark["kind"] == "declared" and card["text"][mark["start"]:mark["end"]] == ""
+    assert "건명" not in card["empty_fields"]
     assert _send(ctrl, "copy_precheck", {})["empty_fields"] == []
 
 
@@ -192,7 +202,7 @@ def test_leave_guard_enumerates_only_what_actually_disappears(tmp_path):
     """
     ctrl, _, _ = _open(tmp_path)
     assert ctrl.leave_guard() == {"armed": False, "lines": []}
-    ctrl.note_copied(ctrl.render()[1])                      # 2건 중 1건 복사
+    ctrl.note_copied(_view(ctrl))                      # 2건 중 1건 복사
     lines = ctrl.leave_guard()["lines"]
     assert any("복사 진행 1/2" in line for line in lines)
     _send(ctrl, "set_fullwidth", {"value": True})
@@ -204,8 +214,8 @@ def test_all_copied_is_not_a_loss(tmp_path):
     """전건 복사는 잃을 진행이 없다 — 끝난 세션을 붙잡지 않는다."""
     ctrl, _, _ = _open(tmp_path)
     _send(ctrl, "toggle_advance", {"value": True})
-    ctrl.note_copied(ctrl.render()[1])
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.leave_guard()["armed"] is False
 
 
@@ -214,12 +224,12 @@ def test_first_copy_records_recent_use_once_per_session(tmp_path):
     """§19.4 — "한 레코드라도 복사 완료"가 최근 사용을 기록한다. 진입만으로는 아니다."""
     ctrl, reg, _ = _open(tmp_path)
     assert reg.load("발주요청_기안").last_run_at == ""      # 진입만으로는 기록하지 않는다
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     first = reg.load("발주요청_기안").last_run_at
     assert first == "2026-08-11T12:34:56"
     # 세션당 1회 — 두 번째 복사는 같은 사실을 다시 쓰지 않는다(durable 쓰기 증식 금지).
     _send(ctrl, "toggle_advance", {"value": True})
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert reg.load("발주요청_기안").last_run_at == first
 
 
@@ -230,7 +240,7 @@ def test_copy_does_not_write_a_review_baseline(tmp_path):
     조용한 누락보다 나쁘다.
     """
     ctrl, reg, _ = _open(tmp_path)
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert reg.load("발주요청_기안").reviewed_rules == {}
 
 
@@ -243,7 +253,7 @@ def test_stamp_failure_is_reported_not_swallowed(tmp_path, monkeypatch):
         raise OSError("디스크에 쓸 수 없습니다")
 
     monkeypatch.setattr(reg, "stamp_last_run", boom)
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     last = ctrl.snapshot()["card"]["last_copy"]
     assert "디스크" in last["stamp_error"]
     assert ctrl.snapshot()["copied_count"] == 1   # 복사 자체는 성사됐다
@@ -258,7 +268,7 @@ def test_the_two_media_share_the_field_but_not_the_predicate(tmp_path):
     """
     ctrl, reg, _ = _open(tmp_path)
     before = reg.load("발주요청_기안").last_run_at
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     job = reg.load("발주요청_기안")
     assert before == "" and job.last_run_at != ""
 
@@ -283,7 +293,7 @@ def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):
     _send(ctrl, "step", {"delta": 1})
     assert ctrl.snapshot()["card"]["position"] == 1
     # 복사해도 그 카드의 자리는 그대로다(큐 후미 이동은 순회 순서의 일이지 번호의 일이 아니다).
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.snapshot()["card"]["position"] == 1
     assert ctrl.snapshot()["card"]["review_state"] == "copied"
     # 첫 항목으로 되돌아가도 자리는 고정 순서 그대로다.
@@ -311,7 +321,7 @@ def test_navigation_bounds_follow_the_frozen_ordinal(tmp_path):
     ])
     card = ctrl.snapshot()["card"]
     assert (card["can_prev"], card["can_next"]) == (False, True)   # 고정 순서 머리
-    ctrl.note_copied(ctrl.render()[1])                             # 복사 = 색만 바뀐다
+    ctrl.note_copied(_view(ctrl))                             # 복사 = 색만 바뀐다
     card = ctrl.snapshot()["card"]
     assert card["position"] == 0                                   # 표시 자리 고정
     # 순회 경계도 같은 자리다 — 첫 카드를 복사해도 「이전」이 생기지 않는다(#338).
@@ -332,7 +342,7 @@ def test_copy_recolors_the_dots_without_moving_them(tmp_path):
     ])
     before = ctrl.snapshot()["card"]["index_map"]
     assert [d["row"] for d in before] == [3, 2, 1]                 # 표시순 그대로
-    ctrl.note_copied(ctrl.render()[1])                             # 첫 카드 복사
+    ctrl.note_copied(_view(ctrl))                             # 첫 카드 복사
     after = ctrl.snapshot()["card"]["index_map"]
     assert [d["index"] for d in after] == [d["index"] for d in before]  # 자리 불변
     assert after[0]["state"] == "current"                          # 작업점은 머문다
@@ -354,11 +364,11 @@ def test_advance_after_copy_goes_to_earliest_uncopied_or_stays(tmp_path):
     _send(ctrl, "toggle_advance", {"value": True})
     for idx in (0, 2, 3):                     # 1 을 건너뛰고 처리해 둔다
         ctrl.queue.set_current(idx)
-        ctrl.note_copied(ctrl.render()[1])    # advance 가 매번 1 로 되돌리므로 재지정
+        ctrl.note_copied(_view(ctrl))    # advance 가 매번 1 로 되돌리므로 재지정
     ctrl.queue.set_current(4)
-    ctrl.note_copied(ctrl.render()[1])        # 5번째 카드 복사 — 미처리는 2번(index 1)뿐
+    ctrl.note_copied(_view(ctrl))        # 5번째 카드 복사 — 미처리는 2번(index 1)뿐
     assert ctrl.queue.current == 1            # 표시순 가장 이른 미처리로 전진
-    ctrl.note_copied(ctrl.render()[1])        # 미처리 0 — 전진할 곳이 없으면 머문다
+    ctrl.note_copied(_view(ctrl))        # 미처리 0 — 전진할 곳이 없으면 머문다
     assert ctrl.queue.current == 1
 
 
@@ -372,12 +382,12 @@ def test_toggling_fullwidth_also_invalidates_a_copied_card(tmp_path):
     다른 말을 하는 창이다.
     """
     ctrl, _, _ = _open(tmp_path)
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.snapshot()["card"]["review_state"] == "copied"
     _send(ctrl, "set_fullwidth", {"value": True})
     assert ctrl.snapshot()["card"]["review_state"] == "recheck"
     # 지금 규칙으로 다시 복사하면 해소된다(별도 무효화 코드 없이 파생이 답한다).
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.snapshot()["card"]["review_state"] == "copied"
 
 
@@ -436,7 +446,7 @@ def test_copy_note_carries_the_stamp_failure(tmp_path, monkeypatch):
         raise OSError("디스크에 쓸 수 없습니다")
 
     monkeypatch.setattr(reg, "stamp_last_run", boom)
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert "디스크" in ctrl.snapshot()["card"]["last_copy"]["stamp_error"]
 
 
@@ -453,7 +463,7 @@ def test_queue_index_map_lets_the_user_jump_to_a_known_row(tmp_path):
     _send(ctrl, "set_current", {"index": imap[1]["index"]})
     assert ctrl.snapshot()["card"]["source_row"] == 1
     # 복사·재확인 상태도 색인이 함께 말한다(점 하나가 두 사실을 나른다).
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     _send(ctrl, "set_fullwidth", {"value": True})
     marked = [d for d in ctrl.snapshot()["card"]["index_map"] if d["recheck"]]
     assert len(marked) == 1 and marked[0]["row"] == 1
@@ -517,8 +527,8 @@ def test_leave_guard_counts_records_waiting_for_re_copy(tmp_path):
     """
     ctrl, _, _ = _open(tmp_path)
     _send(ctrl, "toggle_advance", {"value": True})
-    ctrl.note_copied(ctrl.render()[1])
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.leave_guard()["armed"] is False        # 전건 복사 = 잃을 진행 없음
     _send(ctrl, "set_fullwidth", {"value": True})
     guard = ctrl.leave_guard()
@@ -579,7 +589,7 @@ def test_moving_the_work_point_drops_the_previous_copy_note(tmp_path):
     그 레코드의 기안문이 한 건 누락된다.
     """
     ctrl, _, _ = _open(tmp_path)
-    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(_view(ctrl))
     assert ctrl.snapshot()["card"]["last_copy"]["row"] == 3   # 원본 행 번호(1-기반)
     _send(ctrl, "step", {"delta": 1})
     assert ctrl.snapshot()["card"]["last_copy"] is None
@@ -614,7 +624,7 @@ def test_a_move_cannot_land_inside_the_copy_transaction(tmp_path):
     assert res["copied"] is True and len(landed) == 1
     # 복사 완료로 찍힌 카드는 **렌더된 그 카드**다(이동은 거래가 끝난 뒤 착지한다).
     assert ctrl.queue.is_copied(0) is True
-    assert ctrl._copied_rules == {0: ctrl._rules_signature()}
+    assert ctrl._copied_rules == {0: ctrl._edits.signature(0, ctrl._rules_signature())}
     # 이동은 삼켜지지 않았다 — 그 뒤에 정상으로 반영되고 완료 노트는 함께 걷힌다.
     assert ctrl.snapshot()["card"]["source_row"] == 1
     assert ctrl.snapshot()["card"]["last_copy"] is None
@@ -700,7 +710,7 @@ def _open_slot(tmp_path: Path, selection, *, body: str = _SLOT_TEMPLATE):
 
 
 def _card(ctrl) -> str:
-    return "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
+    return ctrl.snapshot()["card"]["text"]
 
 
 def test_card_shows_only_the_chosen_option_and_never_the_markers(tmp_path):
@@ -908,9 +918,9 @@ def test_leave_guard_after_a_fullwidth_toggle_lists_only_the_recheck_line(tmp_pa
     집합과 일치해야 한다(과경고도 과소경고도 아니게).
     """
     ctrl, _, _ = _open(tmp_path)
-    ctrl.note_copied(ctrl.render()[1])           # 전건 복사(2건 중 2건)는 아니다 — 1건만
+    ctrl.note_copied(_view(ctrl))           # 전건 복사(2건 중 2건)는 아니다 — 1건만
     ctrl.queue.set_current(1)
-    ctrl.note_copied(ctrl.render()[1])           # 2건 중 2건 — 복사 진행 줄은 서지 않는다
+    ctrl.note_copied(_view(ctrl))           # 2건 중 2건 — 복사 진행 줄은 서지 않는다
     assert ctrl.leave_guard()["armed"] is False
 
     _send(ctrl, "set_fullwidth", {"value": True})
@@ -918,3 +928,125 @@ def test_leave_guard_after_a_fullwidth_toggle_lists_only_the_recheck_line(tmp_pa
     assert guard["armed"] is True
     assert len(guard["lines"]) == 1
     assert "다시 확인" in guard["lines"][0] and "2건" in guard["lines"][0]
+
+
+# ------------------------------------------------------- #1148 PR B — 본문 임시 편집
+def test_set_card_text_stores_an_edit_and_clears_when_it_matches_the_unedited_text(tmp_path):
+    """편집본을 받으면 ``edited=True`` 로 서고, 원문과 같아지면 편집이 없는 것으로 접힌다.
+
+    ``text_key`` 는 편집 왕복에서 바뀌지 않는다(#1148 PR B) — 표면이 들고 있는 문서·캐럿을
+    서버 푸시가 건드리지 않게 하는 신호다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    before = ctrl.snapshot()["card"]
+    assert before["edited"] is False
+
+    edited_text = before["text"] + " 추가"
+    _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": edited_text})
+    after = ctrl.snapshot()["card"]
+    assert after["edited"] is True and after["text"] == edited_text
+    assert after["text_key"] == before["text_key"]
+
+    _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": before["text"]})
+    cleared = ctrl.snapshot()["card"]
+    assert cleared["edited"] is False and cleared["text"] == before["text"]
+
+
+def test_revert_card_clears_the_edit_and_bumps_the_text_key(tmp_path):
+    """「원래대로」는 편집을 버리고 **문서를 갈아 끼운다** — 그때만 ``text_key`` 가 오른다."""
+    ctrl, _, _ = _open(tmp_path)
+    before = ctrl.snapshot()["card"]
+    _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": before["text"] + "x"})
+    edited = ctrl.snapshot()["card"]
+    assert edited["edited"] is True
+
+    _send(ctrl, "revert_card", {"index": ctrl.queue.current})
+    reverted = ctrl.snapshot()["card"]
+    assert reverted["edited"] is False and reverted["text"] == before["text"]
+    assert reverted["text_key"] != edited["text_key"]
+
+
+def test_set_card_text_in_raw_view_raises(tmp_path):
+    """원문 보기는 읽기 전용이다 — 채운 모습(복사되는 글자) 위에서만 고친다."""
+    ctrl, _, _ = _open(tmp_path)
+    _send(ctrl, "set_view", {"view": "raw"})
+    with pytest.raises(ValueError):
+        _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": "아무 글"})
+
+
+def test_set_card_text_rejects_an_out_of_range_index(tmp_path):
+    ctrl, _, _ = _open(tmp_path)
+    with pytest.raises(ValueError):
+        _send(ctrl, "set_card_text", {"index": 99, "text": "아무 글"})
+
+
+def test_editing_a_row_that_is_not_the_current_one_lands_on_that_row(tmp_path):
+    """정체는 payload 의 ``index`` 다(작업점이 아니다) — 다른 행 편집이 지금 카드에 안 샌다."""
+    ctrl, _, _ = _open(tmp_path)
+    other_text = ctrl._card_view(1).text
+    _send(ctrl, "set_card_text", {"index": 1, "text": other_text + "!!"})
+    assert ctrl.snapshot()["card"]["edited"] is False  # 지금 작업점(0)은 안 흔들린다
+
+    _send(ctrl, "set_current", {"index": 1})
+    card = ctrl.snapshot()["card"]
+    assert card["edited"] is True and card["text"] == other_text + "!!"
+
+
+def test_edit_that_fills_a_blank_clears_it_from_the_gate_but_not_other_blanks(tmp_path):
+    """채운 빈 자리만 게이트에서 빠진다 — 손대지 않은 다른 빈 자리는 그대로 걸린다."""
+    ctrl, reg, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), [(0, {"부서": "", "사업명": ""})])
+    pre = _send(ctrl, "copy_precheck", {})
+    assert set(pre["empty_fields"]) == {"수신", "건명"}
+
+    card = ctrl.snapshot()["card"]
+    mark = next(m for m in card["marks"] if m["name"] == "수신")
+    edited = card["text"][:mark["start"]] + "채움" + card["text"][mark["end"]:]
+    _send(ctrl, "set_card_text", {"index": 0, "text": edited})
+
+    post = _send(ctrl, "copy_precheck", {})
+    assert post["empty_fields"] == ["건명"]
+
+    written: "list[str]" = []
+    result = ctrl.copy_to(ctrl.copy_token(), written.append)
+    assert result["copied"] is True, result
+    assert written == [edited]
+
+
+def test_editing_a_copied_row_marks_it_for_recheck_and_changes_the_copy_token(tmp_path):
+    """편집도 복사되는 글자다 — 지문(``copy_token``·``_row_signature``)이 그 사실을 담는다."""
+    ctrl, _, _ = _open(tmp_path)
+    ctrl.note_copied(_view(ctrl))
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"
+    token_before = ctrl.copy_token()
+
+    card = ctrl.snapshot()["card"]
+    _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": card["text"] + "!"})
+
+    assert ctrl.snapshot()["card"]["review_state"] == "recheck"
+    assert ctrl.copy_token() != token_before
+
+
+def test_leave_guard_lists_temporarily_edited_rows(tmp_path):
+    ctrl, _, _ = _open(tmp_path)
+    assert ctrl.leave_guard()["armed"] is False
+    card = ctrl.snapshot()["card"]
+    _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": card["text"] + "!"})
+    guard = ctrl.leave_guard()
+    assert guard["armed"] is True
+    assert any("임시로 고친 항목 1건" in line for line in guard["lines"]), guard
+
+
+def test_close_guard_reason_mentions_edits(tmp_path):
+    ctrl, _, _ = _open(tmp_path)
+    card = ctrl.snapshot()["card"]
+    _send(ctrl, "set_card_text", {"index": ctrl.queue.current, "text": card["text"] + "!"})
+    assert ctrl.close_guard_reason() == "검토·복사 작업대의 복사 진행 또는 임시로 고친 본문"
+
+
+def test_action_registry_includes_the_card_edit_verbs() -> None:
+    from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
+
+    assert {"set_card_text", "revert_card"} <= set(ACTION_REGISTRY["workbench"])

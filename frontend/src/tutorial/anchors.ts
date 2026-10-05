@@ -40,7 +40,7 @@ export const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   "wb-copy": "#wbCopy",
   "wb-next": "#wbNext",
   "wb-blank": "#wbCard .seg-blank[data-token='{arg}']",
-  "wb-declared": "#wbCard .seg-blank[data-token='{arg}']",
+  "wb-declared": "#wbCard .seg-declared[data-token='{arg}']",
   "txt-review": "#wbCard",
   "authoring-range": "#authoring-canvas .cm-tutorial-range",
   "create-command": ".authoring-toolbar button[data-rove='{arg}']",

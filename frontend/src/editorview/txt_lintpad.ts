@@ -22,11 +22,11 @@
  * Escape·Tab의 모달 이탈 가드와 포커스 트랩을 유지한다. */
 import { Compartment, EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
-import { Decoration, EditorView, WidgetType, keymap, lineNumbers } from "@codemirror/view";
+import { Decoration, EditorView, WidgetType, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { history, historyKeymap, undo, redo, undoDepth, redoDepth, isolateHistory } from "@codemirror/commands";
 import { search, openSearchPanel } from "@codemirror/search";
-import type { DecorationSet } from "@codemirror/view";
 import { GUIDE_CLASS, guidePainted, snapOutOfTokens } from "./txt_ranges.ts";
+import { markEffects, markField, markPieces, type LintpadMark } from "./txt_card_marks.ts";
 
 /** Python 브리지가 UTF-16 으로 번역한 토큰 좌표 1건. */
 export type LintpadSpan = {
@@ -67,6 +67,7 @@ export type LintpadProblem = {
 /** 표지 짝 1쌍(IDE-05) — Python 의 `analysis.placements` 가 준 여는 표지 줄·닫는 표지 줄 위의 offset 하나씩.
  *  짝은 여기서 계산하지 않는다. 캐럿이 한쪽 줄에 있으면 다른 쪽 줄이 옅게 선다. */
 export type LintpadPair = { open: number; close: number };
+
 
 /** 마운트된 메모장 1개의 **불투명 손잡이** — vendor 타입을 밖으로 내지 않는다. */
 export type LintpadHandle = {
@@ -114,6 +115,8 @@ export type LintpadUpdateSpec = {
   labels?: LintpadLabels;
   /** 항목·선택 범위 전집(줄 왼쪽 막대). 넘기지 않으면 그대로 둔다. */
   regions?: readonly LintpadRegion[];
+  /** 본문 표식 전집(값·빈 값 표지 — `txt_card_marks.ts`). 넘기지 않으면 그대로 둔다(문서 변경에 따라 매핑된다). */
+  marks?: readonly LintpadMark[];
 };
 
 /** 손잡이 → 실제 뷰. 이 `WeakMap` 이 vendor 타입 봉쇄의 자리다. */
@@ -412,7 +415,7 @@ const pairField = StateField.define<PairState>({
 
 /** 한 층이 그린 조각 1건 — 단위 창구의 평범한 얼굴. `token` 층은 원문을 가린 이름표다(`label` 이 보이는 글자). */
 export type LintpadDrawn = {
-  layer: "span" | "token" | "problem" | "pair" | "region"; from: number; to: number; className: string;
+  layer: "span" | "token" | "problem" | "pair" | "region" | "mark"; from: number; to: number; className: string;
   title?: string; label?: string; region?: string; role?: string;
 };
 
@@ -424,12 +427,13 @@ export function lintpadDecorations(
   doc: string, spec: {
     spans?: readonly LintpadSpan[]; problems?: readonly LintpadProblem[]; pairs?: readonly LintpadPair[]; caret?: number;
     labels?: LintpadLabels; regions?: readonly LintpadRegion[]; edits?: readonly { start: number; end: number; text: string }[];
-    updates?: readonly LintpadUpdateSpec[];
+    updates?: readonly LintpadUpdateSpec[]; marks?: readonly LintpadMark[];
   },
 ): LintpadDrawn[] & { doc: string; atoms: { from: number; to: number }[] } {
-  let state = EditorState.create({ doc, extensions: [spanField, regionField, problemField, pairField] });
+  let state = EditorState.create({ doc, extensions: [spanField, regionField, problemField, pairField, markField] });
   state = state.update({
     effects: [setSpans.of(spec.spans || []), setProblems.of(spec.problems || []), setPairs.of(spec.pairs || []),
+      ...markEffects(spec.marks),
       ...(spec.labels ? [setLabels.of(spec.labels)] : []), setRegions.of(spec.regions || [])],
     selection: spec.caret === undefined ? undefined : { anchor: spec.caret },
   }).state;
@@ -455,7 +459,7 @@ export function lintpadDecorations(
   for (const source of state.facet(EditorView.atomicRanges)) {
     source({ state } as unknown as EditorView).between(0, state.doc.length, (from, to) => { atoms.push({ from, to }); });
   }
-  return Object.assign(out, { doc: state.doc.toString(), atoms });
+  return Object.assign([...out, ...markPieces(state)], { doc: state.doc.toString(), atoms });
 }
 
 /** 메모장 기본 모습 — 색·굵기는 제품 CSS(`frontend/css/editor.css`)가 토큰으로 소유한다.
@@ -683,6 +687,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
         regionField,
         problemField,
         pairField,
+        markField,
         BASE_THEME,
         PANEL_THEME,
         darkness.of(darkFacet(currentDark())),
@@ -758,6 +763,7 @@ function lintpadUpdate(state: EditorState, spec: LintpadUpdateSpec) {
     ...(current && spec.regions !== undefined ? [setRegions.of(spec.regions)] : []),
     ...(current && spec.problems !== undefined ? [setProblems.of(spec.problems)] : []),
     ...(current && spec.pairs !== undefined ? [setPairs.of(spec.pairs)] : []),
+    ...markEffects(spec.marks, current),
   ];
   return {
     changes: replacing ? { from: 0, to: state.doc.length, insert: spec.doc } : undefined,

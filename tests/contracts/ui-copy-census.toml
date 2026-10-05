@@ -2501,10 +2501,6 @@ text = "'다음'은 다음 계약 행의 문장으로 넘어갑니다. 누르세
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
-text = "'단위'는 일부러 비워 둔 항목(비움 확정)입니다. 본문에는 똑같이 〈빈 값〉으로 보이지만 복사 전 확인에서 빠집니다. '다음'을 누르세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "'담당자 전화번호'에는 '담당자전화' 열이 제안됐습니다. '제안'을 눌러 확인하세요."
 
 [[sentence]]
@@ -2678,6 +2674,10 @@ text = "'＋ 새 작업'의 '고르기' 단계에는 서식 폴더의 템플릿 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "TXT 템플릿은 파일을 만들지 않고 채운 문장을 복사해 쓰는 서식입니다. '{}'를 누르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "〈비워 둠〉은 일부러 비워 둔 항목입니다. 〈빈 값〉과 달리 복사 전 확인에서 빠집니다. '다음'을 누르세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
@@ -4237,6 +4237,14 @@ text = "복사 진행 {}/{}건 — 나가면 이 진행은 사라집니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_workbench.py"
 text = "원문 보기에서는 복사하지 않습니다. 「채운 모습」으로 바꾼 뒤 복사하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "원문 보기에서는 본문을 고치지 않습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/screen_workbench.py"
+text = "임시로 고친 항목 {}건 — 나가면 고친 내용은 사라집니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/screen_workbench.py"
