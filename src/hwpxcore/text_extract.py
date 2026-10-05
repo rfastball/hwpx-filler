@@ -1,6 +1,6 @@
 """HWPX 본문 텍스트 추출 — 결정적(deterministic) 문서 트리 생성.
 
-HWPX 본문(``Contents/section*.xml``)을 파싱해 문단/표 구조를 담은 직렬화 가능한
+HWPX 본문(``Contents/section*.xml``)을 파싱해 문단/표/글상자 구조를 담은 직렬화 가능한
 데이터클래스 트리로 복원한다. diff 도구와 문서 생성기가 함께 소비할 수 있도록
 설계했으며, 의존성은 ``lxml`` + 표준 라이브러리로 한정한다.
 
@@ -26,7 +26,14 @@ HWPX 본문(``Contents/section*.xml``)을 파싱해 문단/표 구조를 담은 
     ``hp:t`` 다. 추출 시 값은 그대로 잡되 어느 필드 소속인지 선택적으로 기록한다.
   - 표 캡션 ``hp:caption`` 은 ``hp:tr`` 들의 형제로 ``hp:tbl`` 밑에 오며, 셀과 같은
     ``subList`` > ``hp:p`` 구조로 본문 텍스트(예: ``<표 1> …주요제원``)를 담는다 —
-    표 앞 문단으로 복원한다. 그림 객체 ``hp:pic`` 은 런 안의 이미지로 본문 텍스트가 없다.
+    표 앞 문단으로 복원한다.
+  - 도형(``hp:rect``·``ellipse``·``arc``·``polygon``·``curve``·``line``·``connectLine``)과
+    그림 ``hp:pic`` 은 런 안에 앵커된 개체다. 본문은 글상자 ``drawText`` > ``subList`` >
+    ``hp:p``(셀과 동형)와 캡션 ``caption`` > ``subList`` > ``hp:p`` 두 갈래뿐이고, 나머지
+    자식은 기하·렌더 메타다(꼭짓점 ``hc:pt0`` 등은 core 네임스페이스). 글상자는 앵커 자리에
+    :class:`TextBox` 로, 캡션은 그 앞 문단으로 복원하며, 묶음 ``hp:container`` 는 자식 도형을
+    문서 순서로 재귀한다. 글상자도 캡션도 없는 개체(폴리곤·캡션 없는 그림)는 블록을 내지
+    않아 문단을 쪼개지 않는다. 결정표는 :mod:`hwpxcore.shape_text` 가 소유한다.
 
 출력은 랜덤 ID(id, fieldid, charPrIDRef 등)를 전혀 담지 않아 골든 스냅샷이 실행 간
 안정적이고 문서 버전 간 의미를 갖는다.
@@ -53,15 +60,31 @@ HWPX 본문(``Contents/section*.xml``)을 파싱해 문단/표 구조를 담은 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Protocol
 
 import lxml.etree as etree
 
 from .lineseg import LINESEG_LOCAL
+from .shape_text import SHAPE_TAGS, caption_blocks, shape_blocks
 
-HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+# 데이터 모델·원장은 :mod:`hwpxcore.text_model` 이 소유한다. 기존 import 경로
+# (``from hwpxcore.text_extract import Document`` 등)는 여기서 그대로 다시 내보낸다.
+from .text_model import (
+    HP_NS,
+    Block,
+    Cell,
+    CoverageLedger,
+    Document,
+    FieldFilter,
+    Paragraph,
+    Section,
+    Table,
+    TextBox,
+    local_name,
+)
+from .text_model import namespace_of as _ns
 
 
 class PackageLike(Protocol):
@@ -75,66 +98,6 @@ class PackageLike(Protocol):
     def content_xml_names(self) -> "list[str]": ...
 
 
-def local_name(tag: object) -> str:
-    """요소의 로컬 태그명(네임스페이스 제거). 주석/PI 등 비문자 태그는 빈 문자열."""
-    if not isinstance(tag, str):
-        return ""
-    return tag.rsplit("}", 1)[-1]
-
-
-def _ns(tag: object) -> str:
-    """요소 태그의 네임스페이스 URI. 없으면 빈 문자열."""
-    if not isinstance(tag, str) or not tag.startswith("{"):
-        return ""
-    return tag[1:].split("}", 1)[0]
-
-
-# ---------------------------------------------------------------- 커버리지 원장
-@dataclass
-class CoverageLedger:
-    """모델링하지 않은 구조를 소리 나게 남기는 원장.
-
-    각 순회 결정 지점(섹션/문단/런/표/행/셀 직속 자식)에서 HANDLED 도 KNOWN_IGNORED 도
-    아닌 태그를 만나면 여기에 태그->횟수, 태그->첫 등장 경로로 기록한다. 원장이 비어야
-    '모든 자식을 의식적으로 처리 또는 허용했다'는 뜻이다.
-    """
-
-    counts: "dict[str, int]" = field(default_factory=dict)
-    examples: "dict[str, str]" = field(default_factory=dict)
-
-    def record(self, tag: str, path: str) -> None:
-        self.counts[tag] = self.counts.get(tag, 0) + 1
-        self.examples.setdefault(tag, path)
-
-    def classify(
-        self,
-        child: etree._Element,
-        handled: "frozenset[str]",
-        known_ignored: "frozenset[str]",
-        path: str,
-    ) -> str:
-        """자식 요소를 분류하고, 미처리면 기록. 로컬 태그명을 반환(비-요소는 '')."""
-        tag = child.tag
-        if not isinstance(tag, str):  # 주석/PI 등
-            return ""
-        local = local_name(tag)
-        ns = _ns(tag)
-        if ns and ns != HP_NS:
-            # 본문 결정 지점에 나타난 비-hp 요소도 침묵 누락 방지 위해 기록.
-            self.record(f"{{{ns}}}{local}", f"{path}/{local}")
-            return local
-        if local in handled or local in known_ignored:
-            return local
-        self.record(local, f"{path}/{local}")
-        return local
-
-    def to_dict(self) -> dict:
-        return {
-            "counts": {k: self.counts[k] for k in sorted(self.counts)},
-            "examples": {k: self.examples[k] for k in sorted(self.examples)},
-        }
-
-
 # ----------------------------------- 결정 지점별 허용 태그 (작고 명시적으로 유지)
 # 문단/셀 컨테이너의 직속 자식.
 _HANDLED_CONTAINER = frozenset({"p"})
@@ -144,20 +107,16 @@ _IGNORE_CONTAINER: "frozenset[str]" = frozenset()
 _HANDLED_P = frozenset({"run"})
 _IGNORE_P = frozenset({LINESEG_LOCAL})  # 줄 배치 레이아웃 정보, 본문 텍스트 없음
 
-# hp:run 직속 자식.
-_HANDLED_RUN = frozenset({"t", "ctrl", "tbl", "lineBreak", "tab"})
-# secPr: 섹션 속성 메타데이터 / pic: 이미지 객체 — 본문 텍스트 없음(캡션 없는 그림).
-# 실제 코퍼스의 pic 는 캡션을 품지 않는다. 만약 캡션 있는 그림이 나타나면
-# test_no_silent_text_drop(모든 hp:t 를 독립 순회) 가 소리 나게 실패해 의식적 처리를 강제한다.
-_IGNORE_RUN = frozenset({"secPr", "pic"})
+# hp:run 직속 자식. 표·도형(글상자·캡션을 품는 개체)은 블록을 낳는 개체로 따로 다룬다.
+_RUN_OBJECTS = frozenset({"tbl"}) | SHAPE_TAGS
+_RUN_INLINE = {"lineBreak": "\n", "tab": "\t"}  # 런 직속 글자 요소 → 글자
+_HANDLED_RUN = frozenset({"t", "ctrl"}) | _RUN_OBJECTS | frozenset(_RUN_INLINE)
+# secPr: 섹션 속성 메타데이터 — 본문 텍스트 없음.
+_IGNORE_RUN = frozenset({"secPr"})
 
 # hp:tbl 직속 자식. caption 은 표/그림 캡션으로 본문 텍스트를 갖는다 — 별도 결정 지점 처리.
 _HANDLED_TBL = frozenset({"tr", "caption"})
 _IGNORE_TBL = frozenset({"sz", "pos", "outMargin", "inMargin"})  # 표 크기/위치/여백 메타
-
-# hp:caption 직속 자식. 캡션 텍스트는 subList 밑 문단에 담긴다(표 셀과 동형 구조).
-_HANDLED_CAPTION = frozenset({"subList"})
-_IGNORE_CAPTION: "frozenset[str]" = frozenset()
 
 # hp:tr 직속 자식.
 _HANDLED_TR = frozenset({"tc"})
@@ -166,94 +125,6 @@ _IGNORE_TR: "frozenset[str]" = frozenset()
 # hp:tc 직속 자식. cellSpan/cellAddr 는 메타로 읽으므로 HANDLED.
 _HANDLED_TC = frozenset({"subList", "cellSpan", "cellAddr"})
 _IGNORE_TC = frozenset({"cellSz", "cellMargin"})  # 셀 크기/여백 렌더 메타
-
-
-# ----------------------------------------------------------------- data model
-@dataclass
-class Paragraph:
-    """복원된 문단. ``text`` 는 파편을 이어붙인 최종 문자열(탭/줄바꿈 보존).
-
-    ``fields`` 는 이 문단 안에서 텍스트를 담은 누름틀 이름의 순서 있는 중복 없는 목록
-    (의미론적 이름이므로 랜덤 ID 가 아니다). BOOKMARK 는 Field 가 아니라 구간 경계라 넣지
-    않고, 그 밖의 ``type`` 거름은 :func:`extract_document` 의 ``field_filter`` 가 정한다.
-    """
-
-    text: str
-    fields: "list[str]" = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return {"type": "paragraph", "text": self.text, "fields": list(self.fields)}
-
-
-@dataclass
-class Cell:
-    """표 셀. 자체 문단/표 블록(표 중첩 지원)과 병합 메타를 갖는다.
-
-    ``span``/``addr`` 은 원문 ``cellSpan``/``cellAddr`` 숫자를 그대로 보존한다(그리드
-    기하는 해석하지 않음 — diff/생성기가 정렬에 쓰도록).
-    """
-
-    blocks: "list[Paragraph | Table]" = field(default_factory=list)
-    span: "dict[str, int]" = field(default_factory=dict)  # {"colSpan":n,"rowSpan":n}
-    addr: "dict[str, int]" = field(default_factory=dict)  # {"colAddr":n,"rowAddr":n}
-
-    def to_dict(self) -> dict:
-        return {
-            "blocks": [b.to_dict() for b in self.blocks],
-            "span": {k: self.span[k] for k in sorted(self.span)},
-            "addr": {k: self.addr[k] for k in sorted(self.addr)},
-        }
-
-
-@dataclass
-class Table:
-    """표. ``rows`` 는 행 목록, 각 행은 셀 목록."""
-
-    rows: "list[list[Cell]]" = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return {
-            "type": "table",
-            "rows": [[c.to_dict() for c in row] for row in self.rows],
-        }
-
-
-@dataclass
-class Section:
-    """섹션/머리말/꼬리말 본문. ``blocks`` 는 문서 순서의 Paragraph/Table 목록."""
-
-    blocks: "list[Paragraph | Table]" = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return {"blocks": [b.to_dict() for b in self.blocks]}
-
-
-@dataclass
-class Document:
-    """추출된 문서 전체.
-
-    ``sections`` 는 본문 섹션(section0, section1, ...). ``headers``/``footers`` 는 본문
-    문단을 실제로 담은 머리말/꼬리말 영역(스타일 전용 ``hp:head`` 파일은 제외). 본문에
-    섞지 않고 종류별로 분리해 라벨링한다. ``unhandled``/``unhandled_examples`` 는 미처리
-    구조 원장이다(정상 문서에서는 비어 있어야 한다).
-    """
-
-    sections: "list[Section]" = field(default_factory=list)
-    headers: "list[Section]" = field(default_factory=list)
-    footers: "list[Section]" = field(default_factory=list)
-    unhandled: "dict[str, int]" = field(default_factory=dict)
-    unhandled_examples: "dict[str, str]" = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        return {
-            "sections": [s.to_dict() for s in self.sections],
-            "headers": [s.to_dict() for s in self.headers],
-            "footers": [s.to_dict() for s in self.footers],
-            "unhandled": {k: self.unhandled[k] for k in sorted(self.unhandled)},
-            "unhandled_examples": {
-                k: self.unhandled_examples[k] for k in sorted(self.unhandled_examples)
-            },
-        }
 
 
 # ------------------------------------------------------------- 엔트리 선택
@@ -382,7 +253,7 @@ def text_of_t(t_el: etree._Element) -> str:
 
 
 def _field_label(
-    begin: etree._Element, field_filter: "Callable[[str | None], bool] | None"
+    begin: etree._Element, field_filter: FieldFilter
 ) -> str:
     """``Paragraph.fields`` 에 실을 누름틀 이름. 싣지 않을 경계는 빈 문자열.
 
@@ -421,14 +292,14 @@ def _blocks_from_paragraph(
     p_el: etree._Element,
     ledger: CoverageLedger,
     path: str,
-    field_filter: "Callable[[str | None], bool] | None" = None,
-) -> "list[Paragraph | Table]":
+    field_filter: FieldFilter = None,
+) -> "list[Block]":
     """단일 ``hp:p`` 를 블록 목록으로 변환.
 
-    문단 안에 표가 끼어들면 앞 텍스트를 Paragraph 로 flush 한 뒤 Table 을 넣어 문서
-    순서를 보존한다. 텍스트도 표도 없는 문단은 빈 Paragraph 로 보존한다.
+    문단 안에 표·글상자가 끼어들면 앞 텍스트를 Paragraph 로 flush 한 뒤 개체 블록을 넣어
+    문서 순서를 보존한다. 텍스트도 개체 블록도 없는 문단은 빈 Paragraph 로 보존한다.
     """
-    blocks: "list[Paragraph | Table]" = []
+    blocks: "list[Block]" = []
     buf: "list[str]" = []
     field_names: "list[str]" = []
     # (fieldBegin@id, 실을 이름 또는 "") — fieldEnd@beginIDRef 로 짝을 찾는다.
@@ -439,6 +310,13 @@ def _blocks_from_paragraph(
             blocks.append(Paragraph("".join(buf), list(field_names)))
             buf.clear()
             field_names.clear()
+
+    def emit(object_blocks: "list[Block]") -> None:
+        # 개체 블록은 앞 텍스트를 flush 한 뒤 그 자리(문서 순서)에 둔다. 글자 없는 개체
+        # (캡션 없는 그림·글상자 없는 도형)는 블록이 없어 문단을 쪼개지 않는다.
+        if object_blocks:
+            flush()
+            blocks.extend(object_blocks)
 
     for run in p_el:
         if ledger.classify(run, _HANDLED_P, _IGNORE_P, path) != "run":
@@ -466,17 +344,10 @@ def _blocks_from_paragraph(
                         field_stack.append((c.get("id"), _field_label(c, field_filter)))
                     elif cl == "fieldEnd":
                         _close_field(field_stack, c.get("beginIDRef"))
-            elif ln == "tbl":
-                flush()
-                cap_blocks, table = _table_from_el(
-                    ch, ledger, f"{run_path}/tbl", field_filter
-                )
-                blocks.extend(cap_blocks)  # 캡션 문단을 표 앞(문서 순서)에 배치
-                blocks.append(table)
-            elif ln == "lineBreak":
-                buf.append("\n")
-            elif ln == "tab":
-                buf.append("\t")
+            elif ln in _RUN_OBJECTS:
+                emit(_object_blocks(ch, ln, ledger, f"{run_path}/{ln}", field_filter))
+            elif ln in _RUN_INLINE:
+                buf.append(_RUN_INLINE[ln])
             # secPr 등 KNOWN_IGNORED 는 텍스트 없음 — 무시.
 
     if buf:
@@ -491,10 +362,10 @@ def _blocks_from_container(
     container: etree._Element,
     ledger: CoverageLedger,
     path: str,
-    field_filter: "Callable[[str | None], bool] | None" = None,
-) -> "list[Paragraph | Table]":
+    field_filter: FieldFilter = None,
+) -> "list[Block]":
     """컨테이너(섹션 루트 또는 셀 subList)의 직속 ``hp:p`` 를 순서대로 블록화."""
-    blocks: "list[Paragraph | Table]" = []
+    blocks: "list[Block]" = []
     for child in container:
         if (
             ledger.classify(child, _HANDLED_CONTAINER, _IGNORE_CONTAINER, path) == "p"
@@ -524,44 +395,40 @@ def _cell_span_addr(tc: etree._Element) -> "tuple[dict, dict]":
     return span, addr
 
 
-def _caption_blocks(
-    cap_el: etree._Element,
+def _object_blocks(
+    obj: etree._Element,
+    kind: str,
     ledger: CoverageLedger,
     path: str,
-    field_filter: "Callable[[str | None], bool] | None" = None,
-) -> "list[Paragraph | Table]":
-    """``hp:caption`` -> 캡션 문단 블록 목록. 텍스트는 ``hp:subList`` 밑 문단에 담긴다.
-
-    캡션은 표/그림에 붙는 제목·설명(예: ``<표 1> 유압식 잭(30톤) 주요제원``)으로 본문
-    텍스트다. 셀 subList 와 동형이라 같은 컨테이너 헬퍼로 문단을 복원한다.
-    """
-    blocks: "list[Paragraph | Table]" = []
-    for sub in cap_el:
-        if ledger.classify(sub, _HANDLED_CAPTION, _IGNORE_CAPTION, path) == "subList":
-            blocks.extend(
-                _blocks_from_container(sub, ledger, f"{path}/subList", field_filter)
-            )
-    return blocks
+    field_filter: FieldFilter,
+) -> "list[Block]":
+    """런 안 개체(표·도형·그림)가 낳는 블록. 캡션 문단은 개체 앞(문서 순서)에 둔다."""
+    if kind == "tbl":
+        cap_blocks, table = _table_from_el(obj, ledger, path, field_filter)
+        return [*cap_blocks, table]
+    return shape_blocks(obj, ledger, path, field_filter, _blocks_from_container)
 
 
 def _table_from_el(
     tbl_el: etree._Element,
     ledger: CoverageLedger,
     path: str,
-    field_filter: "Callable[[str | None], bool] | None" = None,
-) -> "tuple[list[Paragraph | Table], Table]":
+    field_filter: FieldFilter = None,
+) -> "tuple[list[Block], Table]":
     """``hp:tbl`` -> (캡션 블록, Table). 셀 내용은 ``hp:subList`` 밑 문단에서 추출(중첩 재귀).
 
     캡션 ``hp:caption`` 은 ``hp:tr`` 들의 형제로 표 앞에 온다. 문서 순서를 지키도록 캡션
     문단을 별도 블록으로 돌려주고, 호출부가 Table 앞에 배치한다.
     """
     rows: "list[list[Cell]]" = []
-    caption_blocks: "list[Paragraph | Table]" = []
+    captions: "list[Block]" = []
     for child in tbl_el:
         ln = ledger.classify(child, _HANDLED_TBL, _IGNORE_TBL, path)
         if ln == "caption":
-            caption_blocks.extend(
-                _caption_blocks(child, ledger, f"{path}/caption", field_filter)
+            captions.extend(
+                caption_blocks(
+                    child, ledger, f"{path}/caption", field_filter, _blocks_from_container
+                )
             )
             continue
         if ln != "tr":
@@ -573,7 +440,7 @@ def _table_from_el(
                 continue
             tc_path = f"{tr_path}/tc"
             span, addr = _cell_span_addr(tc)
-            cell_blocks: "list[Paragraph | Table]" = []
+            cell_blocks: "list[Block]" = []
             for sub in tc:
                 if (
                     ledger.classify(sub, _HANDLED_TC, _IGNORE_TC, tc_path)
@@ -586,7 +453,7 @@ def _table_from_el(
                     )
             cells.append(Cell(cell_blocks, span=span, addr=addr))
         rows.append(cells)
-    return caption_blocks, Table(rows)
+    return captions, Table(rows)
 
 
 # ------------------------------------------------------------------ 공개 API
@@ -607,7 +474,7 @@ def require_package(obj: object) -> PackageLike:
 def extract_document(
     pkg: object,
     *,
-    field_filter: "Callable[[str | None], bool] | None" = None,
+    field_filter: FieldFilter = None,
 ) -> Document:
     """열린 HWPX package 에서 본문·머리말·꼬리말을 추출해 Document 반환.
 
@@ -664,11 +531,13 @@ def extract_document(
     return doc
 
 
-def _iter_blocks(blocks: "list[Paragraph | Table]"):
-    """블록 트리를 문서 순서로 깊이 우선 순회하며 Paragraph 를 yield."""
+def _iter_blocks(blocks: "list[Block]"):
+    """블록 트리를 문서 순서로 깊이 우선 순회하며 Paragraph 를 yield(글상자 안 포함)."""
     for b in blocks:
         if isinstance(b, Paragraph):
             yield b
+        elif isinstance(b, TextBox):
+            yield from _iter_blocks(b.blocks)
         elif isinstance(b, Table):
             for row in b.rows:
                 for cell in row:
@@ -676,7 +545,7 @@ def _iter_blocks(blocks: "list[Paragraph | Table]"):
 
 
 def iter_paragraph_texts(doc: Document) -> "list[str]":
-    """문서 순서(머리말->본문->꼬리말, 표 셀 내부 포함)로 모든 문단 텍스트를 반환."""
+    """문서 순서(머리말->본문->꼬리말, 표 셀·글상자 내부 포함)로 모든 문단 텍스트를 반환."""
     out: "list[str]" = []
     for region in (*doc.headers, *doc.sections, *doc.footers):
         for para in _iter_blocks(region.blocks):

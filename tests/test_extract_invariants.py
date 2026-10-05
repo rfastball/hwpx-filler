@@ -56,6 +56,8 @@ def _section_texts(doc) -> str:
         for block in blocks:
             if block["type"] == "paragraph":
                 yield block["text"]
+            elif block["type"] == "textbox":
+                yield from walk(block["blocks"])
             else:
                 for row in block["rows"]:
                     for cell in row:

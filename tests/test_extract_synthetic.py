@@ -12,18 +12,22 @@ from hwpxcore.text_extract import (
     CoverageLedger,
     Document,
     Paragraph,
+    Section,
     Table,
+    TextBox,
     _blocks_from_container,
     _has_body_text,
     extract_document,
+    iter_paragraph_texts,
 )
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+HC = "http://www.hancom.co.kr/hwpml/2011/core"
 
 
 def _blocks(inner_xml: str, ledger: "CoverageLedger | None" = None):
     """``<sec>...</sec>`` 로 감싼 조각을 파싱해 최상위 블록 목록 반환."""
-    xml = f'<sec xmlns:hp="{HP}">{inner_xml}</sec>'
+    xml = f'<sec xmlns:hp="{HP}" xmlns:hc="{HC}">{inner_xml}</sec>'
     root = etree.fromstring(xml.encode("utf-8"))
     return _blocks_from_container(root, ledger or CoverageLedger(), "sec")
 
@@ -280,9 +284,10 @@ def test_table_caption_text_extracted():
 
 
 def test_pic_object_no_text_keeps_ledger_clean():
-    """런 안의 그림 객체 ``hp:pic`` 은 본문 텍스트가 없고 원장을 더럽히지 않는다.
+    """런 안의 캡션 없는 그림 객체 ``hp:pic`` 은 본문 텍스트가 없고 원장을 더럽히지 않는다.
 
-    pic 은 KNOWN_IGNORED(이미지 객체) 라 유령 텍스트를 만들지 않고 크래시도 없다.
+    pic 의 이미지·기하 자식은 도형 결정표의 허용 메타라 유령 텍스트를 만들지 않고, 블록이
+    없으니 문단도 쪼개지 않는다.
     """
     ledger = CoverageLedger()
     xml = """
@@ -361,3 +366,151 @@ def test_extract_document_rejects_path_input_loudly():
         extract_document("some/template.hwpx")
     with pytest.raises(TypeError, match="열린 HWPX package"):
         extract_document(b"PK\x03\x04")
+
+
+# ------------------------------------------------------- 도형 글상자·캡션(shape_text)
+def _rect(inner: str) -> str:
+    """실 문서(한글 2024 글상자)와 같은 기하·렌더 메타를 두른 ``hp:rect`` 조각."""
+    return (
+        "<hp:rect><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/>"
+        "<hp:renderingInfo/><hp:lineShape/><hp:shadow/>"
+        f"{inner}"
+        "<hc:pt0/><hc:pt1/><hc:pt2/><hc:pt3/><hp:sz/><hp:pos/><hp:outMargin/></hp:rect>"
+    )
+
+
+def _draw_text(paragraphs: str) -> str:
+    return (
+        "<hp:drawText><hp:subList>"
+        f"{paragraphs}"
+        "</hp:subList><hp:textMargin/></hp:drawText>"
+    )
+
+
+def _p(text: str) -> str:
+    return f"<hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p>"
+
+
+def test_textbox_paragraphs_field_and_table_extracted_in_anchor_order():
+    """글상자(``drawText`` > ``subList``)의 여러 문단·누름틀·표가 앵커 자리에 TextBox 로 온다.
+
+    글상자 앞뒤 본문은 표와 같은 규칙으로 갈라지고, 글상자 안 누름틀 이름은 그 문단의
+    ``fields`` 에 실린다. 문서 순서 순회(``iter_paragraph_texts``)는 글상자 안까지 걷는다.
+    """
+    ledger = CoverageLedger()
+    inner = _draw_text(
+        _p("첫 줄")
+        + "<hp:p><hp:run><hp:ctrl><hp:fieldBegin type=\"CLICK_HERE\" name=\"담당자\"/>"
+        "</hp:ctrl></hp:run><hp:run><hp:t>홍길동</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+        + "<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>"
+        + _p("상자 속 셀")
+        + "</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>"
+    )
+    xml = f"<hp:p><hp:run><hp:t>앞 문구(</hp:t>{_rect(inner)}<hp:t>) 뒤 문구</hp:t></hp:run></hp:p>"
+    blocks = _blocks(xml, ledger)
+
+    assert [type(b).__name__ for b in blocks] == ["Paragraph", "TextBox", "Paragraph"]
+    box = blocks[1]
+    assert isinstance(box, TextBox)
+    assert [type(b).__name__ for b in box.blocks] == ["Paragraph", "Paragraph", "Table"]
+    assert box.blocks[1] == Paragraph("홍길동", ["담당자"])
+    assert box.to_dict()["type"] == "textbox"
+    assert iter_paragraph_texts(Document(sections=[Section(blocks)])) == [
+        "앞 문구(", "첫 줄", "홍길동", "상자 속 셀", ") 뒤 문구",
+    ]
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
+def test_container_children_keep_document_order_and_textless_shape_emits_nothing():
+    """묶음 ``hp:container`` 는 자식 도형을 문서 순서로 재귀하고, 글상자 없는 도형은 블록이 없다."""
+    ledger = CoverageLedger()
+    xml = (
+        "<hp:p><hp:run><hp:t>가</hp:t><hp:container><hp:offset/><hp:sz/><hp:pos/>"
+        + _rect(_draw_text(_p("첫째 상자")))
+        + "<hp:ellipse><hp:offset/><hc:center/><hc:ax1/><hc:ax2/></hp:ellipse>"
+        + "<hp:polygon><hc:pt/><hc:pt/><hp:shapeComment/></hp:polygon>"
+        + "<hp:ellipse><hc:center/>" + _draw_text(_p("둘째 상자")) + "</hp:ellipse>"
+        + "</hp:container><hp:t>나</hp:t></hp:run></hp:p>"
+    )
+    blocks = _blocks(xml, ledger)
+
+    assert [type(b).__name__ for b in blocks] == [
+        "Paragraph", "TextBox", "TextBox", "Paragraph",
+    ]
+    assert iter_paragraph_texts(Document(sections=[Section(blocks)])) == [
+        "가", "첫째 상자", "둘째 상자", "나",
+    ]
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
+def test_shape_caption_precedes_textbox():
+    """도형 캡션은 표 캡션과 같은 규칙으로 개체 블록 앞(문서 순서) 문단이 된다."""
+    ledger = CoverageLedger()
+    caption = f"<hp:caption><hp:subList>{_p('[그림 1] 처리 흐름')}</hp:subList></hp:caption>"
+    xml = f"<hp:p><hp:run>{_rect(_draw_text(_p('상자 본문')) + caption)}</hp:run></hp:p>"
+    blocks = _blocks(xml, ledger)
+
+    assert [type(b).__name__ for b in blocks] == ["Paragraph", "TextBox"]
+    assert blocks[0] == Paragraph("[그림 1] 처리 흐름", [])
+    assert isinstance(blocks[1], TextBox)
+    assert blocks[1].blocks == [Paragraph("상자 본문", [])]
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
+def test_polygon_without_text_emits_no_block_and_does_not_split_paragraph():
+    """``drawText`` 없는 도형(실 코퍼스 ``metatag_s1`` 의 폴리곤 형상)은 블록도 원장도 없다."""
+    ledger = CoverageLedger()
+    xml = (
+        "<hp:p><hp:run><hp:t>앞</hp:t><hp:polygon><hp:offset/><hp:orgSz/><hp:curSz/>"
+        "<hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hp:lineShape/><hp:shadow/>"
+        "<hc:pt/><hc:pt/><hc:pt/><hp:sz/><hp:pos/><hp:outMargin/>"
+        "<hp:shapeComment>다각형입니다.</hp:shapeComment><hp:metaTag>{}</hp:metaTag>"
+        "</hp:polygon><hp:t>뒤</hp:t></hp:run></hp:p>"
+    )
+    blocks = _blocks(xml, ledger)
+
+    assert blocks == [Paragraph("앞뒤", [])]
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
+def test_unknown_shape_children_are_recorded_loudly():
+    """도형·글상자 결정표에 없는 자식은 원장에 경로와 함께 소리 나게 남는다."""
+    ledger = CoverageLedger()
+    xml = (
+        "<hp:p><hp:run>"
+        + _rect(
+            "<hp:futureShapePart/><hc:futurePoint/>"
+            "<hp:drawText><hp:futureTextPart/><hp:subList>"
+            + _p("상자")
+            + "</hp:subList></hp:drawText>"
+        )
+        + "</hp:run></hp:p>"
+    )
+    blocks = _blocks(xml, ledger)
+
+    assert isinstance(blocks[0], TextBox)  # 미지 자식이 있어도 아는 본문은 복원한다
+    assert ledger.counts == {
+        "futureShapePart": 1,
+        f"{{{HC}}}futurePoint": 1,
+        "futureTextPart": 1,
+    }
+    assert ledger.examples["futureShapePart"] == "sec/p/run/rect/futureShapePart"
+    assert ledger.examples["futureTextPart"] == "sec/p/run/rect/drawText/futureTextPart"
+
+
+def test_pic_caption_text_preserved():
+    """캡션을 품은 그림 ``hp:pic`` 은 캡션 문단을 그림 자리에 남긴다(이미지 메타는 무시)."""
+    ledger = CoverageLedger()
+    xml = (
+        "<hp:p><hp:run><hp:t>본문 문구</hp:t><hp:pic><hp:offset/><hp:orgSz/><hp:curSz/>"
+        "<hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hc:img/><hp:imgRect/><hp:imgClip/>"
+        "<hp:inMargin/><hp:imgDim/><hp:effects/><hp:sz/><hp:pos/><hp:outMargin/>"
+        "<hp:shapeComment/>"
+        f"<hp:caption><hp:subList>{_p('[사진 1] 현장 전경')}</hp:subList></hp:caption>"
+        "</hp:pic></hp:run></hp:p>"
+    )
+    blocks = _blocks(xml, ledger)
+
+    assert blocks == [Paragraph("본문 문구", []), Paragraph("[사진 1] 현장 전경", [])]
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"

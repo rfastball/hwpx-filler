@@ -580,11 +580,8 @@ function_statements = 65
 [budget."src/hwpxcore/structural_boundary.py::_scan_entry"]
 function_complexity = 25
 
-[budget."src/hwpxcore/text_extract.py"]
-module_statements = 304
-
 [budget."src/hwpxcore/text_extract.py::_blocks_from_paragraph"]
-function_complexity = 21
+function_complexity = 20
 
 [budget."src/hwpxfiller/application/dataset_pool.py"]
 module_statements = 341

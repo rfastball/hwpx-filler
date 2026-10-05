@@ -205,6 +205,29 @@ def test_stray_tokens_detected_and_real_fields_excluded():
     assert schema.stray_tokens == ["누락토큰"]  # 계약명은 실제 필드라 제외
 
 
+def test_stray_tokens_inside_textbox_are_reported():
+    """도형 글상자(``drawText`` > ``subList``) 안의 미치환 ``{{X}}`` 도 잔존으로 신고한다.
+
+    구간 경계(BOOKMARK) 안 평문 토큰은 저작 스캐너·누름틀 값 원장 어느 쪽도 소유하지 않아
+    문단 순회만이 잡는다 — 추출기가 글상자를 걷지 않으면 이 토큰이 조용히 빠진다.
+    """
+    xml = """
+    <hp:p><hp:run><hp:t>본문(</hp:t><hp:rect><hp:sz/><hp:pos/>
+      <hp:drawText><hp:subList>
+        <hp:p><hp:run><hp:t>상자 {{상자토큰}}</hp:t></hp:run></hp:p>
+        <hp:p>
+          <hp:run><hp:ctrl><hp:fieldBegin id="7" type="BOOKMARK" name="구간"/></hp:ctrl></hp:run>
+          <hp:run><hp:t>{{북마크토큰}}</hp:t></hp:run>
+          <hp:run><hp:ctrl><hp:fieldEnd beginIDRef="7"/></hp:ctrl></hp:run>
+        </hp:p>
+      </hp:subList><hp:textMargin/></hp:drawText>
+    </hp:rect><hp:t>)</hp:t></hp:run></hp:p>
+    """
+    schema = extract_schema(_pkg(xml))
+    assert sorted(schema.stray_tokens) == ["북마크토큰", "상자토큰"]
+    assert schema.unhandled == {}
+
+
 # --------------------------------------------------------- 랜덤 ID 누출 없음
 def test_no_random_ids_in_output():
     """to_dict() 직렬화에 랜덤 ID 계열 속성이 전혀 남지 않는다."""
