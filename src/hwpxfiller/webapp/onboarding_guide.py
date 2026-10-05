@@ -90,11 +90,13 @@ def rewind_unopened_template(tutorial: Any) -> bool:
 
 
 def rewind_unmet_inputs(tutorial: Any) -> bool:
-    """Back to the beat that chose the editor's template or data once it no longer holds.
+    """Back to the beat that chose the editor's template or data (or opened the practice TXT) once it no longer holds.
 
     The beat shown is then that earlier beat with its own text and box — never a later beat's
     progress number over an earlier beat's words.
     """
+    if rewind_unopened_template(tutorial):
+        return True
     progress = tutorial.progress
     lesson, beat = progress.selected, progress.beat()
     inputs = _EDITOR_INPUTS.get(lesson or "")

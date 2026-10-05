@@ -1,8 +1,8 @@
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ScreenRuntime } from "./runtime.ts";
-import { expectHostValue } from "./runtime.ts";
 import { errorText } from "./authoring_a11y.ts";
 import { guideFeed } from "./authoring_guide.ts";
+import { authoringHost } from "./authoring_host.ts";
 
 type Obj = Record<string, any>;
 export type AuthoringEditor = {
@@ -190,16 +190,9 @@ export function createAuthoringController(deps: Deps) {
     if (viewId && (view.preview !== before.preview || view.command !== before.command) && !hovered) redecorate();
     listeners.forEach((listener) => listener());
   };
-  // verdict: Python 이 판정을 세션 상태로 이미 투영한 호출(시험 입력 검증 등) — ok:false 는 오류 띠가 아니라 그 표면이 보인다.
-  const dispatch = async (action: string, payload: Obj = {}, verdict = false): Promise<Obj> => {
-    const call = deps.client.dispatch as unknown as (screen: string, name: string, body: Obj) => ReturnType<BridgeClient["dispatch"]>;
-    const result = expectHostValue(await call("authoring", action, payload), `authoring/${action}`) as Obj;
-    // 거절(refusal)은 오류가 아니라 판정이다 — 호출자가 사유와 대안을 그린다(U07·AC08·AC10).
-    if (result?.ok === false && !result.refusal && !verdict) throw new Error(result.message || result.detail || result.reason);
-    return result || {};
-  };
-  const invoke = async (method: Parameters<BridgeClient["invoke"]>[0], ...args: unknown[]): Promise<Obj | null> =>
-    expectHostValue(await deps.client.invoke(method, ...args), method) as Obj | null;
+  // Python 왕복 두 길 — Python 이 스스로 세운 활성 문서를 뷰로 따라가기(#1146)도 그 왕복의 진행을 보고 진다.
+  const { dispatch, invoke } = authoringHost(deps.client, { activeId: () => snapshot().active_id || "", viewId: () => viewId,
+    activate: (id) => activate(id), fail: (error) => fail(error, "editor"), subscribe: (listener) => model.subscribe(listener) });
   const revision = (id: string): number => revisions.get(id) ?? tab(id).revision;
   const fenced = (id: string, payload: Obj = {}): Obj => ({ session_id: id, revision: revision(id), ...payload });
 
@@ -305,26 +298,7 @@ export function createAuthoringController(deps: Deps) {
     await dispatch("remember_view", fenced(id, { selection: coordinates(state.selection), mode: state.mode || "template" }));
   }
 
-  // 이 화면이 문서를 열고 닫고 옮기는 중이다(그 동작이 끝에 activate 한다) — 그사이 도착한 push 의 활성 문서는 따라가지 않는다.
-  let steering = 0;
-  function steered<T>(work: () => Promise<T>): Promise<T> {
-    steering += 1;
-    return work().finally(() => { steering -= 1; });
-  }
-
-  /** Python 이 스스로 활성으로 세운 문서(튜토리얼이 연 연습 문서, 작업 공간 전환, 연습 종료 뒤 복원)를 이 화면의 뷰로 받는다.
-   *  편집기는 스냅샷의 활성 탭을 그리는데 뷰가 그 탭이 아니면 편집기의 선택 보고가 버려진다(#1146) — 선택해도 판정이 없다. */
-  function followActive() {
-    const active = snapshot().active_id;
-    if (active && active !== viewId && steering === 0) void guarded(() => activate(active), "editor");
-  }
-  model.subscribe(followActive);
-
-  function activate(id: string): Promise<void> {
-    return steered(() => activateNow(id));
-  }
-
-  async function activateNow(id: string) {
+  async function activate(id: string) {
     clearTimeout(trialTimer);
     if (snapshot().active_id) { await flush(snapshot().active_id); await inputPumps.get(snapshot().active_id); }
     const activated = await dispatch("activate", { session_id: id });
@@ -342,25 +316,19 @@ export function createAuthoringController(deps: Deps) {
     await applyRestore(id);
   }
 
-  function open(path?: string): Promise<void> {
-    return steered(async () => {
-      await deps.runtime.loadInitial("authoring");
-      returnScreen = "editor";
-      if (path) {
-        const result = await invoke("open_authoring_document", path, true);
-        if (!result) return;
-        revisions.set(result.session_id, result.revision);
-        await activate(result.session_id);
-      }
-      deps.navigation.go("authoring", { force: true });
-    });
+  async function open(path?: string) {
+    await deps.runtime.loadInitial("authoring");
+    returnScreen = "editor";
+    if (path) {
+      const result = await invoke("open_authoring_document", path, true);
+      if (!result) return;
+      revisions.set(result.session_id, result.revision);
+      await activate(result.session_id);
+    }
+    deps.navigation.go("authoring", { force: true });
   }
 
-  function openFile(): Promise<void> {
-    return steered(openFileNow);
-  }
-
-  async function openFileNow() {
+  async function openFile() {
     const result = await invoke("open_authoring_document", "", false);
     if (!result) return;
     revisions.set(result.session_id, result.revision);
@@ -387,11 +355,7 @@ export function createAuthoringController(deps: Deps) {
     return true;
   }
 
-  function close(id: string): Promise<boolean> {
-    return steered(() => closeNow(id));
-  }
-
-  async function closeNow(id: string): Promise<boolean> {
+  async function close(id: string): Promise<boolean> {
     await flush(id);
     await inputPumps.get(id);
     // 남은 작업 위치를 먼저 보낸다. 실패는 알리되 문서 닫기를 막지 않는다(잃는 것은 위치 기록뿐이다).
@@ -773,7 +737,7 @@ export function createAuthoringController(deps: Deps) {
     /** 활성 탭(또는 그 탭)의 지금 revision — 표면이 제 목록이 옛 문서의 것인지 비교할 뿐이다(판정 아님). */
     revisionOf: (id = snapshot().active_id) => revision(id),
     returnScreen: () => returnScreen,
-    create: () => steered(async () => { const result = await dispatch("new", { media: "txt" }); revisions.set(result.session_id, result.revision); await activate(result.session_id); }),
+    create: async () => { const result = await dispatch("new", { media: "txt" }); revisions.set(result.session_id, result.revision); await activate(result.session_id); },
     content: (id: string) => dispatch("content", { session_id: id }),
     preflight: (id: string, revision: number, content: string) => dispatch("rhwp_roundtrip_preflight", { session_id: id, revision, content }),
     unverified: (id: string, revision: number, detail: string) => dispatch("rhwp_unverified", { session_id: id, revision, detail }),

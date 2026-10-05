@@ -322,7 +322,7 @@ class OnboardingController:
             self._emit()
             return False
         before = repr(self._context())
-        rewound = rewind_unmet_inputs(self) or rewind_unopened_template(self)
+        rewound = rewind_unmet_inputs(self)
         advanced = advance_current(self, screen, action, payload, result) or rewound
         if advanced or repr(self._context()) != before:
             self._persist()

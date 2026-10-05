@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { beatRange, followBeatRange } from "../../frontend/src/tutorial/range.ts";
 import { guideFeed, guideSpans } from "../../frontend/src/screens/authoring_guide.ts";
-import { guidePainted } from "../../frontend/src/editorview/txt_lintpad.ts";
+import { guidePainted } from "../../frontend/src/editorview/txt_ranges.ts";
 
 const range = { session_id: "s1", start: 10, end: 20 };
 const live = (beat) => ({ active: true, paused: false, beat });
