@@ -2861,10 +2861,10 @@ index 7f52f3ec3..7ce0f69c0 100644
  
      macro_rules! f {
 diff --git a/src/document_core/converters/common_obj_attr_writer.rs b/src/document_core/converters/common_obj_attr_writer.rs
-index a2188ed8a..25000d833 100644
+index a2188ed8a..0a5867dec 100644
 --- a/src/document_core/converters/common_obj_attr_writer.rs
 +++ b/src/document_core/converters/common_obj_attr_writer.rs
-@@ -108,6 +108,7 @@ mod tests {
+@@ -108,9 +108,11 @@ mod tests {
              height_criterion: SizeCriterion::Absolute,
              description: String::new(),
              raw_extra: Vec::new(),
@@ -2872,6 +2872,10 @@ index a2188ed8a..25000d833 100644
              locked: false,
              numbering_type: crate::model::shape::ObjectNumberingType::None,
              drop_cap_style: crate::model::shape::DropCapStyle::None,
++            hwpx_href: None,
+         }
+     }
+ 
 diff --git a/src/document_core/queries/field_query.rs b/src/document_core/queries/field_query.rs
 index 853c5a8c6..1d4d50850 100644
 --- a/src/document_core/queries/field_query.rs
@@ -2976,10 +2980,10 @@ index 7bfcef5cb..758af3eb6 100644
              tab_extended: Vec::new(),
              title_marks: new_title_marks,
 diff --git a/src/model/shape.rs b/src/model/shape.rs
-index d849542d6..e8d7ea78a 100644
+index d849542d6..36fbf2215 100644
 --- a/src/model/shape.rs
 +++ b/src/model/shape.rs
-@@ -104,6 +104,11 @@ pub struct CommonObjAttr {
+@@ -104,11 +104,20 @@ pub struct CommonObjAttr {
      pub drop_cap_style: DropCapStyle,
      /// 파싱된 필드 이후 추가 바이트 (라운드트립 보존용)
      pub raw_extra: Vec<u8>,
@@ -2991,8 +2995,28 @@ index d849542d6..e8d7ea78a 100644
      /// HWPX `lock`(개체 잠금) 속성 보존 (#2840, #2855, #2931).
      ///
      /// 파서가 이 속성을 읽지 않아 직렬화 시 항상 `lock="0"`으로 하드코딩되던 문제
+     /// 해소 — 수식·공용 도형·표·차트/OLE 경로에 배선한다.
+     pub locked: bool,
++    /// HWPX 도형 `href`(개체에 걸린 하이퍼링크) 원문 보존. 직렬화기가 빈 값으로 하드코딩해
++    /// 글상자에 걸린 링크가 저장 시 사라졌다. 그림은 `Picture.href` 가 따로 담는다.
++    #[serde(skip_serializing)]
++    pub hwpx_href: Option<String>,
+ }
+ 
+ /// HWPX 개체 `numberingType` (캡션 번호 범주)
+@@ -335,6 +344,10 @@ pub struct DrawingObjAttr {
+     pub text_box: Option<TextBox>,
+     /// 캡션
+     pub caption: Option<Caption>,
++    /// HWPX 원본에 `hp:shadow` 요소가 있었는지. 전 필드 0(그림자 없음)이어도 원본에 있던
++    /// 요소는 되쓴다. HWP5·새 도형은 false → 전 필드 0 이면 미방출(종전 동작).
++    #[serde(skip_serializing)]
++    pub hwpx_shadow_present: bool,
+ }
+ 
+ /// 글상자 (그리기 개체 내 텍스트)
 diff --git a/src/model/style.rs b/src/model/style.rs
-index b9e652c5e..8a7e8a60f 100644
+index b9e652c5e..5d4a225e9 100644
 --- a/src/model/style.rs
 +++ b/src/model/style.rs
 @@ -162,6 +162,10 @@ pub struct CharShape {
@@ -3014,7 +3038,7 @@ index b9e652c5e..8a7e8a60f 100644
          }
      }
  }
-@@ -362,6 +367,15 @@ pub struct ParaShape {
+@@ -362,11 +367,24 @@ pub struct ParaShape {
      /// `case` 에 절반값을 넣으면 한글이 보는 여백이 절반이 된다(쪽수 증가). 파서가 이 표기를
      /// 남기고 HWPX 직렬화기가 같은 표기로 되돌려 원본 조판을 지킨다.
      pub hwpx_plain_para_margin: bool,
@@ -3030,7 +3054,24 @@ index b9e652c5e..8a7e8a60f 100644
      /// [#1986] HWPX breakSetting@breakLatinWord 원문 보존
      /// (BREAK_WORD/KEEP_WORD/HYPHENATION). 파서 미수집 시 None → 직렬화 기본값
      /// KEEP_WORD. 값이 3가지라 attr1 비트 인코딩 대신 원문 보존으로 무손실 방출.
-@@ -757,6 +771,10 @@ pub struct GradientFill {
+     /// 꼬리말·표셀 등 재계산 경로에서 줄나눔이 달라져 레이아웃이 갈리는 것을 막는다.
+     pub break_latin_word: Option<String>,
++    /// HWPX `hh:paraPr@textDir` 원문 보존(한글 2024 이상이 모든 문단 모양에 쓴다). IR 이
++    /// 모델링하지 않는 축이라 원문 그대로 되쓴다. HWP5 등 원본에 없으면 None → 미방출.
++    #[serde(skip_serializing)]
++    pub text_dir: Option<String>,
+ }
+ 
+ /// ParaShape 비교: raw_data 필드 제외 (라운드트립용 원본 바이트는 논리적 동일성과 무관)
+@@ -391,6 +409,7 @@ impl PartialEq for ParaShape {
+             && self.head_type == other.head_type
+             && self.para_level == other.para_level
+             && self.break_latin_word == other.break_latin_word
++            && self.text_dir == other.text_dir
+     }
+ }
+ 
+@@ -757,6 +776,10 @@ pub struct GradientFill {
      pub colors: Vec<ColorRef>,
      /// 색상 위치 목록
      pub positions: Vec<i32>,
@@ -3117,8 +3158,20 @@ index a420b5fcc..9819e5b19 100644
          // [#4896] HWP5 는 ctrl_id 자체가 종류라 원문 문자열이 없다 — 직렬화기가
          // `tags::OWPML_EXTRA_FIELD_TYPES` 로 ctrl_id 에서 이름을 되찾는다.
          raw_type: None,
+diff --git a/src/parser/control/shape.rs b/src/parser/control/shape.rs
+index 5d00569bb..b48b9f3e3 100644
+--- a/src/parser/control/shape.rs
++++ b/src/parser/control/shape.rs
+@@ -728,6 +728,7 @@ fn parse_container_children(child_records: &[Record], depth: u32) -> Vec<ShapeOb
+             shadow_alpha: parsed.shadow_alpha,
+             text_box: None,
+             caption: None,
++            hwpx_shadow_present: false,
+         };
+         // tb_attr: SHAPE_COMPONENT 인라인 텍스트 속성 (미구현, 항상 None)
+         let tb_attr: Option<(i16, i16, i16, i16, u32, u32)> = None;
 diff --git a/src/parser/doc_info.rs b/src/parser/doc_info.rs
-index 4115a2805..c295aec45 100644
+index 4115a2805..c19c41e9d 100644
 --- a/src/parser/doc_info.rs
 +++ b/src/parser/doc_info.rs
 @@ -458,6 +458,7 @@ pub(crate) fn parse_fill(r: &mut ByteReader) -> Fill {
@@ -3137,12 +3190,14 @@ index 4115a2805..c295aec45 100644
      })
  }
  
-@@ -820,6 +822,8 @@ fn parse_para_shape(data: &[u8]) -> Result<ParaShape, DocInfoError> {
+@@ -820,6 +822,10 @@ fn parse_para_shape(data: &[u8]) -> Result<ParaShape, DocInfoError> {
          break_latin_word: None,
          // HWP5 원본에는 HWPX 표기 구분이 없다 — switch 형태로 방출한다 (#4898).
          hwpx_plain_para_margin: false,
 +        hwpx_heading_switch_xml: None,
 +        hwpx_case_margin_raw: Default::default(),
++        // HWP5 에는 HWPX textDir 원문이 없다 — 미방출(종전 동작).
++        text_dir: None,
      })
  }
  
@@ -3159,7 +3214,7 @@ index 8be134589..b43cf5467 100644
              (crate::model::style::FillType::Gradient, Some(grad))
          } else {
 diff --git a/src/parser/hwpx/header.rs b/src/parser/hwpx/header.rs
-index 8c26e1eb1..8bf2b4734 100644
+index 8c26e1eb1..6d333c4fb 100644
 --- a/src/parser/hwpx/header.rs
 +++ b/src/parser/hwpx/header.rs
 @@ -770,6 +770,12 @@ fn parse_char_shape(
@@ -3175,7 +3230,16 @@ index 8c26e1eb1..8bf2b4734 100644
                                          cs.strike_shape = match val.as_str() {
                                              "SOLID" => 0,
                                              "DASH" => 1,
-@@ -930,10 +936,18 @@ fn parse_para_shape(
+@@ -911,6 +917,8 @@ fn parse_para_shape(
+                     ps.attr1 &= !(1 << 8);
+                 }
+             }
++            // 한글 2024 의 textDir — 직렬화기가 원문 그대로 되쓴다.
++            b"textDir" => ps.text_dir = Some(attr_str(&attr)),
+             _ => {}
+         }
+     }
+@@ -930,10 +938,18 @@ fn parse_para_shape(
                              parse_para_shape_margin_children(reader, &mut ps)?;
                          }
                          ParaShapeChildKind::Switch => {
@@ -3196,7 +3260,7 @@ index 8c26e1eb1..8bf2b4734 100644
                          }
                          ParaShapeChildKind::Other => {}
                      }
-@@ -1228,11 +1242,17 @@ fn parse_para_shape_margin_children(
+@@ -1228,11 +1244,17 @@ fn parse_para_shape_margin_children(
  fn parse_para_shape_switch(
      reader: &mut Reader<&[u8]>,
      ps: &mut ParaShape,
@@ -3215,7 +3279,7 @@ index 8c26e1eb1..8bf2b4734 100644
      // default 값을 임시 저장 (case가 없을 때 폴백)
      let mut def_margin_left: Option<i32> = None;
      let mut def_margin_right: Option<i32> = None;
-@@ -1248,9 +1268,19 @@ fn parse_para_shape_switch(
+@@ -1248,9 +1270,19 @@ fn parse_para_shape_switch(
      let mut case_prev: Option<i32> = None;
      let mut case_next: Option<i32> = None;
      let mut case_line_spacing: Option<i32> = None;
@@ -3236,7 +3300,7 @@ index 8c26e1eb1..8bf2b4734 100644
              Ok(Event::Start(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
-@@ -1276,9 +1306,25 @@ fn parse_para_shape_switch(
+@@ -1276,9 +1308,25 @@ fn parse_para_shape_switch(
                  let local = local_name(cname.as_ref());
                  if in_hwpunitchar_case || in_default {
                      match local {
@@ -3262,7 +3326,7 @@ index 8c26e1eb1..8bf2b4734 100644
                              for attr in ce.attributes().flatten() {
                                  if attr.key.as_ref().as_bytes() == b"value" {
                                      let val = parse_i32(&attr);
-@@ -1314,6 +1360,20 @@ fn parse_para_shape_switch(
+@@ -1314,6 +1362,20 @@ fn parse_para_shape_switch(
                                              }
                                              _ => {}
                                          }
@@ -3283,7 +3347,7 @@ index 8c26e1eb1..8bf2b4734 100644
                                          found_case = true;
                                      } else if in_default {
                                          match tag_name {
-@@ -1444,9 +1504,22 @@ fn parse_para_shape_switch(
+@@ -1444,9 +1506,22 @@ fn parse_para_shape_switch(
          if let Some(v) = ls_exact {
              ps.line_spacing = v;
          }
@@ -3307,7 +3371,7 @@ index 8c26e1eb1..8bf2b4734 100644
  }
  
  /// `<switch>` 의 `case`(HwpUnitChar, 1× 스케일) 와 `default`(IR 과 같은 2× 스케일) 가
-@@ -1665,6 +1738,7 @@ fn parse_border_fill(
+@@ -1665,6 +1740,7 @@ fn parse_border_fill(
                                      b"centerY" => grad.center_y = parse_i16(&attr),
                                      b"blur" | b"step" => grad.blur = parse_i16(&attr),
                                      b"stepCenter" => grad.step_center = parse_u8(&attr),
@@ -3315,8 +3379,32 @@ index 8c26e1eb1..8bf2b4734 100644
                                      b"alpha" => {
                                          let val = attr_str(&attr);
                                          if let Ok(f) = val.parse::<f64>() {
+@@ -2849,6 +2925,23 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn test_parse_hwpx_para_shape_text_dir_lexical() {
++        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
++<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">
++  <hh:refList>
++    <hh:paraProperties itemCnt="2">
++      <hh:paraPr id="0" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="0" suppressLineNumbers="0" checked="0" textDir="LTR"><hh:align horizontal="JUSTIFY" vertical="BASELINE"/></hh:paraPr>
++      <hh:paraPr id="1" tabPrIDRef="0" condense="0" fontLineHeight="0" snapToGrid="0" suppressLineNumbers="0" checked="0"><hh:align horizontal="JUSTIFY" vertical="BASELINE"/></hh:paraPr>
++    </hh:paraProperties>
++  </hh:refList>
++</hh:head>"##;
++
++        let (doc_info, _) = parse_hwpx_header(xml).unwrap();
++        assert_eq!(doc_info.para_shapes[0].text_dir.as_deref(), Some("LTR"));
++        assert_eq!(doc_info.para_shapes[1].text_dir, None);
++    }
++
+     #[test]
+     fn test_parse_hwpx_para_shape_break_non_latin_word_bit() {
+         let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
 diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
-index 0b7f15694..d01b4dd24 100644
+index 0b7f15694..d64cd1947 100644
 --- a/src/parser/hwpx/section.rs
 +++ b/src/parser/hwpx/section.rs
 @@ -542,6 +542,10 @@ fn parse_paragraph_body(
@@ -3460,7 +3548,21 @@ index 0b7f15694..d01b4dd24 100644
  
      Ok(Control::Picture(Box::new(pic)))
  }
-@@ -3923,6 +3959,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+@@ -3487,6 +3523,13 @@ fn parse_object_element_attrs(
+             // [#2840] 개체 잠금(lock) — 종전 미파싱으로 <hp:equation> 직렬화 시
+             // 항상 "0"으로 되돌아가 원본의 잠금 상태가 유실됐다.
+             b"lock" => common.locked = attr_str(&attr) == "1",
++            // 도형에 걸린 하이퍼링크 — 직렬화기가 원문 그대로 되쓴다(빈 값은 미보존).
++            b"href" => {
++                let value = attr_str(&attr);
++                if !value.is_empty() {
++                    common.hwpx_href = Some(value);
++                }
++            }
+             _ => {}
+         }
+     }
+@@ -3923,6 +3966,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
      }
  
      let mut bl = ShapeBorderLine::default();
@@ -3470,7 +3572,7 @@ index 0b7f15694..d01b4dd24 100644
      for attr in e.attributes().flatten() {
          match attr.key.as_ref().as_bytes() {
              b"color" => bl.color = parse_color(&attr),
-@@ -3946,7 +3985,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
+@@ -3946,7 +3992,9 @@ fn parse_line_shape_attr(e: &quick_xml::events::BytesStart) -> ShapeBorderLine {
                      "SLIM_THICK_SLIM" => 11,
                      _ => 1,
                  };
@@ -3481,7 +3583,7 @@ index 0b7f15694..d01b4dd24 100644
              }
              b"endCap" => {
                  let end_cap: u32 = match attr_str(&attr).as_str() {
-@@ -4084,6 +4125,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
+@@ -4084,6 +4132,7 @@ fn parse_shape_fill_brush(reader: &mut Reader<&[u8]>) -> Result<Fill, HwpxError>
                                  b"centerY" => grad.center_y = parse_i16(&attr),
                                  b"blur" | b"step" => grad.blur = parse_i16(&attr),
                                  b"stepCenter" => grad.step_center = parse_u8(&attr),
@@ -3489,7 +3591,7 @@ index 0b7f15694..d01b4dd24 100644
                                  b"alpha" => {
                                      let val = attr_str(&attr);
                                      if let Ok(f) = val.parse::<f64>() {
-@@ -4389,6 +4431,11 @@ fn parse_shape_object(
+@@ -4389,6 +4438,11 @@ fn parse_shape_object(
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
                  common.description = read_dutmal_text(reader, b"shapeComment")?;
              }
@@ -3501,7 +3603,23 @@ index 0b7f15694..d01b4dd24 100644
              // 도형 캡션 (#1403) — 미적재 시 roundtrip 에서 캡션 subList 소실
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"caption" => {
                  caption = Some(parse_caption(ce, reader)?);
-@@ -4748,6 +4795,11 @@ fn parse_container_body(
+@@ -4546,6 +4600,7 @@ fn parse_shape_object(
+                         }
+                     }
+                     b"shadow" => {
++                        // 원본에 있던 요소임을 남긴다 — 전 필드 0 이어도 되쓴다.
+                         shadow_acc = Some(parse_shape_shadow_attr(ce));
+                     }
+                     _ => {}
+@@ -4586,6 +4641,7 @@ fn parse_shape_object(
+         inst_id: object_ids.instid,
+         text_box,
+         caption,
++        hwpx_shadow_present: shadow_acc.is_some(),
+     };
+ 
+     let shape = match shape_type {
+@@ -4748,6 +4804,11 @@ fn parse_container_body(
              Ok(Event::Start(ref ce)) if local_name(ce.name().as_ref()) == b"shapeComment" => {
                  common.description = read_dutmal_text(reader, b"shapeComment")?;
              }
@@ -3513,7 +3631,7 @@ index 0b7f15694..d01b4dd24 100644
              Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce)) => {
                  let cname = ce.name();
                  let local = local_name(cname.as_ref());
-@@ -4836,7 +4888,7 @@ fn parse_ctrl(
+@@ -4836,7 +4897,7 @@ fn parse_ctrl(
      reader: &mut Reader<&[u8]>,
      controls: &mut Vec<Control>,
      text_parts: &mut Vec<String>,
@@ -3522,7 +3640,7 @@ index 0b7f15694..d01b4dd24 100644
  ) -> Result<(), HwpxError> {
      let mut buf = Vec::new();
      loop {
-@@ -4902,7 +4954,8 @@ fn parse_ctrl(
+@@ -4902,7 +4963,8 @@ fn parse_ctrl(
                      }
                      b"fieldEnd" => {
                          // [Task #1556] beginIDRef/fieldid 포착 (고아 fieldEnd 복원용).
@@ -3532,7 +3650,7 @@ index 0b7f15694..d01b4dd24 100644
                          skip_element(reader, b"fieldEnd")?;
                          // FIELD_END 제어 문자 추가 (Task #11)
                          text_parts.push("\u{0004}".to_string());
-@@ -5002,7 +5055,8 @@ fn parse_ctrl(
+@@ -5002,7 +5064,8 @@ fn parse_ctrl(
                      }
                      b"fieldEnd" => {
                          // [Task #1556] 자기닫힘 fieldEnd — beginIDRef/fieldid 포착.
@@ -3542,7 +3660,7 @@ index 0b7f15694..d01b4dd24 100644
                          text_parts.push("\u{0004}".to_string());
                      }
                      b"hiddenComment" => {}
-@@ -5242,7 +5296,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
+@@ -5242,7 +5305,10 @@ fn parse_field_begin_attrs(e: &quick_xml::events::BytesStart) -> Field {
                      f.properties |= 1 << 15;
                  }
              }
@@ -3554,7 +3672,7 @@ index 0b7f15694..d01b4dd24 100644
          }
      }
      // field_id 는 필드별 고유 식별자여야 한다(모델 계약 "문서 내 고유 ID").
-@@ -5781,6 +5838,8 @@ fn parse_ctrl_field_begin(
+@@ -5781,6 +5847,8 @@ fn parse_ctrl_field_begin(
                  let local = local_name(cname.as_ref());
                  if local == b"parameters" {
                      parse_field_parameters(ce, reader, &mut f)?;
@@ -3563,7 +3681,7 @@ index 0b7f15694..d01b4dd24 100644
                  } else if local == b"subList" && f.field_type == FieldType::Memo {
                      for attr in ce.attributes().flatten() {
                          if attr.key.as_ref().as_bytes() == b"textDirection" {
-@@ -5796,6 +5855,9 @@ fn parse_ctrl_field_begin(
+@@ -5796,6 +5864,9 @@ fn parse_ctrl_field_begin(
                      skip_element(reader, &tag)?;
                  }
              }
@@ -3573,7 +3691,7 @@ index 0b7f15694..d01b4dd24 100644
              Ok(Event::End(ref ee)) => {
                  let eename = ee.name();
                  if local_name(eename.as_ref()) == b"fieldBegin" {
-@@ -5811,6 +5873,42 @@ fn parse_ctrl_field_begin(
+@@ -5811,6 +5882,42 @@ fn parse_ctrl_field_begin(
      Ok(Control::Field(f))
  }
  
@@ -3616,7 +3734,7 @@ index 0b7f15694..d01b4dd24 100644
  /// `<parameters>` 내부에서 Command 문자열 파라미터를 추출한다.
  /// XML 텍스트/속성값 이스케이프 (#1391 parameters verbatim 재조립용).
  fn escape_xml_text(s: &str) -> String {
-@@ -7562,6 +7660,9 @@ fn parse_common_shape_children(
+@@ -7562,6 +7669,9 @@ fn parse_common_shape_children(
                      b"shapeComment" => {
                          common.description = read_dutmal_text(reader, b"shapeComment")?;
                      }
@@ -3626,7 +3744,7 @@ index 0b7f15694..d01b4dd24 100644
                      // [#4319] 캡션 — 미적재 시 라운드트립에서 캡션 subList 소실(다른
                      // 도형 변형과 동형, parse_shape_object/parse_container 참고).
                      b"caption" => {
-@@ -8925,7 +9026,9 @@ mod tests {
+@@ -8925,7 +9035,9 @@ mod tests {
    <hp:p paraPrIDRef="0" styleIDRef="0">
      <hp:run charPrIDRef="0">
        <hp:ctrl>
@@ -3637,7 +3755,7 @@ index 0b7f15694..d01b4dd24 100644
        </hp:ctrl>
        <hp:t>ABC</hp:t>
        <hp:ctrl>
-@@ -8943,6 +9046,16 @@ mod tests {
+@@ -8943,6 +9055,16 @@ mod tests {
          assert_eq!(para.char_count, 20);
          assert_eq!(para.controls.len(), 1);
          assert_eq!(para.field_ranges.len(), 1);
@@ -3655,7 +3773,7 @@ index 0b7f15694..d01b4dd24 100644
          let range = &para.field_ranges[0];
          assert_eq!(range.start_char_idx, 0);
 diff --git a/src/serializer/doc_info/tests.rs b/src/serializer/doc_info/tests.rs
-index 67d63b4db..2d3e1a64d 100644
+index 67d63b4db..8d9ac1877 100644
 --- a/src/serializer/doc_info/tests.rs
 +++ b/src/serializer/doc_info/tests.rs
 @@ -164,6 +164,7 @@ fn test_serialize_char_shape_roundtrip() {
@@ -3666,16 +3784,18 @@ index 67d63b4db..2d3e1a64d 100644
      };
  
      let data = serialize_char_shape(&cs);
-@@ -288,6 +289,8 @@ fn test_serialize_para_shape_roundtrip() {
+@@ -288,7 +289,10 @@ fn test_serialize_para_shape_roundtrip() {
          head_type: crate::model::style::HeadType::None,
          para_level: 0,
          break_latin_word: None,
 +        hwpx_heading_switch_xml: None,
 +        hwpx_case_margin_raw: Default::default(),
          hwpx_plain_para_margin: false,
++        text_dir: None,
      };
  
-@@ -655,6 +658,7 @@ fn test_serialize_doc_info_roundtrip() {
+     let data = serialize_para_shape(&ps);
+@@ -655,6 +659,7 @@ fn test_serialize_doc_info_roundtrip() {
          strike_shape: 0,
          kerning: false,
          use_font_space: false,
@@ -3683,15 +3803,17 @@ index 67d63b4db..2d3e1a64d 100644
      });
      doc_info.para_shapes.push(ParaShape {
          raw_data: None,
-@@ -677,6 +681,8 @@ fn test_serialize_doc_info_roundtrip() {
+@@ -677,7 +682,10 @@ fn test_serialize_doc_info_roundtrip() {
          head_type: crate::model::style::HeadType::None,
          para_level: 0,
          break_latin_word: None,
 +        hwpx_heading_switch_xml: None,
 +        hwpx_case_margin_raw: Default::default(),
          hwpx_plain_para_margin: false,
++        text_dir: None,
      });
      doc_info.styles.push(Style {
+         raw_data: None,
 diff --git a/src/serializer/hwpx/char_shapes.rs b/src/serializer/hwpx/char_shapes.rs
 index 4d423adbb..96b08b817 100644
 --- a/src/serializer/hwpx/char_shapes.rs
@@ -4142,10 +4264,46 @@ index f3fd6cf21..0564597ec 100644
  
      #[test]
 diff --git a/src/serializer/hwpx/header.rs b/src/serializer/hwpx/header.rs
-index d0226f0cf..04e2fbe77 100644
+index d0226f0cf..7d0bf7150 100644
 --- a/src/serializer/hwpx/header.rs
 +++ b/src/serializer/hwpx/header.rs
-@@ -1026,15 +1026,21 @@ fn write_para_pr<W: Write>(
+@@ -973,19 +973,22 @@ fn write_para_pr<W: Write>(
+     let condense = ((ps.attr1 >> 9) & 0x7f).to_string();
+     let font_line_height = ((ps.attr1 >> 22) & 1).to_string();
+     let snap_to_grid = ((ps.attr1 >> 8) & 1).to_string();
+-    start_tag_attrs(
+-        w,
+-        "hh:paraPr",
+-        &[
+-            ("id", &id.to_string()),
+-            ("tabPrIDRef", &ps.tab_def_id.to_string()),
+-            ("condense", &condense),
+-            ("fontLineHeight", &font_line_height),
+-            ("snapToGrid", &snap_to_grid),
+-            ("suppressLineNumbers", "0"),
+-            ("checked", "0"),
+-        ],
+-    )?;
++    let id_str = id.to_string();
++    let tab_pr_id_ref = ps.tab_def_id.to_string();
++    let mut attrs: Vec<(&str, &str)> = vec![
++        ("id", &id_str),
++        ("tabPrIDRef", &tab_pr_id_ref),
++        ("condense", &condense),
++        ("fontLineHeight", &font_line_height),
++        ("snapToGrid", &snap_to_grid),
++        ("suppressLineNumbers", "0"),
++        ("checked", "0"),
++    ];
++    // 한글 2024 는 textDir 를 마지막 속성으로 쓴다. 원본에 있었을 때만 원문 그대로 되쓴다.
++    if let Some(text_dir) = ps.text_dir.as_deref() {
++        attrs.push(("textDir", text_dir));
++    }
++    start_tag_attrs(w, "hh:paraPr", &attrs)?;
+ 
+     // 자식 순서 (한컴 원본 관찰):
+     // align, heading, breakSetting, autoSpacing, switch(margin+lineSpacing), border
+@@ -1026,15 +1029,21 @@ fn write_para_pr<W: Write>(
              ("vertical", vertical),
          ],
      )?;
@@ -4176,7 +4334,7 @@ index d0226f0cf..04e2fbe77 100644
      empty_tag(
          w,
          "hh:breakSetting",
-@@ -1136,12 +1142,29 @@ fn write_para_margin<W: Write>(
+@@ -1136,12 +1145,29 @@ fn write_para_margin<W: Write>(
      half: bool,
  ) -> Result<(), SerializeError> {
      let v = |x: i32| if half { x / 2 } else { x };
@@ -4211,7 +4369,7 @@ index d0226f0cf..04e2fbe77 100644
      end_tag(w, "hh:margin")?;
      Ok(())
  }
-@@ -1175,12 +1198,9 @@ fn write_margin_child<W: Write>(
+@@ -1175,12 +1201,9 @@ fn write_margin_child<W: Write>(
      w: &mut Writer<W>,
      name: &str,
      value: i32,
@@ -4226,10 +4384,31 @@ index d0226f0cf..04e2fbe77 100644
  }
  
  fn alignment_str(a: Alignment) -> &'static str {
-@@ -2059,6 +2079,20 @@ mod tests {
+@@ -2059,6 +2082,41 @@ mod tests {
          );
      }
  
++    /// 한글 2024 는 모든 `hh:paraPr` 에 `textDir` 를 마지막 속성으로 쓴다. 원문이 있으면
++    /// 그대로 되쓰고, 없으면(HWP5·이전 한글) 종전처럼 방출하지 않는다.
++    #[test]
++    fn write_para_pr_preserves_hangul2024_text_dir() {
++        let write = |ps: &ParaShape| {
++            let mut writer = Writer::new(Vec::new());
++            write_para_pr(&mut writer, 0, ps).expect("write paraPr");
++            String::from_utf8(writer.into_inner()).unwrap()
++        };
++        let ps = ParaShape {
++            text_dir: Some("LTR".into()),
++            ..Default::default()
++        };
++        let xml = write(&ps);
++        assert!(
++            xml.contains(r#"suppressLineNumbers="0" checked="0" textDir="LTR">"#),
++            "{xml}"
++        );
++        assert!(!write(&ParaShape::default()).contains("textDir"));
++    }
++
 +    #[test]
 +    fn write_para_pr_preserves_conditional_heading_switch() {
 +        let raw = "<hp:switch><hp:case><hh:heading type=\"NONE\" idRef=\"0\" level=\"0\"/></hp:case><hp:default><hh:heading type=\"OUTLINE\" idRef=\"1\" level=\"2\"/></hp:default></hp:switch>";
@@ -4247,7 +4426,7 @@ index d0226f0cf..04e2fbe77 100644
      #[test]
      fn write_para_pr_emits_align_and_break_from_preserved_bits() {
          // [Finding 18] align@vertical, breakSetting@{breakNonLatinWord, widowOrphan,
-@@ -2489,4 +2523,124 @@ mod tests {
+@@ -2489,4 +2547,124 @@ mod tests {
          assert_eq!(tab_leader_str(11), "SLIM_THICK_SLIM");
          assert_eq!(tab_leader_str(8), "DOUBLE_SLIM");
      }
@@ -4473,7 +4652,7 @@ index 564e62e00..36463c9c8 100644
 +    }
  }
 diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
-index f951d7284..b869167a8 100644
+index f951d7284..831ad6dfc 100644
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
 @@ -563,14 +563,21 @@ pub fn write_section(
@@ -4745,7 +4924,25 @@ index f951d7284..b869167a8 100644
                  out.push_str("</hp:fieldBegin>");
              } else {
                  match writer_to_string(|w| write_field_begin(w, f)) {
-@@ -3056,6 +3182,10 @@ fn render_common_shape_xml(
+@@ -2995,7 +3121,7 @@ fn render_common_shape_xml(
+         .unwrap_or(c.instance_id);
+     let mut out = format!(
+         concat!(
+-            r#"<hp:{tag} id="{id}" zOrder="{zo}" numberingType="{nt}" textWrap="{tw}" textFlow="{tf}" lock="{lock}" dropcapstyle="None" href="" groupLevel="{gl}" instid="{iid}"{extra}>"#,
++            r#"<hp:{tag} id="{id}" zOrder="{zo}" numberingType="{nt}" textWrap="{tw}" textFlow="{tf}" lock="{lock}" dropcapstyle="None" href="{href}" groupLevel="{gl}" instid="{iid}"{extra}>"#,
+             "{block}",
+             "{geometry}",
+             r#"<hp:sz width="{w}" height="{h}" widthRelTo="{wrt}" heightRelTo="{hrt}" protect="{prot}"/>"#,
+@@ -3011,6 +3137,8 @@ fn render_common_shape_xml(
+         nt = super::shape::numbering_type_str(c.numbering_type),
+         // [#2840] lock(개체 잠금) — IR 보존 값 방출 (종전 "0" 하드코딩).
+         lock = if c.locked { "1" } else { "0" },
++        // 도형에 걸린 하이퍼링크 원문 보존(종전 href="" 하드코딩으로 소실).
++        href = super::utils::xml_escape(c.hwpx_href.as_deref().unwrap_or("")),
+         gl = group_level,
+         iid = instid,
+         tw = text_wrap_to_hwpx(c.text_wrap),
+@@ -3056,6 +3184,10 @@ fn render_common_shape_xml(
          Ok(xml) => out.push_str(&xml),
          Err(e) => eprintln!("[hwpx] Shape({tag}) shapeComment 직렬화 실패: {e}"),
      }
@@ -4756,7 +4953,49 @@ index f951d7284..b869167a8 100644
      out.push_str(&format!("</hp:{tag}>"));
      out
  }
-@@ -4373,6 +4503,111 @@ mod tests {
+@@ -3905,6 +4037,41 @@ mod tests {
+         );
+     }
+ 
++    /// 공용 도형 경로(ellipse/arc/polygon/curve)도 원본 `href` 와 원본에 있던 그림자 없음
++    /// 요소를 되쓴다. 종전엔 `href=""` 하드코딩·전 필드 0 그림자 미방출이었다.
++    #[test]
++    fn common_shape_emits_preserved_href_and_present_empty_shadow() {
++        use crate::model::shape::{CommonObjAttr, DrawingObjAttr};
++
++        let mut c = CommonObjAttr::default();
++        c.hwpx_href = Some("http://x.test/?a=1&b=2;1;0;0;".to_string());
++        let drawing = DrawingObjAttr {
++            hwpx_shadow_present: true,
++            ..Default::default()
++        };
++        let mut ctx = SerializeContext::default();
++        let xml =
++            render_common_shape_xml("ellipse", &c, &None, Some(&drawing), &[], "", "", &mut ctx);
++        assert!(
++            xml.contains(r#"href="http://x.test/?a=1&amp;b=2;1;0;0;""#),
++            "공용 도형 href 원문(이스케이프)이 보존돼야 함: {xml}"
++        );
++        assert!(xml.contains(r#"<hp:shadow type="NONE""#), "{xml}");
++
++        let plain = render_common_shape_xml(
++            "ellipse",
++            &CommonObjAttr::default(),
++            &None,
++            Some(&DrawingObjAttr::default()),
++            &[],
++            "",
++            "",
++            &mut ctx,
++        );
++        assert!(plain.contains(r#"href="""#), "{plain}");
++        assert!(!plain.contains("hp:shadow"), "{plain}");
++    }
++
+     /// [Issue #1944] legacy 공용 도형 경로(polygon/ellipse/arc/curve)가 도형 내
+     /// 글상자(drawText) 문단을 방출해야 한다 — 종전 누락으로 도형 안 텍스트 소실.
+     #[test]
+@@ -4373,6 +4540,111 @@ mod tests {
          );
      }
  
@@ -4868,7 +5107,7 @@ index f951d7284..b869167a8 100644
      /// [#2779] 각주 코드 2(가장 오른쪽 단)는 각주 전용 토큰이 있으나, 미주에는 스키마상
      /// 대응 토큰이 없어 기본값 END_OF_DOCUMENT 로 강등한다(주석 참조).
      #[test]
-@@ -4840,16 +5075,31 @@ mod tests {
+@@ -4840,16 +5112,31 @@ mod tests {
  
      #[test]
      fn task1407_single_column_doc_unaffected() {
@@ -4903,7 +5142,7 @@ index f951d7284..b869167a8 100644
      }
  
      #[test]
-@@ -5286,6 +5536,7 @@ mod tests {
+@@ -5286,6 +5573,7 @@ mod tests {
              begin_id_ref: 1_878_228_493,
              field_id: 627_272_811,
              begin_ctrl_id: 0,
@@ -4911,7 +5150,7 @@ index f951d7284..b869167a8 100644
          }];
          let (doc, section) = make_doc_with_paragraph(para);
          let mut ctx = SerializeContext::collect_from_document(&doc);
-@@ -5360,6 +5611,7 @@ mod tests {
+@@ -5360,6 +5648,7 @@ mod tests {
              begin_id_ref: 42,
              field_id: 0,
              begin_ctrl_id: 0,
@@ -4919,7 +5158,7 @@ index f951d7284..b869167a8 100644
          }];
          let (doc, section) = make_doc_with_paragraph(para);
          let mut ctx = SerializeContext::collect_from_document(&doc);
-@@ -5863,6 +6115,7 @@ mod tests {
+@@ -5863,6 +6152,7 @@ mod tests {
              begin_id_ref: 1_867_945_539,
              field_id: 0,
              begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
@@ -4927,7 +5166,7 @@ index f951d7284..b869167a8 100644
          }];
  
          let runs = runs_of(&para);
-@@ -5883,6 +6136,7 @@ mod tests {
+@@ -5883,6 +6173,7 @@ mod tests {
              begin_id_ref: 0,
              field_id: 0,
              begin_ctrl_id: 0,
@@ -4935,7 +5174,7 @@ index f951d7284..b869167a8 100644
          }];
          let runs = runs_of(&para);
          assert!(
-@@ -5911,6 +6165,7 @@ mod tests {
+@@ -5911,6 +6202,7 @@ mod tests {
              begin_id_ref: 2_031_845_287,
              field_id: 0,
              begin_ctrl_id: crate::parser::tags::FIELD_CLICKHERE,
@@ -4943,7 +5182,7 @@ index f951d7284..b869167a8 100644
          }];
  
          let runs = runs_of(&para);
-@@ -5922,6 +6177,195 @@ mod tests {
+@@ -5922,6 +6214,195 @@ mod tests {
          );
      }
  
@@ -5139,7 +5378,7 @@ index f951d7284..b869167a8 100644
      /// [#4778] 위치 축이 무너진 문단(파서 미수용 8유닛 슬롯 — 차례표지 0x0008 등)의
      /// 저장 lineseg 는 방출하지 않는다. textpos 사다리와 어긋난 lineseg 를 한글 2022 가
      /// 만나면 그 문단부터 문서 끝까지 본문을 폐기한다(성년후견 h2x -112,075자 실측,
-@@ -6191,8 +6635,11 @@ mod tests {
+@@ -6191,8 +6672,11 @@ mod tests {
          use crate::model::style::CharShape;
  
          // 첫 문단: "abcdef", 경계 1개 — 원본 파스 결과는 [(0,1),(19,2)]
@@ -5152,10 +5391,20 @@ index f951d7284..b869167a8 100644
          p0.char_count = 23;
          p0.char_shapes = vec![cs(0, 1), cs(19, 2)];
 diff --git a/src/serializer/hwpx/shape.rs b/src/serializer/hwpx/shape.rs
-index bc3278b8d..2e39d6404 100644
+index bc3278b8d..5249aca96 100644
 --- a/src/serializer/hwpx/shape.rs
 +++ b/src/serializer/hwpx/shape.rs
-@@ -109,6 +109,7 @@ pub fn write_rect<W: Write>(
+@@ -73,7 +73,8 @@ pub fn write_rect<W: Write>(
+             // [#2840] lock(개체 잠금) — 파서가 읽기 시작했으므로 IR 값을 방출한다.
+             ("lock", bool01(c.locked)),
+             ("dropcapstyle", "None"),
+-            ("href", ""),
++            // 도형에 걸린 하이퍼링크 원문 보존(종전 "" 하드코딩으로 소실).
++            ("href", c.hwpx_href.as_deref().unwrap_or("")),
+             ("groupLevel", &group_level),
+             ("instid", &instid),
+             ("ratio", &ratio),
+@@ -109,6 +110,7 @@ pub fn write_rect<W: Write>(
          write_caption(w, cap, ctx)?;
      }
      write_shape_comment(w, c)?;
@@ -5163,7 +5412,16 @@ index bc3278b8d..2e39d6404 100644
  
      end_tag(w, "hp:rect")?;
      Ok(())
-@@ -260,6 +261,7 @@ pub fn write_line<W: Write>(
+@@ -176,7 +178,7 @@ pub fn write_line<W: Write>(
+         // [#2840] lock(개체 잠금) — IR 보존 값 방출.
+         ("lock", bool01(c.locked)),
+         ("dropcapstyle", "None"),
+-        ("href", ""),
++        ("href", c.hwpx_href.as_deref().unwrap_or("")),
+         ("groupLevel", &group_level),
+         ("instid", &instid),
+     ];
+@@ -260,6 +262,7 @@ pub fn write_line<W: Write>(
      }
      // [#1588] 도형 설명 — caption 뒤 (write_rect/container 와 동형).
      write_shape_comment(w, c)?;
@@ -5171,7 +5429,16 @@ index bc3278b8d..2e39d6404 100644
  
      end_tag(w, tag)?;
      Ok(())
-@@ -335,6 +337,7 @@ pub fn write_container_close<W: Write>(
+@@ -302,7 +305,7 @@ pub fn write_container_open<W: Write>(
+             // [#2840] lock(개체 잠금) — IR 보존 값 방출.
+             ("lock", bool01(common.locked)),
+             ("dropcapstyle", "None"),
+-            ("href", ""),
++            ("href", common.hwpx_href.as_deref().unwrap_or("")),
+             ("groupLevel", &group_level),
+             ("instid", &id_str),
+         ],
+@@ -335,6 +338,7 @@ pub fn write_container_close<W: Write>(
      }
      // 설명 (#1392) — caption 직후
      write_shape_comment(w, common)?;
@@ -5179,7 +5446,17 @@ index bc3278b8d..2e39d6404 100644
      end_tag(w, "hp:container")
  }
  
-@@ -418,6 +421,7 @@ pub(crate) fn write_ole<W: Write>(
+@@ -393,7 +397,8 @@ pub(crate) fn write_ole<W: Write>(
+             // [#2840] lock(개체 잠금) — IR 보존 값 방출.
+             ("lock", bool01(c.locked)),
+             ("dropcapstyle", "None"),
+-            ("href", ""),
++            // 도형에 걸린 하이퍼링크 원문 보존(종전 "" 하드코딩으로 소실).
++            ("href", c.hwpx_href.as_deref().unwrap_or("")),
+             ("groupLevel", &group_level),
+             ("instid", &instid_str),
+             ("objectType", "UNKNOWN"),
+@@ -418,6 +423,7 @@ pub(crate) fn write_ole<W: Write>(
          write_caption(w, cap, ctx)?;
      }
      write_shape_comment(w, c)?;
@@ -5187,7 +5464,7 @@ index bc3278b8d..2e39d6404 100644
  
      end_tag(w, "hp:ole")?;
      Ok(())
-@@ -503,6 +507,7 @@ fn write_chart_element<W: Write>(
+@@ -503,6 +509,7 @@ fn write_chart_element<W: Write>(
      if let Some(cap) = &ole.caption {
          write_caption(w, cap, ctx)?;
      }
@@ -5195,7 +5472,7 @@ index bc3278b8d..2e39d6404 100644
      end_tag(w, "hp:chart")?;
      Ok(())
  }
-@@ -962,20 +967,23 @@ pub(crate) fn write_fill_brush<W: Write>(
+@@ -962,20 +969,23 @@ pub(crate) fn write_fill_brush<W: Write>(
              let step = grad.blur.to_string();
              let step_center = grad.step_center.to_string();
              let alpha = fill_alpha_str(fill.alpha);
@@ -5232,7 +5509,25 @@ index bc3278b8d..2e39d6404 100644
              for c in &grad.colors {
                  let v = color_to_hex(*c);
                  empty_tag(w, "hc:color", &[("value", &v)])?;
-@@ -1131,10 +1139,26 @@ pub(super) fn write_shape_comment<W: Write>(
+@@ -1064,13 +1074,15 @@ fn hatch_style_str(pattern_type: i32) -> &'static str {
+ }
+ 
+ /// `<hp:shadow>` — `parse_shape_shadow_attr` 의 역매핑.
+-/// 전 필드 0 이면 원본에 shadow 부재로 간주하여 미방출.
++/// 전 필드 0 이면 원본에 shadow 부재로 간주하여 미방출 — 단 HWPX 원본에 요소가 있었으면
++/// (`hwpx_shadow_present`, 한글 2024 는 그림자 없음도 `type="NONE"` 으로 적는다) 되쓴다.
+ /// alpha 는 정수 방출 (파서의 `>1.0` 경로와 정합 — 0/1 경계값만 비가역).
+ pub(crate) fn write_shadow<W: Write>(
+     w: &mut Writer<W>,
+     d: &DrawingObjAttr,
+ ) -> Result<(), SerializeError> {
+-    if d.shadow_type == 0
++    if !d.hwpx_shadow_present
++        && d.shadow_type == 0
+         && d.shadow_color == 0
+         && d.shadow_offset_x == 0
+         && d.shadow_offset_y == 0
+@@ -1131,10 +1143,26 @@ pub(super) fn write_shape_comment<W: Write>(
          return Ok(());
      }
      start_tag(w, "hp:shapeComment")?;
@@ -5260,6 +5555,69 @@ index bc3278b8d..2e39d6404 100644
  // =====================================================================
  // 공통 자식 요소 (sz / pos / outMargin)
  // =====================================================================
+@@ -2099,4 +2127,62 @@ mod tests {
+             "u32 bin_data_id 가 u16 로 잘려 무관한 image5 를 오참조함: {xml}"
+         );
+     }
++
++    /// 한글 2024 저장본 왕복: 글상자에 걸린 `href` 와 그림자 없음(`type="NONE"`, 전 필드 0)
++    /// `hp:shadow` 가 원본 그대로 되쓰여야 한다. 종전엔 href 를 "" 로 하드코딩하고 전 필드 0
++    /// 그림자를 미방출해, 무편집 저장이 문서를 바꿨다(링크는 실제 손실).
++    #[test]
++    fn hangul2024_rect_href_and_empty_shadow_round_trip() {
++        let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
++<hs:sec xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"
++        xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section">
++  <hp:p id="0" paraPrIDRef="0" styleIDRef="0">
++    <hp:run charPrIDRef="0">
++      <hp:rect id="1" zOrder="1" href="http://www.g2b.go.kr;1;0;0;" groupLevel="0" instid="2" ratio="0">
++        <hp:shadow type="NONE" color="#000000" offsetX="0" offsetY="0" alpha="0"/>
++        <hp:sz width="2600" height="2600" protect="0"/>
++        <hp:pos treatAsChar="0" vertRelTo="PARA" horzRelTo="PARA"/>
++      </hp:rect>
++    </hp:run>
++  </hp:p>
++</hs:sec>"##;
++        let section = crate::parser::hwpx::section::parse_hwpx_section(xml).unwrap();
++        let crate::model::control::Control::Shape(shape) = &section.paragraphs[0].controls[0]
++        else {
++            panic!("expected shape control");
++        };
++        let crate::model::shape::ShapeObject::Rectangle(rect) = shape.as_ref() else {
++            panic!("expected rectangle shape");
++        };
++        let out = serialize_rect(rect);
++        assert!(
++            out.contains(r#"href="http://www.g2b.go.kr;1;0;0;""#),
++            "도형 href 원문이 보존돼야 한다: {out}"
++        );
++        assert!(
++            out.contains(
++                r##"<hp:shadow type="NONE" color="#000000" offsetX="0" offsetY="0" alpha="0"/>"##
++            ),
++            "원본에 있던 그림자 없음 요소가 되쓰여야 한다: {out}"
++        );
++    }
++
++    /// 원본에 `hp:shadow`·`href` 가 없던 도형(HWP5·새 도형)은 종전 출력 그대로다.
++    #[test]
++    fn rect_without_source_shadow_or_href_keeps_previous_output() {
++        let out = serialize_rect(&RectangleShape::default());
++        assert!(!out.contains("hp:shadow"), "{out}");
++        assert!(out.contains(r#"href="""#), "{out}");
++    }
++
++    /// 선 도형도 같은 공통 IR(href)·그림자 존재 표식을 따른다.
++    #[test]
++    fn line_emits_preserved_href_and_present_empty_shadow() {
++        let mut line = LineShape::default();
++        line.common.hwpx_href = Some("a&b".to_string());
++        line.drawing.hwpx_shadow_present = true;
++        let out = serialize_line(&line);
++        assert!(out.contains(r#"href="a&amp;b""#), "{out}");
++        assert!(out.contains(r#"<hp:shadow type="NONE""#), "{out}");
++    }
+ }
 diff --git a/src/serializer/hwpx/table.rs b/src/serializer/hwpx/table.rs
 index 553fed725..effe9f439 100644
 --- a/src/serializer/hwpx/table.rs
