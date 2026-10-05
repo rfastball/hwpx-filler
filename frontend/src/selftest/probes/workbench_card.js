@@ -7,6 +7,14 @@ function textOf(el) {
   return el ? String(el.textContent) : "";
 }
 
+/** 글자 넣기는 편집면의 붙여넣기 경로로 한다 — 편집면이 제 선택 자리에 트랜잭션으로 넣는다. 네이티브
+ *  `insertText` 는 창이 OS 초점을 쥐지 않으면 편집면이 쓰지 않은 DOM 선택에 꽂혀 표지 글자까지 문서로 읽힌다. */
+function pasteInto(ctx, el, text) {
+  const transfer = new ctx.win.DataTransfer();
+  transfer.setData("text/plain", text);
+  el.dispatchEvent(new ctx.win.ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+}
+
 /** 본문 표식이 Python 표식대로 갈려 섰는가 — 값 칠·〈빈 값〉·〈비워 둠〉·편집 가능·토큰 신원. */
 export function readWorkbenchCard(ctx) {
   const card = (selector) => ctx.doc.querySelector(`#wbCard ${selector}`);
@@ -44,7 +52,7 @@ export async function probeCardEdit(ctx, stubBridgeCall) {
     hole.dispatchEvent(new ctx.win.MouseEvent("mousedown", at));
     ctx.win.dispatchEvent(new ctx.win.MouseEvent("mouseup", { ...at, buttons: 0 }));
     await ctx.sleep(80);
-    doc.execCommand("insertText", false, "없음");
+    pasteInto(ctx, content, "없음");
     await ctx.sleep(30);
     res.hole_gone = !doc.querySelector('#wbCard .seg-blank[data-token="비고"]');
     res.filled_marks = doc.querySelectorAll("#wbCard .seg-fill").length;
@@ -54,7 +62,7 @@ export async function probeCardEdit(ctx, stubBridgeCall) {
     const compose = (type, data) => content.dispatchEvent(
       new ctx.win.CompositionEvent(type, { bubbles: true, data }));
     compose("compositionstart", "");
-    doc.execCommand("insertText", false, "함");
+    pasteInto(ctx, content, "함");
     await ctx.sleep(400);
     res.sent_while_composing = sent.length;
     compose("compositionend", "함");
