@@ -349,7 +349,7 @@ function_complexity = 24
 function_complexity = 15
 
 [budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
-function_complexity = 54
+function_complexity = 46
 
 [budget."frontend/src/screens/workbench.ts::createWorkbenchController.copyCard"]
 function_complexity = 11
