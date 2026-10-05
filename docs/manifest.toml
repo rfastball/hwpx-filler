@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "0f430ac30135dffe2a79489f31d0fbbe5f24645132649f06e9ae6ac342eb1523"
+source_sha256 = "0f5787b7b3e6822e9b7d8dd01f7484dc9dc441f9da9498b11e07db01f61f2dd5"
 body_sha256 = "0220fd674f2a5d6d0add5e6b4afeff8006c181a517aff07e7aa6f1cbba9b0fea"
 
 [[document]]
@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
-source_sha256 = "564abb9c097aae361a7aff6598bee7c9e25f983bfe1775f8c6291e0acde13728"
+source_sha256 = "154dbb581563aa0320ec53fa405d9cb2886e1873a83ff1c080e8f31a746edf5f"
 body_sha256 = "5981c38b8ae3b0b8795bef3232b103fe71431d7c44cddc07265428aea609e6ee"
 
 [[topic]]
