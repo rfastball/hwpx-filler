@@ -36,14 +36,17 @@ export async function probeCardEdit(ctx, stubBridgeCall) {
     const hole = doc.querySelector('#wbCard .seg-blank[data-token="비고"]');
     const line = hole && hole.closest(".cm-line");
     const text = line && Array.prototype.find.call(line.childNodes, (node) => node.nodeType === 3);
+    /* 초점을 먼저 주고 편집면이 제 선택을 되돌려 놓은 **뒤에** 캐럿을 둔다 — 순서가 바뀌면 편집면이
+       초점 복원으로 캐럿을 문서 머리에 되돌려 글자가 엉뚱한 자리에 들어간다. */
     content.focus();
+    await ctx.sleep(60);
     const range = doc.createRange();
     range.setStart(text, text.length);
     range.collapse(true);
     const picked = doc.getSelection();
     picked.removeAllRanges();
     picked.addRange(range);
-    await ctx.sleep(30);
+    await ctx.sleep(80);
     doc.execCommand("insertText", false, "없음");
     await ctx.sleep(30);
     res.hole_gone = !doc.querySelector('#wbCard .seg-blank[data-token="비고"]');
