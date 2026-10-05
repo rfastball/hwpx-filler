@@ -5,19 +5,7 @@ import type { AuthoringController } from "./authoring_controller.ts";
 import { isCurrentTarget } from "./authoring_a11y.ts";
 import type { Obj } from "./authoring_primitives.ts";
 
-/** 위치 줄 메시지(IDE-05)의 내용 — locate 가 판정한 `problems_here`(문제 목록 순번) 가운데 첫 문제의 심각도와 Python 문장.
- *  겹침은 Python 이 판정했다. 여기서는 순번으로 문제를 찾을 뿐이다. `source: "problem"` 은 캐럿이 옮길 때 이 메모를
- *  다음 판정까지 남겨 둘지(깜박임 없이) 가르는 표지다. */
-export function problemNote(problems: Obj[] | undefined, here: unknown): { message: string; severity?: "error" | "warning"; source: "problem" } | null {
-  if (!Array.isArray(here)) return null;
-  for (const index of here) {
-    const problem = typeof index === "number" ? problems?.[index] : undefined;
-    if (!problem?.message) continue;
-    const severity = problem.severity === "error" || problem.severity === "warning" ? problem.severity : undefined;
-    return { message: String(problem.message), ...(severity ? { severity } : {}), source: "problem" };
-  }
-  return null;
-}
+export { problemNote } from "./authoring_problem_note.ts";
 
 export const KIND_LABEL: Obj = { field: "필드", slot: "항목", option: "선택", text: "본문" };
 export const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };

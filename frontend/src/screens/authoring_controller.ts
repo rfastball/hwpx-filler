@@ -3,7 +3,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { errorText } from "./authoring_a11y.ts";
 import { guideFeed } from "./authoring_guide.ts";
 import { authoringHost } from "./authoring_host.ts";
-import { problemNote } from "./authoring_outline_model.ts";
+import { problemNote } from "./authoring_problem_note.ts";
 import { createProposal } from "./authoring_proposal.ts";
 
 type Obj = Record<string, any>;
