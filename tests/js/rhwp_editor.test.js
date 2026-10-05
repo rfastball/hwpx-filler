@@ -12,7 +12,7 @@ const b64 = (text) => Buffer.from(text, "utf8").toString("base64");
 function fakeStudio(log, hooks = {}) {
   let readOnly = false;
   let bytes = new TextEncoder().encode("mounted");
-  const changed = new Set(), shortcuts = new Set(), menus = new Set();
+  const changed = new Set(), shortcuts = new Set(), menus = new Set(), clicks = new Set();
   /** SDK calls other than document I/O, and the options the Studio was created with. */
   const calls = [];
   let options = null;
@@ -40,6 +40,7 @@ function fakeStudio(log, hooks = {}) {
     onDocumentChanged(listener) { changed.add(listener); return () => changed.delete(listener); },
     onShortcut(listener) { shortcuts.add(listener); return () => shortcuts.delete(listener); },
     onContextMenuRequest(listener) { menus.add(listener); return () => menus.delete(listener); },
+    onDecorationClick(listener) { clicks.add(listener); return () => clicks.delete(listener); },
     element: { getBoundingClientRect: () => hooks.frame ?? { left: 0, top: 0 }, contentWindow: hooks.frameWindow },
     chrome: { async set() {} },
     commands: { async execute(id) { calls.push(["execute", id]); return { ok: true }; } },
@@ -60,7 +61,8 @@ function fakeStudio(log, hooks = {}) {
     options: () => options,
     pressShortcut: (shortcut, detail) => { for (const listener of shortcuts) listener(shortcut, detail); },
     rightClick: (point) => { for (const listener of menus) listener(point); },
-    listeners: () => ({ shortcuts: shortcuts.size, menus: menus.size }) };
+    clickDecoration: (click) => { for (const listener of clicks) listener(click); },
+    listeners: () => ({ shortcuts: shortcuts.size, menus: menus.size }), clickListeners: () => clicks.size };
 }
 
 /** Manual timers: the test decides when the export debounce and the selection poll fire. */
@@ -647,8 +649,9 @@ test("#1156: the caret line moving under an unchanged caret (scroll) goes to onC
     assert.deepEqual(lines.at(-1), null, "outside the frame: null (the popover hides)");
     assert.equal(reports.length, 1, "the caret itself is reported once");
     await poll(at(1, 3, 8), line);
+    assert.equal(lines.length, 2, "a new range is a selection report, not a line report");
     await poll(at(1, 3, 8), { ...line, y: 30 });
-    assert.equal(lines.length, 2, "a range has no caret-line report");
+    assert.deepEqual(lines.at(-1), { left: 70, top: 65, bottom: 95 }, "a range's end line is followed too (a clicked spot's popover moves with it)");
     handle.dispose();
   }, timers);
 });
@@ -742,5 +745,46 @@ test("IDE-08 H2: problems become problem markers (error strong, warning subtle) 
     assert.equal(notes.length, 1, "덜어 냈다는 기록은 콘솔 debug 에 마운트당 한 번");
     assert.match(notes[0], /1 problem markers dropped/);
   } finally { console.debug = debug; }
+  handle.dispose();
+}));
+
+test("#1158: a click on a proposal/held decoration reaches the host as its spot token and the clicked line in host px; tokens never go to the Studio", () => withDom(async () => {
+  const fake = fakeStudio([], { frame: { left: 10, top: 20, width: 300 }, frameWindow: { innerWidth: 200, innerHeight: 400 } });
+  const sent = [];
+  const studio = async (host, created) => { const editor = await fake.studio(host, created);
+    const original = editor.setDecorations; editor.setDecorations = async (list, options) => { sent.push(list); return original(list, options); }; return editor; };
+  const clicks = [];
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false, sectionEntries: ["Contents/section0.xml"],
+    onChanged() {}, onSelectionChanged() {}, onDecorationClick: (click) => clicks.push(click), onError: (error) => { throw error; },
+    preflight: async () => ({ editable: true }), studio, trackSelection: "never" });
+  const entry = "Contents/section0.xml";
+  const field = { name: "이름", occurrences: [{ entry, paragraph: 1, start: 2, end: 8 }] };
+  const proposals = [
+    { token: "s1", place: { entry, paragraph: 4, start: 7, end: 18 }, label: "추정가격", held: false },
+    { token: "s2", place: { entry, paragraph: 1, start: 0, end: 5 }, label: "공고명", held: false, open: true },
+    { token: "s4", place: { entry, paragraph: 0, start: 0, end: 4 }, label: "낙찰자결정방법", held: true },
+  ];
+  await handle.setDecorations({ fields: [field], slots: [], mode: "template", highlight: null, problems: [], proposals });
+  const drawn = sent.at(-1);
+  assert.deepEqual(drawn.map((marker) => [marker.kind, marker.emphasis, marker.label]),
+    [["field", "strong", "이름"], ["proposal", "strong", "공고명"], ["proposal", "subtle", "추정가격"], ["held", "subtle", "낙찰자결정방법"]],
+    "의미 표지 뒤에 연 자리·제안·보류 — 연 자리는 같은 표지가 강하게 선다");
+  assert.ok(drawn.every((marker) => !("token" in marker)), "자리 신원은 Studio 로 가지 않는다(검사기가 모르는 키를 거절한다)");
+  assert.equal(fake.clickListeners(), 1);
+  fake.clickDecoration({ index: 2, kind: "proposal", rect: { x: 40, y: 60, width: 30, height: 20 } });
+  fake.clickDecoration({ index: 3, kind: "held", rect: { x: 40, y: 500, width: 30, height: 20 } });
+  fake.clickDecoration({ index: 0, kind: "proposal", rect: { x: 40, y: 60, width: 30, height: 20 } });
+  assert.deepEqual(clicks, [{ token: "s1", rect: { left: 70, top: 110, bottom: 140 } }, { token: "s4", rect: null }],
+    "차례 → 자리 신원, 누른 줄은 호스트 좌표(틀 밖이면 null); 자리가 아닌 표지의 차례는 무시한다");
+  handle.dispose();
+  assert.equal(fake.clickListeners(), 0, "dispose unsubscribes");
+}));
+
+test("#1158: an older pinned SDK without decoration clicks mounts as before (spots then open from the caret alone)", () => withDom(async () => {
+  const fake = fakeStudio([]);
+  const studio = async (host, created) => { const editor = await fake.studio(host, created); delete editor.onDecorationClick; return editor; };
+  const handle = await mountRhwp({ host: {}, content: b64("disk"), fileName: "a.hwpx", readOnly: false, sectionEntries: ["Contents/section0.xml"],
+    onChanged() {}, onSelectionChanged() {}, onDecorationClick: () => assert.fail("no click without the SDK event"), onError: (error) => { throw error; },
+    preflight: async () => ({ editable: true }), studio, trackSelection: "never" });
   handle.dispose();
 }));

@@ -156,6 +156,13 @@ export function selectionBarItems(entries: CommandEntry[], readOnly: boolean): {
     : entry.alternative ? [{ key: `${entry.type}-alternative`, label: entry.alternative.label, command: entry.alternative.command_type, alternative: true }] : []);
   return items.filter((entry, index) => items.findIndex((other) => other.command === entry.command) === index);
 }
+/** 선택 옆 막대가 서는가 — 이 탭의 선택 끝 줄이 있고, 지금 선택에 대한 Python 판정이 도착했으며(판정 전·다른 선택의 판정으로는
+ *  서지 않는다), 메뉴·팔레트·제안 팝오버(#1156, 자리를 누르면 자리 전체가 골라진다)가 없고 실을 것이 있을 때만 — 떠 있는 표면은
+ *  한 번에 하나다. */
+export function selectionBarShown(itemId: string | undefined, anchorId: string | undefined, view: Record<string, any>, count: number): boolean {
+  return !!itemId && anchorId === itemId && !!view.commandsSelection && view.commandsSelection === view.selection
+    && !view.contextMenu && !view.palette && !view.proposalOpen && count > 0;
+}
 /** 선택 끝 줄과 막대 사이(px). */
 export const SELECTION_BAR_GAP = 8;
 /** 선택 옆 막대의 창 좌표 — 선택 끝 줄 아래 8px 에 서고, 아래가 모자라면 그 줄 위로 뒤집으며 창 안에 든다(clampMenu 규칙). */

@@ -351,10 +351,11 @@ export declare class RhwpEditor {
   getSelectionContext(): Promise<RhwpSelectionContextV1>;
   setReadOnly(readOnly: boolean): Promise<void>;
   /**
-   * kind: 'field' | 'slot' | 'option' | 'problem'. problem 은 밑줄(strong=오류 물결, subtle=경고 점선)이고
-   * label 이 포인터 설명이다. 표지는 한 번에 500개까지다.
+   * kind: 'field' | 'slot' | 'option' | 'problem' | 'proposal' | 'held'. problem 은 밑줄(strong=오류 물결, subtle=경고 점선)이고
+   * label 이 포인터 설명이다. proposal(초록)·held(회색)는 링크처럼 점선 밑줄이고 포인터 아래에서 한 덩어리로 반응하며
+   * (strong=연 자리) 누르면 범위 전체가 선택되고 onDecorationClick 이 온다. 표지는 한 번에 500개까지다.
    */
-  setDecorations(markers: Array<{ kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
+  setDecorations(markers: Array<{ kind: 'field' | 'slot' | 'option' | 'problem' | 'proposal' | 'held'; label: string; emphasis: 'subtle' | 'strong'; section: number;
     startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
     cellPath?: RhwpCellPathEntryV1[] }>, options?: { labels?: 'selected' | 'all' | 'none' }): Promise<void>;
   /** 호스트 테마·도구 모음 배율 (Studio 자체 설정보다 우선) */
@@ -380,6 +381,8 @@ export declare class RhwpEditor {
   onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6' | 'ShiftF10' | 'ContextMenu',
     detail?: { caret: RhwpClientRect | null }) => void): () => void;
   onContextMenuRequest(listener: (point: { x: number; y: number }) => void): () => void;
+  /** proposal·held 표지 클릭: Studio 가 이미 표지 범위 전체를 선택했다. index 는 마지막 setDecorations 목록의 차례, rect 는 iframe client 좌표 */
+  onDecorationClick(listener: (click: { index: number; kind: 'proposal' | 'held'; rect: RhwpClientRect }) => void): () => void;
   /** iframe 엘리먼트를 반환합니다 */
   readonly element: HTMLIFrameElement;
   // ── 브리지 표면 ────────────────────────────────────────────────
