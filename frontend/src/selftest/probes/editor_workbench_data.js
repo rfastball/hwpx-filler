@@ -2326,9 +2326,10 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3814,
-      deadlineMs: 2500,
+      deadlineMs: 4000,
       deadlineRationale:
-        "공용 `_probe_late` 예산 2.5초 그대로(내부 대기 160+300+300+120+120+260ms).",
+        "공용 `_probe_late` 예산 2.5초(내부 대기 160+300+300+120+120+260ms)에 본문 편집 되읽기"
+        + "(#1148 — 입력 뒤 편집 쉼 250ms 를 넘기는 대기 3회 400ms + 60ms)를 더했다.",
       completionField: "pending",
       requiresHost: ["window_resize"],
       after: ["editor_txt_band"],
