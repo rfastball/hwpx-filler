@@ -22,11 +22,12 @@ from ..application.field_proposal import (
     empty_view,
     group_command,
     normalize_rows,
+    pick_column,
     proposal_view,
     toast_many,
     toast_one,
 )
-from ..application.template_authoring_session import AuthoringSession
+from ..application.template_authoring_session import AuthoringSession, content_digest
 from ..domain.dataset_reference import STATUS_ACTIVE
 from ..external.hwpx_field_proposal import read_hwpx, read_txt, spot_location
 from ..viewmodel.run_state import resolve_pool_source
@@ -94,7 +95,7 @@ class ProposalPanel:
     def _key(session: AuthoringSession, state: FieldProposalState) -> tuple:
         fields = tuple(sorted(str(item.get("name", "")) for item in session.analysis.get("fields", [])))
         return (session.revision, state.pool_key, state.sheet, state.row, frozenset(state.dismissed),
-                id(state.loaded), fields)
+                tuple(sorted(state.picks.items())), id(state.loaded), fields)
 
     def _datasets(self) -> list[dict]:
         return self._data.datasets() if self._data is not None else []
@@ -159,7 +160,8 @@ class ProposalPanel:
         if result.get("ok") is False:
             return result
         bindings, values = drafts(groups)
-        session.proposal_pending = (session.revision, bindings, values)
+        assert session.last_preview is not None  # 성공한 미리보기는 늘 그 본문을 세션에 남긴다
+        session.proposal_pending = (content_digest(session.last_preview[0]), bindings, values)
         return {**result, "command": command, "toast": toast}
 
     def _do_propose_make(self, p: dict) -> dict:
@@ -193,4 +195,16 @@ class ProposalPanel:
         """띠 끄기 — 제안 상태와 「그대로 두기」 집합을 비운다(만든 필드의 연결 초안은 남는다)."""
         session = self._session_of(p)
         session.proposal = None
+        session.proposal_pending = None
         return {"ok": True}
+
+    def _do_propose_pick_column(self, p: dict) -> dict:
+        """팝오버 머리의 열 고르기 — 같은 값의 열 가운데 하나로 이 묶음을 다시 판정한다(문서가 바뀌어도 남는다)."""
+        session = self._session_of(p, revision=True)
+        _view, group = self._group(session, p.get("group_id"))
+        state = session.proposal
+        assert isinstance(state, FieldProposalState)
+        pick_column(state, group, p.get("column"))
+        view = self.view(session)
+        assert view is not None
+        return view

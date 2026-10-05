@@ -43,6 +43,17 @@ def hint_other(count: int) -> str:
     return f"맞는 값 {count}개"
 
 
+def source_text(row: int, column: str) -> str:
+    """팝오버 머리 아래 출처 줄 — 고른 행과 연결 열."""
+    return f"{row_label(row)} ‘{column}’ 열과 같은 값입니다."
+
+
+#: 같은 이름 필드가 이미 있는 묶음 — 만들면 그 필드에 자리가 더해진다(``links_existing``).
+LINKS_NOTE = "같은 이름 필드에 자리를 더합니다."
+#: 열 고르기가 묶음의 열이 아닌 열을 가리킬 때.
+REASON_NOT_SAME_VALUE = "이 값과 같은 열 가운데서 고르세요."
+
+
 def toast_one(name: str) -> str:
     return f"‘{name}’ 필드를 만들고 연결 초안에 열과 표시 형식을 넣었습니다."
 
@@ -81,6 +92,8 @@ class FieldProposalState:
     row: int | None = None  # 1부터 — 사람이 고른 행. None 이면 가장 많이 맞는 행
     loaded: LoadedRows | None = None
     dismissed: set[tuple[str, str]] = field(default_factory=set)
+    #: 사람이 같은 값의 열 가운데 고른 열 — 묶음 열쇠(같은 값을 낸 열들) → 열. 문서가 바뀌어도 남는다.
+    picks: dict[str, str] = field(default_factory=dict)
     cache: tuple[object, dict] | None = None
 
 
@@ -113,16 +126,27 @@ def chosen_row(state: FieldProposalState, counts: Sequence[int]) -> int:
     return max(range(len(counts)), key=lambda index: (counts[index], -index)) + 1
 
 
-def _group_view(group: Group, locate: Callable[[int, int, int], dict]) -> dict:
+def _only_label(group: Group, spots: list[dict]) -> str | None:
+    """보류 묶음의 「이 자리만」 단추 이름 — 고를 수 있는 한 자리(``only``)가 표 칸이면 「표 칸 1곳만 필드로」.
+
+    ``only`` 가 없으면 연 자리 하나다. 열 이름이 필드 이름이 될 수 없거나 자리가 없으면 단추가 없다.
+    """
+    if group.kind != KIND_HELD or not spots or group.reason == REASON_BAD_NAME:
+        return None
+    only = next((spot for spot in spots if spot["id"] == group.only), None)
+    return _ONLY_CELL if only is not None and only.get("cell_path") else _ONLY_SPOT
+
+
+def _group_view(group: Group, locate: Callable[[int, int, int], dict], row: int) -> dict:
     spots = [{"id": spot.id, **locate(spot.paragraph, spot.start, spot.end), "text": spot.text,
               "where": spot.where} for spot in group.spots]
-    only = next((spot for spot in spots if spot["id"] == group.only), None)
     return {
         "id": group.id, "kind": group.kind, "name": group.name, "column": group.column,
         "columns": note_for(group), "value": group.value, "raw": group.raw,
         "binding": TRANSFORMS[group.transform].binding(), "reason": group.reason, "note": group.note,
-        "only": group.only,
-        "only_label": None if only is None else _ONLY_CELL if only.get("cell_path") else _ONLY_SPOT,
+        "source_text": source_text(row, group.column),
+        "links_note": LINKS_NOTE if group.links_existing else "",
+        "only": group.only, "only_label": _only_label(group, spots),
         "links_existing": group.links_existing, "count_text": group.count_text, "spots": spots,
     }
 
@@ -137,13 +161,13 @@ def proposal_view(*, state: FieldProposalState, revision: int, paragraphs: Seque
     # 고른 행은 고정한다 — 필드를 만들면 그 값이 문서 밖 글자에서 빠져 「가장 많이 맞는 행」이 바뀔 수 있다.
     row = state.row = chosen_row(state, counts)
     result: Proposal = propose(paragraphs, loaded.rows[row - 1], loaded.columns,
-                               existing_fields=existing, dismissed=state.dismissed)
+                               existing_fields=existing, dismissed=state.dismissed, picks=state.picks)
     return {
         "state": STATE_READY, "error": "", "revision": revision, "datasets": datasets,
         "data": {"pool_key": state.pool_key, "name": loaded.name, "sheet": state.sheet, "row": row,
                  "rows": _rows_view(counts, row), "rows_truncated": loaded.truncated},
         "counts": {"proposal": result.count(KIND_PROPOSAL), "held": result.count(KIND_HELD)},
-        "groups": [_group_view(group, locate) for group in result.groups],
+        "groups": [_group_view(group, locate, row) for group in result.groups],
         "missing": [{"column": item.column, "reason": item.reason} for item in result.missing],
     }
 
@@ -174,6 +198,14 @@ def group_command(group: Mapping[str, object], spot_id: object = None) -> dict:
     if len(spots) > 1:
         command["ranges"] = [_site(spot) for spot in spots]
     return command
+
+
+def pick_column(state: FieldProposalState, group: Mapping[str, object], column: object) -> None:
+    """같은 값의 열 가운데 하나를 고른다 — 묶음의 지금 열이나 「열도 같은 값」 열만 받는다."""
+    allowed = [str(group["column"])] + [str(item["name"]) for item in group["columns"]]  # type: ignore[union-attr]
+    if not isinstance(column, str) or column not in allowed:
+        raise ValueError(REASON_NOT_SAME_VALUE)
+    state.picks[str(group["id"])] = column
 
 
 def all_command(view: Mapping[str, object]) -> tuple[dict, list[Mapping[str, object]]]:

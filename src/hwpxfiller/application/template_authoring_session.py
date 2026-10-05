@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
+
+
+def content_digest(content: bytes) -> str:
+    """문서 본문의 지문 — 제안 미리보기 본문과 확정 본문이 같은지 가른다."""
+    return hashlib.sha256(content).hexdigest()
 
 
 @dataclass
@@ -45,8 +51,9 @@ class AuthoringSession:
     proposal: object | None = None
     #: 제안으로 만든 필드의 연결 초안 ``{필드: {"source", "type", "fmt"}}`` — 필드가 문서에 있는 동안만 산다.
     proposal_bindings: dict[str, dict] = field(default_factory=dict)
-    #: 제안 미리보기가 기다리는 연결 초안 ``(기준 revision, {필드: 초안}, {필드: 시험 값})`` — 다음 문서 확정에서 정산한다.
-    proposal_pending: tuple[int, dict[str, dict], dict[str, str]] | None = None
+    #: 제안 미리보기가 기다리는 연결 초안 ``(미리보기 본문 지문, {필드: 초안}, {필드: 시험 값})`` — 확정된 본문이
+    #: **그 미리보기 본문과 같을 때만** 기록한다(다른 확정은 초안을 물려받지 않는다).
+    proposal_pending: tuple[str, dict[str, dict], dict[str, str]] | None = None
     #: 실행 취소로 필드가 사라진 연결 초안과 시험 값 — 다시 실행으로 필드가 돌아오면 되살린다.
     proposal_retired: dict[str, tuple[dict, str]] = field(default_factory=dict)
     #: 제안이 시험 값에 넣은 원시 값 — 필드가 사라질 때 사람이 고치지 않은 값만 거둔다.
@@ -82,15 +89,16 @@ class AuthoringSession:
     def _settle_proposal_bindings(self) -> None:
         """문서가 바뀔 때 연결 초안을 정산한다 — 제안 미리보기가 확정됐으면 기록, 필드가 사라지면 거두고 돌아오면 되살린다."""
         fields = {item.get("name") for item in self.analysis.get("fields", []) if isinstance(item, dict)}
-        pending, self.proposal_pending = self.proposal_pending, None
         values = dict(self.values)
-        if pending is not None and pending[0] + 1 == self.revision:
+        pending = self.proposal_pending
+        if pending is not None and pending[0] == content_digest(self.content):
+            self.proposal_pending = None
             self._record_proposal(pending, fields, values)
         self._retire_proposal(fields, values)
         self._restore_proposal(fields, values)
         self.replace_trial_input(values, self.selected)
 
-    def _record_proposal(self, pending: tuple[int, dict[str, dict], dict[str, str]], fields: set,
+    def _record_proposal(self, pending: tuple[str, dict[str, dict], dict[str, str]], fields: set,
                          values: dict) -> None:
         for name in pending[1]:
             if name in fields:

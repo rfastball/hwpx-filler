@@ -123,6 +123,7 @@ export const SCREEN_ACTIONS = {
     propose_make: { required: ["group_id", "revision", "session_id"], optional: ["spot_id"] },
     propose_make_all: { required: ["revision", "session_id"], optional: [] },
     propose_dismiss: { required: ["group_id", "revision", "session_id"], optional: [] },
+    propose_pick_column: { required: ["column", "group_id", "revision", "session_id"], optional: [] },
     propose_off: { required: ["session_id"], optional: [] },
   },
   library: {

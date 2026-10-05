@@ -172,7 +172,45 @@ def test_a_cancelled_make_does_not_record_a_draft(tmp_path: Path) -> None:
     ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": group(view, "공고명")["id"]})
     edited = base64.b64encode(hwpx_bytes(*NOTICE[:3])).decode()
     ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": edited})
-    assert ctrl.sessions[sid].proposal_bindings == {} and ctrl.sessions[sid].proposal_pending is None
+    session = ctrl.sessions[sid]
+    assert session.proposal_bindings == {} and session.values == {}
+
+
+def test_a_manual_make_after_a_cancelled_proposal_does_not_inherit_the_draft(tmp_path: Path) -> None:
+    """초안은 확정된 본문이 제안 미리보기 본문과 같을 때만 기록한다 — 「revision + 1」만으로는 아니다."""
+    ctrl = controller(tmp_path, Port())
+    sid = hwpx_session(ctrl, *NOTICE)
+    view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
+    title = group(view, "공고명")
+    ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": title["id"]})
+    # 사람이 제안을 접고, 같은 이름을 다른 범위(앞 두 글자)로 손수 만든다.
+    spot = title["spots"][0]
+    manual = {"type": "create_field", "name": "공고명", "entry": spot["entry"], "paragraph": spot["paragraph"],
+              "start": spot["start"], "end": spot["start"] + 2}
+    made = ctrl.dispatch("preview", {"session_id": sid, "revision": 0, "command": manual})
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": made["content"]})
+    session = ctrl.sessions[sid]
+    assert [field["name"] for field in session.analysis["fields"]] == ["공고명"]
+    assert session.proposal_bindings == {} and session.values == {}
+    # 같은 제안을 다시 만들어 그 본문이 오면 그때 기록한다.
+    ctrl.dispatch("update", {"session_id": sid, "revision": 1,
+                             "content": ctrl.dispatch("content", {"session_id": sid})["content"]})
+    assert session.proposal_bindings == {}
+
+
+def test_the_draft_is_recorded_only_for_the_previewed_content(tmp_path: Path) -> None:
+    ctrl = controller(tmp_path, Port())
+    sid = hwpx_session(ctrl, *NOTICE)
+    view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
+    made = ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": group(view, "공고명")["id"]})
+    # 그사이 다른 확정(편집 흘려보내기)이 와도 초안은 기다린다 — 제안 본문이 오면 기록한다.
+    other = base64.b64encode(hwpx_bytes(*NOTICE, p("덧붙인 문단"))).decode()
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": other})
+    session = ctrl.sessions[sid]
+    assert session.proposal_bindings == {} and session.proposal_pending is not None
+    ctrl.dispatch("update", {"session_id": sid, "revision": 1, "content": made["content"]})
+    assert session.proposal_bindings == {"공고명": {"source": "공고명", "type": "text", "fmt": ""}}
+    assert session.proposal_pending is None
 
 
 def test_only_the_label_cell_of_a_held_group(tmp_path: Path) -> None:
@@ -240,6 +278,7 @@ def test_a_refused_preview_is_returned_as_is(tmp_path: Path) -> None:
     refused = panel._prepared(session, {"type": "create_field", "name": "#", "entry": "Contents/section0.xml",
                                         "paragraph": 2, "start": 8, "end": 19}, [], "")
     assert refused["ok"] is False and session.proposal_pending is None
+    assert ctrl.dispatch("propose_off", {"session_id": sid}) == {"ok": True}
 
 
 def test_txt_sessions_use_editor_offsets(tmp_path: Path) -> None:
@@ -302,3 +341,50 @@ def test_a_group_of_many_spots_is_one_command_and_a_hand_edited_value_survives_u
     ctrl.dispatch("update", {"session_id": sid, "revision": 1, "content": original})
     session = ctrl.sessions[sid]
     assert session.proposal_bindings == {} and session.values == {"공고명": "손으로 고친 값"}
+
+
+def test_python_owns_the_popover_sentences(tmp_path: Path) -> None:
+    ctrl = controller(tmp_path, Port())
+    sid = hwpx_session(ctrl, *NOTICE)
+    view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
+    price = group(view, "추정가격")
+    assert price["source_text"] == "2행 ‘추정가격’ 열과 같은 값입니다."
+    assert (price["links_note"], price["only_label"]) == ("", None)
+    assert group(view, "낙찰자결정방법")["only_label"] == "표 칸 1곳만 필드로"
+    # 한 자리만 만든 뒤 남은 같은 값 자리는 같은 이름 필드에 더해진다 — 그 한 줄도 Python 문장이다.
+    ctrl2 = controller(tmp_path, Port())
+    sid2 = hwpx_session(ctrl2, *NOTICE, p("청사 보안 장비 구매"))
+    first = ctrl2.dispatch("propose_fields", {"session_id": sid2, "revision": 0})
+    title = group(first, "공고명")
+    one = ctrl2.dispatch("propose_make", {"session_id": sid2, "revision": 0, "group_id": title["id"],
+                                          "spot_id": title["spots"][1]["id"]})
+    ctrl2.dispatch("update", {"session_id": sid2, "revision": 0, "content": one["content"]})
+    again = group(tab(ctrl2, sid2)["proposal"], "공고명")
+    assert again["links_existing"] is True and again["links_note"] == "같은 이름 필드에 자리를 더합니다."
+
+
+def test_pick_column_among_equal_values(tmp_path: Path) -> None:
+    rows = [{"입찰공고번호": "R26BK01234567", "현행공고": "R26BK01234567", "추정가격": "170309180"}]
+    ctrl = controller(tmp_path, Port(rows))
+    sid = hwpx_session(ctrl, p("R26BK01234567"), p("나. 추정가격: 170,309,180원"))
+    view = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
+    number = group(view, "입찰공고번호")
+    assert number["kind"] == "held" and number["id"] == "g_입찰공고번호|현행공고"
+    assert number["columns"] == [{"name": "현행공고", "note": "현행공고 열도 같은 값입니다."}]
+    with pytest.raises(ValueError, match="이 값과 같은 열 가운데서 고르세요."):
+        ctrl.dispatch("propose_pick_column", {"session_id": sid, "revision": 0, "group_id": number["id"],
+                                              "column": "추정가격"})
+    picked = ctrl.dispatch("propose_pick_column", {"session_id": sid, "revision": 0, "group_id": number["id"],
+                                                   "column": "현행공고"})
+    chosen = next(item for item in picked["groups"] if item["id"] == number["id"])
+    assert (chosen["kind"], chosen["column"], chosen["name"]) == ("proposal", "현행공고", "현행공고")
+    assert chosen["columns"] == [{"name": "입찰공고번호", "note": "입찰공고번호 열도 같은 값입니다."}]
+    assert chosen["source_text"] == "1행 ‘현행공고’ 열과 같은 값입니다."
+    # 문서가 바뀌어도 고른 열은 남고, 띠를 끄면 잊는다.
+    price = group(picked, "추정가격")
+    made = ctrl.dispatch("propose_make", {"session_id": sid, "revision": 0, "group_id": price["id"]})
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": made["content"]})
+    assert next(item for item in tab(ctrl, sid)["proposal"]["groups"] if item["id"] == number["id"])["column"] == "현행공고"
+    ctrl.dispatch("propose_off", {"session_id": sid})
+    fresh = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 1})
+    assert next(item for item in fresh["groups"] if item["id"] == number["id"])["column"] == "입찰공고번호"

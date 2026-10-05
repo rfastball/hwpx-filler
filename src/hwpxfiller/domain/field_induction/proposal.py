@@ -127,12 +127,17 @@ def _hold_unmakeable(group: Group, named: bool) -> None:
         group.kind, group.reason, group.note = KIND_HELD, REASON_CONTROL_BEFORE, ""
 
 
-def _group(view: DocumentView, verdict: Grade, transform: str, raw: str,
+def group_id(columns: Sequence[str]) -> str:
+    """묶음 열쇠 — 같은 값을 낸 열(행 차례)로 짓는다. 사람이 열을 골라도 바뀌지 않는다."""
+    return "g_" + "|".join(columns)
+
+
+def _group(view: DocumentView, verdict: Grade, key: str, transform: str, raw: str,
            existing: Collection[str]) -> Group:
     name = field_name(verdict.column)
     spots = [_spot(view, item) for item in verdict.spots if item.creatable]
     group = Group(
-        id=f"g_{verdict.column}", kind=verdict.kind, name=name or verdict.column, column=verdict.column,
+        id=key, kind=verdict.kind, name=name or verdict.column, column=verdict.column,
         others=list(verdict.others), value=_display_value(verdict.spots[0].text, transform, verdict.spots, view),
         raw=raw, transform=transform, reason=verdict.reason, note=verdict.note, only=_only(view, verdict),
         links_existing=name in existing, count_text=_count_text(verdict, spots), spots=spots,
@@ -142,7 +147,7 @@ def _group(view: DocumentView, verdict: Grade, transform: str, raw: str,
 
 
 def _groups(view: DocumentView, slots: Sequence[Slot], row: Mapping[str, str | None],
-            columns: Sequence[str], existing: Collection[str]) -> list[Group]:
+            columns: Sequence[str], existing: Collection[str], picks: Mapping[str, str]) -> list[Group]:
     by_text: dict[str, list[Slot]] = {}
     for slot in slots:
         by_text.setdefault(view.paragraphs[slot.paragraph].text[slot.start:slot.end], []).append(slot)
@@ -150,9 +155,10 @@ def _groups(view: DocumentView, slots: Sequence[Slot], row: Mapping[str, str | N
     for same in by_text.values():
         ordered, transforms = _slot_columns(same, columns)
         evidence = [spot_evidence(view, slot, ordered) for slot in same]
-        verdict = grade(ordered, evidence)
+        key = group_id(ordered)
+        verdict = grade(ordered, evidence, picks.get(key))
         if verdict is not None:
-            out.append(_group(view, verdict, transforms[verdict.column], row[verdict.column] or "", existing))
+            out.append(_group(view, verdict, key, transforms[verdict.column], row[verdict.column] or "", existing))
     return out
 
 
@@ -189,13 +195,15 @@ def _missing(paragraphs: Sequence[ParagraphText], row: Mapping[str, str | None],
 
 
 def propose(paragraphs: Sequence[ParagraphText], row: Mapping[str, str | None], columns: Sequence[str], *,
-            existing_fields: Collection[str] = (), dismissed: Collection[tuple[str, str]] = ()) -> Proposal:
-    """문서 문단과 행 하나로 제안을 짓는다. ``dismissed`` 는 「그대로 두기」 한 (열, 원시 값) 집합이다."""
+            existing_fields: Collection[str] = (), dismissed: Collection[tuple[str, str]] = (),
+            picks: Mapping[str, str] | None = None) -> Proposal:
+    """문서 문단과 행 하나로 제안을 짓는다. ``dismissed`` 는 「그대로 두기」 한 (열, 원시 값) 집합이고,
+    ``picks`` 는 사람이 같은 값의 열 가운데 고른 열(묶음 열쇠 → 열)이다."""
     view = DocumentView(paragraphs)
     ordered = {column: row.get(column) for column in columns}
     slots = mask(find_candidates(paragraphs, ordered))
     existing = set(existing_fields)
-    groups = _one_per_column(_groups(view, slots, ordered, columns, existing))
+    groups = _one_per_column(_groups(view, slots, ordered, columns, existing, picks or {}))
     # 「그대로 두기」 한 묶음과, 이미 필드가 된 이름의 남은 보류(필드 밖 산문 반복)는 싣지 않는다.
     kept = [group for group in groups if (group.column, group.raw) not in set(dismissed)
             and not (group.kind == KIND_HELD and group.links_existing)]

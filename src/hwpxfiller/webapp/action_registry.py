@@ -119,6 +119,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "propose_make": _schema("session_id revision group_id", "spot_id"),
         "propose_make_all": _schema("session_id revision"),
         "propose_dismiss": _schema("session_id revision group_id"),
+        "propose_pick_column": _schema("session_id revision group_id column"),
         "propose_off": _schema("session_id"),
     },
     # 「문서 작업」 전역 라이브러리(§19.6·§19.7) — 구 `home` 채널의 승계자(재작성 F2).

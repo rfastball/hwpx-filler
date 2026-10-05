@@ -81,21 +81,33 @@ class Grade:
     only: SpotEvidence | None = None
 
 
-def _resolve_column(columns: Sequence[str], spots: Sequence[SpotEvidence]) -> tuple[str | None, list[SpotEvidence]]:
-    """라벨이 부르는 열 하나와 그 라벨 자리 — 라벨이 둘 이상의 열을 부르거나 없으면 (None, [])."""
+def _resolve_column(columns: Sequence[str], spots: Sequence[SpotEvidence],
+                    pick: str | None = None) -> tuple[str | None, list[SpotEvidence]]:
+    """라벨이 부르는 열 하나와 그 라벨 자리 — 라벨이 둘 이상의 열을 부르거나 없으면 (None, []).
+
+    사람이 같은 값의 열 가운데 하나를 골랐으면(``pick``) 그 열이고, 라벨 자리는 라벨이 있는 자리 전부다.
+    """
     labelled = [spot for spot in spots if spot.labelled]
+    fixed = _fixed_column(columns, pick)
+    if fixed is not None:
+        return fixed, labelled
     named = {column for spot in labelled for column in spot.matched}
-    if len(columns) == 1:
-        return columns[0], labelled
     if len(named) != 1:
         return None, []
     column = next(iter(named))
     return column, [spot for spot in labelled if spot.matched == (column,)]
 
 
-def grade(columns: Sequence[str], spots: Sequence[SpotEvidence]) -> Grade | None:
+def _fixed_column(columns: Sequence[str], pick: str | None) -> str | None:
+    """라벨 없이도 정해진 열 — 사람이 고른 열, 아니면 후보 열이 하나뿐일 때 그 열."""
+    if pick in columns:
+        return pick
+    return columns[0] if len(columns) == 1 else None
+
+
+def grade(columns: Sequence[str], spots: Sequence[SpotEvidence], pick: str | None = None) -> Grade | None:
     """후보 열(차례대로)과 자리 증거로 묶음 판정. 짧은 값에 라벨 자리가 없으면 None(묶음을 내지 않는다)."""
-    column, labelled = _resolve_column(columns, spots)
+    column, labelled = _resolve_column(columns, spots, pick)
     short = specificity(spots[0].text) < SPECIFIC
     if column is None:
         # 열 하나는 늘 정해진다 — 여기는 같은 값의 열이 둘 이상이고 라벨이 하나를 가리키지 않을 때다.
