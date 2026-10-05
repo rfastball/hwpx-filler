@@ -1,8 +1,8 @@
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ScreenRuntime } from "./runtime.ts";
-import { expectHostValue } from "./runtime.ts";
 import { errorText } from "./authoring_a11y.ts";
 import { guideFeed } from "./authoring_guide.ts";
+import { authoringHost } from "./authoring_host.ts";
 
 type Obj = Record<string, any>;
 export type AuthoringEditor = {
@@ -190,16 +190,9 @@ export function createAuthoringController(deps: Deps) {
     if (viewId && (view.preview !== before.preview || view.command !== before.command) && !hovered) redecorate();
     listeners.forEach((listener) => listener());
   };
-  // verdict: Python 이 판정을 세션 상태로 이미 투영한 호출(시험 입력 검증 등) — ok:false 는 오류 띠가 아니라 그 표면이 보인다.
-  const dispatch = async (action: string, payload: Obj = {}, verdict = false): Promise<Obj> => {
-    const call = deps.client.dispatch as unknown as (screen: string, name: string, body: Obj) => ReturnType<BridgeClient["dispatch"]>;
-    const result = expectHostValue(await call("authoring", action, payload), `authoring/${action}`) as Obj;
-    // 거절(refusal)은 오류가 아니라 판정이다 — 호출자가 사유와 대안을 그린다(U07·AC08·AC10).
-    if (result?.ok === false && !result.refusal && !verdict) throw new Error(result.message || result.detail || result.reason);
-    return result || {};
-  };
-  const invoke = async (method: Parameters<BridgeClient["invoke"]>[0], ...args: unknown[]): Promise<Obj | null> =>
-    expectHostValue(await deps.client.invoke(method, ...args), method) as Obj | null;
+  // Python 왕복 두 길 — Python 이 스스로 세운 활성 문서를 뷰로 따라가기(#1146)도 그 왕복의 진행을 보고 진다.
+  const { dispatch, invoke } = authoringHost(deps.client, { activeId: () => snapshot().active_id || "", viewId: () => viewId,
+    activate: (id) => activate(id), fail: (error) => fail(error, "editor"), subscribe: (listener) => model.subscribe(listener) });
   const revision = (id: string): number => revisions.get(id) ?? tab(id).revision;
   const fenced = (id: string, payload: Obj = {}): Obj => ({ session_id: id, revision: revision(id), ...payload });
 

@@ -38,7 +38,7 @@ function_complexity = 54
 function_statements = 51
 
 [budget."frontend/src/editorview/txt_lintpad.ts"]
-module_statements = 435
+module_statements = 427
 
 [budget."frontend/src/editorview/txt_lintpad.ts::lintpadDecorations"]
 function_complexity = 11
@@ -48,9 +48,6 @@ function_complexity = 12
 
 [budget."frontend/src/editorview/txt_lintpad.ts::lintpadUpdate"]
 function_complexity = 14
-
-[budget."frontend/src/editorview/txt_lintpad.ts::snapOutOfTokens"]
-function_complexity = 11
 
 [budget."frontend/src/product_api.js::createProductApi.deliver"]
 function_complexity = 13
@@ -78,10 +75,10 @@ function_complexity = 23
 function_complexity = { value = 22, override = "#1121", reason = "authoring.ts 1단계 책임 분할 — 기존 동작을 보존한 중간 산출물. 후속 단계에서 편집면·속성 배치에서 문서별 본문과 패널 표시 조립을 분리해 함수 상한 이하로 낮추고 이 예외를 제거한다." }
 
 [budget."frontend/src/screens/authoring_controller.ts"]
-module_statements = 663
+module_statements = 657
 
 [budget."frontend/src/screens/authoring_controller.ts::createAuthoringController"]
-function_statements = 79
+function_statements = 78
 
 [budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.activate"]
 function_complexity = 12
@@ -400,7 +397,7 @@ function_complexity = 56
 function_statements = 255
 
 [budget."frontend/src/selftest/probes/job.js"]
-module_statements = 900
+module_statements = 897
 
 [budget."frontend/src/selftest/probes/job.js::runJobMirror"]
 function_complexity = 63
@@ -408,7 +405,7 @@ function_statements = 230
 
 [budget."frontend/src/selftest/probes/job.js::runJobResult"]
 function_complexity = 38
-function_statements = 200
+function_statements = 197
 
 [budget."frontend/src/selftest/probes/react_runtime.js::measureTutorialSurface"]
 function_complexity = 28

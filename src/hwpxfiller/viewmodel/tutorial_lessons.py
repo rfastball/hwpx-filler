@@ -42,11 +42,11 @@ class Lesson:
 #: UI and runs no product command, so no product observation can witness it (#1127 decision 1).
 UI_PRESS_EVENTS = frozenset({
     "create_form_opened", "trial_dock_opened", "sheet_checked", "slice_closed", "screen_entered_job",
-    "binding_menu_opened",
+    "binding_menu_opened", "template_menu_opened",
 })
 
 #: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
-CURRICULUM = 4
+CURRICULUM = 5
 
 _NEW_JOB = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
 _TO_BINDING = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
@@ -90,6 +90,20 @@ def _open_workbench(event: str = "txt_workbench_opened") -> Beat:
 
 def _create(beat_id: str, title: str, body: str, command: str) -> Beat:
     return Beat(beat_id, title, body, "authoring", "create-command", "create_form_opened", arg=command)
+
+
+def _open_template() -> tuple[Beat, ...]:
+    """The way into template authoring (#1146): the practice TXT is opened from the template list, never silently."""
+    return (
+        Beat("open_list", "템플릿 목록 열기",
+             "'＋ 새 작업'의 '고르기' 단계에는 서식 폴더의 템플릿 목록이 있습니다. 누르세요.",
+             "library", "new-job", "new_job_opened"),
+        Beat("open_menu", "템플릿 메뉴 열기",
+             f"'{_TXT}' 줄 끝의 '⋮'은 이 템플릿에 쓰는 명령을 엽니다. 누르세요.",
+             "editor", "template-more", "template_menu_opened", arg=_TXT),
+        Beat("open_edit", "템플릿 저작 열기", "'내용 편집'은 이 템플릿을 템플릿 저작 화면에서 엽니다. 누르세요.",
+             "editor", "menu-item", "practice_template_opened", arg="edit"),
+    )
 
 
 def _trial_open() -> Beat:
@@ -246,6 +260,7 @@ LESSONS: tuple[Lesson, ...] = (
     )),
     Lesson("field_trial", "내 서식에 필드 만들기",
            "안내문의 문구를 데이터가 들어갈 필드로 바꾸고, 시험값으로 결과를 확인한 뒤 저장합니다.", (
+        *_open_template(),
         Beat("range", "바꿀 문구 고르기",
              "본문에서 끌어 고른 문구가 필드로 바뀔 자리입니다. 3번 문단의 '10일'을 끌어 고르세요.",
              "authoring", "authoring-range", "field_range_selected", entry_screen="authoring"),
@@ -264,7 +279,8 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("about", "이 연습에서 할 일",
              "안내문의 3번 문단을 '항목'으로 묶고, 문단을 넣는 '선택'과 빼는 '선택'을 만듭니다. "
              "그러면 문서마다 이 문단을 넣을지 뺄지 고를 수 있습니다. '다음'을 누르세요.",
-             None, None, entry_screen="authoring"),
+             None, None, entry_screen="library"),
+        *_open_template(),
         Beat("item_range", "문단 고르기", "색으로 표시한 13~15번 줄을 끝까지 끌어 고르세요.",
              "authoring", "authoring-range", "item_range_selected", entry_screen="authoring"),
         _create("item_create", "항목으로 만들기", "'항목으로 만들기'는 고른 줄을 하나의 '항목'으로 묶습니다. 누르세요.",
@@ -277,12 +293,14 @@ LESSONS: tuple[Lesson, ...] = (
              "authoring", "authoring-range", "include_range_selected"),
         _create("include_create", "선택으로 만들기", "'선택으로 만들기'는 고른 줄을 이 '항목'의 '선택' 하나로 만듭니다. 누르세요.",
                 "create_option"),
-        Beat("include_name", "'안내포함' 이름", "'표시 이름'에 안내포함을 적고 Enter 키를 두 번 누르세요.",
+        # A choice of whole lines applies at the first Enter; any other first shows its effect and the button then
+        # carries the Enter key. A fixed "press Enter twice" sent the second Enter into the editor over the new choice.
+        Beat("include_name", "'안내포함' 이름", "'표시 이름'에 안내포함을 적고 Enter 키를 누르세요. 단추에 Enter 표시가 나오면 한 번 더 누르세요.",
              "authoring", "property-name", "option_created"),
         Beat("omit_range", "빈 줄 고르기", "색으로 표시한 '항목' 안의 빈 줄을 누르세요. 문단을 뺄 때 이 줄이 대신 들어갑니다.",
              "authoring", "authoring-range", "omit_range_selected"),
         _create("omit_create", "선택으로 만들기", "'선택으로 만들기'를 누르세요.", "create_option"),
-        Beat("omit_name", "'안내생략' 이름", "'표시 이름'에 안내생략을 적고 Enter 키를 두 번 누르세요.",
+        Beat("omit_name", "'안내생략' 이름", "'표시 이름'에 안내생략을 적고 Enter 키를 누르세요. 단추에 Enter 표시가 나오면 한 번 더 누르세요.",
              "authoring", "property-name", "practice_options_created"),
         _trial_open(),
         Beat("fill", "빈 시험 칸 채우기", "'필드 이름 사용'은 비어 있는 시험 칸을 필드 이름으로 채웁니다. 누르세요.",
@@ -295,6 +313,7 @@ LESSONS: tuple[Lesson, ...] = (
     )),
     Lesson("change_apply", "바뀐 서식을 작업에 적용하기",
            "'항목'을 더한 서식을 저장한 작업에 적용하고, 문서 만들기에서 그 '항목'을 골라 채운 문장을 확인합니다.", (
+        *_open_template(),
         Beat("impact", "변경 영향 열기",
              "'변경 영향·작업 적용'은 이 서식을 쓰는 저장한 작업에 바뀐 점을 반영하는 패널입니다. 누르세요.",
              "authoring", "impact-tab", "impact_tab_opened", entry_screen="authoring"),

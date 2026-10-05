@@ -14,7 +14,7 @@ from ..domain.template_authoring_primitives import from_utf16, to_utf16
 from ..external.tutorial_practice import fingerprint
 from .onboarding_match_editor import Matcher, Observation
 
-__all__ = ["AUTHORING_MATCHERS", "guide_range"]
+__all__ = ["AUTHORING_MATCHERS", "guide_range", "practice_template_open"]
 
 TXT = "낙찰자 선정 및 계약체결 안내.txt"
 SLOT, INCLUDE, OMIT = "예산재배정", "안내포함", "안내생략"
@@ -31,6 +31,14 @@ def _session(tutorial: Any, obs: Observation) -> Any:
     return session
 
 
+def practice_template_open(tutorial: Any) -> bool:
+    """The practice TXT is the open authoring document, opened as the library template ('저장' writes it in place)."""
+    authoring = tutorial.controllers["authoring"]
+    session = authoring.sessions.get(authoring.active_id)
+    return (session is not None and session.media == "txt" and session.source_path == tutorial._asset(TXT)
+            and session.save_path == session.source_path)
+
+
 def _slots(session: Any) -> list:
     return session.analysis.get("slots", [])
 
@@ -38,6 +46,13 @@ def _slots(session: Any) -> list:
 def _options(session: Any) -> set:
     return {option.get("label") for slot in _slots(session) if slot.get("label") == SLOT
             for option in slot.get("options", [])}
+
+
+# ------------------------------------------------------------------ opening the practice TXT
+def _template_opened(tutorial: Any, obs: Observation) -> dict | None:
+    """'내용 편집' on the template list opened the practice TXT for template authoring (#1146)."""
+    opened = obs.action == "open_authoring_document" and _session(tutorial, obs) is not None
+    return {} if opened and practice_template_open(tutorial) else None
 
 
 # ------------------------------------------------------------------ text ranges
@@ -233,6 +248,7 @@ def _applied(tutorial: Any, obs: Observation) -> dict | None:
 
 
 AUTHORING_MATCHERS: dict[str, Matcher] = {
+    "practice_template_opened": _template_opened,
     "field_range_selected": _field_range,
     "item_range_selected": _item_range,
     "include_range_selected": _include_range,

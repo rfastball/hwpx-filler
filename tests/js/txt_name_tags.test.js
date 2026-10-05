@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { lintpadDecorations, lintpadPieces, snapOutOfTokens } from "../../frontend/src/editorview/txt_lintpad.ts";
+import { lintpadDecorations, lintpadPieces } from "../../frontend/src/editorview/txt_lintpad.ts";
+import { snapOutOfTokens } from "../../frontend/src/editorview/txt_ranges.ts";
 
 // FB-03(#1079) — TXT 편집면은 표기 원문 대신 HWPX 편집면과 같은 이름표를 그린다. 이름·짝은 Python 이 준다
 // (`analysis.spans[].label/region/role/paired`, tests/test_text_structure.py 가 그 판정을 잰다). 여기서는 받은 것을

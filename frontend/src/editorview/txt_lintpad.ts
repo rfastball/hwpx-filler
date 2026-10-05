@@ -26,6 +26,7 @@ import { Decoration, EditorView, WidgetType, keymap, lineNumbers } from "@codemi
 import { history, historyKeymap, undo, redo, undoDepth, redoDepth, isolateHistory } from "@codemirror/commands";
 import { search, openSearchPanel } from "@codemirror/search";
 import type { DecorationSet } from "@codemirror/view";
+import { GUIDE_CLASS, guidePainted, snapOutOfTokens } from "./txt_ranges.ts";
 
 /** Python 브리지가 UTF-16 으로 번역한 토큰 좌표 1건. */
 export type LintpadSpan = {
@@ -122,7 +123,7 @@ const SPAN_CLASS: Record<string, string> = {
   field: "cm-txtField",
   marker: "cm-txtMarker",
   // 튜토리얼이 고르라고 한 한 줄 안의 글자(#1136) — 이름표가 아닌 원문 위 강조다.
-  guide: "cm-tutorial-range",
+  guide: GUIDE_CLASS,
 };
 
 /** 문서 표시(`labels: "none"`)의 이름표 — 색 없이 이름만 조용히 선다(HWPX 문서 표시에 표지가 없는 것과 같은 자리). */
@@ -301,29 +302,22 @@ const spanField = StateField.define<SpanState>({
   ],
 });
 
+/** 튜토리얼 범위가 칠해진 동안은 이미 고른 글을 끌어 옮기지 않는다(#1146). 그 단계가 바라는 것은 새로 끌어 고르기인데,
+ *  방금 만든 '항목'처럼 이미 고른 범위 안에서 누른 끌기는 글 옮기기가 되어 범위를 고르지 못하고 연습 문서를 바꾼다.
+ *  끌기를 거절하면 CodeMirror 가 그 누름 자리부터 새 범위를 고른다. 판정은 하지 않는다 — 칠이 있는가만 본다. */
+const GUIDE_DRAG: Extension = EditorView.domEventHandlers({
+  dragstart(event, view) {
+    if (!guidePainted(view.state.field(spanField).spans)) return false;
+    event.preventDefault();
+    return true;
+  },
+});
+
 /** 가린 토큰의 [from, to] 목록 — 원자 범위의 평범한 얼굴(vendor 타입 없음). */
 function atomList(state: EditorState): { from: number; to: number }[] {
   const out: { from: number; to: number }[] = [];
   state.field(spanField).atoms.between(0, state.doc.length, (from, to) => { out.push({ from, to }); });
   return out;
-}
-
-/** 밖에서 옮긴 선택을 가린 토큰 밖으로 민다 — 캐럿은 가까운 쪽 경계로, 범위는 걸친 토큰을 통째로 담는다.
- *  편집기 자신의 캐럿·끌기는 원자 범위가 이미 막는다. 이것은 문제·검색·구조 목록에서 온 좌표를 위한 것이다 —
- *  캐럿이 가린 토큰 안에 서면 다음 글자가 보이지 않는 표기 안으로 들어간다. */
-export function snapOutOfTokens(atoms: readonly { from: number; to: number }[], start: number, end: number): [number, number] {
-  if (start === end) {
-    const inside = atoms.find((atom) => atom.from < start && start < atom.to);
-    if (!inside) return [start, end];
-    const side = start - inside.from <= inside.to - start ? inside.from : inside.to;
-    return [side, side];
-  }
-  let lo = Math.min(start, end), hi = Math.max(start, end);
-  for (const atom of atoms) {
-    if (atom.from < lo && lo < atom.to) lo = atom.from;
-    if (atom.from < hi && hi < atom.to) hi = atom.to;
-  }
-  return start <= end ? [lo, hi] : [hi, lo];
 }
 
 /** 항목·선택 범위의 줄 막대(FB-03) — HWPX 편집면의 범위 상자와 같은 자리다. 템플릿 표시는 캐럿이 든 범위만,
@@ -685,6 +679,7 @@ export function mountLintpad(spec: LintpadMountSpec): LintpadHandle {
         ...(spec.onSelectionRect ? [selectionRectExtension(spec.onSelectionRect)] : []),
         ...(spec.onRangePick ? [rangePickExtension(spec.onRangePick)] : []),
         spanField,
+        GUIDE_DRAG,
         regionField,
         problemField,
         pairField,

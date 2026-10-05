@@ -174,6 +174,8 @@ export function TutorialCoach(props: CoachProps): ReactNode {
   return h("section", { id: "tutorialCoach", className: inline ? "tutorial-coach tutorial-coach-inline" : "tutorial-coach", style,
     role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
     "data-side": inline ? "inline" : placement?.side ?? "center", "data-shown": String(!props.hidden),
+    // The boxed control's key: a control the product shows only on hover is revealed while it is the one boxed (CSS).
+    "data-target": beat.target ?? undefined,
     "data-nudge": props.missed ? parity(props.missed) : undefined },
   placement?.arrow ? h("i", { className: "tutorial-coach-arrow", style: placement.arrow, "aria-hidden": true }) : null,
   h("div", { className: "tutorial-coach-scroll" },

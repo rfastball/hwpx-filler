@@ -17,7 +17,9 @@ from uuid import uuid4
 from ..external.tutorial_practice import ORIGINALS, PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
 from ..viewmodel.tutorial_lessons import BY_ID, LessonProgress
-from .onboarding_guide import advance_current, guide_beat, observe_ui_press, picker_hint, rewind_unmet_inputs
+from .onboarding_guide import (
+    advance_current, guide_beat, observe_ui_press, picker_hint, rewind_unmet_inputs, rewind_unopened_template,
+)
 from .onboarding_match_results import match_event
 from .onboarding_practice import (
     NO_RETURN_SCREEN, capture_return, note_practice_save, practice_resources, restore_screen, start_fresh,
@@ -265,6 +267,8 @@ class OnboardingController:
             # The escape route exists exactly while a practice workspace is the active one.
             if context is not None and self.switch.practice_home is not None:
                 self._return_context = context
+        # A lesson resumed in a rebuilt workspace has no authoring document open yet.
+        rewind_unopened_template(self)
         self._persist()
         self._emit()
         beat = self.snapshot()["beat"] or {}

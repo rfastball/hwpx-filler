@@ -8,6 +8,7 @@ export const ANCHORS: Readonly<Record<string, string>> = Object.freeze({
   "library-use": "#libraryDetail [data-use]",
   "library-edit": "#libraryDetail [data-edit]",
   "template-row": "#editorTplList .pitem[data-path$='{arg}']",
+  "template-more": "#editorTplList .pitem-wrap:has(.pitem[data-path$='{arg}']) button[data-act='lib-more']",
   "data-row": "#editorDataList .pitem[data-key='{arg}']",
   "data-browse": "#editorPoolBrowse",
   "editor-next": "#editor-foot button[data-act='next']",

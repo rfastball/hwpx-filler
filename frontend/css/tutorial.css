@@ -108,3 +108,5 @@
   .tutorial-fin-doc{transform:translateX(-50%) rotate(var(--fan-r))}.tutorial-fin-doc[data-arrived]{transition:opacity 220ms linear}
   .tutorial-coach[data-nudge="a"]{animation-name:tutorialBlinkA}.tutorial-coach[data-nudge="b"]{animation-name:tutorialBlinkB}
 }
+/* The template row's ⋮ appears on hover only; while a beat boxes it (#1146) it stands so the ring is not empty. */
+body:has(#tutorialCoach[data-target="template-more"]) #editorTplList .job-more{visibility:visible}

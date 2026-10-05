@@ -185,19 +185,61 @@ def test_seeded_names_are_fixed_and_lessons_one_and_three_register_both_sheets(a
         assert app._job_registry.names() == []
 
 
-def test_lesson_nine_starts_with_the_finished_template_open_and_its_change_pending(app):
+def _open_template(app, path: str) -> None:
+    """The three beats that open the practice TXT from the template list (#1146)."""
+    app.dispatch("editor", "new_session", {})
+    snap = app.initial("tutorial")
+    app.dispatch("tutorial", "observe_ui", {"scenario_id": snap["scenario_id"], "checkpoint": snap["checkpoint"],
+                                            "anchor": "template-more"})
+    app.open_authoring_document(path, True)
+
+
+def test_lesson_nine_starts_with_the_finished_template_and_its_change_pending(app):
     tutorial = app.controllers["tutorial"]
     tutorial.dispatch("select", {"scenario_id": "change_apply"})
     path = tutorial._context()["assets"]["낙찰자 선정 및 계약체결 안내.txt"]["path"]
     text = Path(path).read_text(encoding="utf-8")
     assert "{{#항목 예산재배정 예산재배정}}" in text and "{{#선택 안내생략 안내생략}}\n\n{{/선택}}" in text
     authoring = app.controllers["authoring"]
+    # Nothing is opened silently (#1146): the lesson begins with the way into template authoring.
+    assert not authoring.sessions and app.initial("tutorial")["beat"]["id"] == "open_list"
+    _open_template(app, path)
     session = authoring.sessions[authoring.active_id]
     assert session.source_path == session.save_path == path
     assert [slot["label"] for slot in session.analysis["slots"]] == ["예산재배정"]
     assert tutorial.snapshot()["resources"]["ready"], "깔아 둔 서식이 수정된 연습 파일로 오인됐습니다"
     assert app.controllers["job"].work.name == "계약 안내 작업"
     assert app.initial("tutorial")["beat"]["id"] == "impact"
+
+
+def test_an_authoring_beat_without_the_practice_template_returns_to_opening_it(app, tmp_path, monkeypatch):
+    from hwpxfiller.webapp.app import WebFrontend
+
+    tutorial = app.controllers["tutorial"]
+    tutorial.dispatch("select", {"scenario_id": "field_trial"})
+    path = tutorial._context()["assets"]["낙찰자 선정 및 계약체결 안내.txt"]["path"]
+    # Only '내용 편집' on the practice TXT opens the way: another template opened there does not.
+    app.dispatch("editor", "new_session", {})
+    snap = app.initial("tutorial")
+    app.dispatch("tutorial", "observe_ui", {"scenario_id": "field_trial", "checkpoint": snap["checkpoint"],
+                                            "anchor": "template-more"})
+    other = tutorial._context()["assets"]["계약방법 결정 및 구매추진 안내.txt"]["path"]
+    app.open_authoring_document(other, True)
+    assert app.initial("tutorial")["beat"]["id"] == "open_edit"
+    app.open_authoring_document(path, True)
+    assert app.initial("tutorial")["beat"]["id"] == "range"
+    # A closed tab leaves the range beat with nothing to select: the next observation returns to opening it.
+    authoring = app.controllers["authoring"]
+    for session_id in list(authoring.sessions):
+        app.dispatch("authoring", "close", {"session_id": session_id, "force": True})
+    assert app.initial("tutorial")["beat"]["id"] == "open_list"
+    _open_template(app, path)
+    assert app.initial("tutorial")["beat"]["id"] == "range"
+    # A restart rebuilds the practice workspace with no document open: resuming lands on opening it again.
+    restarted = WebFrontend()
+    result = restarted.dispatch("tutorial", "select", {"scenario_id": "field_trial"})
+    beat = restarted.initial("tutorial")["beat"]
+    assert beat["id"] == "open_list" and result["screen"] == "library"
 
 
 def test_a_failure_after_the_switch_returns_the_window_to_the_user_workspace(app, monkeypatch):
