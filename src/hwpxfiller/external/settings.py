@@ -592,26 +592,6 @@ def save_tutorial_practice(value: dict) -> None:
     _save_nested("tutorial", "practice", value)
 
 
-# 튜토리얼 버튼 표시 토글(#1147) — 같은 ``tutorial`` 중첩 아래 ``entry_visible`` 칸. 전역
-# 설정 파일(path 생략 → ``_settings_path()``)에 두는 이유는 두 가지다: (1) 「학습 기록 초기화」
-# (``onboarding.reset_progress``)는 튜토리얼 진행 저장소(``TutorialWorkspace``)만 지우므로
-# 여기 두면 초기화에 지워지지 않는다. (2) 연습 작업 공간 전환은 ``_workspace_settings_path()``
-# 가 연습 홈의 별도 파일을 가리키지만, 이 칸은 ``load_tutorial_progress``/``load_tutorial_practice``
-# 와 같은 전역 경로를 써 연습 중에도 사용자가 고른 값이 흔들리지 않는다.
-def load_tutorial_entry_visible() -> bool:
-    """튜토리얼 버튼 표시 토글 — 미저장·비유효는 기본 ``True``(표시)."""
-    bucket = _read().get("tutorial")
-    raw = bucket.get("entry_visible") if isinstance(bucket, dict) else None
-    return raw if isinstance(raw, bool) else True
-
-
-def save_tutorial_entry_visible(visible: bool) -> None:
-    """토글 영속 — 비bool 은 조용히 무시하지 않고 ``ValueError``(confirm-or-alarm)."""
-    if not isinstance(visible, bool):
-        raise ValueError(f"튜토리얼 버튼 표시 값은 bool 이어야 합니다: {visible!r}")
-    _save_nested("tutorial", "entry_visible", visible)
-
-
 # 예제 세트 설치 manifest(#891 · 설계 정본 https://github.com/rfastball/hwpx-filler/blob/5f51e442dde87891b68fbbdc1519a04e01211b8e/docs/ONBOARDING_TUTORIAL.md §1 D4) — 같은 ``tutorial``
 # 중첩 키 아래 ``manifest`` 칸이다(#893 진행 칸이 예고한 자리). 그룹은 실체가 아니라 소속이라
 # 「그룹 삭제 한 번으로 통째 제거」가 성립하지 않는다: 제거(슬라이스 C)는 **여기 기재된 항목만**

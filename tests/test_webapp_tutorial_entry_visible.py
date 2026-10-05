@@ -1,6 +1,6 @@
 """설정의 「튜토리얼 버튼 표시」 토글(#1147) — 백엔드 소유·판정.
 
-값은 전역 설정 파일에 영속하고(학습 기록 초기화·연습 작업 공간 전환에 지워지지 않는다),
+값은 튜토리얼 전용 저장소의 별도 파일에 영속하고(학습 기록 초기화·연습 작업 공간 전환에 지워지지 않는다),
 최종 표시값은 연습 중(``practice.active``)이면 토글과 무관하게 ``True``다.
 """
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from hwpxfiller.external import settings
+from hwpxfiller.external.tutorial_workspace import TutorialWorkspace
 
 
 @pytest.fixture()
@@ -82,10 +83,17 @@ def test_invalid_payload_is_rejected(app):
     assert app.initial("tutorial")["entry"]["visible"] is True
 
 
-def test_settings_module_round_trip(tmp_path, monkeypatch):
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
-    assert settings.load_tutorial_entry_visible() is True
-    settings.save_tutorial_entry_visible(False)
-    assert settings.load_tutorial_entry_visible() is False
+def test_workspace_round_trip_and_damaged_file(tmp_path, monkeypatch):
+    alerts = []
+    monkeypatch.setattr(settings, "alert", alerts.append)
+    workspace = TutorialWorkspace(tmp_path / "tw")
+    assert workspace.load_entry_visible() is True
+    workspace.save_entry_visible(False)
+    assert workspace.load_entry_visible() is False
     with pytest.raises(ValueError):
-        settings.save_tutorial_entry_visible("no")  # type: ignore[arg-type]
+        workspace.save_entry_visible("no")  # type: ignore[arg-type]
+    assert workspace.load_entry_visible() is False, "a rejected value never reaches the file"
+    (tmp_path / "tw" / "entry.json").write_text("{", encoding="utf-8")
+    assert workspace.load_entry_visible() is True and len(alerts) == 1, "damage is alarmed and opens shown"
+    (tmp_path / "tw" / "entry.json").write_text('{"visible": "no"}', encoding="utf-8")
+    assert workspace.load_entry_visible() is True

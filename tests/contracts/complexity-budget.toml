@@ -998,7 +998,7 @@ function_complexity = 16
 function_complexity = 15
 
 [budget."src/hwpxfiller/external/settings.py"]
-module_statements = { value = 342, override = "#1147", reason = "튜토리얼 버튼 표시 토글 두 함수(load/save_tutorial_entry_visible) 추가 — 기존 tutorial 중첩 버킷 접근자 묶음과 같은 자리가 계약(같은 전역 경로·판독-보존-쓰기)이라 지금 쪼개면 그 묶음을 흩어 놓는다. module 분리는 별도 이슈로 다룬다." }
+module_statements = 334
 
 [budget."src/hwpxfiller/external/settings.py::load_last_data_source"]
 function_complexity = 16

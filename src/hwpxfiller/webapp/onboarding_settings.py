@@ -2,7 +2,7 @@
 
 Free functions over :class:`~hwpxfiller.webapp.onboarding.OnboardingController`, the same shape
 as :mod:`.onboarding_practice`. Both replace or mutate ``tutorial.progress`` from a payload the
-dispatch gate already validated; persistence/typing rejection is settings.py's own
+dispatch gate already validated; persistence/typing rejection is the tutorial workspace's own
 confirm-or-alarm (no duplicate check here — a second check would add a second user sentence).
 """
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from ..external import settings
 from ..viewmodel.tutorial_lessons import LessonProgress
 
 __all__ = ["reset_progress", "set_entry_visible"]
@@ -28,6 +27,6 @@ def reset_progress(tutorial: Any, payload: dict) -> None:
 
 def set_entry_visible(tutorial: Any, payload: dict) -> None:
     """Persist the HUD/invitation toggle and mirror it onto the live progress view."""
-    visible = cast(bool, payload.get("visible"))  # pyright-only; settings rejects a non-bool
-    settings.save_tutorial_entry_visible(visible)
+    visible = cast(bool, payload.get("visible"))  # pyright-only; the workspace rejects a non-bool
+    tutorial.workspace.save_entry_visible(visible)
     tutorial.progress.entry_visible = visible

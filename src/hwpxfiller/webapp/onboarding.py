@@ -14,7 +14,6 @@ import threading
 from typing import Any
 from uuid import uuid4
 
-from ..external import settings
 from ..external.tutorial_practice import ORIGINALS, PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
 from ..viewmodel.tutorial_lessons import BY_ID, LessonProgress
@@ -49,7 +48,7 @@ class OnboardingController:
         self.practice: PracticeFiles | None = None
         self.switch: Any = None
         self.progress = LessonProgress(workspace.load_progress(), first_launch=first_launch)
-        self.progress.entry_visible = settings.load_tutorial_entry_visible()
+        self.progress.entry_visible = workspace.load_entry_visible()
         self.controllers: dict = {}
         self._recovery: str | None = None
         self._lock = threading.RLock()
