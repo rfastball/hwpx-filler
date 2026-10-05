@@ -165,7 +165,7 @@ def _colon_label(line: str) -> tuple[str, str] | None:
     if index < 0:
         return None
     gap = line[index + 1:]
-    if len(gap.strip()) > 25 or ":" in gap:
+    if len(gap.strip()) > 25:
         return None
     head = strip_markers(line[:index])
     if len(normalize_label(head)) > 16:

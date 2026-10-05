@@ -391,3 +391,20 @@ def test_label_cell_above_a_value_cell() -> None:
     ]
     (group,) = propose(paragraphs, {"납품장소": "정부대전청사 3동"}, ["납품장소"]).groups
     assert group.kind == "proposal" and group.spots[0].where == "표 칸"
+
+
+def test_label_extraction_edges() -> None:
+    assert strip_markers("1. 가. 1) (1) 깊은 항목") == "깊은 항목"  # 기호는 네 겹까지만 걷는다
+    assert strip_markers("1. 가. 1) (1) ① 다섯째") == "① 다섯째"
+    assert extract_label("비고: " + "가" * 26 + " ")[1] == "before"  # 쌍점 뒤가 길면 라벨이 아니다
+    assert extract_label("(): ")[1] != "colon"  # 쌍점 앞에 라벨 글자가 없다
+
+
+def test_long_prose_repeats_and_cells_without_a_label_neighbour() -> None:
+    paragraphs = doc("수요기관: 조달청", *["조달청 안내 문장입니다" for _ in range(55)])
+    (group,) = propose(paragraphs, {"수요기관": "조달청"}, ["수요기관"]).groups
+    assert group.kind == "held" and group.reason.startswith("문장 속에도 55번")
+    cells = [ParagraphText("a", "1,234,567", 10, cell=CellRef("t", 0, 0)),
+             ParagraphText("b", "1,234,567", 10, cell=CellRef("t", 0, 1))]
+    (group,) = propose(cells, {"금액": "1234567"}, ["금액"]).groups
+    assert group.value == "1,234,567" and group.kind == "proposal" and len(group.spots) == 2

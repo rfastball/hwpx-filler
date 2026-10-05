@@ -144,8 +144,6 @@ def domain_equivalent(a: str, b: str, value: str) -> bool:
     원문과 날짜 형식은 그 형식 그대로 적힌 날짜 글자에서 늘 같다 — 관찰로 가를 수 없으니 한 프로그램이다.
     원문과 천 단위 쉼표는 ``500`` 에서 같아도 1000 에서 갈린다 — 같은 프로그램이 아니다.
     """
-    if a == b:
-        return True
     if "identity" not in {a, b}:
         return False
     other = TRANSFORMS[b if a == "identity" else a]
