@@ -46,7 +46,7 @@ UI_PRESS_EVENTS = frozenset({
 })
 
 #: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
-CURRICULUM = 4
+CURRICULUM = 5
 
 _NEW_JOB = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
 _TO_BINDING = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
