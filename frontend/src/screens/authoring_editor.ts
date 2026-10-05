@@ -200,6 +200,8 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
           },
           onChanged: (content) => controller.changed(item.id, content),
           onSelectionChanged: (selection, caret) => { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection, caret); },
+          // 캐럿 줄만 옮겨 가면(편집면 스크롤) 문서에서 연 제안 팝오버가 따라가거나 숨는다(#1156).
+          onCaretRect: (caret) => controller.proposal.caretRect(item.id, caret),
           onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
           onRangePick: (point) => controller.pickClick(item.id, point),
           onError: (error) => controller.fail(error, "editor"), readOnly: false,

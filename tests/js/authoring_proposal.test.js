@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createAuthoringController } from "../../frontend/src/screens/authoring_controller.ts";
-import { AuthoringScreen } from "../../frontend/src/screens/authoring.ts";
+import { AuthoringScreen, escapeShell } from "../../frontend/src/screens/authoring.ts";
 import { PROPOSAL_COPY, bandView, missingLines, outlineGroups, popoverView, proposalMarks, proposalSpots, spotAt } from "../../frontend/src/screens/authoring_proposal.ts";
 import { proposalPlace } from "../../frontend/src/screens/authoring_proposal_view.ts";
 import { DECORATION_LIMIT, fitMarkers, proposalMarkers } from "../../frontend/src/editorview/rhwp_marks.ts";
@@ -17,19 +17,19 @@ const proposal = (patch = {}) => ({
   state: "ready", error: "", revision: 0,
   datasets: [{ key: "p1", name: "26년 하반기 공고 목록" }, { key: "p2", name: "계약 목록" }],
   data: { pool_key: "p1", name: "26년 하반기 공고 목록", sheet: null, row: 3,
-    rows: [{ index: 3, label: "3행", hint: "값이 가장 많이 맞는 행 · 2개" }, { index: 7, label: "7행", hint: "맞는 값 1개" }], rows_truncated: false },
+    rows: [{ index: 3, label: "3행", hint: "찾은 값이 가장 많은 행 · 2개" }, { index: 7, label: "7행", hint: "찾은 값 1개" }], rows_truncated: false, rows_note: "" },
   counts: { proposal: 2, held: 1 },
   groups: [
     { id: "g_price", kind: "proposal", name: "추정가격", column: "추정가격", columns: [{ name: "현행가격", note: "‘현행가격’ 열도 같은 값입니다." }],
-      value: "170,309,180원", raw: "170309180", binding: { type: "amount", fmt: "{:,}", label: "천 단위 쉼표" }, reason: "", note: "", only: null,
+      value: "170,309,180원", raw: "170309180", binding: { type: "amount", fmt: "{:,}", label: "숫자" }, reason: "", note: "", only: null,
       source_text: "3행 ‘추정가격’ 열과 같은 값입니다.", links_note: "", only_label: null, links_existing: false, count_text: "1곳", spots: [{ id: "s1", entry: SECTION, paragraph: 4, cell_path: null, start: 7, end: 18, text: "170,309,180", where: "1. 나" }] },
     { id: "g_title", kind: "proposal", name: "공고명", column: "공고명", columns: [], value: "청사 보안", raw: "청사 보안",
-      binding: { type: "text", fmt: "", label: "원문" }, reason: "", note: "", only: null, links_existing: true, count_text: "2곳",
-      source_text: "3행 ‘공고명’ 열과 같은 값입니다.", links_note: "같은 이름 필드에 자리를 더합니다.", only_label: null,
+      binding: { type: "text", fmt: "", label: "" }, reason: "", note: "", only: null, links_existing: true, count_text: "2곳",
+      source_text: "3행 ‘공고명’ 열과 같은 값입니다.", links_note: "같은 이름 필드에 자리를 더합니다.", only_label: "이 자리만",
       spots: [{ id: "s2", entry: SECTION, paragraph: 1, cell_path: null, start: 0, end: 5, where: "첫 문장" },
         { id: "s3", entry: SECTION, paragraph: 3, cell_path: null, start: 6, end: 11, where: "1. 가" }] },
     { id: "g_judge", kind: "held", name: "낙찰자결정방법", column: "낙찰자결정방법", columns: [], value: "적격심사", raw: "적격심사",
-      binding: { type: "text", fmt: "", label: "원문" }, reason: "같은 값이 다른 곳에도 3번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다.", note: "", only: "s4",
+      binding: { type: "text", fmt: "", label: "" }, reason: "같은 값이 다른 곳에도 3번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다.", note: "", only: "s4",
       source_text: "3행 ‘낙찰자결정방법’ 열과 같은 값입니다.", links_note: "", only_label: "표 칸 1곳만 필드로",
       links_existing: false, count_text: "4곳",
       spots: [{ id: "s5", entry: SECTION, paragraph: 12, cell_path: null, start: 3, end: 7, where: "" },
@@ -78,7 +78,7 @@ test("#1156 band: ready shows Python's counts and the make-all verb; zero propos
   const ready = bandView(proposal(), false);
   assert.equal(ready.message, "제안 2 · 보류 1");
   assert.deepEqual(ready.primary, { label: "제안 2개 모두 필드로", disabled: false });
-  assert.deepEqual([ready.dataKey, ready.row, ready.hint], ["p1", "3", "값이 가장 많이 맞는 행 · 2개"]);
+  assert.deepEqual([ready.dataKey, ready.row, ready.hint, ready.rowsNote, ready.pickData], ["p1", "3", "찾은 값이 가장 많은 행 · 2개", "", false]);
   assert.equal(ready.rows.length, 2);
   const none = bandView(proposal({ counts: { proposal: 0, held: 1 } }), false);
   assert.deepEqual(none.primary, { label: PROPOSAL_COPY.noneLeft, disabled: true });
@@ -87,7 +87,9 @@ test("#1156 band: ready shows Python's counts and the make-all verb; zero propos
   assert.equal(working.message, "문서와 데이터를 맞춰 보는 중…");
   assert.equal(working.primary.disabled, true, "맞춰 보는 동안 주 행동은 흐리다");
   const empty = bandView(proposal({ state: "needs_data" }), false);
-  assert.deepEqual([empty.message, empty.primary, empty.rows.length], ["먼저 데이터를 고르세요.", null, 0]);
+  assert.deepEqual([empty.message, empty.primary, empty.rows.length, empty.pickData], ["먼저 데이터를 고르세요.", null, 0, true], "데이터가 없으면 데이터 고르기 단추가 선다");
+  const cut = bandView(proposal({ data: { ...proposal().data, rows_truncated: true, rows_note: "앞 500행만 맞춰 봅니다." } }), false);
+  assert.equal(cut.rowsNote, "앞 500행만 맞춰 봅니다.", "행이 잘렸으면 Python 안내가 행 힌트 곁에 선다");
   const failed = bandView(proposal({ state: "failed", error: "데이터를 읽을 수 없습니다." }), false);
   assert.deepEqual([failed.message, failed.failed, failed.primary], ["데이터를 읽을 수 없습니다.", true, null], "실패는 Python 문장 그대로이고 성공으로 낮추지 않는다");
 });
@@ -95,25 +97,28 @@ test("#1156 band: ready shows Python's counts and the make-all verb; zero propos
 test("#1156 outline: proposal and held rows carry Python's count text and the contract access names; missing columns group by reason", () => {
   const groups = outlineGroups(proposal());
   assert.deepEqual(groups.proposals.map((row) => [row.name, row.count, row.label]),
-    [["추정가격", "1곳", "필드 제안 추정가격: 170,309,180원"], ["공고명", "2곳", "필드 제안 공고명: 청사 보안"]]);
-  assert.deepEqual(groups.held.map((row) => [row.name, row.count, row.label]), [["낙찰자결정방법", "4곳", "보류된 제안 낙찰자결정방법: 적격심사"]]);
+    [["추정가격", "1곳", "필드 제안 추정가격: 170,309,180원 · 1곳"], ["공고명", "2곳", "필드 제안 공고명: 청사 보안 · 2곳"]], "줄의 접근 이름에 보이는 자리 수가 든다");
+  assert.deepEqual(groups.held.map((row) => [row.name, row.count, row.label]), [["낙찰자결정방법", "4곳", "보류된 제안 낙찰자결정방법: 적격심사 · 4곳"]]);
   assert.deepEqual(missingLines(proposal()), [
     { columns: "찾지 못한 열 · 품명, 비고", reason: "이 행에서 값이 비어 있습니다." },
     { columns: "찾지 못한 열 · 담당", reason: "문서에서 같은 값을 찾지 못했습니다." }]);
 });
 
-test("#1156 popover: Python's source line; format shows only when not 원문; equal-value columns make the head a column pick", () => {
+test("#1156 popover: Python's source line; the format line shows iff Python sends a format name; equal-value columns make the head a column pick", () => {
   const price = popoverView(proposal(), { group: "g_price", spot: "s1" });
   assert.equal(price.source, "3행 ‘추정가격’ 열과 같은 값입니다.");
   assert.deepEqual([price.column, price.choices], ["추정가격", ["추정가격", "현행가격"]], "같은 값의 열이 있으면 머리가 열 고르기다");
   assert.equal(price.dialogLabel, "추정가격 제안");
-  assert.deepEqual(price.format, { label: "천 단위 쉼표", raw: "170309180" });
+  assert.deepEqual(price.format, { label: "숫자", raw: "170309180" });
   assert.deepEqual(price.columns, ["‘현행가격’ 열도 같은 값입니다."]);
   assert.deepEqual([price.make, price.only, price.same, price.reason], [true, null, null, ""], "한 자리 제안에는 「이 자리만」이 없다");
   const title = popoverView(proposal(), { group: "g_title", spot: "s3" });
-  assert.equal(title.format, null, "원문은 표시형 줄을 세우지 않는다");
-  assert.deepEqual(title.same, { text: "같은 값 2곳", where: "첫 문장, 1. 가" });
-  assert.deepEqual(title.only, { label: "이 자리만", spot: "s3" });
+  assert.equal(title.format, null, "원문(빈 표시 이름)은 표시형 줄을 세우지 않는다");
+  assert.deepEqual(title.same, { text: "같은 값 2곳", where: "첫 문장 · 1. 가" }, "위치 표지는 쉼표를 품을 수 있어 가운뎃점으로 잇는다");
+  assert.deepEqual(title.only, { label: "이 자리만", spot: "s3" }, "「이 자리만」 단추 이름도 Python only_label 이다");
+  const one = proposal();
+  one.groups[1] = { ...one.groups[1], only_label: null };
+  assert.equal(popoverView(one, { group: "g_title", spot: "s3" }).only, null, "Python 이 단추 이름을 싣지 않으면 자리가 둘이어도 단추가 없다");
   assert.equal(title.links, "같은 이름 필드에 자리를 더합니다.", "같은 이름 필드 주석은 Python 문장이다");
   assert.deepEqual(title.choices, [], "다른 열이 없으면 이름만 선다");
 });
@@ -121,6 +126,7 @@ test("#1156 popover: Python's source line; format shows only when not 원문; eq
 test("#1156 popover (held): no make verb, Python's reason, and the one allowed place — a table cell reads 표 칸 1곳만 필드로", () => {
   const held = popoverView(proposal(), { group: "g_judge", spot: "s5" });
   assert.deepEqual([held.held, held.make, held.reason], [true, false, "같은 값이 다른 곳에도 3번 나옵니다. 라벨 옆 1곳만 고를 수 있습니다."]);
+  assert.equal(held.dialogLabel, "낙찰자결정방법 보류", "보류 묶음의 대화상자 이름은 「이름 보류」다");
   assert.deepEqual(held.only, { label: "표 칸 1곳만 필드로", spot: "s4" }, "고를 수 있는 자리는 Python 의 only 다");
   const loose = proposal();
   loose.groups[2] = { ...loose.groups[2], only: null, only_label: "이 자리만 필드로", reason: "문장 속 자리입니다." };
@@ -145,7 +151,7 @@ test("#1156 caret: only a collapsed caret inside a spot (same section, paragraph
 test("#1156 TXT marks: green and grey dotted spots carry the anchor token; only the open spot gets the face and the faint name tag", () => {
   const marks = proposalMarks(proposal(), { group: "g_title", spot: "s2" });
   assert.deepEqual(marks.slice(0, 3), [
-    { start: 0, end: 0, className: "cm-authoring-proposal-tag", label: "공고명" },
+    { start: 0, end: 0, className: "cm-authoring-proposal-tag", label: "공고명", decorative: true },
     { start: 0, end: 4, className: "cm-authoring-proposal cm-authoring-proposal-held", token: "proposal:s4" },
     { start: 0, end: 5, className: "cm-authoring-proposal cm-authoring-proposal-open", token: "proposal:s2" }]);
   assert.equal(marks.filter((mark) => mark.label).length, 1, "이름표는 연 자리에만");
@@ -223,9 +229,10 @@ test("#1156 caret: entering a spot opens its popover without moving focus; leavi
   const markup = render(controller);
   assert.ok(markup.includes('role="dialog" aria-label="추정가격 제안"'), "비모달 대화상자 「이름 제안」");
   assert.ok(markup.includes('<p class="authoring-proposal-source">3행 ‘추정가격’ 열과 같은 값입니다.</p>'));
-  assert.ok(markup.includes('<span>표시형</span><span class="authoring-proposal-fmt">천 단위 쉼표</span><span class="authoring-proposal-raw">데이터 값 <span class="mono">170309180</span></span>'));
+  assert.ok(markup.includes('<span>표시형</span><span class="authoring-proposal-fmt">숫자</span><span class="authoring-proposal-raw">데이터 값 <span class="mono">170309180</span></span>'));
   assert.ok(markup.includes('<button type="button" class="btn primary">필드로 만들기</button><button type="button" class="btn quiet authoring-proposal-keep">그대로 두기</button>'));
-  assert.ok(markup.includes('aria-label="필드 제안 추정가격: 170,309,180원" aria-pressed="true" aria-haspopup="dialog" aria-expanded="true"'), "열린 묶음의 줄은 눌린 상태다");
+  assert.ok(markup.includes('aria-label="필드 제안 추정가격: 170,309,180원 · 1곳" aria-haspopup="dialog" aria-expanded="true"'), "열린 묶음의 줄은 펼친 대화상자 단추다");
+  assert.ok(!/<button[^>]*data-proposal-row[^>]*aria-pressed/.test(markup), "토글 단추로 읽히지 않는다");
   caret(10, 14);
   assert.equal(controller.viewModel.getSnapshot().proposalOpen, null, "범위 선택은 팝오버를 걷는다");
   caret(9);
@@ -280,8 +287,8 @@ test("#1156 make: propose_make's result lands in the editor as one apply, then t
   controller.changed("a", "사용자가 친 글");
   await settle(); await settle();
   const undos = log.filter((entry) => entry[0] === "command").length;
-  await toasts[1].undo();
-  assert.equal(log.filter((entry) => entry[0] === "command").length, undos, "그 뒤 문서가 바뀌었으면 알림은 아무것도 되돌리지 않는다");
+  await assert.rejects(toasts[1].undo(), { message: "문서가 바뀌어 실행 취소할 수 없습니다." }, "그 뒤 문서가 바뀌었으면 되돌리지 않고 성공처럼 걷히지도 않는다");
+  assert.equal(log.filter((entry) => entry[0] === "command").length, undos, "아무것도 되돌리지 않는다");
 });
 
 test("#1156 make-all and dismiss: make-all is one apply with the contract sentence when Python sends none; dismiss and off are their own actions", async () => {
@@ -318,7 +325,10 @@ test("#1156 surfaces: the band under the toolbar, the outline groups above the f
   assert.ok(markup.includes('<section class="authoring-proposal-band" role="region" aria-labelledby="authoring-proposal-title">'));
   assert.ok(markup.includes('<label for="authoring-proposal-data">데이터</label>'));
   assert.ok(markup.includes('<option value="7">7행</option>'));
-  assert.ok(markup.includes('<span class="authoring-proposal-hint">값이 가장 많이 맞는 행 · 2개</span>'));
+  assert.ok(markup.includes('<span class="authoring-proposal-hint">찾은 값이 가장 많은 행 · 2개</span>'));
+  assert.ok(!markup.includes("authoring-proposal-rows-note"), "행이 잘리지 않았으면 안내가 없다");
+  assert.ok(markup.includes('<select id="authoring-proposal-data" class="field authoring-proposal-select"><option value="p1" selected="">'), "지금 데이터가 골라진 채이고 빈 첫 항목이 없다");
+  assert.ok(markup.includes('<span class="authoring-proposal-title" id="authoring-proposal-title" tabindex="-1">'), "띠 제목은 행동 뒤 초점을 받을 수 있다");
   assert.ok(markup.includes('<span class="authoring-proposal-status">제안 <b>2</b> · 보류 <b>1</b></span>'));
   assert.ok(markup.includes('<button type="button" class="btn primary">제안 2개 모두 필드로</button>'));
   assert.ok(markup.includes('aria-label="데이터로 필드 찾기 끄기"'));
@@ -329,10 +339,15 @@ test("#1156 surfaces: the band under the toolbar, the outline groups above the f
   snapshot.tabs[0].proposal = proposal({ counts: { proposal: 0, held: 1 }, groups: [proposal().groups[2]] });
   markup = render(controller);
   assert.ok(markup.includes('<p class="authoring-outline-empty">남은 제안이 없습니다.</p>'));
-  assert.ok(markup.includes('<button type="button" class="btn primary" disabled="">남은 제안 없음</button>'));
-  snapshot.tabs[0].proposal = proposal({ state: "needs_data" });
+  assert.ok(markup.includes('<button type="button" class="btn primary" aria-disabled="true">남은 제안 없음</button>'), "흐려도 disabled 가 아니다 — 초점이 몸통으로 떨어지지 않는다");
+  snapshot.tabs[0].proposal = proposal({ state: "needs_data", data: null, datasets: [] });
   markup = render(controller);
   assert.ok(markup.includes('<span class="authoring-proposal-status">먼저 데이터를 고르세요.</span>'));
+  assert.ok(markup.includes('<button type="button" class="btn">데이터 선택…</button>'), "데이터가 없으면 「문서 작업」의 데이터 선택 단추가 선다(막다르지 않다)");
+  assert.ok(!markup.includes('id="authoring-proposal-data"'), "고른 데이터가 없으면 빈 항목으로 시작하는 데이터 칸을 세우지 않는다");
+  snapshot.tabs[0].proposal = proposal({ data: { ...proposal().data, rows_truncated: true, rows_note: "앞 500행만 맞춰 봅니다." } });
+  assert.ok(render(controller).includes('<span class="authoring-proposal-hint">찾은 값이 가장 많은 행 · 2개</span><span class="authoring-proposal-rows-note">앞 500행만 맞춰 봅니다.</span>'),
+    "행이 잘렸으면 Python 안내가 행 힌트 뒤에 선다");
   assert.ok(!markup.includes("authoring-proposal-list"), "준비 전에는 묶음이 서지 않는다");
 });
 
@@ -361,4 +376,83 @@ test("#1156 column pick: equal-value columns turn the popover head into a named 
     { action: "propose_pick_column", session_id: "a", revision: 0, group_id: "g_price", column: "현행가격" });
   controller.update({ proposalOpen: { group: "g_title", spot: "s3", origin: "spot", rect: null, focus: 0 } });
   assert.ok(render(controller).includes('<span class="authoring-proposal-field">공고명</span>'), "다른 열이 없으면 이름만 선다");
+});
+
+test("#1156 TXT: closing a document popover (✕/Escape) does not reopen it from the focus-return echo; it reopens only after the caret leaves the spot", async () => {
+  const { controller, snapshot } = harness((action) => action === "locate" ? { matches: [], commands: [] } : {}, { media: "txt", name: "a.txt", path: "a.txt" });
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  const log = [];
+  // TXT 편집면처럼 초점 돌려주기가 같은 선택을 다시 보고한다(CodeMirror 는 선택을 실은 트랜잭션마다 selectionSet 이다).
+  const txt = { ...editor(log), focus: async (target) => { log.push(["focus", target]); controller.proposal.caret("a", { start: target.start, end: target.end }); } };
+  controller.attach("a", txt);
+  controller.update({ selection: { start: 2, end: 2 } });
+  controller.proposal.caret("a", { start: 2, end: 2 });
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen?.spot, "s2");
+  controller.proposal.close(true);
+  await settle();
+  assert.deepEqual(log, [["focus", { start: 2, end: 2 }]], "초점은 편집면의 지금 선택으로 돌아간다");
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen, null, "돌려준 초점의 선택 보고가 팝오버를 다시 열지 않는다");
+  controller.proposal.caret("a", { start: 4, end: 4 });
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen, null, "같은 자리 안에서 캐럿을 옮겨도 닫은 그대로다");
+  controller.proposal.caret("a", { start: 30, end: 30 });
+  controller.proposal.caret("a", { start: 1, end: 1 });
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen?.spot, "s2", "자리를 떠났다 돌아오면 다시 선다");
+  assert.equal(escapeShell(controller), "popover", "편집면의 Escape 는 팝오버만 걷는다 — 초점을 옮기지 않는 단계");
+  controller.proposal.caret("a", { start: 1, end: 1 });
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen, null, "Escape 로 닫은 자리도 다시 열리지 않는다");
+});
+
+test("#1156 Escape with a dock panel open closes only the popover and keeps the panel (no focus move to the dock opener)", async () => {
+  const { controller, snapshot } = harness();
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  controller.update({ panel: "search", proposalOpen: { group: "g_price", spot: "s1", origin: "spot", rect: null, focus: 0 } });
+  assert.equal(escapeShell(controller), "popover");
+  const view = controller.viewModel.getSnapshot();
+  assert.deepEqual([view.proposalOpen, view.panel], [null, "search"]);
+});
+
+test("#1156 decorations are re-sent only when the open spot changes; a moved caret line updates the anchor alone", async () => {
+  const { controller, snapshot } = harness((action) => action === "locate" ? { matches: [], commands: [] } : {});
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  let decorations = 0;
+  controller.attach("a", { ...editor([]), decorate() { decorations += 1; } });
+  const at = (start) => ({ entry: SECTION, paragraph: 4, start_paragraph: 4, end_paragraph: 4, start, end: start });
+  controller.proposal.caret("a", at(9), null);
+  const opened = decorations;
+  controller.proposal.caret("a", at(9), { left: 10, top: 20, bottom: 36 });
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalOpen.rect, { left: 10, top: 20, bottom: 36 }, "같은 캐럿이 줄과 함께 다시 오면 기준 줄을 고친다");
+  controller.proposal.caret("a", at(12), { left: 10, top: 20, bottom: 36 });
+  controller.proposal.caretRect("a", { left: 10, top: 60, bottom: 76 });
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalOpen.rect, { left: 10, top: 60, bottom: 76 }, "편집면 스크롤로 캐럿 줄이 옮겨 가면 따라간다");
+  controller.proposal.caretRect("a", null);
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen.rect, null, "틀 밖이면 기준이 없다(팝오버가 숨는다)");
+  assert.equal(decorations, opened, "같은 자리 안의 이동·기준 줄 변화는 장식을 다시 보내지 않는다");
+  controller.proposal.caret("a", at(30));
+  assert.equal(decorations, opened + 1, "자리를 떠나면 한 번");
+});
+
+test("#1156 focus after actions: an action taken from inside the popover asks the band for the next panel row; make-all asks for the title when none remain; the entry link asks for the title", async () => {
+  const command = { type: "create_field", name: "추정가격", entry: SECTION, paragraph: 4, start: 7, end: 18 };
+  const { controller, snapshot } = harness((action) => action === "propose_make" || action === "propose_make_all"
+    ? { content: "TkVX", edits: [], command, toast: "" } : action === "preview" ? { content: "TkVX", edits: [] } : action === "update" ? { revision: 1 } : {});
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  controller.attach("a", editor([]));
+  const spotOpen = { group: "g_title", spot: "s2", origin: "spot", rect: null, focus: 0 };
+  controller.update({ proposalOpen: spotOpen });
+  await controller.proposal.dismiss("g_title");
+  assert.equal(controller.viewModel.getSnapshot().proposalFocus ?? null, null, "문서에서 연 팝오버를 초점 밖에서 눌렀으면 초점을 옮기지 않는다");
+  controller.update({ proposalOpen: spotOpen });
+  await controller.proposal.dismiss("g_title", true);
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalFocus, { target: "row", index: 1, group: "g_title", revision: 0, seq: 1 }, "같은 차례의 줄로");
+  await controller.proposal.make("g_price", undefined, true);
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalFocus, { target: "row", index: 0, group: "g_price", revision: 0, seq: 2 });
+  await controller.proposal.makeAll();
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalFocus, { target: "emptyTitle", index: -1, revision: 0, seq: 3 });
+  controller.proposal.focusDone();
+  await controller.proposal.start(true);
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalFocus, { target: "title", index: -1, seq: 1 });
 });

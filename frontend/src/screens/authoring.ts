@@ -44,6 +44,14 @@ export { COVERAGE_LABEL, sameFieldMeta, outlineSpine, groupedPath, fieldsInFirst
   commandAvailability } from "./authoring_outline_model.ts";
 export type { SpineUse, SpineNode } from "./authoring_outline_model.ts";
 
+/** 셸 Escape 한 단계 뒤의 초점 — 패널을 닫았으면 연 자리로, 메뉴의 연 자리가 없으면 도구 막대로. 제안 팝오버만 걷었으면(#1156)
+ *  초점은 이미 편집면에 있으므로 옮기지 않는다. */
+function escapeFocus(controller: Props["controller"], view: Obj, returnFocus: (slot: "properties" | "dock") => void, focusToolbar: () => void) {
+  const closing = view.panel;
+  const stage = escapeShell(controller);
+  if (stage === "panel") returnFocus(closing && closing !== "properties" ? "dock" : "properties");
+  else if (stage === "menu" && !focusable(view.contextMenu?.trigger)) focusToolbar();
+}
 
 /** IME 조합 중에는 문서 명령을 보내지 않는다 — 조합이 끝난 뒤 같은 명령을 다시 받는다. */
 
@@ -325,11 +333,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     else if (shortcut === "commands") openPalette();
     else if (shortcut === "rename") rename();
     else if (shortcut === "undo" || shortcut === "redo") act(() => controller.command(shortcut))();
-    else if (shortcut === "escape") {
-      const closing = view.panel;
-      if (escapeShell(controller) === "panel") returnFocus(closing && closing !== "properties" ? "dock" : "properties");
-      else if (!focusable(view.contextMenu?.trigger)) focusFirst([toolbarEntry()]);
-    }
+    else if (shortcut === "escape") escapeFocus(controller, view, returnFocus, () => focusFirst([toolbarEntry()]));
     else if (shortcut === "cycle") {
       // 패널 간 초점 이동(§10): 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 대신 선다(authoring_layout.ts).
       // roving 묶음(탭·도구 막대·구조 목록)은 제 대기 항목(tabindex=0)으로 들어간다(UX-04).

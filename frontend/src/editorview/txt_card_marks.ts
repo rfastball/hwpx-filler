@@ -21,6 +21,8 @@ export type LintpadMark = {
   label?: string;
   /** 표지·칠에 실을 `data-token`(필드 이름) — 튜토리얼 앵커·프로브가 이 신원으로 겨눈다. */
   token?: string;
+  /** 표지(길이 0)를 보조 기술에서 숨긴다 — 본문 글자로 읽히면 안 되는 장식 표지(#1156 제안 이름표). */
+  decorative?: boolean;
 };
 
 const setMarks = StateEffect.define<readonly LintpadMark[]>();
@@ -30,17 +32,19 @@ class HoleTag extends WidgetType {
   readonly label: string;
   readonly className: string;
   readonly token: string;
-  constructor(label: string, className: string, token: string) {
+  readonly decorative: boolean;
+  constructor(label: string, className: string, token: string, decorative = false) {
     super();
-    this.label = label; this.className = className; this.token = token;
+    this.label = label; this.className = className; this.token = token; this.decorative = decorative;
   }
   eq(other: HoleTag): boolean {
-    return other.label === this.label && other.className === this.className && other.token === this.token;
+    return other.label === this.label && other.className === this.className && other.token === this.token && other.decorative === this.decorative;
   }
   toDOM(): HTMLElement {
     const el = document.createElement("span");
     el.className = this.className;
     if (this.token) el.dataset.token = this.token;
+    if (this.decorative) el.setAttribute("aria-hidden", "true");
     el.textContent = this.label;
     return el;
   }
@@ -54,7 +58,7 @@ function markDecoration(marks: readonly LintpadMark[]): DecorationSet {
     if (mark.start === mark.end) {
       if (mark.label) {
         ranges.push(Decoration.widget({
-          widget: new HoleTag(mark.label, mark.className, mark.token || ""), side: 1,
+          widget: new HoleTag(mark.label, mark.className, mark.token || "", mark.decorative === true), side: 1,
         }).range(mark.start));
       }
     } else {

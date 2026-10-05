@@ -18,7 +18,7 @@ function_statements = 59
 function_complexity = 14
 
 [budget."frontend/src/editorview/rhwp_editor.ts"]
-module_statements = 368
+module_statements = 362
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp"]
 function_complexity = 38
@@ -31,7 +31,7 @@ function_complexity = 18
 function_complexity = 13
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.selection"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.setDecorations"]
 function_complexity = 41
@@ -59,7 +59,7 @@ function_complexity = 98
 function_statements = 155
 
 [budget."frontend/src/screens/authoring.ts::AuthoringScreen.shellInput.current.key"]
-function_complexity = 26
+function_complexity = 22
 
 [budget."frontend/src/screens/authoring_a11y.ts::isCurrentTarget"]
 function_complexity = 12

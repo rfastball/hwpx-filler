@@ -449,7 +449,10 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-proposal-title .icon path:last-child{stroke:var(--proposal-ink)}
 .authoring-proposal-band label{color:var(--n-ink-soft)}
 .authoring-proposal-band .authoring-proposal-select{width:auto;max-width:16rem;min-height:28px;padding-block:0;font-size:var(--fs-dense)}
-.authoring-proposal-hint{font-size:var(--fs-caption);color:var(--n-ink-soft)}
+.authoring-proposal-hint,.authoring-proposal-rows-note{font-size:var(--fs-caption);color:var(--n-ink-soft)}
+/* 맞춰 보는 동안·남은 제안이 없을 때 띠의 조작은 aria-disabled 로 흐린다(초점을 쥔 채로 — disabled 는 초점을 몸통으로 떨군다). */
+.authoring-proposal-band .btn[aria-disabled=true],.authoring-proposal-band .authoring-proposal-select[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.authoring-proposal-band .btn[aria-disabled=true]:active{transform:none}
 .authoring-proposal-status{margin-left:auto;color:var(--n-ink-soft);font-variant-numeric:tabular-nums}
 .authoring-proposal-status b{color:var(--a-ink);font-weight:600}
 .authoring-proposal-status[data-severity=error]{color:var(--a-danger);white-space:normal}
@@ -460,13 +463,13 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-proposal-group{display:flex;justify-content:space-between;padding:var(--sp-8) var(--sp-4) var(--sp-2);font-size:var(--fs-caption);font-weight:600;color:var(--n-ink-soft);font-variant-numeric:tabular-nums}
 .authoring-proposal-row{display:flex;align-items:center;gap:var(--sp-8);width:100%;min-height:28px;padding:0 var(--sp-4);border:0;border-radius:var(--rad-control);background:transparent;font:inherit;font-size:var(--fs-dense);text-align:left;color:var(--a-ink);cursor:pointer}
 .authoring-proposal-row:hover{background:var(--n-hover)}
-.authoring-proposal-row[aria-pressed=true]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.authoring-proposal-row[aria-expanded=true]{background:var(--a-sel);color:var(--a-primary);font-weight:600}
 .authoring-shell .authoring-proposal-row:focus-visible{outline-offset:-2px}
 .authoring-proposal-swatch{flex:none;width:10px;height:10px;border:1.5px dashed var(--proposal-ink);border-radius:2px;background:var(--a-card)}
 .authoring-proposal-swatch.held{border-color:var(--proposal-held)}
 .authoring-proposal-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .authoring-proposal-count{flex:none;font-size:var(--fs-caption);font-weight:400;color:var(--n-ink-soft);white-space:nowrap}
-.authoring-proposal-row[aria-pressed=true] .authoring-proposal-count{color:inherit}
+.authoring-proposal-row[aria-expanded=true] .authoring-proposal-count{color:inherit}
 .authoring-proposal-missing{margin:var(--sp-6) var(--sp-4) 0;font-size:var(--fs-caption);line-height:1.5;color:var(--n-ink-soft)}
 .authoring-proposal-link{padding:0;border:0;background:transparent;font:inherit;font-weight:600;color:var(--a-primary);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .authoring-proposal-link:hover{color:var(--a-primary-h)}
@@ -475,10 +478,10 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:var(--proposal-held)}
 .authoring-document .cm-authoring-proposal-open{background:var(--proposal-face);box-shadow:0 0 0 2px color-mix(in srgb,var(--proposal-ink) 45%,transparent);border-radius:2px 2px 0 0}
 .authoring-document .cm-authoring-proposal-held.cm-authoring-proposal-open{background:color-mix(in srgb,var(--proposal-held) 14%,var(--a-card));box-shadow:0 0 0 2px color-mix(in srgb,var(--proposal-held) 45%,transparent)}
-.authoring-document .cm-authoring-proposal-tag{display:inline-block;margin-right:3px;padding:0 4px;border:1px dashed color-mix(in srgb,var(--proposal-ink) 55%,transparent);border-radius:3px;background:var(--proposal-face);color:var(--proposal-ink);font-family:var(--font-ui);font-size:11px;font-weight:600;line-height:15px;vertical-align:1px}
+.authoring-document .cm-authoring-proposal-tag{display:inline-block;margin-right:3px;padding:0 4px;border:1px dashed color-mix(in srgb,var(--proposal-ink) 55%,transparent);border-radius:3px;background:var(--proposal-face);color:var(--a-ink);font-family:var(--font-ui);font-size:.6875rem;font-weight:600;line-height:1.35;vertical-align:1px}
 .authoring-document .cm-authoring-proposal-tag.cm-authoring-proposal-held{border-color:var(--proposal-held);background:var(--a-card);color:var(--n-ink-soft)}
 /* 제안 팝오버 — 셸 층의 비모달 대화상자. 행동 줄: 주 행동 · 보조 · 오른쪽 끝의 물러선 「그대로 두기」. */
-.authoring-proposal-popover{position:absolute;z-index:var(--z-popover);width:min(340px,calc(100vw - 2rem));padding:var(--sp-10) var(--sp-10) var(--sp-10) var(--sp-12);background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);box-shadow:0 16px 40px var(--a-shadow);font-size:var(--fs-dense);line-height:1.5;color:var(--a-ink);word-break:keep-all;animation:authoring-proposal-in var(--dur-pop) var(--ease-out)}
+.authoring-proposal-popover{position:absolute;z-index:var(--z-popover);width:min(340px,calc(100vw - 2rem));padding:var(--sp-10) var(--sp-10) var(--sp-10) var(--sp-12);background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);box-shadow:0 16px 40px var(--a-shadow);font-size:var(--fs-dense);line-height:1.5;color:var(--a-ink);word-break:keep-all;max-height:min(70vh,32rem);overflow:auto;overscroll-behavior:contain;animation:authoring-proposal-in var(--dur-pop) var(--ease-out)}
 @keyframes authoring-proposal-in{from{opacity:.4;transform:translateY(-3px)}to{opacity:1;transform:none}}
 .authoring-proposal-head{display:flex;align-items:center;gap:var(--sp-8);min-height:30px}
 .authoring-proposal-field{font-size:var(--fs-strong);font-weight:600;min-width:0;overflow-wrap:anywhere}
@@ -488,7 +491,7 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-proposal-value{padding:var(--sp-6) var(--sp-10) var(--sp-8);border-radius:var(--rad-control);background:var(--a-window)}
 .authoring-proposal-text{font-family:var(--font-mono);font-size:var(--fs-body);overflow-wrap:anywhere}
 .authoring-proposal-format{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-4) var(--sp-6);margin-top:var(--sp-4);font-size:var(--fs-caption);color:var(--n-ink-soft)}
-.authoring-proposal-fmt{padding:0 var(--sp-8);border:1px solid color-mix(in srgb,var(--proposal-ink) 40%,transparent);border-radius:var(--rad-pill);background:var(--proposal-face);font-weight:600;line-height:18px;color:var(--proposal-ink);white-space:nowrap}
+.authoring-proposal-fmt{padding:0 var(--sp-8);border:1px solid color-mix(in srgb,var(--proposal-ink) 40%,transparent);border-radius:var(--rad-pill);background:var(--proposal-face);font-weight:600;line-height:18px;color:var(--a-ink);white-space:nowrap}
 .authoring-proposal-raw{flex-basis:100%}
 .authoring-proposal-same,.authoring-proposal-why{display:flex;align-items:flex-start;gap:var(--sp-6);margin:var(--sp-8) 0 0;font-size:var(--fs-caption);color:var(--n-ink-soft)}
 .authoring-proposal-same b{font-weight:600;color:var(--a-ink)}
@@ -504,11 +507,12 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-proposal-band,.authoring-proposal-popover{border-color:CanvasText}
   .authoring-proposal-swatch{border-color:Highlight}
   .authoring-proposal-swatch.held,.authoring-proposal-chip{border-color:GrayText}
-  .authoring-proposal-row[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}
+  .authoring-proposal-row[aria-expanded=true]{outline:2px solid Highlight;outline-offset:-2px}
   .authoring-proposal-link{color:LinkText}
   .authoring-document .cm-authoring-proposal{border-bottom-color:Highlight}
   .authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:GrayText}
   .authoring-document .cm-authoring-proposal-open{outline:2px solid Highlight;outline-offset:1px;box-shadow:none}
   .authoring-document .cm-authoring-proposal-tag{forced-color-adjust:none;border-color:CanvasText;background:Canvas;color:CanvasText}
   .authoring-proposal-fmt{border-color:CanvasText}
+  .authoring-proposal-band .btn[aria-disabled=true]{color:GrayText}
 }

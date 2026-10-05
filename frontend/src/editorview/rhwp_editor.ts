@@ -19,6 +19,10 @@ export type RhwpMountSpec = {
    *  when the selection collapses or changes, the document is edited, or the reported line moves (scroll,
    *  zoom). The same selection is not re-reported after an edit or a move. */
   onSelectionRect?: (rect: HostLineRect | null) => void;
+  /** The caret (collapsed selection) line moved under an unchanged caret (scroll, zoom, relayout): its new line in
+   *  host client coordinates, or null when it left the frame. A UI anchored to the caret (#1156 proposal popover)
+   *  follows it or hides; the caret itself is not re-reported. */
+  onCaretRect?: (caret: HostLineRect | null) => void;
   onError: (error: unknown) => void; onShortcut?: (shortcut: RhwpShortcut) => void;
   /** Document right-click or keyboard menu key (Shift+F10, ContextMenu) inside the editor, in
    *  host client coordinates (the keyboard menu opens under the caret). Given = the host's menu
@@ -112,6 +116,19 @@ function encodeBase64(bytes: Uint8Array): string {
   return btoa(result);
 }
 
+/** A Studio selection range as the wire selection — null when it spans sections, names no known section, carries a
+ *  bad index, or has a table-cell path that cannot be read. Studio reports cellPath only when both edges share one
+ *  table cell; paragraphs are then cell-level. */
+function wireSelection(range: any, sectionEntries: readonly string[]): Selection | null {
+  const entry = range && range.start.section === range.end.section ? sectionEntries[range.start.section] : undefined;
+  const cellPath = range?.cellPath ? wireCellPath(range.cellPath) : undefined;
+  if (!entry || cellPath === null) return null;
+  const { start, end } = range;
+  const next: Selection = { entry, paragraph: start.paragraph, start_paragraph: start.paragraph,
+    end_paragraph: end.paragraph, start: start.charOffset, end: end.charOffset, ...(cellPath ? { cell_path: cellPath } : {}) };
+  return [start.paragraph, end.paragraph, next.start, next.end].every(isIndex) ? next : null;
+}
+
 /** The pinned SDK owns the iframe and MessageChannel; this module owns its lifetime. */
 export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const root = document.documentElement;
@@ -125,7 +142,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   studioUrl.searchParams.set("autosave", "off");
   const editor = await (spec.studio ?? createStudio)(spec.host, { studioUrl: studioUrl.href, plugins: ["hwpctrl"], width: FRAME_WIDTH,
     chrome: { menu: false, toolbar: !spec.readOnly, statusbar: false }, ...(spec.title ? { title: spec.title } : {}) });
-  let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "";
+  let disposed = false, readOnly = spec.readOnly, compatibilityBlocked = false, replacing = false, lastSelection = "", caretLine = "";
   let changeGeneration = 0, lastEmittedContent = spec.content;
   let pendingChange: Promise<void> | null = null;
   // Debounced export: `scheduled` means a change arrived that no export has started for yet.
@@ -207,26 +224,15 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const selection = async () => {
     if (disposed) return;
     const context = await editor.getSelectionContext();
-    const range = context.range;
-    const clear = () => { reportRect("", null); if (lastSelection) { lastSelection = ""; spec.onSelectionChanged({}); } };
-    if (!range || range.start.section !== range.end.section) { clear(); return; }
-    const { start, end } = range;
-    const entry = sectionEntries[start.section];
-    if (!entry) { clear(); return; }
-    const next: Selection = { entry, paragraph: start.paragraph, start_paragraph: start.paragraph,
-      end_paragraph: end.paragraph, start: start.charOffset, end: end.charOffset };
-    if (![start.paragraph, end.paragraph, next.start, next.end].every(isIndex)) { clear(); return; }
-    if (range.cellPath) {
-      // Studio reports cellPath only when both edges share one table cell; paragraphs are then cell-level.
-      const cellPath = wireCellPath(range.cellPath);
-      if (!cellPath) { clear(); return; }
-      next.cell_path = cellPath;
-    }
+    const next = wireSelection(context.range, sectionEntries);
+    if (!next) { reportRect("", null); if (lastSelection) { lastSelection = ""; spec.onSelectionChanged({}); } return; }
     const key = JSON.stringify(next);
     const collapsed = next.start_paragraph === next.end_paragraph && next.start === next.end;
     // A caret polled mid-press has no line yet; the same caret is reported once more when its line is known (#1156).
     const reported = `${key}${collapsed && !context.rect}`;
-    if (reported !== lastSelection) { lastSelection = reported; spec.onSelectionChanged(next, visibleRect(context.rect)); }
+    const line = collapsed ? JSON.stringify(context.rect ?? null) : "";
+    if (reported !== lastSelection) { lastSelection = reported; caretLine = line; spec.onSelectionChanged(next, visibleRect(context.rect)); }
+    else if (collapsed && line !== caretLine) { caretLine = line; spec.onCaretRect?.(visibleRect(context.rect)); }
     reportRect(collapsed || disposed ? "" : key, context.rect);
   };
   // Selection occurs inside the iframe; host-element pointer/key events cannot observe it.

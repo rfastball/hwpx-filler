@@ -118,11 +118,12 @@ export function sharedReason(commands: Obj[] | undefined, types: string[] = COMM
   const reasons = types.map((type) => commandAvailability(commands, type)).filter((entry) => !entry.enabled && !entry.pending).map((entry) => String(entry.reason || ""));
   return reasons.length > 1 && reasons.every((reason) => reason && reason === reasons[0]) ? reasons[0] : null;
 }
-/** Escape 한 단계(§10): 문맥 메뉴가 열려 있으면 그것만 닫고 초점을 연 자리로 돌린다("menu"); 아니면 패널을 닫는다("panel"). */
-export function escapeShell(controller: Pick<AuthoringController, "update" | "viewModel"> & Partial<Pick<AuthoringController, "proposal">>): "menu" | "panel" {
+/** Escape 한 단계(§10): 제안 팝오버가 서 있으면 그것만 걷는다("popover" — 초점은 옮기지 않는다); 문맥 메뉴가 열려 있으면 그것만
+ *  닫고 초점을 연 자리로 돌린다("menu"); 아니면 패널을 닫는다("panel"). */
+export function escapeShell(controller: Pick<AuthoringController, "update" | "viewModel"> & Partial<Pick<AuthoringController, "proposal">>): "menu" | "panel" | "popover" {
   const view = controller.viewModel.getSnapshot();
-  // 제안 팝오버(#1156)가 서 있으면 Escape 한 번은 그것만 걷는다 — 초점은 편집면의 지금 선택으로 돌아간다.
-  if (view.proposalOpen && controller.proposal) { controller.proposal.close(false); return "panel"; }
+  // 제안 팝오버(#1156)가 서 있으면 Escape 한 번은 그것만 걷는다 — 초점은 이미 편집면에 있다(팝오버 안의 Escape 는 팝오버가 받는다).
+  if (view.proposalOpen && controller.proposal) { controller.proposal.close(false); return "popover"; }
   if (view.contextMenu) { const trigger = view.contextMenu.trigger; controller.update({ contextMenu: null, selectionNote: null }); if (focusable(trigger)) trigger.focus(); return "menu"; }
   controller.update({ panel: "", preview: null, refusal: null, selectionNote: null });
   return "panel";

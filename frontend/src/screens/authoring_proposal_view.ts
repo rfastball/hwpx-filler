@@ -7,7 +7,7 @@ import { selectionBarPlace } from "./authoring_commands.ts";
 import { button, iconButton, primary, quiet } from "./authoring_primitives.ts";
 import type { Obj, Props } from "./authoring_primitives.ts";
 import { PROPOSAL_COPY, bandView, missingLines, outlineGroups, popoverView, proposalCounts, proposalOf } from "./authoring_proposal.ts";
-import type { ProposalOpen } from "./authoring_proposal.ts";
+import type { ProposalFocus, ProposalOpen } from "./authoring_proposal.ts";
 import { icon } from "./icons.ts";
 
 type Surface = Props & { item: Obj | undefined; view: Obj };
@@ -30,23 +30,53 @@ function bandStatus(band: ReturnType<typeof bandView>, proposal: Obj): ReactNode
 /** 띠가 단일 live region 으로 읽을 전이 — 준비면 수, 데이터가 없으면 다음 행동. 실패는 경보 칸(role=alert)이 읽는다. */
 const spokenOf = (band: ReturnType<typeof bandView> | null) => band?.state === "ready" || band?.state === "needs_data" ? band.message : "";
 
-/** 데이터·행 고르기 — 데이터는 Python 이 준 등록 데이터 목록, 행은 Python 이 고른 행과 상위 행이며 고른 행의 힌트가 곁에 선다. */
+/** 맞춰 보는 동안 띠의 조작 — `disabled` 가 아니라 `aria-disabled` 로 흐리고 입력을 무시한다. 초점을 쥔 조작이 disabled 가
+ *  되면 브라우저가 초점을 문서 몸통으로 떨어뜨리고 되살리지 않는다(행을 ↓ 로 넘기다 초점을 잃는다). */
+const dimmed = (off: boolean) => (off ? { "aria-disabled": true } : {});
+const unless = (off: boolean, work: () => void) => () => { if (!off) work(); };
+
+/** 데이터·행 고르기 — 데이터는 Python 이 준 등록 데이터 목록(지금 데이터가 골라진 채로만 선다), 행은 Python 이 고른 행과 상위 행이며
+ *  고른 행의 힌트와 행이 잘렸을 때의 Python 안내가 곁에 선다. 데이터가 없으면(needs_data) 데이터 선택 창을 여는 단추가 선다. */
 function bandPickers(controller: Props["controller"], band: ReturnType<typeof bandView>): ReactNode[] {
   const busy = band.state === "working";
   return [
-    band.datasets.length > 0 && h(Fragment, { key: "data" },
+    band.dataKey && band.datasets.length > 0 && h(Fragment, { key: "data" },
       h("label", { htmlFor: "authoring-proposal-data" }, PROPOSAL_COPY.data),
-      h("select", { id: "authoring-proposal-data", className: "field authoring-proposal-select", value: band.dataKey, disabled: busy,
-        onChange: (event: any) => run(controller, () => controller.proposal.chooseData(String(event.target.value)))() },
-        band.dataKey ? null : h("option", { value: "" }, ""),
+      h("select", { id: "authoring-proposal-data", className: "field authoring-proposal-select", value: band.dataKey, ...dimmed(busy),
+        onChange: (event: any) => { if (!busy) run(controller, () => controller.proposal.chooseData(String(event.target.value)))(); } },
         ...band.datasets.map((entry) => h("option", { key: String(entry.key), value: String(entry.key) }, String(entry.name ?? entry.key))))),
+    band.pickData && controller.proposal.canPickData() && h(Fragment, { key: "pick" },
+      button(PROPOSAL_COPY.pickData, unless(busy, run(controller, () => controller.proposal.pickData())), { className: "btn", ...dimmed(busy) })),
     band.rows.length > 0 && h(Fragment, { key: "row" },
       h("label", { htmlFor: "authoring-proposal-row" }, PROPOSAL_COPY.row),
-      h("select", { id: "authoring-proposal-row", className: "field authoring-proposal-select", value: band.row, disabled: busy,
-        onChange: (event: any) => run(controller, () => controller.proposal.chooseRow(Number(event.target.value)))() },
+      h("select", { id: "authoring-proposal-row", className: "field authoring-proposal-select", value: band.row, ...dimmed(busy),
+        onChange: (event: any) => { if (!busy) run(controller, () => controller.proposal.chooseRow(Number(event.target.value)))(); } },
         ...band.rows.map((row) => h("option", { key: String(row.index), value: String(row.index) }, String(row.label ?? row.index)))),
-      band.hint && h("span", { className: "authoring-proposal-hint" }, band.hint)),
+      band.hint && h("span", { className: "authoring-proposal-hint" }, band.hint),
+      band.rowsNote && h("span", { className: "authoring-proposal-rows-note" }, band.rowsNote)),
   ];
+}
+
+/** 행동 뒤 초점 요청(`ProposalFocus`)을 푼다 — Python 의 다음 투영이 닿은 뒤(revision 이 바뀌었거나 그 묶음이 사라졌다) 같은
+ *  차례의 구조 패널 줄로, 줄이 없거나 접혀 있으면 띠 제목으로. 남은 제안이 없을 때만 띠 제목으로 가는 요청(모두 필드로)도 있다. */
+function useFocusRequest(controller: Props["controller"], root: { current: HTMLElement | null }, proposal: Obj | null, request: ProposalFocus | null) {
+  const groups: string[] = Array.isArray(proposal?.groups) ? proposal!.groups.map((group: Obj) => String(group.id)) : [];
+  useEffect(() => {
+    const shell = root.current?.closest<HTMLElement>(".authoring-shell");
+    if (!request || !proposal || !shell || waiting(request, proposal, groups)) return;
+    controller.proposal.focusDone();
+    focusTarget(shell, request, proposal);
+  }, [request?.seq, `${proposal?.revision}:${groups.join(",")}`]);
+}
+/** 요청이 아직 Python 의 다음 투영을 기다리는가 — revision 이 그대로이고 행동한 묶음이 아직 있다. */
+const waiting = (request: ProposalFocus, proposal: Obj, groups: string[]) =>
+  request.revision !== undefined && proposal.revision === request.revision && (!request.group || groups.includes(request.group));
+/** 요청의 자리로 초점을 옮긴다 — 줄 차례(없으면 띠 제목), 띠 제목, 또는 남은 제안이 없을 때만 띠 제목. */
+function focusTarget(shell: HTMLElement, request: ProposalFocus, proposal: Obj) {
+  const title = shell.querySelector<HTMLElement>("#authoring-proposal-title");
+  if (request.target === "emptyTitle") { if (!proposalCounts(proposal).proposal) title?.focus(); return; }
+  const rows = request.target === "row" ? [...shell.querySelectorAll<HTMLElement>("button[data-proposal-row]")] : [];
+  (rows[Math.min(Math.max(request.index, 0), rows.length - 1)] || title)?.focus();
 }
 
 /** 띠(도구 막대 아래, 이름 붙은 구획): 데이터·행 고르기, 수, 「제안 N개 모두 필드로」, 끄기. 수가 바뀌면 단일 live region 이 한 번 읽는다. */
@@ -57,6 +87,7 @@ export function ProposalBand({ controller, item, view }: Surface): ReactNode {
   const spoken = useRef("");
   const say = spokenOf(band);
   useEffect(() => { if (say && say !== spoken.current) controller.announce(say); spoken.current = say; }, [say]);
+  useFocusRequest(controller, root, proposal, view.proposalFocus || null);
   if (!band || !proposal) return null;
   // 끄면 띠가 사라진다 — 초점은 도구 막대의 대기 항목으로 간다.
   const off = run(controller, async () => {
@@ -65,40 +96,33 @@ export function ProposalBand({ controller, item, view }: Surface): ReactNode {
     toolbar?.focus();
   });
   return h("section", { ref: root, className: "authoring-proposal-band", role: "region", "aria-labelledby": "authoring-proposal-title", "aria-busy": band.state === "working" || undefined },
-    h("span", { className: "authoring-proposal-title", id: "authoring-proposal-title" }, icon("find"), PROPOSAL_COPY.title),
+    h("span", { className: "authoring-proposal-title", id: "authoring-proposal-title", tabIndex: -1 }, icon("find"), PROPOSAL_COPY.title),
     ...bandPickers(controller, band),
     bandStatus(band, proposal),
-    band.primary && primary(band.primary.label, run(controller, () => controller.proposal.makeAll()), { disabled: band.primary.disabled }),
+    band.primary && primary(band.primary.label, unless(band.primary.disabled, run(controller, () => controller.proposal.makeAll())), dimmed(band.primary.disabled)),
     h("span", { className: "authoring-proposal-sep", "aria-hidden": true }),
     iconButton("close", PROPOSAL_COPY.off, off));
 }
 
 /** 구조 패널의 제안·보류 묶음(띠가 켜진 동안 필드 목록 위). 줄은 한 번의 Tab 으로 들어와 ↑↓ 로 옮기고(roving),
- *  누르면 그 자리로 편집면을 옮기며 팝오버를 연다. 팝오버가 선 줄은 눌린 상태다. */
+ *  누르면 그 자리로 편집면을 옮기며 팝오버를 연다(대화상자를 여는 단추: aria-haspopup·aria-expanded). 행동 뒤 초점은 띠가 돌린다. */
 export function ProposalOutline({ controller, item, view }: Surface): ReactNode {
   const proposal = proposalOf(item);
-  const list = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState("");
-  const at = useRef(0);
-  // 패널 줄에서 연 팝오버의 행동 뒤 — 같은 차례의 줄(없으면 마지막 줄)로 초점이 돌아온다.
-  useEffect(() => {
-    const rows = [...(list.current?.querySelectorAll<HTMLElement>("button[data-proposal-row]") || [])];
-    if (view.proposalFocus) rows[Math.min(at.current, rows.length - 1)]?.focus();
-  }, [view.proposalFocus]);
   if (proposal?.state !== "ready") return null;
   const groups = outlineGroups(proposal);
   const all = [...groups.proposals, ...groups.held];
   const open: ProposalOpen | null = view.proposalOpen || null;
   const current = all.some((entry) => entry.id === active) ? active : all[0]?.id;
   const row = (entry: Obj) => h("button", { key: entry.id, type: "button", className: "authoring-proposal-row", "data-proposal-row": entry.id,
-    tabIndex: entry.id === current ? 0 : -1, "aria-label": entry.label, "aria-pressed": open?.group === entry.id,
+    tabIndex: entry.id === current ? 0 : -1, "aria-label": entry.label,
     "aria-haspopup": "dialog", "aria-expanded": open?.group === entry.id, onFocus: () => setActive(entry.id),
-    onClick: (event: any) => { at.current = all.indexOf(entry); run(controller, () => controller.proposal.openRow(entry.id, event.currentTarget))(); } },
+    onClick: (event: any) => run(controller, () => controller.proposal.openRow(entry.id, event.currentTarget))() },
     h("span", { className: `authoring-proposal-swatch${entry.held ? " held" : ""}`, "aria-hidden": true }),
     h("span", { className: "authoring-proposal-name", title: entry.name }, entry.name),
     entry.count ? h("span", { className: "authoring-proposal-count" }, entry.count) : null);
   const head = (id: string, label: string, count: number) => h("div", { className: "authoring-proposal-group", id }, h("span", null, label), h("span", null, String(count)));
-  return h("div", { ref: list, className: "authoring-proposal-list", onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, "button[data-proposal-row]", "vertical"); } },
+  return h("div", { className: "authoring-proposal-list", onKeyDown: (event: any) => { roveFocus(event, event.currentTarget, "button[data-proposal-row]", "vertical"); } },
     head("authoring-proposal-group-proposal", PROPOSAL_COPY.proposals, groups.proposals.length),
     groups.proposals.length
       ? h("div", { role: "group", "aria-labelledby": "authoring-proposal-group-proposal" }, ...groups.proposals.map(row))
@@ -112,16 +136,27 @@ export function ProposalOutline({ controller, item, view }: Surface): ReactNode 
 export function EmptyFields({ controller, item, text }: Props & { item: Obj; text: string }): ReactNode {
   return h(Fragment, null, h("p", { className: "authoring-outline-empty" }, text),
     !proposalOf(item) && !proposalReadOnly(item) && h("p", { className: "authoring-outline-empty" },
-      h("button", { type: "button", className: "authoring-proposal-link", onClick: run(controller, () => controller.proposal.find()) }, PROPOSAL_COPY.link)));
+      // 링크는 띠가 서며 걷힌다 — 초점을 쥐고 있었으면 띠 제목으로 옮긴다.
+      h("button", { type: "button", className: "authoring-proposal-link",
+        onClick: (event: any) => { const focused = event.currentTarget === event.currentTarget.ownerDocument?.activeElement; run(controller, () => controller.proposal.start(focused))(); } },
+        PROPOSAL_COPY.link)));
 }
 
-/** 팝오버의 기준 자리(호스트 창 좌표) — 패널 줄이면 그 줄(오른쪽에 선다), TXT 면 그 자리 표식, HWPX 면 캐럿 줄. */
-function anchorOf(controller: Props["controller"], open: ProposalOpen, box: HTMLElement): { rect: Rect; side: "below" | "right" } | null {
+/** 팝오버의 기준 자리(호스트 창 좌표) — 패널 줄이면 그 줄(오른쪽에 선다), TXT 면 그 자리 표식, HWPX 면 캐럿 줄.
+ *  문서 자리가 보이지 않으면(TXT 표식이 편집면 스크롤 밖이거나 가상화로 걷혔다, HWPX 캐럿 줄이 틀 밖이다) `"hidden"` 이다. */
+function anchorOf(controller: Props["controller"], open: ProposalOpen, box: HTMLElement): { rect: Rect; side: "below" | "right" } | "hidden" | null {
   const element = open.origin === "row" ? controller.proposal.opener() as HTMLElement | null
     : box.ownerDocument.querySelector<HTMLElement>(`.authoring-document:not([hidden]) [data-token=${JSON.stringify(`proposal:${open.spot}`)}]`);
   const rect = element?.isConnected && typeof element.getBoundingClientRect === "function" ? element.getBoundingClientRect() : null;
-  if (rect) return { rect: { left: open.origin === "row" ? rect.right : rect.left, top: rect.top, bottom: rect.bottom }, side: open.origin === "row" ? "right" : "below" };
-  return open.rect ? { rect: open.rect as Rect, side: "below" } : null;
+  if (rect && open.origin === "row") return { rect: { left: rect.right, top: rect.top, bottom: rect.bottom }, side: "right" };
+  if (rect) return outside(rect, element!.closest<HTMLElement>(".cm-scroller")) ? "hidden" : { rect: { left: rect.left, top: rect.top, bottom: rect.bottom }, side: "below" };
+  if (open.rect) return { rect: open.rect as Rect, side: "below" };
+  return open.origin === "spot" ? "hidden" : null;
+}
+/** 자리 표식이 편집면 스크롤 창 밖인가. */
+function outside(rect: { top: number; bottom: number }, scroller: HTMLElement | null): boolean {
+  const view = scroller?.getBoundingClientRect();
+  return !!view && view.bottom > view.top && (rect.bottom <= view.top || rect.top >= view.bottom);
 }
 
 /** 팝오버의 창 좌표 — 문서 자리면 그 줄 아래(모자라면 위, 선택 옆 막대와 같은 규칙), 패널 줄이면 그 줄 오른쪽. */
@@ -136,14 +171,26 @@ function placeBox(controller: Props["controller"], open: ProposalOpen, box: HTML
   const shell = box.closest<HTMLElement>(".authoring-shell");
   const win = box.ownerDocument.defaultView;
   if (!shell || !win?.innerWidth) return;
-  const canvas = shell.querySelector<HTMLElement>(".authoring-canvas")?.getBoundingClientRect();
-  const anchor = anchorOf(controller, open, box) ?? (canvas ? { rect: { left: canvas.left + PROPOSAL_GAP, top: canvas.top, bottom: canvas.top }, side: "below" as const } : null);
+  const anchor = placeAnchor(controller, open, box, shell);
   if (!anchor) return;
   const size = box.getBoundingClientRect();
   const place = proposalPlace(anchor, { width: size.width, height: size.height }, { width: win.innerWidth, height: win.innerHeight });
   const base = shell.getBoundingClientRect();
   box.style.left = `${place.left - base.left - (shell.clientLeft || 0) + (shell.scrollLeft || 0)}px`;
   box.style.top = `${place.top - base.top - (shell.clientTop || 0) + (shell.scrollTop || 0)}px`;
+}
+
+/** 놓을 기준 — 문서 자리가 보이지 않는 동안 팝오버는 숨고(엉뚱한 글 위에 떠 있지 않는다) 기준이 없다. 자리가 다시 보이면 그 곁에
+ *  선다. 기준을 모르면(패널 줄이 걷혔다) 편집면 왼쪽 위다. */
+function placeAnchor(controller: Props["controller"], open: ProposalOpen, box: HTMLElement, shell: HTMLElement) {
+  const found = anchorOf(controller, open, box);
+  box.style.visibility = found === "hidden" ? "hidden" : "";
+  return found === "hidden" ? null : found ?? canvasAnchor(shell);
+}
+/** 기준을 모를 때(패널 줄이 걷혔다)의 자리 — 편집면 왼쪽 위. */
+function canvasAnchor(shell: HTMLElement): { rect: Rect; side: "below" } | null {
+  const canvas = shell.querySelector<HTMLElement>(".authoring-canvas")?.getBoundingClientRect();
+  return canvas ? { rect: { left: canvas.left + PROPOSAL_GAP, top: canvas.top, bottom: canvas.top }, side: "below" } : null;
 }
 
 type PopoverModel = NonNullable<ReturnType<typeof popoverView>>;
@@ -161,12 +208,13 @@ function usePlacement(controller: Props["controller"], open: ProposalOpen | null
   }, [key]);
 }
 
-/** 행동 줄 — 주 행동 「필드로 만들기」(제안만), 보조 「이 자리만…」(Python `only`·자리 수), 물러선 「그대로 두기」. */
-function popoverActions(controller: Props["controller"], model: PopoverModel): ReactNode {
+/** 행동 줄 — 주 행동 「필드로 만들기」(제안만), 보조 「이 자리만…」(Python `only_label`), 물러선 「그대로 두기」. 누를 때 초점이
+ *  팝오버 안에 있었는지를 넘긴다 — 그러면 행동 뒤 초점이 패널 줄(없으면 띠 제목)로 간다. */
+function popoverActions(controller: Props["controller"], model: PopoverModel, inside: () => boolean): ReactNode {
   return h("div", { className: "authoring-proposal-actions" },
-    model.make && primary(PROPOSAL_COPY.make, run(controller, () => controller.proposal.make(model.group))),
-    model.only && button(model.only.label, run(controller, () => controller.proposal.make(model.group, model.only!.spot))),
-    quiet(PROPOSAL_COPY.keep, run(controller, () => controller.proposal.dismiss(model.group)), { className: "btn quiet authoring-proposal-keep" }));
+    model.make && primary(PROPOSAL_COPY.make, () => { const focused = inside(); run(controller, () => controller.proposal.make(model.group, undefined, focused))(); }),
+    model.only && button(model.only.label, () => { const focused = inside(); run(controller, () => controller.proposal.make(model.group, model.only!.spot, focused))(); }),
+    quiet(PROPOSAL_COPY.keep, () => { const focused = inside(); run(controller, () => controller.proposal.dismiss(model.group, focused))(); }, { className: "btn quiet authoring-proposal-keep" }));
 }
 
 /** 팝오버 본문 — 출처 줄, 다른 열 주석, 값 상자(표시 형식·데이터 값), 같은 값 수·위치, 주석, 보류 이유(Python 문장). */
@@ -204,7 +252,8 @@ export function ProposalPopover({ controller, item, view }: Surface): ReactNode 
   usePlacement(controller, open, box, model ? `${model.group}:${model.spot}:${open?.origin}` : "");
   useEffect(() => { if (open?.focus && model) box.current?.querySelector<HTMLElement>(".authoring-proposal-actions button")?.focus(); }, [open?.focus, !!model]);
   if (!model) return null;
-  const close = () => controller.proposal.close(!!box.current?.contains(box.current.ownerDocument.activeElement));
+  const inside = () => !!box.current?.contains(box.current.ownerDocument.activeElement);
+  const close = () => controller.proposal.close(inside());
   return h("div", { ref: box, className: `authoring-proposal-popover${model.held ? " held" : ""}`, role: "dialog", "aria-label": model.dialogLabel,
     onKeyDown: (event: any) => {
       if (event.key !== "Escape" || event.nativeEvent?.isComposing) return;
@@ -215,5 +264,5 @@ export function ProposalPopover({ controller, item, view }: Surface): ReactNode 
       model.held && h("span", { className: "authoring-proposal-chip" }, PROPOSAL_COPY.held),
       iconButton("close", PROPOSAL_COPY.close, close)),
     ...popoverBody(model),
-    popoverActions(controller, model));
+    popoverActions(controller, model, inside));
 }
