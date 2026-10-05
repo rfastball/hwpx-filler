@@ -76,8 +76,8 @@ class ProposalPanel:
         self._data = data
 
     def handlers(self) -> dict[str, Callable[[dict], dict]]:
-        return {"propose_fields": self.propose, "propose_make": self.make, "propose_make_all": self.make_all,
-                "propose_dismiss": self.dismiss, "propose_off": self.off}
+        """액션 이름 → 처리기. 이름은 ``_do_<액션>`` 이다(배선 게이트가 컨트롤러와 함께 센다)."""
+        return {name.removeprefix("_do_"): getattr(self, name) for name in vars(type(self)) if name.startswith("_do_")}
 
     # ------------------------------------------------------------ snapshot
     def view(self, session: AuthoringSession) -> dict | None:
@@ -120,7 +120,7 @@ class ProposalPanel:
                              existing=existing, datasets=datasets)
 
     # ------------------------------------------------------------ actions
-    def propose(self, p: dict) -> dict:
+    def _do_propose_fields(self, p: dict) -> dict:
         """띠 켜기·데이터나 행 바꾸기·다시 계산 — 고른 데이터, 세션이 기억한 데이터, 「문서 작업」의 데이터 순."""
         session = self._session_of(p, revision=True)
         state = session.proposal if isinstance(session.proposal, FieldProposalState) else FieldProposalState()
@@ -162,14 +162,14 @@ class ProposalPanel:
         session.proposal_pending = (session.revision, bindings, values)
         return {**result, "command": command, "toast": toast}
 
-    def make(self, p: dict) -> dict:
+    def _do_propose_make(self, p: dict) -> dict:
         """묶음 하나(또는 ``spot_id`` 자리 하나)를 필드로 만드는 미리보기 — 확정은 표면의 적용 사슬이 한다."""
         session = self._session_of(p, revision=True)
         _view, group = self._group(session, p.get("group_id"))
         command = group_command(group, p.get("spot_id"))
         return self._prepared(session, command, [group], toast_one(str(group["name"])))
 
-    def make_all(self, p: dict) -> dict:
+    def _do_propose_make_all(self, p: dict) -> dict:
         """제안 묶음 전부(보류 제외)를 한 명령으로 — 편집기에는 한 문서로 들어가 실행 취소 한 단위다."""
         session = self._session_of(p, revision=True)
         view = self.view(session)
@@ -178,7 +178,7 @@ class ProposalPanel:
         command, groups = all_command(view)
         return self._prepared(session, command, list(groups), toast_many(len(groups)))
 
-    def dismiss(self, p: dict) -> dict:
+    def _do_propose_dismiss(self, p: dict) -> dict:
         """「그대로 두기」 — 그 (열, 값) 묶음을 이 세션 동안 다시 내지 않는다(문서가 바뀌어도)."""
         session = self._session_of(p, revision=True)
         _view, group = self._group(session, p.get("group_id"))
@@ -189,7 +189,7 @@ class ProposalPanel:
         assert view is not None
         return view
 
-    def off(self, p: dict) -> dict:
+    def _do_propose_off(self, p: dict) -> dict:
         """띠 끄기 — 제안 상태와 「그대로 두기」 집합을 비운다(만든 필드의 연결 초안은 남는다)."""
         session = self._session_of(p)
         session.proposal = None
