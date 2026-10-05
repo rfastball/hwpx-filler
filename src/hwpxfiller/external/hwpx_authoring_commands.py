@@ -13,8 +13,11 @@ from hwpxcore.bookmark_region import (
 from hwpxcore.text_extract import HP_NS, require_package
 
 from ..domain.structure_scan import PLACEMENT_OPTION, PLACEMENT_SLOT, normalize_field_id
+from ..domain.template_authoring_primitives import CREATE_FIELDS
 from ..domain.template_authoring import (
+    COMMAND_NAMES,
     COMPILE_TOKEN,
+    REASON_INVALID_SELECTION,
     REVERT_TEMPLATE,
     CascadeRequired,
     command_label,
@@ -39,6 +42,7 @@ from .hwpx_authoring_fields import (
     change_field as _change_field,
     compile_token as _compile_token,
     create_field as _create_field,
+    create_fields as _create_fields,
     field_site_contexts as _field_site_contexts,
     revert_template as _revert_template,
 )
@@ -86,8 +90,8 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
     action = command.get("type")
     before_label = _command_preview_label(command)
     impact_context = _preview_content_context(package, command)
-    prior_fields = _fields(package) if action in {"create_field", "rename_field", "relink_field",
-                                                   "unset_field"} else []
+    prior_fields = _fields(package) if action in {"create_field", CREATE_FIELDS, "rename_field",
+                                                   "relink_field", "unset_field"} else []
     label = command_label(command, impact_context.get("target_name"))
     if action in {"rename_slot", "rename_option"}:
         label = command_label(command, _region_display_name(
@@ -113,6 +117,8 @@ def _execute(package, command: Mapping[str, object], *, projecting: bool) -> tup
 def _dispatch_command(package, command, action, projecting, prior_fields, label, impact_context):
     if action == "create_field":
         return _create_field_command(package, command, prior_fields, label, impact_context)
+    if action == CREATE_FIELDS:
+        return _create_fields_command(package, command, prior_fields, impact_context)
     if action in {"rename_field", "relink_field", "unset_field"}:
         return _change_field_command(package, command, action, prior_fields, impact_context)
     if action == COMPILE_TOKEN:
@@ -143,6 +149,18 @@ def _create_field_command(package, command, prior_fields, label, impact_context)
         impact_context = {**impact_context, "included": sites}
         extra["affected"] = len(sites)
     return captured, label, impact_context, extra, False
+
+
+def _create_fields_command(package, command, prior_fields, impact_context):
+    """여러 이름의 필드를 한 변형으로(#1156) — 미리보기 전후 표지는 없고 영향은 자리 수다."""
+    fields = command.get("fields")
+    if not isinstance(fields, list) or not fields or not all(isinstance(item, Mapping) for item in fields):
+        raise ValueError(REASON_INVALID_SELECTION)
+    count = _create_fields(package, fields)
+    existing = {item["name"] for item in prior_fields}
+    extra = {"affected": count, "before": None, "after": None,
+             "links_existing": any(normalize_field_id(item.get("name")) in existing for item in fields)}
+    return None, COMMAND_NAMES["create_field"], impact_context, extra, False
 
 
 def _change_field_command(package, command, action, prior_fields, impact_context):

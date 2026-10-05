@@ -136,14 +136,39 @@ def _create_field(package, command: Mapping[str, object]) -> str:
     return captured
 
 
-def _validate_create_sites(sites, captured: str) -> None:
+def _create_fields(package, fields: list[Mapping[str, object]]) -> int:
+    """이름이 다른 누름틀 여럿을 한 패키지 변형으로 끼운다(#1156 「모두 필드로」) — 자리 수를 돌려준다.
+
+    이름마다 자리 판정은 :func:`_create_field` 와 같고 **바꾸기 전** 문서에서 한다. 끼우기는 모든 이름의 자리를 모아
+    뒤에서부터 한다 — 같은 문단에 여러 이름의 자리가 있어도 앞 자리의 글자 위치가 밀리지 않는다.
+    """
+    roots: dict = {}
+    planned: list[tuple] = []
+    for item in fields:
+        sites = [_field_paragraph(package, roots, site) for site in _field_ranges(item)]
+        if not sites:
+            raise ValueError(REASON_INVALID_SELECTION)
+        _validate_create_sites(sites, _paragraph_sites(sites[0][1])[2][sites[0][2]:sites[0][3]])
+        name = _field_name(item.get("name"))
+        planned.extend((entry, paragraph, start, end, name) for entry, paragraph, start, end in sites)
+    _validate_create_sites([site[:4] for site in planned], None)
+    allocators = {entry: _authoring._make_id_allocator(root) for entry, root in roots.items()}
+    for entry, paragraph, start, end, name in sorted(planned, key=lambda site: -site[2]):
+        _insert_create_site(paragraph, start, end, name, allocators[entry])
+    for entry, root in roots.items():
+        resolve_field_occurrences(entry, root).require_usable()
+        package.entries[entry] = serialize_modified_section(root)
+    return len(planned)
+
+
+def _validate_create_sites(sites, captured: str | None) -> None:
     for index, (_entry, paragraph, start, end) in enumerate(sites):
         text_sites, hazards, text = _paragraph_sites(paragraph)
         refusal = _field_range_refusal(text_sites, hazards, text, start, end)
         if refusal is not None:
             raise ValueError(refusal)
-        # 같은 문구 N곳이다 — 다른 글자의 자리(옛 좌표)는 짐작해 끼우지 않는다.
-        if text[start:end] != captured:
+        # 같은 문구 N곳이다 — 다른 글자의 자리(옛 좌표)는 짐작해 끼우지 않는다(여러 이름이면 글자를 대조하지 않는다).
+        if captured is not None and text[start:end] != captured:
             raise ValueError(REASON_INVALID_SELECTION)
         if any(other is paragraph and (lo < end and start < hi or (lo, hi) == (start, end))
                for _e, other, lo, hi in sites[index + 1:]):
@@ -325,6 +350,7 @@ MULTI_PARAGRAPH_FIELD = _MULTI_PARAGRAPH_FIELD
 change_field = _change_field
 compile_token = _compile_token
 create_field = _create_field
+create_fields = _create_fields
 field_site_contexts = _field_site_contexts
 require_clean = _require_clean
 revert_template = _revert_template
