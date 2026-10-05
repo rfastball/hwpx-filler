@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -18,6 +18,7 @@ from ..domain.field_induction.candidates import ParagraphText, found_columns
 from ..domain.field_induction.grading import KIND_HELD, KIND_PROPOSAL, REASON_BAD_NAME
 from ..domain.field_induction.proposal import Group, Proposal, field_name, note_for, propose
 from ..domain.field_induction.transforms import TRANSFORMS
+from ..domain.mapping import FieldMapping
 from ..domain.template_authoring import REASON_INVALID_SELECTION
 from ..domain.template_authoring_primitives import CREATE_FIELDS
 
@@ -228,3 +229,18 @@ def drafts(groups: Sequence[Mapping[str, object]]) -> tuple[dict[str, dict], dic
         bindings[name] = {"source": group["column"], "type": binding["type"], "fmt": binding["fmt"]}
         values[name] = str(group["raw"])
     return bindings, values
+
+
+#: 작업 적용 결과 가운데 그 템플릿이 작업의 현재 템플릿이 된 상태 — 이때만 연결 초안을 심는다.
+SEEDABLE_APPLY = frozenset({"applied", "already_applied"})
+
+
+def seed_mappings(existing: Sequence[FieldMapping], fields: Collection[str],
+                  bindings: Mapping[str, Mapping[str, str]]) -> list[FieldMapping]:
+    """연결 초안 → 작업에 더할 새 필드 연결. 적용한 템플릿에 있는 필드이고 작업에 연결이 아직 없는 것만이다.
+
+    작업에 이미 있는 연결(빈 결정 포함)은 건드리지 않는다 — 새 필드만 채운다(#1156 결정).
+    """
+    mapped = {item.template_field for item in existing}
+    return [FieldMapping(name, source=draft["source"], type=draft["type"], fmt=draft["fmt"])
+            for name, draft in bindings.items() if name in fields and name not in mapped]

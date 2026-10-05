@@ -388,3 +388,80 @@ def test_pick_column_among_equal_values(tmp_path: Path) -> None:
     ctrl.dispatch("propose_off", {"session_id": sid})
     fresh = ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 1})
     assert next(item for item in fresh["groups"] if item["id"] == number["id"])["column"] == "입찰공고번호"
+
+
+# ------------------------------------------------------------------ 작업 적용 때 연결 초안 심기
+def _seeded_setup(tmp_path: Path, *, mappings=(), authority: str = "job-mapping/v1"):
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+    from hwpxfiller.external.job_store import JobRegistry
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    template = tmp_path / "공고.txt"
+    template.write_text("공고명: 청사 보안 장비 구매\n추정가격: 170,309,180원\n담당: {{담당}}\n", encoding="utf-8")
+    registry = JobRegistry(tmp_path / "jobs")
+    registry.save(Job(name="공고 작업", template_path=str(template), binding_authority=authority,
+                      mapping=MappingProfile(mappings=[FieldMapping(*item) for item in mappings])))
+
+    class Change:
+        def check(self, name, request_id):
+            return {"preparation": {"change_token": "t"}}
+
+        def apply(self, name, token):
+            return {"status": "applied", "current_template_application_epoch": 2, "is_current": True}
+
+    rows = [{"공고명": "청사 보안 장비 구매", "추정가격": "170309180", "수요기관": "조달청"}]
+    ctrl = AuthoringController(lambda _name, _snapshot: None, directory=tmp_path / "home", proposal_data=Port(rows),
+                               job_registry=registry, template_change=Change())
+    sid = ctrl.open_path(template)["session_id"]
+    return ctrl, sid, registry, template
+
+
+def _make_all_and_save(ctrl: AuthoringController, sid: str, template: Path) -> int:
+    ctrl.dispatch("propose_fields", {"session_id": sid, "revision": 0})
+    made = ctrl.dispatch("propose_make_all", {"session_id": sid, "revision": 0})
+    ctrl.dispatch("update", {"session_id": sid, "revision": 0, "content": made["content"]})
+    assert ctrl.save_to_path(sid, 1, template)["ok"] is True
+    return 1
+
+
+def _apply(ctrl: AuthoringController, sid: str, revision: int) -> dict:
+    return ctrl.dispatch("apply_job", {"session_id": sid, "revision": revision, "job_name": "공고 작업",
+                                       "change_token": "t"})
+
+
+def test_apply_job_seeds_new_fields_from_drafts_only(tmp_path: Path) -> None:
+    ctrl, sid, registry, template = _seeded_setup(tmp_path, mappings=[("공고명", "기존열", "text", "")])
+    revision = _make_all_and_save(ctrl, sid, template)
+    # 저장 뒤 같은 이름 아닌 초안 하나를 더 얹는다 — 적용한 템플릿에 없는 필드는 심지 않는다.
+    ctrl.sessions[sid].proposal_bindings["없는필드"] = {"source": "수요기관", "type": "text", "fmt": ""}
+    result = _apply(ctrl, sid, revision)
+    assert (result["status"], result["seeded_bindings"]) == ("applied", 1)
+    mappings = {item.template_field: item for item in registry.load("공고 작업").mapping.mappings}
+    assert (mappings["공고명"].source, mappings["공고명"].type) == ("기존열", "text"), "기존 연결은 그대로다"
+    price = mappings["추정가격"]
+    assert (price.source, price.type, price.fmt) == ("추정가격", "amount", "{:,}")
+    assert "없는필드" not in mappings and "담당" not in mappings
+    again = _apply(ctrl, sid, revision)
+    assert again["seeded_bindings"] == 0, "다시 적용해도 이미 연결된 필드는 건드리지 않는다"
+
+
+def test_apply_job_without_drafts_or_with_another_authority_writes_nothing(tmp_path: Path) -> None:
+    ctrl, sid, registry, template = _seeded_setup(tmp_path)
+    assert ctrl.save_to_path(sid, 0, template)["ok"] is True
+    before = registry.path_for("공고 작업").read_bytes()
+    assert _apply(ctrl, sid, 0)["seeded_bindings"] == 0
+    assert registry.path_for("공고 작업").read_bytes() == before, "초안이 없으면 저장하지 않는다"
+    other, other_sid, other_registry, other_template = _seeded_setup(tmp_path / "legacy", authority="")
+    revision = _make_all_and_save(other, other_sid, other_template)
+    legacy_before = other_registry.path_for("공고 작업").read_bytes()
+    assert _apply(other, other_sid, revision)["seeded_bindings"] == 0
+    assert other_registry.path_for("공고 작업").read_bytes() == legacy_before, "연결 권위가 작업 연결이 아니면 쓰지 않는다"
+
+
+def test_apply_job_does_not_seed_when_the_change_did_not_land(tmp_path: Path) -> None:
+    ctrl, sid, registry, template = _seeded_setup(tmp_path)
+    revision = _make_all_and_save(ctrl, sid, template)
+    ctrl._template_change.apply = lambda name, token: {"status": "conflict", "is_current": False}
+    assert _apply(ctrl, sid, revision)["seeded_bindings"] == 0
+    assert registry.load("공고 작업").mapping.mappings == []

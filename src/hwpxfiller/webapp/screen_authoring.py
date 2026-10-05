@@ -130,7 +130,7 @@ class AuthoringController:
         #: 저장 경로가 바뀌면 다시 재고, 활성화·외부 변경 확인(창 초점)·영향 확인·초기 스냅숏에서 버린다.
         self._linked_cache: dict[str, tuple[str, bool]] = {}
         #: 「데이터로 필드 찾기」(#1156) — 액션 다섯과 탭의 ``proposal`` 투영. 상태는 세션이 든다.
-        self._proposal = ProposalPanel(self._session, self._do_preview, self._parse, proposal_data)
+        self._proposal = ProposalPanel(self._session, self._do_preview, self._parse, proposal_data, job_registry)
 
     @staticmethod
     def _media(path: Path) -> str:
@@ -1800,4 +1800,6 @@ class AuthoringController:
         token = p.get("change_token")
         if not isinstance(token, str) or not token:
             raise ValueError("변경 확인 토큰이 없습니다.")
-        return {"job_name": job.name, **self._template_change.apply(job.name, token)}
+        # 「데이터로 필드 찾기」의 연결 초안은 적용이 성공한 뒤 새 필드에만 심는다(#1156).
+        return {"job_name": job.name,
+                **self._proposal.applied(job.name, session, self._template_change.apply(job.name, token))}
