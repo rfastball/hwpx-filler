@@ -42,6 +42,29 @@ export function forwardedShellKey(shortcut: string, target: unknown): Obj | null
   const key = shortcut === "Escape" ? { key: "Escape" } : shortcut === "F6" ? { key: "F6" } : shortcut === "ShiftF6" ? { key: "F6", shiftKey: true } : null;
   return key && { ...key, target, nativeEvent: {}, preventDefault() {} };
 }
+/** TXT 제안 표식(#1156) 누름의 판정 — 누름 사건 모양. */
+type SpotPointer = { button: number; detail: number; clientX: number; clientY: number;
+  shiftKey?: boolean; ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean; target?: unknown };
+/** 누름이 클릭으로 남는 이동 한계(px) — Studio 표지 누름(`PICK_CLICK_SLOP`)과 같은 몫. */
+const SPOT_CLICK_SLOP = 4;
+/** 누른 자리(mousedown)의 제안 표식 자리 id — 수정키 없는 왼쪽 단추 한 번 누름만. 표식은 `data-token="proposal:<자리>"` 를 단다.
+ *  누르는 순간 캐럿이 자리에 들며 이름표가 서 글자가 밀리므로, 자리는 누를 때 읽는다(뗄 때의 대상은 이미 다를 수 있다). */
+export function txtSpotPress(event: SpotPointer): { spot: string; x: number; y: number } | null {
+  if (event.button !== 0 || event.detail > 1 || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return null;
+  const target = event.target as { closest?(selector: string): { getAttribute(name: string): string | null } | null } | null;
+  const token = target?.closest?.(".cm-authoring-proposal[data-token]")?.getAttribute("data-token") || "";
+  const spot = token.startsWith("proposal:") ? token.slice("proposal:".length) : "";
+  return spot ? { spot, x: event.clientX, y: event.clientY } : null;
+}
+/** 그 누름이 클릭으로 끝났으면(제자리에서 떼고, 두 번 누름이 아니며, 편집기 선택이 빈 캐럿) 자리 id — 끌어 고른 선택·두 번
+ *  누름(낱말 고르기)·한글 조합 중에는 null 이다. */
+export function txtSpotClick(press: { spot: string; x: number; y: number } | null, event: SpotPointer,
+  selection: { start: number; end: number; composing?: boolean }): string | null {
+  if (!press || event.button !== 0 || event.detail > 1) return null;
+  if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > SPOT_CLICK_SLOP) return null;
+  return selection.composing || selection.start !== selection.end ? null : press.spot;
+}
+
 /** 셸의 키·문맥 메뉴·명령 팔레트 처리기 — 편집면 iframe 은 셸까지 사건을 올리지 못하므로 편집기가 이 손잡이로 넘긴다. */
 /** 편집면 글 한 줄의 호스트 창 좌표(선택 끝 자리) — 편집기가 보고하고 셸은 그 아래에 선택 옆 막대를 세운다(IDE-08). */
 export type LineRect = { left: number; top: number; bottom: number };
@@ -147,6 +170,18 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
           onRangePick: (offset) => controller.pickClick(item.id, { entry: "", paragraph: 0, offset, cell: false }),
           onCompositionChanged: (active) => { composing = active; if (!active) queueMicrotask(() => controller.changed(item.id, lintpadState(handle).text)); },
         });
+        // 제안 표식(#1156)은 누름틀처럼 한 덩어리다 — 누르면(편집기가 캐럿을 놓은 뒤) 자리 전체를 고르고 팝오버를 곧장 연다.
+        const txtHost = host.current;
+        let pressed: ReturnType<typeof txtSpotPress> = null;
+        const onSpotPress = (event: MouseEvent) => { pressed = txtSpotPress(event); };
+        const onSpotClick = (event: MouseEvent) => {
+          const spotId = txtSpotClick(pressed, event, lintpadState(handle));
+          pressed = null;
+          const spot = spotId ? controller.proposal.openSpot(item.id, spotId, null) : null;
+          if (spot && typeof spot.start === "number" && typeof spot.end === "number") navigateLintpad(handle, spot.start, spot.end);
+        };
+        txtHost.addEventListener("mousedown", onSpotPress, true);
+        txtHost.addEventListener("click", onSpotClick);
         adapter.current = {
           flush: async () => { if (lintpadState(handle).composing) throw new Error(IME_BUSY); },
           content: async () => lintpadState(handle).text,
@@ -176,7 +211,7 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
               marks: controller.proposal.marks(item.id) });
           },
         };
-        release = () => disposeLintpad(handle);
+        release = () => { txtHost.removeEventListener("mousedown", onSpotPress, true); txtHost.removeEventListener("click", onSpotClick); disposeLintpad(handle); };
       } else {
         const report = compatibilityReporter(controller, item.id, initial.revision);
         const mountedFit = controller.zoom(item.id) === "fit";
@@ -202,6 +237,8 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
           onSelectionChanged: (selection, caret) => { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection, caret); },
           // 캐럿 줄만 옮겨 가면(편집면 스크롤) 문서에서 연 제안 팝오버가 따라가거나 숨는다(#1156).
           onCaretRect: (caret) => controller.proposal.caretRect(item.id, caret),
+          // 제안 표지를 누르면 Studio 가 자리 전체를 고른다 — 폴링을 기다리지 않고 누른 줄 아래에 팝오버를 연다.
+          onDecorationClick: ({ token, rect }) => { controller.proposal.openSpot(item.id, token, rect); },
           onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
           onRangePick: (point) => controller.pickClick(item.id, point),
           onError: (error) => controller.fail(error, "editor"), readOnly: false,

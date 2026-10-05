@@ -18,7 +18,7 @@ function_statements = 59
 function_complexity = 14
 
 [budget."frontend/src/editorview/rhwp_editor.ts"]
-module_statements = 362
+module_statements = 352
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp"]
 function_complexity = 38
@@ -31,10 +31,10 @@ function_complexity = 18
 function_complexity = 13
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.selection"]
-function_complexity = 13
+function_complexity = 11
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.setDecorations"]
-function_complexity = 41
+function_complexity = 40
 
 [budget."frontend/src/editorview/txt_lintpad.ts"]
 module_statements = 427
@@ -55,7 +55,7 @@ function_complexity = 13
 function_complexity = 11
 
 [budget."frontend/src/screens/authoring.ts::AuthoringScreen"]
-function_complexity = 98
+function_complexity = 92
 function_statements = 155
 
 [budget."frontend/src/screens/authoring.ts::AuthoringScreen.shellInput.current.key"]
@@ -580,11 +580,8 @@ function_statements = 65
 [budget."src/hwpxcore/structural_boundary.py::_scan_entry"]
 function_complexity = 25
 
-[budget."src/hwpxcore/text_extract.py"]
-module_statements = 304
-
 [budget."src/hwpxcore/text_extract.py::_blocks_from_paragraph"]
-function_complexity = 21
+function_complexity = 20
 
 [budget."src/hwpxfiller/application/dataset_pool.py"]
 module_statements = 341

@@ -9,6 +9,7 @@ import { createAuthoringController } from "../../frontend/src/screens/authoring_
 import { AuthoringScreen, escapeShell } from "../../frontend/src/screens/authoring.ts";
 import { PROPOSAL_COPY, bandView, missingLines, outlineGroups, popoverView, proposalMarks, proposalSpots, spotAt } from "../../frontend/src/screens/authoring_proposal.ts";
 import { proposalPlace } from "../../frontend/src/screens/authoring_proposal_view.ts";
+import { txtSpotClick, txtSpotPress } from "../../frontend/src/screens/authoring_editor.ts";
 import { DECORATION_LIMIT, fitMarkers, proposalMarkers } from "../../frontend/src/editorview/rhwp_marks.ts";
 
 const SECTION = "Contents/section0.xml";
@@ -158,14 +159,18 @@ test("#1156 TXT marks: green and grey dotted spots carry the anchor token; only 
   assert.deepEqual(proposalMarks(proposal({ state: "needs_data" }), null), []);
 });
 
-test("#1156 HWPX marks: proposals and held are dotted underlines named by the access name; the open spot adds a field mark; the cap drops held, then proposals, then problems", () => {
+test("#1156 HWPX marks: proposals and held are link-like spots named by the field name; the open spot is the same mark, strong; the cap drops held, then proposals, then problems", () => {
   const spots = proposalSpots(proposal(), { group: "g_price", spot: "s1" });
+  assert.deepEqual(spots.map((spot) => [spot.token, spot.label, spot.held, spot.open === true]),
+    [["s1", "추정가격", false, true], ["s2", "공고명", false, false], ["s3", "공고명", false, false], ["s5", "낙찰자결정방법", true, false], ["s4", "낙찰자결정방법", true, false]]);
   const marks = proposalMarkers([SECTION], spots);
-  assert.deepEqual(marks.proposals.map((mark) => [mark.kind, mark.emphasis, mark.label]),
-    [["problem", "subtle", "필드 제안 추정가격: 170,309,180원"], ["problem", "subtle", "필드 제안 공고명: 청사 보안"], ["problem", "subtle", "필드 제안 공고명: 청사 보안"]]);
-  assert.deepEqual(marks.held.map((mark) => mark.label), ["보류된 제안 낙찰자결정방법: 적격심사", "보류된 제안 낙찰자결정방법: 적격심사"]);
+  assert.deepEqual(marks.open.map((mark) => [mark.kind, mark.emphasis, mark.label, mark.startOffset, mark.endOffset]), [["proposal", "strong", "추정가격", 7, 18]],
+    "연 자리는 덧칠 표지가 아니라 같은 제안 표지가 강하게 선다");
+  assert.deepEqual(marks.proposals.map((mark) => [mark.kind, mark.emphasis, mark.label]), [["proposal", "subtle", "공고명"], ["proposal", "subtle", "공고명"]]);
+  assert.deepEqual(marks.held.map((mark) => [mark.kind, mark.emphasis, mark.label]), [["held", "subtle", "낙찰자결정방법"], ["held", "subtle", "낙찰자결정방법"]]);
   assert.deepEqual(marks.held[1].cellPath, [{ parentParagraph: 9, control: 0, cell: 1, paragraph: 0 }]);
-  assert.deepEqual(marks.open.map((mark) => [mark.kind, mark.label, mark.startOffset, mark.endOffset]), [["field", "추정가격", 7, 18]]);
+  assert.deepEqual([...marks.open, ...marks.proposals, ...marks.held].map((mark) => marks.tokens.get(mark)), ["s1", "s2", "s3", "s5", "s4"], "표지마다 자리 신원이 호스트에 남는다");
+  assert.ok([...marks.open, ...marks.proposals, ...marks.held].every((mark) => !("token" in mark)), "신원은 Studio 로 보내는 표지에 싣지 않는다");
   const one = marks.proposals[0];
   const dropped = [];
   const base = Array.from({ length: DECORATION_LIMIT - 3 }, () => ({ ...one, kind: "field" }));
@@ -176,6 +181,78 @@ test("#1156 HWPX marks: proposals and held are dotted underlines named by the ac
   const crowded = [];
   fitMarkers(Array.from({ length: DECORATION_LIMIT }, () => one), { problems: [one], proposals: [one] }, (kind, count) => crowded.push([kind, count]));
   assert.deepEqual(crowded, [["problem", 1], ["proposals", 1]]);
+});
+
+test("#1158 spot = one piece: a selection of exactly the spot's range is inside it (the editor selects the whole spot on click); other ranges are not", () => {
+  const at = (start, end = start, extra = {}) => ({ entry: SECTION, paragraph: 4, start_paragraph: 4, end_paragraph: 4, start, end, ...extra });
+  assert.deepEqual(spotAt(proposal(), at(7, 18), "hwpx"), { group: "g_price", spot: "s1" }, "자리 전체 선택");
+  assert.equal(spotAt(proposal(), at(7, 17), "hwpx"), null, "자리 일부 범위는 선택 옆 막대다");
+  assert.equal(spotAt(proposal(), at(7, 18, { end_paragraph: 5 }), "hwpx"), null, "문단을 넘는 범위는 그 자리가 아니다");
+  assert.equal(spotAt(proposal(), { ...at(0, 4), paragraph: 0, start_paragraph: 0, end_paragraph: 0 }, "hwpx"), null, "표 칸 밖 같은 범위는 다른 자리다");
+  assert.deepEqual(spotAt(proposal(), { ...at(0, 4), paragraph: 0, start_paragraph: 0, end_paragraph: 0, cell_path: CELL }, "hwpx"), { group: "g_judge", spot: "s4" });
+  assert.deepEqual(spotAt(proposal(), { start: 6, end: 11 }, "txt"), { group: "g_title", spot: "s3" });
+});
+
+test("#1158 click: openSpot opens the spot's popover at once under the clicked line; the whole-spot selection report keeps it there and scrolls move it", async () => {
+  const { controller, snapshot } = harness((action) => action === "locate" ? { matches: [], commands: [] } : {});
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  const log = [];
+  controller.attach("a", editor(log));
+  const clicked = { left: 70, top: 110, bottom: 140 };
+  const spot = controller.proposal.openSpot("a", "s3", clicked);
+  assert.equal(spot.id, "s3", "누른 자리를 돌려준다(TXT 는 그 범위를 고른다)");
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalOpen, { group: "g_title", spot: "s3", origin: "spot", rect: clicked, focus: 0 }, "폴링을 기다리지 않는다");
+  const select = (start, end, rect) => controller.proposal.caret("a", { entry: SECTION, paragraph: 3, start_paragraph: 3, end_paragraph: 3, start, end }, rect);
+  select(6, 11, { left: 160, top: 110, bottom: 140 });
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalOpen.rect, clicked, "자리 전체 선택 보고는 팝오버를 닫지도 옮기지도 않는다");
+  controller.proposal.caretRect("a", { left: 160, top: 50, bottom: 80 });
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalOpen.rect, { left: 70, top: 50, bottom: 80 }, "편집면 스크롤만큼 누른 줄을 옮긴다");
+  controller.proposal.caretRect("a", null);
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen.rect, null, "틀 밖이면 숨는다");
+  select(6, 9, { left: 120, top: 50, bottom: 80 });
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen, null, "자리 일부만 고르면 걷힌다");
+  assert.equal(controller.proposal.openSpot("a", "gone", clicked), null, "다시 계산되어 사라진 자리는 열지 않는다");
+  snapshot.tabs[0].proposal = proposal({ state: "working" });
+  assert.equal(controller.proposal.openSpot("a", "s3", clicked), null, "준비 상태가 아니면 열지 않는다");
+  assert.deepEqual(log, [], "누름으로 연 팝오버는 편집면 초점·선택을 건드리지 않는다(선택은 편집면이 이미 골랐다)");
+});
+
+test("#1158 click reopens a spot whose popover was closed; the caret alone still does not", async () => {
+  const { controller, snapshot } = harness((action) => action === "locate" ? { matches: [], commands: [] } : {});
+  snapshot.tabs[0].proposal = proposal();
+  await controller.activate("a");
+  controller.attach("a", editor([]));
+  const caret = (start) => controller.proposal.caret("a", { entry: SECTION, paragraph: 4, start_paragraph: 4, end_paragraph: 4, start, end: start }, { left: 10, top: 20, bottom: 36 });
+  caret(9);
+  controller.proposal.close(false);
+  caret(10);
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen, null, "닫은 자리는 캐럿만으로 다시 열리지 않는다");
+  controller.proposal.openSpot("a", "s1", { left: 30, top: 20, bottom: 36 });
+  assert.equal(controller.viewModel.getSnapshot().proposalOpen?.spot, "s1", "누름은 명시 열기다");
+  controller.proposal.caret("a", { entry: SECTION, paragraph: 4, start_paragraph: 4, end_paragraph: 4, start: 7, end: 18 }, { left: 90, top: 20, bottom: 36 });
+  assert.deepEqual(controller.viewModel.getSnapshot().proposalOpen.rect, { left: 30, top: 20, bottom: 36 });
+});
+
+test("#1158 TXT click: the spot is read at the press (its tag then shifts the text); a plain single click in place names it, drags, double clicks, modifiers and other marks do not", () => {
+  const mark = (token) => ({ closest: (selector) => selector === ".cm-authoring-proposal[data-token]" && token !== null ? { getAttribute: () => token } : null });
+  const down = (patch = {}) => ({ button: 0, detail: 1, clientX: 100, clientY: 40, target: mark("proposal:s2"), ...patch });
+  const up = (patch = {}) => ({ button: 0, detail: 1, clientX: 101, clientY: 41, target: mark(null), ...patch });
+  const caret = { start: 3, end: 3 };
+  const press = txtSpotPress(down());
+  assert.deepEqual(press, { spot: "s2", x: 100, y: 40 });
+  assert.equal(txtSpotClick(press, up(), caret), "s2", "뗄 때 대상이 이름표로 바뀌어도 누른 자리다");
+  assert.equal(txtSpotClick(press, up({ clientX: 120 }), caret), null, "끌었다");
+  assert.equal(txtSpotClick(press, up(), { start: 1, end: 4 }), null, "끌어 고른 선택은 그대로 둔다");
+  assert.equal(txtSpotClick(press, up({ detail: 2 }), caret), null, "두 번 누름(낱말 고르기)은 그대로 둔다");
+  assert.equal(txtSpotClick(press, up(), { ...caret, composing: true }), null, "한글 조합 중에는 고르지 않는다");
+  assert.equal(txtSpotClick(null, up(), caret), null);
+  assert.equal(txtSpotPress(down({ shiftKey: true })), null);
+  assert.equal(txtSpotPress(down({ button: 2 })), null);
+  assert.equal(txtSpotPress(down({ detail: 2 })), null);
+  assert.equal(txtSpotPress(down({ target: mark("이름") })), null, "제안 표식이 아닌 토큰");
+  assert.equal(txtSpotPress(down({ target: mark(null) })), null);
+  assert.equal(txtSpotPress(down({ target: null })), null);
 });
 
 test("#1156 popover place: below the spot's line (flipping above when short), beside the panel row, always inside the window", () => {

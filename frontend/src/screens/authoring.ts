@@ -32,7 +32,7 @@ export { rhwpMount, trialViewerKey, externalDocumentSpec, forwardedShellKey, she
 
 import { CREATE_TYPES, openContextMenu, focusRequest, dockBadge, renameShortcut,
   DOCK_PANELS, dockTabs, sharedReason, escapeShell, commandEntries,
-  selectionBarItems, selectionBarPlace, PALETTE_SELF } from "./authoring_commands.ts";
+  selectionBarItems, selectionBarPlace, selectionBarShown, PALETTE_SELF } from "./authoring_commands.ts";
 import type { MenuAction } from "./authoring_commands.ts";
 export { openContextMenu, focusRequest, dockBadge, renameChoice, renameShortcut, selectionNoteView,
   DOCK_PANELS, dockTabs, sharedReason, escapeShell, copyText, commandEntries, selectionBarItems,
@@ -217,8 +217,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
   // 막대는 지금 선택에 대한 Python 판정이 도착했을 때만 선다(commandsSelection) — 판정 전·다른 선택의 판정으로는 서지 않는다.
   // 초점은 옮기지 않는다: 단추는 Tab 순서 밖이고 누름이 초점을 먼저 가져가지 않는다. 키보드 입구는 Shift+F10 문맥 메뉴다.
   const barItems = selectionBarItems(commandTable, readOnly);
-  const barShown = !!item && barAnchor?.id === item.id && !!view.commandsSelection && view.commandsSelection === view.selection
-    && !view.contextMenu && !view.palette && barItems.length > 0;
+  const barShown = selectionBarShown(item?.id, barAnchor?.id, view, barItems.length);
   // 메뉴·팔레트가 열리면 막대는 걷힌다 — 떠 있는 표면은 한 번에 하나다.
   useEffect(() => { if (view.contextMenu || view.palette) setBarAnchor(null); }, [view.contextMenu, view.palette]);
   // 스크롤(편집면·셸 어디서든)과 창 크기 변화에 걷힌다 — 막대가 선택 자리에서 떨어진다.

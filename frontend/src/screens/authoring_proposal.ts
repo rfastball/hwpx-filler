@@ -190,12 +190,18 @@ function sameCell(a: unknown, b: unknown): boolean {
   const key = (path: unknown) => JSON.stringify(Array.isArray(path) && path.length ? path.map((step: Obj) => [step?.parent_paragraph, step?.control, step?.cell, step?.paragraph]) : null);
   return key(a) === key(b);
 }
-/** 캐럿(빈 선택)이 이 자리 안(양 끝 포함)에 섰는가. TXT 는 글자 위치만, HWPX 는 구역·문단·표 칸까지 같아야 한다. */
+/** 선택이 이 자리 안인가 — 캐럿(빈 선택)이 자리 안(양 끝 포함)에 섰거나, 선택이 자리와 똑같은 범위다(자리를 누르면 편집면이
+ *  자리 전체를 고른다). TXT 는 글자 위치만, HWPX 는 구역·문단·표 칸까지 같아야 한다. */
 function holds(spot: Obj, selection: Obj, text: boolean): boolean {
-  const at = selection.start;
-  if (typeof at !== "number" || selection.end !== at || at < spot.start || at > spot.end) return false;
+  const { start, end } = selection;
+  if (typeof start !== "number" || typeof end !== "number") return false;
+  const caret = start === end && start >= spot.start && start <= spot.end;
+  if (!caret && (start !== spot.start || end !== spot.end)) return false;
   return text || sameParagraph(spot, selection);
 }
+/** 빈 선택(캐럿)인가 — HWPX 는 문단까지 같아야 한다. */
+const collapsed = (selection: Obj) => selection.start === selection.end
+  && (selection.start_paragraph ?? selection.paragraph) === (selection.end_paragraph ?? selection.start_paragraph ?? selection.paragraph);
 /** HWPX 캐럿과 자리가 같은 구역·문단·표 칸인가. */
 function sameParagraph(spot: Obj, selection: Obj): boolean {
   const paragraph = selection.start_paragraph ?? selection.paragraph;
@@ -212,11 +218,12 @@ export function spotAt(proposal: Obj | null, selection: Obj, media: string): { g
   return null;
 }
 
-/** HWPX 편집면에 넘길 제안 자리 — 띠가 준비 상태일 때만. 연 자리에는 필드 이름을 실어 이름표 표지가 하나 더 선다. */
-export function proposalSpots(proposal: Obj | null, open: ProposalOpen | null | undefined): { place: Obj; label: string; held: boolean; open?: string }[] {
+/** HWPX 편집면에 넘길 제안 자리 — 띠가 준비 상태일 때만. 자리 신원(`token`, 표지를 누르면 돌아온다), 이름표(필드 이름),
+ *  보류 여부, 팝오버가 연 자리인가(그 표지는 강하게 선다). */
+export function proposalSpots(proposal: Obj | null, open: ProposalOpen | null | undefined): { token: string; place: Obj; label: string; held: boolean; open?: boolean }[] {
   if (proposal?.state !== "ready") return [];
-  return groupsOf(proposal).flatMap((group) => spotsOf(group).map((spot) => ({ place: spot, label: spotName(group), held: group.kind === "held",
-    ...(open?.spot === spot.id ? { open: String(group.name ?? "") } : {}) })));
+  return groupsOf(proposal).flatMap((group) => spotsOf(group).map((spot) => ({ token: String(spot.id), place: spot,
+    label: String(group.name ?? ""), held: group.kind === "held", ...(open?.spot === spot.id ? { open: true } : {}) })));
 }
 
 /** TXT 편집면의 제안 표식(본문 표식 층) — 제안은 초록·보류는 회색 점선 밑줄이고, 연 자리는 면이 깔리며 그 앞에 흐린 이름표가
@@ -283,11 +290,14 @@ export function createProposal(host: ProposalHost) {
   let seq = 0;
   // 닫은 팝오버의 자리 — 캐럿이 그 자리를 떠날 때까지 다시 열지 않는다(닫으며 편집면에 돌려준 초점이 같은 선택을 다시 보고한다).
   let dismissed = "";
+  // 자리 전체를 고른 채 연 팝오버(HWPX 표지 누름)의 선택 끝 줄 — 편집면이 스크롤되면 팝오버를 그만큼 옮긴다(누른 줄을 따른다).
+  let lineAt: Obj | null = null;
 
   const proposal = () => proposalOf(host.tab(host.viewId()));
   /** 팝오버를 바꾼다 — 편집면 장식은 연 자리가 실제로 바뀔 때만 다시 보낸다(같은 자리의 기준 줄만 바뀌면 보내지 않는다). */
   function setOpen(next: ProposalOpen | null) {
     const before: ProposalOpen | null = host.view().proposalOpen || null;
+    if ((before?.spot || "") !== (next?.spot || "")) lineAt = null;
     host.update({ proposalOpen: next });
     if ((before?.spot || "") !== (next?.spot || "")) host.redecorate();
   }
@@ -332,13 +342,18 @@ export function createProposal(host: ProposalHost) {
     if (id !== host.viewId() || moving) return;
     const hit = spotAt(proposal(), selection || {}, String(host.tab(id).media || ""));
     if (hit?.spot !== dismissed) dismissed = "";
-    if (hit) enter(id, hit, rect);
+    if (hit) enter(id, hit, rect, collapsed(selection || {}));
     else if (host.view().proposalOpen) setOpen(null);
   }
-  /** 캐럿이 선 자리 — 이미 연 자리면 기준 줄만 고치고, 닫은 자리가 아니면 그 팝오버를 연다. */
-  function enter(id: string, hit: { group: string; spot: string }, rect: Obj | null | undefined) {
+  /** 캐럿이 선 자리 — 이미 연 자리면 기준 줄만 고치고(자리 전체 선택이면 누른 줄을 그대로 두고 그 선택 끝 줄을 기억한다),
+   *  닫은 자리가 아니면 그 팝오버를 연다. */
+  function enter(id: string, hit: { group: string; spot: string }, rect: Obj | null | undefined, caretOnly = true) {
     const open: ProposalOpen | null = host.view().proposalOpen || null;
-    if (open?.spot === hit.spot) { if (rect !== undefined) caretRect(id, rect); return; }
+    if (open?.spot === hit.spot) {
+      if (rect === undefined) return;
+      if (caretOnly || !open.rect) { lineAt = null; caretRect(id, rect); } else lineAt = rect;
+      return;
+    }
     if (dismissed) return;
     opener = null;
     setOpen({ ...hit, origin: "spot", rect: rect || null, focus: 0 });
@@ -347,7 +362,25 @@ export function createProposal(host: ProposalHost) {
   function caretRect(id: string, rect: Obj | null) {
     const open: ProposalOpen | null = host.view().proposalOpen || null;
     if (id !== host.viewId() || open?.origin !== "spot" || sameRect(open.rect, rect)) return;
-    setOpen({ ...open, rect });
+    // 자리 전체 선택이면 선택 끝 줄이 움직인 만큼 누른 줄을 옮긴다 — 팝오버가 누른 자리 아래에 머문다.
+    const from = lineAt;
+    lineAt = rect;
+    setOpen({ ...open, rect: from && rect && open.rect ? { left: open.rect.left + rect.left - from.left, top: open.rect.top + rect.top - from.top,
+      bottom: open.rect.bottom + rect.top - from.top } : rect });
+  }
+  /** 문서의 제안 자리를 눌렀다(HWPX 표지·TXT 표식 — 편집면이 자리 전체를 고른다) — 폴링을 기다리지 않고 그 자리의 팝오버를
+   *  누른 줄(`rect`, 호스트 좌표 — TXT 는 표식이 기준이라 null) 아래에 곧장 연다. 누름은 명시 열기라 닫아 둔 자리도 연다.
+   *  그 자리를 돌려준다(없으면 null — 다시 계산되어 사라졌다). */
+  function openSpot(id: string, spotId: string, rect: Obj | null): Obj | null {
+    const current = proposal();
+    if (id !== host.viewId() || current?.state !== "ready") return null;
+    const group = groupsOf(current).find((entry) => spotsOf(entry).some((spot) => spot.id === spotId));
+    const spot = spotsOf(group).find((entry) => entry.id === spotId);
+    if (!group || !spot) return null;
+    dismissed = "";
+    opener = null;
+    setOpen({ group: String(group.id), spot: String(spot.id), origin: "spot", rect: rect || null, focus: 0 });
+    return spot;
   }
 
   /** 구조 패널 줄(키보드 입구) — 그 자리로 편집면을 옮기고 팝오버를 연다. 연 줄을 다시 누르면 닫는다. */
@@ -425,7 +458,7 @@ export function createProposal(host: ProposalHost) {
       const data: Obj = proposal()?.data || {};
       return find({ pool_key: data.pool_key, ...(data.sheet != null ? { sheet: data.sheet } : {}), row: index });
     },
-    caret, caretRect, openRow, close,
+    caret, caretRect, openSpot, openRow, close,
     /** 묶음(또는 그 한 자리)을 필드로 만든다. `focused` 는 누를 때 초점이 팝오버 안에 있었는가다(표면이 잰다). */
     async make(groupId: string, spotId?: string, focused = false) {
       const id = host.viewId();

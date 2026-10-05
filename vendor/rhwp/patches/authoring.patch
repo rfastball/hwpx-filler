@@ -61,7 +61,7 @@ index 9e51f5a07..9f30d7107 100644
    }
    safeInteger(event.documentEpoch, 'document changed event documentEpoch', 1, code);
 diff --git a/npm/editor/index.d.ts b/npm/editor/index.d.ts
-index 6b35540e6..26a179270 100644
+index 6b35540e6..87a9c1b47 100644
 --- a/npm/editor/index.d.ts
 +++ b/npm/editor/index.d.ts
 @@ -15,8 +15,13 @@ export interface EditorOptions {
@@ -128,16 +128,17 @@ index 6b35540e6..26a179270 100644
    documentEpoch: number;
    changeSeq: number;
    commandId: string;
-@@ -317,14 +349,37 @@ export declare class RhwpEditor {
+@@ -317,14 +349,40 @@ export declare class RhwpEditor {
    getDocumentState(): Promise<RhwpDocumentStateV1>;
    /** 현재 캐럿/선택의 exact body paragraph 컨텍스트 */
    getSelectionContext(): Promise<RhwpSelectionContextV1>;
 +  setReadOnly(readOnly: boolean): Promise<void>;
 +  /**
-+   * kind: 'field' | 'slot' | 'option' | 'problem'. problem 은 밑줄(strong=오류 물결, subtle=경고 점선)이고
-+   * label 이 포인터 설명이다. 표지는 한 번에 500개까지다.
++   * kind: 'field' | 'slot' | 'option' | 'problem' | 'proposal' | 'held'. problem 은 밑줄(strong=오류 물결, subtle=경고 점선)이고
++   * label 이 포인터 설명이다. proposal(초록)·held(회색)는 링크처럼 점선 밑줄이고 포인터 아래에서 한 덩어리로 반응하며
++   * (strong=연 자리) 누르면 범위 전체가 선택되고 onDecorationClick 이 온다. 표지는 한 번에 500개까지다.
 +   */
-+  setDecorations(markers: Array<{ kind: 'field' | 'slot' | 'option' | 'problem'; label: string; emphasis: 'subtle' | 'strong'; section: number;
++  setDecorations(markers: Array<{ kind: 'field' | 'slot' | 'option' | 'problem' | 'proposal' | 'held'; label: string; emphasis: 'subtle' | 'strong'; section: number;
 +    startParagraph: number; startOffset: number; endParagraph: number; endOffset: number | null;
 +    cellPath?: RhwpCellPathEntryV1[] }>, options?: { labels?: 'selected' | 'all' | 'none' }): Promise<void>;
 +  /** 호스트 테마·도구 모음 배율 (Studio 자체 설정보다 우선) */
@@ -163,11 +164,13 @@ index 6b35540e6..26a179270 100644
 +  onShortcut(listener: (shortcut: 'F2' | 'CtrlShiftP' | 'CtrlS' | 'CtrlF' | 'Escape' | 'F6' | 'ShiftF6' | 'ShiftF10' | 'ContextMenu',
 +    detail?: { caret: RhwpClientRect | null }) => void): () => void;
 +  onContextMenuRequest(listener: (point: { x: number; y: number }) => void): () => void;
++  /** proposal·held 표지 클릭: Studio 가 이미 표지 범위 전체를 선택했다. index 는 마지막 setDecorations 목록의 차례, rect 는 iframe client 좌표 */
++  onDecorationClick(listener: (click: { index: number; kind: 'proposal' | 'held'; rect: RhwpClientRect }) => void): () => void;
    /** iframe 엘리먼트를 반환합니다 */
    readonly element: HTMLIFrameElement;
    // ── 브리지 표면 ────────────────────────────────────────────────
 diff --git a/npm/editor/index.js b/npm/editor/index.js
-index f4ed3c6c1..b7f9bce30 100644
+index f4ed3c6c1..0bce1f8f8 100644
 --- a/npm/editor/index.js
 +++ b/npm/editor/index.js
 @@ -22,7 +22,7 @@ import {
@@ -206,7 +209,7 @@ index f4ed3c6c1..b7f9bce30 100644
      return result;
    }
  
-@@ -293,6 +299,56 @@ export class RhwpEditor {
+@@ -293,6 +299,71 @@ export class RhwpEditor {
      return selection;
    }
  
@@ -255,6 +258,21 @@ index f4ed3c6c1..b7f9bce30 100644
 +    });
 +  }
 +
++  /**
++   * Clicks on link-like decorations (`proposal`, `held`): the Studio has already selected the decoration's whole
++   * range; `index` is its position in the last `setDecorations` list and `rect` the clicked box in iframe client
++   * coordinates.
++   */
++  onDecorationClick(listener) {
++    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
++    return this._transport.on('decorationClick', (click) => {
++      const rect = click?.rect;
++      if (!Number.isSafeInteger(click?.index) || click.index < 0 || (click.kind !== 'proposal' && click.kind !== 'held')
++          || !rect || !['x', 'y', 'width', 'height'].every((key) => Number.isFinite(rect[key]))) return;
++      listener({ index: click.index, kind: click.kind, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
++    });
++  }
++
 +  /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
 +  async setContextMenuForwarding(enabled) {
 +    return this._request('setContextMenuForwarding', { enabled: enabled === true });
@@ -263,7 +281,7 @@ index f4ed3c6c1..b7f9bce30 100644
    /** exact preimage fence를 검증하고 한 Studio 트랜잭션으로 문단 전체를 교체합니다. */
    async applyTextCommand(command) {
      assertCapability(this._transport, 'document-agent-command-v1');
-@@ -324,6 +380,19 @@ export class RhwpEditor {
+@@ -324,6 +395,19 @@ export class RhwpEditor {
      }));
    }
  
@@ -283,7 +301,7 @@ index f4ed3c6c1..b7f9bce30 100644
    /** agent apply/revert가 commit된 뒤 strict v1 변경 이벤트를 구독합니다. */
    onDocumentChanged(listener) {
      assertCapability(this._transport, 'document-change-events-v1');
-@@ -338,6 +407,7 @@ export class RhwpEditor {
+@@ -338,6 +422,7 @@ export class RhwpEditor {
            return;
          }
          if (!this._isFreshDocumentEvent(event.documentEpoch, event.changeSeq)) return;
@@ -291,7 +309,7 @@ index f4ed3c6c1..b7f9bce30 100644
          this._rememberDocumentVersion(event.documentEpoch, event.changeSeq);
          for (const subscriber of this._documentChangedListeners) {
            try { subscriber(event); } catch { /* 한 listener가 다른 listener를 막지 않는다. */ }
-@@ -353,10 +423,45 @@ export class RhwpEditor {
+@@ -353,10 +438,45 @@ export class RhwpEditor {
      };
    }
  
@@ -341,7 +359,7 @@ index f4ed3c6c1..b7f9bce30 100644
  
    _rememberDocumentVersion(epoch, changeSeq) {
 diff --git a/npm/editor/tests/document-agent-command-v1.contract.test.mjs b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
-index 1b8d0fcec..5b66303a8 100644
+index 1b8d0fcec..d3391cb2a 100644
 --- a/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 +++ b/npm/editor/tests/document-agent-command-v1.contract.test.mjs
 @@ -40,6 +40,9 @@ function selection() {
@@ -365,7 +383,7 @@ index 1b8d0fcec..5b66303a8 100644
    const first = [];
    const second = [];
    editor.onDocumentChanged(event => first.push(event.changeSeq));
-@@ -250,8 +253,66 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
+@@ -250,8 +253,81 @@ test('문서 변경 이벤트는 모든 listener에 한 번 전달하고 stale e
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(3, 2));
    emit('documentChanged', event(2, 99));
@@ -431,6 +449,21 @@ index 1b8d0fcec..5b66303a8 100644
 +  emit('rangePick', { section: 0, paragraph: -1, charOffset: 0, cell: false });
 +  emit('rangePick', { section: 0, paragraph: 1, charOffset: 0 });
 +  assert.deepEqual(points, [{ section: 0, paragraph: 9, charOffset: 0, cell: true }]);
++});
++
++test('onDecorationClick passes only well-formed proposal/held clicks with a finite client rect', () => {
++  const { editor, emit } = editorHarness({});
++  const clicks = [];
++  editor.onDecorationClick((click) => clicks.push(click));
++  const rect = { x: 12, y: 30, width: 48, height: 18 };
++  emit('decorationClick', { index: 2, kind: 'proposal', rect: { ...rect, extra: 1 } });
++  emit('decorationClick', { index: 0, kind: 'held', rect });
++  emit('decorationClick', { index: -1, kind: 'proposal', rect });
++  emit('decorationClick', { index: 1, kind: 'field', rect });
++  emit('decorationClick', { index: 1, kind: 'proposal', rect: { ...rect, y: Number.NaN } });
++  emit('decorationClick', { index: 1, kind: 'proposal' });
++  assert.deepEqual(clicks, [{ index: 2, kind: 'proposal', rect }, { index: 0, kind: 'held', rect }]);
++  assert.throws(() => editor.onDecorationClick(null), TypeError);
 +});
 diff --git a/npm/hwpctrl-ocx/src/studio-plugin.mjs b/npm/hwpctrl-ocx/src/studio-plugin.mjs
 index fef90d7aa..2945167d5 100644
@@ -690,7 +723,7 @@ index 5c625f7b8..7d8c701dd 100644
 +  keyboardMenuAt: Number.NEGATIVE_INFINITY,
 +};
 diff --git a/rhwp-studio/src/embed/rpc-router.ts b/rhwp-studio/src/embed/rpc-router.ts
-index 9723fff53..e57f5ac0e 100644
+index 9723fff53..ec4d82fde 100644
 --- a/rhwp-studio/src/embed/rpc-router.ts
 +++ b/rhwp-studio/src/embed/rpc-router.ts
 @@ -1,5 +1,6 @@
@@ -724,7 +757,7 @@ index 9723fff53..e57f5ac0e 100644
  
    // ── 브리지 확장 (P4) ────────────────────────────────────
    // 자동화·플러그인·창 제어. 부모는 **구조화 복제 가능한 값만** 보낼 수 있으므로 함수를 받는
-@@ -99,6 +112,46 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
+@@ -99,6 +112,50 @@ function assertOnlyKeys(value: Record<string, unknown>, allowed: readonly string
    if (unknown.length > 0) throw new Error(`${label} contains unknown field: ${unknown.sort()[0]}`);
  }
  
@@ -735,8 +768,12 @@ index 9723fff53..e57f5ac0e 100644
 +export type EmbedBodyRange = { section: number; startParagraph: number; startOffset: number;
 +  endParagraph: number; endOffset: number | null; cellPath?: EmbedCellPathEntry[] };
 +
-+/** Semantic overlay kinds; `problem` is an authoring diagnostic drawn as an underline. */
-+const DECORATION_KINDS = ['field', 'slot', 'option', 'problem'];
++/**
++ * Semantic overlay kinds; `problem` is an authoring diagnostic drawn as an underline. `proposal`
++ * and `held` are link-like spots: hovered they react as one piece, clicked they select their whole
++ * range and raise `decorationClick`.
++ */
++const DECORATION_KINDS = ['field', 'slot', 'option', 'problem', 'proposal', 'held'];
 +
 +const CELL_PATH_KEYS = ['parentParagraph', 'control', 'cell', 'paragraph'] as const;
 +
@@ -771,7 +808,7 @@ index 9723fff53..e57f5ac0e 100644
  /** 비어 있지 않은 문자열 식별자. 라우터에서 거르지 않으면 핸들러마다 같은 검사를 반복한다. */
  function asId(value: unknown): string {
    if (typeof value !== 'string' || value.length === 0) {
-@@ -176,6 +229,59 @@ export async function routeEmbedRequest(
+@@ -176,6 +233,59 @@ export async function routeEmbedRequest(
      case 'getSelectionContext':
        assertEmptyParams(params, 'getSelectionContext params');
        return handlers.getSelectionContext();
@@ -831,7 +868,7 @@ index 9723fff53..e57f5ac0e 100644
      case 'applyTextCommand': return handlers.applyTextCommand(parseApplyTextCommand(
        assertOnlyParam(params, 'command', 'applyTextCommand params'),
      ));
-@@ -185,6 +291,8 @@ export async function routeEmbedRequest(
+@@ -185,6 +295,8 @@ export async function routeEmbedRequest(
      case 'focusTarget': return handlers.focusTarget(parseBodyParagraphTarget(
        assertOnlyParam(params, 'target', 'focusTarget params'),
      ));
@@ -841,10 +878,10 @@ index 9723fff53..e57f5ac0e 100644
      case 'automation.list': return handlers.automationList();
      case 'automation.menuModel': return handlers.automationMenuModel();
 diff --git a/rhwp-studio/src/embed/runtime.ts b/rhwp-studio/src/embed/runtime.ts
-index fe02079b2..e1e3cde23 100644
+index fe02079b2..5f6b37143 100644
 --- a/rhwp-studio/src/embed/runtime.ts
 +++ b/rhwp-studio/src/embed/runtime.ts
-@@ -11,11 +11,18 @@ import {
+@@ -11,11 +11,19 @@ import {
  import { routeEmbedRequest, type EmbedRpcHandlers } from './rpc-router.ts';
  import { isDocumentAgentError } from '../document-agent/types.ts';
  
@@ -860,20 +897,22 @@ index fe02079b2..e1e3cde23 100644
 +  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void;
 +  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void;
 +  subscribeRangePick?: (listener: (point: unknown) => void) => () => void;
++  subscribeDecorationClick?: (listener: (click: unknown) => void) => () => void;
  }
  
  function errorText(error: unknown): string {
-@@ -47,6 +54,9 @@ function bindPort(
+@@ -47,6 +55,10 @@ function bindPort(
    clientCapabilities: readonly string[],
    handlers: EmbedRpcHandlers,
    subscribeDocumentChanged?: (listener: (payload: unknown) => void) => () => void,
 +  subscribeShortcut?: (listener: (shortcut: EmbedShortcutPayload) => void) => () => void,
 +  subscribeContextMenu?: (listener: (point: { x: number; y: number }) => void) => () => void,
 +  subscribeRangePick?: (listener: (point: unknown) => void) => () => void,
++  subscribeDecorationClick?: (listener: (click: unknown) => void) => () => void,
  ): () => void {
    port.onmessage = async ({ data }) => {
      if (!isRequestAttempt(data, sessionId)) return;
-@@ -100,7 +110,7 @@ function bindPort(
+@@ -100,7 +112,7 @@ function bindPort(
      type: 'rhwp-connected', version: EMBED_PROTOCOL_VERSION, sessionId,
      capabilities: EMBED_CAPABILITIES,
    });
@@ -882,7 +921,7 @@ index fe02079b2..e1e3cde23 100644
      port.postMessage({
        type: 'rhwp-event',
        version: EMBED_PROTOCOL_VERSION,
-@@ -108,7 +118,20 @@ function bindPort(
+@@ -108,7 +120,26 @@ function bindPort(
        event: 'documentChanged',
        payload,
      });
@@ -900,11 +939,17 @@ index fe02079b2..e1e3cde23 100644
 +    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
 +      event: 'rangePick', payload: point });
 +  });
-+  return () => { offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); offRangePick?.(); };
++  const offDecorationClick = subscribeDecorationClick?.((click) => {
++    port.postMessage({ type: 'rhwp-event', version: EMBED_PROTOCOL_VERSION, sessionId,
++      event: 'decorationClick', payload: click });
++  });
++  return () => {
++    offDocumentChanged?.(); offShortcut?.(); offContextMenu?.(); offRangePick?.(); offDecorationClick?.();
++  };
  }
  
  function rejectConnect(port: MessagePort, attempt: { version: number; sessionId: string }): void {
-@@ -200,6 +223,15 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
+@@ -200,6 +231,18 @@ export function installEmbedRuntime(options: EmbedRuntimeOptions): () => void {
          event.data.capabilities.includes('document-change-events-v1')
            ? options.subscribeDocumentChanged
            : undefined,
@@ -916,6 +961,9 @@ index fe02079b2..e1e3cde23 100644
 +          : undefined,
 +        event.data.capabilities.includes('document-change-events-v1')
 +          ? options.subscribeRangePick
++          : undefined,
++        event.data.capabilities.includes('document-change-events-v1')
++          ? options.subscribeDecorationClick
 +          : undefined,
        );
        binding = { origin: event.origin, sessionId: event.data.sessionId, port, offDocumentChanged };
@@ -1114,7 +1162,7 @@ index 4250e1ab0..1ec3ea162 100644
  
    // 그림 객체 선택 중 우클릭 → 그림 객체 메뉴 표시 (선택 유지)
 diff --git a/rhwp-studio/src/engine/input-handler.ts b/rhwp-studio/src/engine/input-handler.ts
-index 2dde6f1a8..1fbb027d1 100644
+index 2dde6f1a8..335ee9652 100644
 --- a/rhwp-studio/src/engine/input-handler.ts
 +++ b/rhwp-studio/src/engine/input-handler.ts
 @@ -1,5 +1,8 @@
@@ -1143,7 +1191,7 @@ index 2dde6f1a8..1fbb027d1 100644
  
  const SVG_NS = 'http://www.w3.org/2000/svg';
  const DRAG_SCROLL_EDGE_PX = 48;
-@@ -309,6 +313,17 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
+@@ -309,6 +313,21 @@ function createOverlayLabel(x: number, y: number, text: string): HTMLDivElement
  }
  
  /** 클릭 커서 배치 + 키보드 입력을 처리한다 */
@@ -1153,15 +1201,19 @@ index 2dde6f1a8..1fbb027d1 100644
 +  cellPath?: EmbedCellPathEntry[] };
 +type SemanticGeometry = { index: number; marker: SemanticMarker;
 +  boxes: Array<{ pageIndex: number; left: number; top: number; width: number; height: number }>;
++  /** The drawn mark elements (a link-like spot lights all of them on hover). */
++  marks: HTMLElement[];
 +  /** A 항목/선택 region drawn as one box per page (labels sit on its top edge). */
 +  region?: boolean };
 +/** Region box outset (page px): a 항목 box sits outside its 선택 boxes so nesting stays visible. */
 +const REGION_OUTSET: Record<string, number> = { slot: 5, option: 1 };
++/** Link-like marker kinds: one piece under the pointer, a click selects the whole range (`embed-decoration-click`). */
++const LINK_KINDS = ['proposal', 'held'];
 +
  export class InputHandler {
    private cursor: CursorState;
    private caret: CaretRenderer;
-@@ -319,6 +334,31 @@ export class InputHandler {
+@@ -319,6 +338,36 @@ export class InputHandler {
    private active = false;
    private insertMode = true;  // true=삽입, false=수정(덮어쓰기)
    private editMode: EditorEditMode = 'normal';
@@ -1173,10 +1225,15 @@ index 2dde6f1a8..1fbb027d1 100644
 +  /** Marker indices whose labels are on screen; null forces the next layout. */
 +  private semanticLabelKey: string | null = null;
 +  private semanticHover = -1;
++  /** The link-like marker under the pointer (-1 = none) and the last pointer point over the document. */
++  private semanticLinkHover = -1;
++  private semanticPointer: { x: number; y: number } | null = null;
 +  private readonly overlayRelayout = browserOverlayRelayout(() => this.relayoutEmbedOverlays());
 +  private onSemanticHoverBound = (e: MouseEvent) => this.onSemanticHover(e);
 +  private onSemanticLeaveBound = () => {
++    this.semanticPointer = null;
 +    this.setSemanticTitle('');
++    this.setSemanticLinkHover(-1);
 +    if (this.semanticHover !== -1) { this.semanticHover = -1; this.renderSemanticLabels(); }
 +  };
 +  /** Native tooltip text of the problem marker under the pointer ('' = none). */
@@ -1193,7 +1250,7 @@ index 2dde6f1a8..1fbb027d1 100644
    /** 마지막 셀 키 (눈금자 셀 bbox 중복 조회 방지) */
    private lastCellKey: string | null = null;
    /** [#4162] 선택 없이 지정한 글자 서식 — 다음 삽입 런에 적용 예약(캐럿 대기 글자 모양) */
-@@ -647,6 +687,12 @@ export class InputHandler {
+@@ -647,6 +696,16 @@ export class InputHandler {
      };
      document.addEventListener('keydown', this.onF11InterceptBound, true);
  
@@ -1203,10 +1260,14 @@ index 2dde6f1a8..1fbb027d1 100644
 +    container.addEventListener('click', (e) => { if (this.rangePickOn) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 +    container.addEventListener('mousemove', (e) => this.onRangePickMove(e), true);
 +    container.addEventListener('scroll', () => this.scheduleRangePickRender(), { passive: true });
++    // Link-like markers (proposal/held): a plain click selects the marker's whole range once the Studio's own press
++    // handling is done. Nothing is swallowed, so drags and double-clicks keep their meaning.
++    container.addEventListener('mousedown', (e) => this.onSemanticLinkDown(e), true);
++    container.addEventListener('scroll', () => this.refreshSemanticHover(), { passive: true });
      container.addEventListener('mousedown', this.onClickBound);
      container.addEventListener('dblclick', this.onDblClickBound);
      container.addEventListener('contextmenu', this.onContextMenuBound);
-@@ -661,33 +707,19 @@ export class InputHandler {
+@@ -661,33 +720,19 @@ export class InputHandler {
      this.textarea.addEventListener('paste', this.onPasteBound);
  
      // 줌 변경 시 캐럿/선택 마커 위치 갱신
@@ -1253,7 +1314,7 @@ index 2dde6f1a8..1fbb027d1 100644
  
      eventBus.on('document-view-changed', () => {
        if (!this.active) return;
-@@ -3037,6 +3069,9 @@ export class InputHandler {
+@@ -3037,6 +3082,9 @@ export class InputHandler {
      if (!range) return;
      if ('mode' in range && range.mode === 'headerFooter') {
        this.cursor.selectHeaderFooterRange(range.start, range.end, range.previewPage);
@@ -1263,7 +1324,7 @@ index 2dde6f1a8..1fbb027d1 100644
      }
    }
  
-@@ -3108,7 +3143,8 @@ export class InputHandler {
+@@ -3108,7 +3156,8 @@ export class InputHandler {
                  desc.operation,
                  desc.editContext,
                )
@@ -1273,7 +1334,7 @@ index 2dde6f1a8..1fbb027d1 100644
          const newPos = this.history.execute(cmd, this.wasm);
          const markPastedFieldEndOutside = this.pastedFieldEndOutsidePending;
          // 무변경 경로에서도 pending 플래그는 소비한다 — 남겨 두면 다음 연산으로 샌다.
-@@ -3122,6 +3158,7 @@ export class InputHandler {
+@@ -3122,6 +3171,7 @@ export class InputHandler {
          } else {
            this.cursor.moveTo(newPos);
            this.cursor.resetPreferredX();
@@ -1281,7 +1342,7 @@ index 2dde6f1a8..1fbb027d1 100644
          }
          this.caretLayoutReveal.requestFor(desc.operationType);
          if (markPastedFieldEndOutside) {
-@@ -3232,6 +3269,11 @@ export class InputHandler {
+@@ -3232,6 +3282,11 @@ export class InputHandler {
  
    /** 텍스트 입력 처리 (textarea input 이벤트) */
    private onInput(e?: Event): void {
@@ -1293,7 +1354,7 @@ index 2dde6f1a8..1fbb027d1 100644
      _text.onInput.call(this, e as InputEvent);
    }
  
-@@ -4257,6 +4299,8 @@ export class InputHandler {
+@@ -4257,6 +4312,8 @@ export class InputHandler {
      this.container.removeEventListener('mousedown', this.onClickBound);
      this.container.removeEventListener('dblclick', this.onDblClickBound);
      this.container.removeEventListener('contextmenu', this.onContextMenuBound);
@@ -1302,7 +1363,7 @@ index 2dde6f1a8..1fbb027d1 100644
      this.container.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mousemove', this.onMouseMoveBound);
      document.removeEventListener('mouseup', this.onMouseUpBound);
-@@ -4272,6 +4316,8 @@ export class InputHandler {
+@@ -4272,6 +4329,8 @@ export class InputHandler {
      this.caret.dispose();
      this.fieldMarker.dispose();
      this.selectionRenderer.dispose();
@@ -1311,7 +1372,7 @@ index 2dde6f1a8..1fbb027d1 100644
      this.cellSelectionRenderer?.dispose();
      this.tableObjectRenderer?.dispose();
      this.tableResizeRenderer?.dispose();
-@@ -4302,6 +4348,463 @@ export class InputHandler {
+@@ -4302,6 +4361,544 @@ export class InputHandler {
      this.eventBus.emit('command-state-changed');
    }
  
@@ -1373,6 +1434,7 @@ index 2dde6f1a8..1fbb027d1 100644
 +    this.rangePickStart = enabled ? start : null;
 +    if (!enabled) { this.rangePickPress = null; this.rangePickPointer = null; }
 +    this.scheduleRangePickRender();
++    this.refreshSemanticHover();
 +  }
 +
 +  private onRangePickDown(e: MouseEvent): void {
@@ -1445,7 +1507,9 @@ index 2dde6f1a8..1fbb027d1 100644
 +  /**
 +   * Render backend-projected meaning as a non-mutating document overlay. Field runs get an
 +   * inline marker (tint + underline); a problem gets an underline (strong = error, wavy; subtle =
-+   * warning, dotted) whose label is its hover tooltip. Floating labels follow `labels`: `selected`
++   * warning, dotted) whose label is its hover tooltip. `proposal`/`held` spots are link-like: a dotted
++   * underline that lights as one piece under the pointer (strong = the opened spot) and selects its whole
++   * range on click. Floating labels follow `labels`: `selected`
 +   * shows only the markers under the caret or the pointer, `all` every marker, `none` no label.
 +   */
 +  setSemanticMarkers(markers: typeof this.semanticMarkers, labels: 'selected' | 'all' | 'none' = 'selected'): void {
@@ -1480,7 +1544,7 @@ index 2dde6f1a8..1fbb027d1 100644
 +            left: this.virtualScroll.getPageLeftResolved(region.pageIndex, contentWidth) + region.x * zoom,
 +            top: this.virtualScroll.getPageOffset(region.pageIndex) + region.y * zoom,
 +            width: Math.max(3, region.width * zoom), height: Math.max(3, region.height * zoom) }));
-+          boxes.forEach((box, at) => {
++          const marks = boxes.map((box, at) => {
 +            const mark = document.createElement('div');
 +            mark.className = 'rhwp-semantic-mark';
 +            mark.dataset.kind = marker.kind;
@@ -1490,8 +1554,9 @@ index 2dde6f1a8..1fbb027d1 100644
 +            if (open) mark.dataset.open = open;
 +            mark.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`;
 +            this.semanticLayer!.appendChild(mark);
++            return mark;
 +          });
-+          if (boxes.length) { this.semanticGeometry.push({ index, marker, boxes, region: true }); return; }
++          if (boxes.length) { this.semanticGeometry.push({ index, marker, boxes, marks, region: true }); return; }
 +        }
 +        const endOffset = marker.endOffset
 +          ?? this.embedParagraphLength(marker.section, marker.endParagraph, marker.cellPath);
@@ -1505,17 +1570,22 @@ index 2dde6f1a8..1fbb027d1 100644
 +          left: this.virtualScroll.getPageLeftResolved(rect.pageIndex, contentWidth) + rect.x * zoom,
 +          top: this.virtualScroll.getPageOffset(rect.pageIndex) + rect.y * zoom,
 +          width: Math.max(3, rect.width * zoom), height: Math.max(3, rect.height * zoom) }));
-+        for (const box of boxes) {
++        const marks = boxes.map((box) => {
 +          const mark = document.createElement('div');
 +          mark.className = 'rhwp-semantic-mark';
 +          mark.dataset.kind = marker.kind;
 +          mark.dataset.emphasis = marker.emphasis;
 +          mark.style.cssText = `left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px`;
 +          this.semanticLayer!.appendChild(mark);
-+        }
-+        this.semanticGeometry.push({ index, marker, boxes });
++          return mark;
++        });
++        this.semanticGeometry.push({ index, marker, boxes, marks });
 +      } catch { /* Unsupported nested or unresolved positions remain in the semantic outline. */ }
 +    });
++    // New geometry: the spot under a still pointer lights again (its old mark elements are gone).
++    this.semanticLinkHover = -1;
++    delete this.container.dataset.semanticLink;
++    this.refreshSemanticHover();
 +    this.renderSemanticLabels();
 +  }
 +
@@ -1647,10 +1717,12 @@ index 2dde6f1a8..1fbb027d1 100644
 +  private renderSemanticLabels(): void {
 +    const layer = this.semanticLayer;
 +    if (!layer) return;
-+    // Problem markers never float a label: their message is the hover tooltip (onSemanticHover).
-+    const wanted = this.semanticLabelMode === 'none' ? [] : this.semanticGeometry.filter((item) => item.marker.kind !== 'problem'
-+      && (this.semanticLabelMode === 'all' || item.index === this.semanticHover
-+      || (this.active && this.semanticMarkerHasCaret(item.marker))));
++    // Problem markers never float a label: their message is the hover tooltip (onSemanticHover). A link-like spot
++    // names itself only while it is hovered or opened (strong), whatever the label mode.
++    const wanted = this.semanticGeometry.filter((item) => item.marker.kind !== 'problem' && (LINK_KINDS.includes(item.marker.kind)
++      ? item.index === this.semanticHover || item.marker.emphasis === 'strong'
++      : this.semanticLabelMode !== 'none' && (this.semanticLabelMode === 'all' || item.index === this.semanticHover
++        || (this.active && this.semanticMarkerHasCaret(item.marker)))));
 +    const key = wanted.map((item) => item.index).join(',');
 +    if (key === this.semanticLabelKey) return;
 +    this.semanticLabelKey = key;
@@ -1728,20 +1800,90 @@ index 2dde6f1a8..1fbb027d1 100644
 +   * in `selected` mode.
 +   */
 +  private onSemanticHover(e: MouseEvent): void {
-+    if (this.semanticGeometry.length === 0) return;
++    this.semanticPointer = { x: e.clientX, y: e.clientY };
++    this.refreshSemanticHover();
++  }
++
++  /**
++   * Re-reads what lies under the last pointer point (pointer moves, scrolls, new geometry): the problem tooltip, the
++   * link-like spot lit as one piece (every mark of it gets `data-hover`, the document shows a pointer cursor) and,
++   * in `selected` mode, the hovered marker's label.
++   */
++  private refreshSemanticHover(): void {
++    const pointer = this.semanticPointer;
 +    const scrollContent = this.container.querySelector('#scroll-content');
-+    if (!scrollContent) return;
++    if (!pointer || !scrollContent || this.semanticGeometry.length === 0) { this.setSemanticLinkHover(-1); return; }
 +    const origin = scrollContent.getBoundingClientRect();
-+    const x = e.clientX - origin.left, y = e.clientY - origin.top;
++    const x = pointer.x - origin.left, y = pointer.y - origin.top;
 +    const over = (item: SemanticGeometry) => item.boxes.some((box) =>
 +      x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height);
 +    this.setSemanticTitle(this.semanticGeometry.find((item) => item.marker.kind === 'problem' && over(item))?.marker.label ?? '');
-+    if (this.semanticLabelMode !== 'selected') return;
-+    const hit = this.semanticGeometry.find((item) => item.marker.kind !== 'problem' && over(item));
++    const link = this.rangePickOn ? undefined
++      : this.semanticGeometry.find((item) => LINK_KINDS.includes(item.marker.kind) && over(item));
++    this.setSemanticLinkHover(link ? link.index : -1);
++    // Hover names the marker under the pointer in `selected` mode; a link-like spot in every mode.
++    const hit = this.semanticGeometry.find((item) => item.marker.kind !== 'problem' && over(item)
++      && (this.semanticLabelMode === 'selected' || LINK_KINDS.includes(item.marker.kind)));
 +    const next = hit ? hit.index : -1;
 +    if (next === this.semanticHover) return;
 +    this.semanticHover = next;
 +    this.renderSemanticLabels();
++  }
++
++  /** Lights the link-like marker `index` as one piece (-1 = none) and shows the pointer cursor over it. */
++  private setSemanticLinkHover(index: number): void {
++    if (index === this.semanticLinkHover) return;
++    const marksOf = (at: number) => this.semanticGeometry.find((item) => item.index === at)?.marks ?? [];
++    for (const mark of marksOf(this.semanticLinkHover)) delete mark.dataset.hover;
++    this.semanticLinkHover = index;
++    for (const mark of marksOf(index)) mark.dataset.hover = '';
++    if (index === -1) delete this.container.dataset.semanticLink;
++    else this.container.dataset.semanticLink = '';
++  }
++
++  /** The link-like geometry and the box of it under a client point, or null. */
++  private semanticLinkAt(clientX: number, clientY: number):
++    { item: SemanticGeometry; box: SemanticGeometry['boxes'][number] } | null {
++    const scrollContent = this.container.querySelector('#scroll-content');
++    if (!scrollContent) return null;
++    const origin = scrollContent.getBoundingClientRect();
++    const x = clientX - origin.left, y = clientY - origin.top;
++    for (const item of this.semanticGeometry) {
++      if (!LINK_KINDS.includes(item.marker.kind)) continue;
++      const box = item.boxes.find((b) => x >= b.left && x <= b.left + b.width && y >= b.top && y <= b.top + b.height);
++      if (box) return { item, box };
++    }
++    return null;
++  }
++
++  /**
++   * A plain left click (released within {@link PICK_CLICK_SLOP} px, no modifier, single click) that ends on a
++   * link-like marker selects the marker's whole range after the Studio's own press handling (caret move), then
++   * emits `embed-decoration-click` `{ index, kind, rect }` with the clicked box in client coordinates.
++   */
++  private onSemanticLinkDown(e: MouseEvent): void {
++    if (this.rangePickOn || e.button !== 0 || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
++    if (!this.semanticLinkAt(e.clientX, e.clientY)) return;
++    const press = { x: e.clientX, y: e.clientY };
++    const release = (up: MouseEvent) => {
++      document.removeEventListener('mouseup', release, true);
++      if (up.button !== 0 || up.detail > 1
++        || Math.hypot(up.clientX - press.x, up.clientY - press.y) > PICK_CLICK_SLOP) return;
++      // After every mouseup listener of this press (the Studio's own caret placement and drag end).
++      setTimeout(() => {
++        if (this.rangePickOn || this.isDragging) return;
++        const hit = this.semanticLinkAt(up.clientX, up.clientY);
++        if (!hit) return;
++        const { marker, index } = hit.item;
++        if (!this.focusBodyRange(marker.section, marker.startParagraph, marker.startOffset, marker.endParagraph,
++          marker.endOffset, marker.cellPath, false)) return;
++        const origin = this.container.querySelector('#scroll-content')?.getBoundingClientRect();
++        if (!origin) return;
++        this.eventBus.emit('embed-decoration-click', { index, kind: marker.kind, rect: {
++          x: origin.left + hit.box.left, y: origin.top + hit.box.top, width: hit.box.width, height: hit.box.height } });
++      }, 0);
++    };
++    document.addEventListener('mouseup', release, true);
 +  }
 +
 +  private setSemanticTitle(title: string): void {
@@ -1775,7 +1917,7 @@ index 2dde6f1a8..1fbb027d1 100644
    /** 양식 모드인가? */
    isFormMode(): boolean { return this.editMode === 'form'; }
  
-@@ -4466,6 +4969,9 @@ export class InputHandler {
+@@ -4466,6 +5063,9 @@ export class InputHandler {
    }
  
    private isOperationAllowedInEditMode(desc: OperationDescriptor): boolean {
@@ -1785,7 +1927,7 @@ index 2dde6f1a8..1fbb027d1 100644
      if (this.editMode !== 'form') return true;
      // [Task #2337-review] kind:'record' 는 이미 적용된 뮤테이션을 히스토리에 기록만 한다.
      // form mode 에서 이를 드롭하면 그 뮤테이션이 undo 불가한 미기록 편집으로 남아(더블클릭
-@@ -4673,6 +5179,109 @@ export class InputHandler {
+@@ -4673,6 +5273,113 @@ export class InputHandler {
      }
    }
  
@@ -1858,9 +2000,13 @@ index 2dde6f1a8..1fbb027d1 100644
 +    } catch { return false; }
 +  }
 +
-+  /** Select an exact body or table-cell range without mutating the document. */
++  /**
++   * Select an exact body or table-cell range without mutating the document. `centre` scrolls the
++   * caret line to the middle of the view (host navigation); a click on the document keeps the view.
++   */
 +  focusBodyRange(section: number, startParagraph: number, startOffset: number,
-+                 endParagraph: number, endOffset: number | null, cellPath?: EmbedCellPathEntry[]): boolean {
++                 endParagraph: number, endOffset: number | null, cellPath?: EmbedCellPathEntry[],
++                 centre = true): boolean {
 +    const end = this.embedRangeEnd(section, startParagraph, startOffset, endParagraph, endOffset, cellPath);
 +    if (end === null) return false;
 +    try {
@@ -1881,7 +2027,7 @@ index 2dde6f1a8..1fbb027d1 100644
 +      this.active = true;
 +      this.updateCaret(true);
 +      this.focusTextarea();
-+      const rect = this.cursor.getRect();
++      const rect = centre ? this.cursor.getRect() : null;
 +      if (rect) {
 +        const centerY = this.virtualScroll.getPageOffset(rect.pageIndex)
 +          + rect.y * this.viewportManager.getZoom();
@@ -2040,7 +2186,7 @@ index 000000000..277746476
 +  });
 +}
 diff --git a/rhwp-studio/src/main.ts b/rhwp-studio/src/main.ts
-index 64e8a6d1d..c2fdcc96e 100644
+index 64e8a6d1d..f4cc74579 100644
 --- a/rhwp-studio/src/main.ts
 +++ b/rhwp-studio/src/main.ts
 @@ -56,7 +56,8 @@ import {
@@ -2086,7 +2232,7 @@ index 64e8a6d1d..c2fdcc96e 100644
  
    try {
      const drafts = (await listAutosaveDrafts()).filter((draft) => draft.data.byteLength > 0);
-@@ -1941,7 +1944,62 @@ void initPromise.then(() => {
+@@ -1941,7 +1944,63 @@ void initPromise.then(() => {
  installEmbedRuntime({
    hostWindow: window,
    parentWindow: window.parent,
@@ -2128,6 +2274,7 @@ index 64e8a6d1d..c2fdcc96e 100644
 +    const off = eventBus.on('embed-range-pick', (point) => listener(point));
 +    return () => { off(); inputHandler?.setRangePick(false, null); };
 +  },
++  subscribeDecorationClick: (listener) => eventBus.on('embed-decoration-click', (click) => listener(click)),
 +  subscribeContextMenu: (listener) => {
 +    const off = eventBus.on('embed-contextmenu', (point) => listener(point as { x: number; y: number }));
 +    return () => { off(); hostInput.contextMenu = false; };
@@ -2150,7 +2297,7 @@ index 64e8a6d1d..c2fdcc96e 100644
    handlers: {
      async ready() {
        await initPromise;
-@@ -2022,7 +2080,26 @@ installEmbedRuntime({
+@@ -2022,7 +2081,26 @@ installEmbedRuntime({
      async getSelectionContext() {
        await initPromise;
        if (!documentAgent) throw new Error('Document agent is not initialized');
@@ -2178,7 +2325,7 @@ index 64e8a6d1d..c2fdcc96e 100644
      },
      async applyTextCommand(command) {
        await initPromise;
-@@ -2039,6 +2116,23 @@ installEmbedRuntime({
+@@ -2039,6 +2117,23 @@ installEmbedRuntime({
        if (!documentAgent) throw new Error('Document agent is not initialized');
        return documentAgent.focusTarget(target);
      },
@@ -2272,10 +2419,10 @@ index a74050ecd..5853a1b5a 100644
    return {
      recoveryEnabled: settings.recoveryEnabled,
 diff --git a/rhwp-studio/src/styles/editor.css b/rhwp-studio/src/styles/editor.css
-index 1b1ecf8d5..5c132bd43 100644
+index 1b1ecf8d5..3d7678202 100644
 --- a/rhwp-studio/src/styles/editor.css
 +++ b/rhwp-studio/src/styles/editor.css
-@@ -144,3 +144,122 @@
+@@ -144,3 +144,156 @@
      -1px 0 0 var(--doc-paper);
    white-space: nowrap;
  }
@@ -2289,6 +2436,8 @@ index 1b1ecf8d5..5c132bd43 100644
 +  --rhwp-semantic-option: #c08436;
 +  --rhwp-semantic-problem-error: #c0392b;
 +  --rhwp-semantic-problem-warning: #a05a00;
++  --rhwp-semantic-proposal: #198575;
++  --rhwp-semantic-held: #8a9099;
 +  position: absolute;
 +  inset: 0;
 +  pointer-events: none;
@@ -2354,6 +2503,24 @@ index 1b1ecf8d5..5c132bd43 100644
 +  border-bottom: 2px dotted var(--rhwp-semantic-problem-warning);
 +}
 +
++/* Data-induction spots read like links: a dotted underline under the glyphs (proposal green, held
++   grey), never a fill. The spot under the pointer (data-hover) and the opened one (strong) get a
++   face as one piece; the opened one also a ring. The document shows a pointer cursor over a spot. */
++.rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"]) {
++  --rhwp-link-ink: var(--rhwp-semantic-proposal);
++  border-bottom: 2px dotted var(--rhwp-link-ink);
++  border-radius: 2px 2px 0 0;
++  mix-blend-mode: multiply;
++}
++.rhwp-semantic-mark[data-kind="held"] { --rhwp-link-ink: var(--rhwp-semantic-held); }
++.rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"]):is([data-hover], [data-emphasis="strong"]) {
++  background: color-mix(in srgb, var(--rhwp-link-ink) 8%, transparent);
++}
++.rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"])[data-emphasis="strong"] {
++  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rhwp-link-ink) 45%, transparent);
++}
++#scroll-container[data-semantic-link] { cursor: pointer; }
++
 +.rhwp-semantic-label {
 +  position: absolute;
 +  padding: 0 4px;
@@ -2367,6 +2534,8 @@ index 1b1ecf8d5..5c132bd43 100644
 +
 +.rhwp-semantic-label[data-kind="slot"] { background: var(--rhwp-semantic-slot); }
 +.rhwp-semantic-label[data-kind="option"] { background: var(--rhwp-semantic-option); }
++.rhwp-semantic-label[data-kind="proposal"] { background: #f3faf8; color: #0f5e52; border: 1px dashed #8fcdbf; }
++.rhwp-semantic-label[data-kind="held"] { background: #f5f6f8; color: #4f555d; border: 1px dashed #b4bac2; }
 +
 +@media (forced-colors: active) {
 +  .rhwp-semantic-mark {
@@ -2381,10 +2550,22 @@ index 1b1ecf8d5..5c132bd43 100644
 +  .rhwp-semantic-mark[data-kind="option"] { border-color: Highlight; }
 +  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="strong"]::after { --rhwp-problem-wave: CanvasText; }
 +  .rhwp-semantic-mark[data-kind="problem"][data-emphasis="subtle"]::after { border-bottom-color: CanvasText; }
++  .rhwp-semantic-mark[data-kind="proposal"] { --rhwp-link-ink: LinkText; }
++  .rhwp-semantic-mark[data-kind="held"] { --rhwp-link-ink: GrayText; }
++  .rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"]):is([data-hover], [data-emphasis="strong"]) {
++    background: transparent;
++    outline: 1px solid Highlight;
++  }
++  .rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"])[data-emphasis="strong"] { box-shadow: 0 0 0 2px Highlight; }
 +  .rhwp-semantic-label {
 +    forced-color-adjust: none;
 +    background: Highlight;
 +    color: HighlightText;
++  }
++  .rhwp-semantic-label:is([data-kind="proposal"], [data-kind="held"]) {
++    background: Canvas;
++    color: CanvasText;
++    border-color: CanvasText;
 +  }
 +}
 +
@@ -2546,10 +2727,10 @@ index c598a6d2d..ca57272c9 100644
 +  assert.equal(controller.getSelectionContext().range, null);
 +});
 diff --git a/rhwp-studio/tests/embed-protocol.test.ts b/rhwp-studio/tests/embed-protocol.test.ts
-index a87452c42..73b9af364 100644
+index a87452c42..fde01d215 100644
 --- a/rhwp-studio/tests/embed-protocol.test.ts
 +++ b/rhwp-studio/tests/embed-protocol.test.ts
-@@ -1151,3 +1151,26 @@ test('embed router는 notifySaved fileName을 정규화해 핸들러로 전달
+@@ -1151,3 +1151,90 @@ test('embed router는 notifySaved fileName을 정규화해 핸들러로 전달
  
    assert.deepEqual(received, [undefined, 'a.hwp', undefined, undefined]);
  });
@@ -2575,6 +2756,70 @@ index a87452c42..73b9af364 100644
 +  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: Array(501).fill(problem) }, handlers),
 +    /invalid decoration count/);
 +  assert.deepEqual(calls, [{ method: 'scroll', value: range }, { method: 'decorate', value: [[problem], 'none'] }]);
++});
++
++test('embed router는 링크 같은 proposal·held 장식을 받고 runtime은 decorationClick 이벤트를 포트로 보낸다', async () => {
++  const calls: unknown[] = [];
++  const handlers = {
++    setDecorations: async (value: unknown, labels: unknown) => { calls.push([value, labels]); },
++  } as unknown as EmbedRpcHandlers;
++  const proposal = { kind: 'proposal', label: '공고명', emphasis: 'subtle', section: 0,
++    startParagraph: 2, startOffset: 4, endParagraph: 2, endOffset: 9 };
++  const held = { ...proposal, kind: 'held', emphasis: 'strong', label: '공고번호' };
++  await routeEmbedRequest('setDecorations', { markers: [proposal, held], labels: 'selected' }, handlers);
++  // The host keeps its spot ids to itself: an extra key on a marker is refused.
++  await assert.rejects(() => routeEmbedRequest('setDecorations', { markers: [{ ...proposal, token: 'p:1' }] }, handlers),
++    /unknown field: token/);
++  assert.deepEqual(calls, [[[proposal, held], 'selected']]);
++
++  let messageListener: (event: MessageEvent) => void = () => {};
++  const hostWindow = {
++    addEventListener(_type: string, listener: (event: MessageEvent) => void) { messageListener = listener; },
++    removeEventListener() {},
++  };
++  const parentWindow = { postMessage() {} };
++  let emitClick: (click: unknown) => void = () => {};
++  let unsubscribed = false;
++  const cleanup = installEmbedRuntime({
++    hostWindow: hostWindow as unknown as Window,
++    parentWindow: parentWindow as unknown as Window,
++    handlers: { ready: async () => true } as EmbedRpcHandlers,
++    subscribeDecorationClick: (listener) => { emitClick = listener; return () => { unsubscribed = true; }; },
++  });
++  const channel = new MessageChannel();
++  const click = { index: 3, kind: 'proposal', rect: { x: 10, y: 20, width: 40, height: 18 } };
++  const event = new Promise<unknown>((resolve) => {
++    channel.port1.onmessage = ({ data }) => {
++      if (data.type === 'rhwp-connected') emitClick(click);
++      else resolve(data);
++    };
++  });
++  channel.port1.start();
++  messageListener({
++    data: { type: 'rhwp-connect', version: 1, sessionId: 'session-d',
++      capabilities: ['transferable-array-buffer', 'document-change-events-v1'] },
++    source: parentWindow,
++    origin: 'https://host.example',
++    ports: [channel.port2],
++  } as unknown as MessageEvent);
++  assert.deepEqual(await event, { type: 'rhwp-event', version: 1, sessionId: 'session-d',
++    event: 'decorationClick', payload: click });
++  cleanup();
++  assert.equal(unsubscribed, true);
++  channel.port1.close();
++});
++
++test('input handler는 링크 표지를 한 덩어리로 다룬다: hover 면·포인터 커서, 클릭은 범위 전체 선택 뒤 이벤트', () => {
++  const source = readFileSync(new URL('../src/engine/input-handler.ts', import.meta.url), 'utf8');
++  assert.match(source, /const LINK_KINDS = \['proposal', 'held'\];/);
++  // Hover lights every mark of the spot and flips the document cursor.
++  assert.match(source, /for \(const mark of marksOf\(index\)\) mark\.dataset\.hover = '';[\s\S]*?this\.container\.dataset\.semanticLink = '';/);
++  // A click never swallows the press: capture listener only records, the selection follows the Studio's own handling.
++  assert.match(source, /private onSemanticLinkDown\(e: MouseEvent\): void \{(?:(?!preventDefault|stopImmediatePropagation)[\s\S])*?setTimeout\(\(\) => \{[\s\S]*?this\.focusBodyRange\([\s\S]*?marker\.cellPath, false\)\) return;[\s\S]*?this\.eventBus\.emit\('embed-decoration-click', \{ index, kind: marker\.kind, rect:/);
++  assert.match(source, /up\.detail > 1/);
++  const css = readFileSync(new URL('../src/styles/editor.css', import.meta.url), 'utf8');
++  assert.match(css, /#scroll-container\[data-semantic-link\] \{ cursor: pointer; \}/);
++  assert.match(css, /border-bottom: 2px dotted var\(--rhwp-link-ink\);/);
 +});
 diff --git a/rhwp-studio/tests/field-marker-ink.test.ts b/rhwp-studio/tests/field-marker-ink.test.ts
 new file mode 100644

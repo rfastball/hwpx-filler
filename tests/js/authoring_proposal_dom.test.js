@@ -22,8 +22,8 @@ const proposalRow = (env, name) => env.container.querySelectorAll("button[data-p
 test("#1156 keyboard: a proposal row opens the popover and focuses its first action; Escape closes it back to the row; ↓ roves the rows", async () => {
   const env = await boot(proposalTab());
   const editorMount = env.mounts.find((record) => record.spec.fileName === "a.hwpx");
-  assert.deepEqual(editorMount.projection.proposals.map((spot) => [spot.label, spot.held]),
-    [["필드 제안 추정가격: 170,309,180원", false], ["보류된 제안 입찰방식: 전자입찰", true], ["보류된 제안 입찰방식: 전자입찰", true]], "편집면 장식에 제안 자리가 실린다");
+  assert.deepEqual(editorMount.projection.proposals.map((spot) => [spot.label, spot.held, typeof spot.token]),
+    [["추정가격", false, "string"], ["입찰방식", true, "string"], ["입찰방식", true, "string"]], "편집면 장식에 제안 자리가 이름표(필드 이름)·자리 신원과 함께 실린다");
   const price = proposalRow(env, "추정가격");
   assert.equal(price.getAttribute("tabindex"), "0", "제안 줄 묶음은 한 번의 Tab 입구다");
   assert.equal(proposalRow(env, "입찰방식").getAttribute("tabindex"), "-1");
@@ -38,7 +38,7 @@ test("#1156 keyboard: a proposal row opens the popover and focuses its first act
   assert.equal(env.document.activeElement.textContent, "이 자리만 필드로", "보류의 첫 행동이 초점을 받는다(만들기 단추 없음)");
   assert.equal(proposalRow(env, "입찰방식").getAttribute("aria-expanded"), "true");
   assert.ok(dialog.textContent.includes("같은 값 2곳이 모두 문장 속에 있어 일반 낱말로 보입니다."), "보류 이유는 Python 문장 그대로");
-  assert.ok(editorMount.projection.proposals.some((spot) => spot.open === "입찰방식"), "연 자리는 이름표 표지를 하나 더 싣는다");
+  assert.deepEqual(editorMount.projection.proposals.filter((spot) => spot.open).map((spot) => spot.label), ["입찰방식"], "연 자리 하나가 강한 표지로 선다");
   press(env, "Escape");
   await settle();
   assert.equal(named(env, "dialog", "입찰방식 보류"), undefined);

@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "0db1a62b881c4eafa5cf95badb8b3596571c8f23a7e7094860c255641fd7b08b"
+source_sha256 = "bb88fef69921022772e3b6ca0f43658b4be65c45e4d001169bc6bcf81974de96"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/external/template_change.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring*.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js", "tests/js/txt_name_tags.test.js"]
-source_sha256 = "34b5b1c6d609d4f65cffaa72210a436cad57b395b1c851b75de839e10255843a"
+source_sha256 = "4e822a16c554053a999a5c0a53148f54d9b297fd6d1448c6779c9f1efb82b47a"
 body_sha256 = "123c523f72d59d6856946dc9e4a8a744feeb4acee488912c10a07d6ad4e70bec"
 
 [[topic]]
@@ -250,7 +250,7 @@ document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py"]
 source_sha256 = "ab355af0a54405d0358ba7d693339917c797a9286459ff43ed78ebc435754726"
-body_sha256 = "1f7e7754eaa3654741ae119608152c14131942216dcfb939b749f11028433080"
+body_sha256 = "6b3f9aff844d72961622a67ff295e119a25acf2214573e83bead8de900eaec09"
 
 [[topic]]
 id = "development"
