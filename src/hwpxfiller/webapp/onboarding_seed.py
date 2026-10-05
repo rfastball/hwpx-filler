@@ -26,6 +26,12 @@ HWPX_NAME = "물품 구매입찰 공고.hwpx"
 TXT_NAME = "낙찰자 선정 및 계약체결 안내.txt"
 PURCHASE_NAME = "계약방법 결정 및 구매추진 안내.txt"
 
+#: 공고서 머리에만 쓰이는 날짜 필드(#1145). 다른 날짜 필드(입찰개시일시 등)는 시각까지
+#: 그대로 두고, 머리 문구에 박히는 이 필드만 공문서 표준 연·월 표시형으로 시드한다.
+HEAD_DATE_FIELD = "게시일시"
+#: `domain.format_engine` 의 예약 표시형 코드 — 「표준(연·월)」(예: 2026. 10.).
+HEAD_DATE_FMT = "ym"
+
 #: lesson → (derived data kind, its fixed file name, its sheet).
 DERIVED = {
     "replace_data": ("replacement", "공고목록(새 판).xlsx", "공고"),
@@ -132,7 +138,8 @@ def _mapping(fields: list[str], *, blank_unit: bool) -> MappingProfile:
         if blank_unit and field == "단위":
             return FieldMapping("단위", type="const")  # 일부러 비워 둔 항목(비움 확정)
         kind = infer_type(field)
-        return FieldMapping(field, _SOURCE_OVERRIDES.get(field, field),
-                            type=kind if kind in {"date", "amount"} else "text")
+        kind = kind if kind in {"date", "amount"} else "text"
+        fmt = HEAD_DATE_FMT if field == HEAD_DATE_FIELD and kind == "date" else ""
+        return FieldMapping(field, _SOURCE_OVERRIDES.get(field, field), type=kind, fmt=fmt)
 
     return MappingProfile(mappings=[row(field) for field in fields])

@@ -97,11 +97,12 @@ def _section(section: str) -> Matcher:
 
 
 # ------------------------------------------------------------------ binding rows
-def _confirmed(field: str, source: str = "", kind: str = "") -> Matcher:
+def _confirmed(field: str, source: str = "", kind: str = "", fmt: str | None = None) -> Matcher:
     def match(tutorial: Any, obs: Observation) -> dict | None:
         row = _rows(tutorial).get(field)
         return {} if (_on(obs, "set_confirmed") and _lesson_inputs(tutorial) and row and row.confirmed
-                      and (not source or row.source == source) and (not kind or row.type == kind)) else None
+                      and (not source or row.source == source) and (not kind or row.type == kind)
+                      and (fmt is None or row.fmt == fmt)) else None
     return match
 
 
@@ -120,6 +121,12 @@ def _contract_source(tutorial: Any, obs: Observation) -> dict | None:
 def _contract_currency(tutorial: Any, obs: Observation) -> dict | None:
     row = _rows(tutorial).get("계약보증금")
     return {} if _on(obs, "set_display") and _lesson_inputs(tutorial) and row and row.type == "amount" and row.fmt == "" else None
+
+
+def _notice_date_format(tutorial: Any, obs: Observation) -> dict | None:
+    row = _rows(tutorial).get("게시일시")
+    return {} if (_on(obs, "set_display") and _lesson_inputs(tutorial)
+                  and row and row.type == "date" and row.fmt == "ym") else None
 
 
 def _pattern_set(tutorial: Any, obs: Observation) -> dict | None:
@@ -208,8 +215,11 @@ def _saved(template: str, valid: Callable[[Any, dict], bool]) -> Matcher:
 
 def _notice_saved(edit: Any, rows: dict) -> bool:
     expected = {"낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화"}
-    return edit.pattern == PATTERN and all(
-        (row := rows.get(key)) and row.source == source and row.confirmed for key, source in expected.items())
+    date_row = rows.get("게시일시")
+    return (edit.pattern == PATTERN
+            and all((row := rows.get(key)) and row.source == source and row.confirmed
+                    for key, source in expected.items())
+            and bool(date_row and date_row.type == "date" and date_row.fmt == "ym" and date_row.confirmed))
 
 
 def _contract_saved(_edit: Any, rows: dict) -> bool:
@@ -235,6 +245,8 @@ EDITOR_MATCHERS: dict[str, Matcher] = {
     "editor_section_template": _section("template"),
     "notice_row_confirmed": _confirmed("낙찰자결정방법", "낙찰방법"),
     "notice_mapping_confirmed": _notice_mapping,
+    "notice_date_format_set": _notice_date_format,
+    "notice_date_confirmed": _confirmed("게시일시", kind="date", fmt="ym"),
     "notice_pattern_set": _pattern_set,
     "contract_source_chosen": _contract_source,
     "contract_mapping_set": _confirmed("대표계약업체", "계약상대자"),

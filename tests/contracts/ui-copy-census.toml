@@ -2473,6 +2473,10 @@ text = "'검토·복사 시작'은 고른 행의 채운 문장을 한 건씩 보
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "'게시일시'는 공고서 머리에 적히는 날짜입니다. '게시일시'의 표시형에서 '날짜' 아래 '표준(연·월)'을 고르세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "'결과 시험'은 시험값을 넣은 결과 문서를 보여 줍니다. 누르세요."
 
 [[sentence]]
@@ -2806,6 +2810,10 @@ text = "표 위 '모두 확인' 단추는 제안된 연결을 한 번에 확인�
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
 text = "표시형을 바꾼 연결도 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/viewmodel/tutorial_lessons.py"
+text = "표시형을 바꾼 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/tutorial_state.py"

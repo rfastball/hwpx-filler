@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import re
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -94,6 +96,10 @@ def test_lesson_one_walks_single_actions_to_three_documents(app, tmp_path):
                                                   {"index": walk.row("낙찰자결정방법"), "confirmed": True}))
     walk.step("confirm_phone", lambda: walk.send("editor", "set_confirmed",
                                                  {"index": walk.row("담당자 전화번호"), "confirmed": True}))
+    walk.step("date_format", lambda: walk.send("editor", "set_display",
+                                               {"index": walk.row("게시일시"), "type": "date", "fmt": "ym"}))
+    walk.step("date_confirm", lambda: walk.send("editor", "set_confirmed",
+                                                {"index": walk.row("게시일시"), "confirmed": True}))
     walk.step("to_filename", lambda: walk.send("editor", "goto_section", {"section": "filename"}))
     walk.step("pattern", lambda: walk.send("editor", "set_pattern", {"pattern": "구매입찰공고-{{입찰공고번호}}"}))
 
@@ -112,6 +118,18 @@ def test_lesson_one_walks_single_actions_to_three_documents(app, tmp_path):
     walk.step("method", lambda: walk.option("낙찰자 결정방법", "고시 미만"))
     pick_output_folder(app.controllers["job"], tmp_path / "out")
     walk.step("generate", lambda: app.generate("job"))
+    # 게시일시는 머리 문구에만 쓰이는 필드라 '표준(연·월)'로 서식한 결과만 시각이 빠지고,
+    # 입찰개시일시처럼 그대로 둔 다른 날짜 필드는 여전히 시각까지 남는다(#1145).
+    generated = sorted((tmp_path / "out").glob("*.hwpx"))
+    assert generated, "생성된 HWPX 파일이 없습니다."
+    with zipfile.ZipFile(generated[0]) as zf:
+        section = zf.read("Contents/section0.xml").decode("utf-8")
+    head_idx = section.find("입찰에 부치고자 다음과 같이 공고합니다")
+    assert head_idx != -1
+    head_slice = section[head_idx:head_idx + 400]
+    assert re.search(r"\b2026\. 10\.(?!\s*\d)", head_slice), head_slice
+    assert "{{게시일시}}" not in section
+    assert re.search(r"2026\. 10\. \d{1,2}\. \d{2}:\d{2}", section), "다른 날짜 필드는 시각까지 남아야 합니다."
     walk.step("result", lambda: walk.send("job", "artifact_open", {"ordinal": 0}))
     result = walk.finished()
     assert result["count"] == 3 and result["next_scenario_id"] == "contract_txt"
