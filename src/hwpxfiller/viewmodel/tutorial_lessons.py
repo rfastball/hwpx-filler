@@ -45,6 +45,11 @@ UI_PRESS_EVENTS = frozenset({
     "binding_menu_opened", "template_menu_opened",
 })
 
+#: Anchors inside client-only transient UI (an open context menu). Nothing restores such UI — not a closed menu,
+#: a resume, or a restarted app — so a beat boxing one stands on the beat right before it, whose press opened it,
+#: and returns there once the web reports the control gone unpressed or the lesson is re-entered (#1149 review).
+TRANSIENT_TARGETS = frozenset({"menu-item"})
+
 #: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
 CURRICULUM = 5
 
@@ -520,6 +525,8 @@ def _beat_view(beat: Beat) -> dict:
         "target": beat.target,
         "arg": beat.arg,
         "press": beat.event in UI_PRESS_EVENTS,
+        #: The boxed control lives in a transient menu: the web reports it vanishing unpressed (``observe_ui_closed``).
+        "transient": beat.target in TRANSIENT_TARGETS,
         "placement": beat.placement,
         "can_next": beat.event is None,
         #: Range beats: the text range the guide resolves on the open practice document.
