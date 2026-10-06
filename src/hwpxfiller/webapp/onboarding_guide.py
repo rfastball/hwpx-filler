@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..viewmodel.tutorial_lessons import BY_ID, UI_PRESS_EVENTS
+from ..viewmodel.tutorial_lessons import BY_ID, TRANSIENT_TARGETS, UI_PRESS_EVENTS, Beat
 from .onboarding_match_authoring import guide_range, practice_template_open
 
-__all__ = ["advance_current", "guide_beat", "picker_hint", "observe_ui_press", "rewind_unmet_inputs",
-           "rewind_unopened_template"]
+__all__ = ["advance_current", "guide_beat", "picker_hint", "observe_ui_closed", "observe_ui_press",
+           "rewind_on_entry", "rewind_unmet_inputs", "rewind_unopened_template"]
 
 #: The first beat of opening the practice TXT from the template list (``tutorial_lessons._open_template``).
 _OPEN_TEMPLATE = "open_list"
@@ -55,14 +55,29 @@ def observe_ui_press(tutorial: Any, payload: dict) -> bool:
     the current checkpoint and the current beat's anchor, and that beat must be one whose press
     runs no product command (:data:`UI_PRESS_EVENTS`). Anything else is ignored.
     """
-    progress = tutorial.progress
-    beat = progress.beat()
-    if (not progress.active or beat is None or beat.event not in UI_PRESS_EVENTS
-            or payload.get("scenario_id") != progress.selected
-            or payload.get("checkpoint") != progress.record(progress.selected)["checkpoint"]
-            or payload.get("anchor") != beat.target):
+    beat = _reported_beat(tutorial.progress, payload)
+    if beat is None or beat.event not in UI_PRESS_EVENTS:
         return False
-    return progress.observed(beat.event)
+    return tutorial.progress.observed(beat.event)
+
+
+def observe_ui_closed(tutorial: Any, payload: dict) -> bool:
+    """The web reports only that the current beat's boxed menu control vanished without being pressed.
+
+    Same naming rule as :func:`observe_ui_press`; a closed menu takes the beat back to the press that opens it.
+    """
+    beat = _reported_beat(tutorial.progress, payload)
+    return beat is not None and rewind_transient(tutorial)
+
+
+def _reported_beat(progress: Any, payload: dict) -> Beat | None:
+    """The live beat a UI report names by lesson, checkpoint and anchor; ``None`` for any stale or foreign report."""
+    beat = progress.beat()
+    if not progress.active or beat is None or payload.get("scenario_id") != progress.selected:
+        return None
+    if payload.get("checkpoint") != progress.record(progress.selected)["checkpoint"]:
+        return None
+    return beat if payload.get("anchor") == beat.target else None
 
 
 def advance_current(tutorial: Any, screen: str, action: str, payload: dict, result: Any) -> bool:
@@ -87,6 +102,21 @@ def rewind_unopened_template(tutorial: Any) -> bool:
         return False
     lesson = BY_ID[progress.selected]
     return any(item.id == _OPEN_TEMPLATE for item in lesson.beats) and progress.rewind(_OPEN_TEMPLATE)
+
+
+def rewind_transient(tutorial: Any) -> bool:
+    """Back to the press that opens a menu once a beat boxes an item of that menu (``TRANSIENT_TARGETS``)."""
+    progress = tutorial.progress
+    beat = progress.beat()
+    if beat is None or beat.target not in TRANSIENT_TARGETS:
+        return False
+    index = progress.record(progress.selected)["checkpoint"]
+    return index > 0 and progress.rewind(BY_ID[progress.selected].beats[index - 1].id)
+
+
+def rewind_on_entry(tutorial: Any) -> bool:
+    """A lesson entered or resumed has no authoring document and no open menu yet: its beat stands on neither."""
+    return rewind_unopened_template(tutorial) or rewind_transient(tutorial)
 
 
 def rewind_unmet_inputs(tutorial: Any) -> bool:

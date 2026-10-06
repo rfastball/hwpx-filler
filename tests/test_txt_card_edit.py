@@ -3,7 +3,7 @@
 여기서 재는 것은 :mod:`hwpxfiller.viewmodel.txt_card_edit` 가 혼자 내는 판정이다. 컨트롤러
 결선(``set_card_text``/``revert_card``·스냅샷 ``text``/``marks``)은 ``tests/test_webapp_workbench.py``
 소관이고, 물질화 대조는 ``tests/test_txt_materialization.py`` 소관이다 — 여기는 사상 규칙
-(표식 시작은 끼어든 글자 **앞**, 끝은 **뒤**)과 채움·해소 판정만 격리해서 본다.
+(:mod:`~hwpxfiller.viewmodel.txt_card_diff`)과 채움·해소 판정만 격리해서 본다.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from hwpxfiller.viewmodel.txt_card_edit import (
     CardMark,
     base_marks,
     edit_card,
+    plain_edit,
     raw_card,
     utf16_marks,
 )
@@ -224,3 +225,116 @@ def test_card_edits_signature_differs_with_the_edit_and_is_stable_without_it():
     edits.put(0, "고침", "원문")
     assert edits.signature(0, rules) != base_sig
     assert edits.signature(1, rules) == base_sig  # 다른 행은 영향받지 않는다
+
+
+# ------------------------------------------------------------------ 보수 판정(#1153 리뷰 후속)
+def test_a_repeated_blank_counts_as_filled_only_when_every_occurrence_is_filled():
+    """같은 이름의 빈 자리가 둘이면 **둘 다** 채워야 채운 것이다(Codex 4182765550).
+
+    하나만 채우고 이름째 게이트에서 빼면, 나머지 〈빈 값〉이 그대로인데 복사 전 확인이 묻지 않는다.
+    """
+    base = " / "
+    marks = (CardMark("blank", "x", 0, 0), CardMark("blank", "x", 3, 3))
+
+    assert edit_card(base, marks, "v / ", fullwidth=False).filled == frozenset()
+    assert edit_card(base, marks, "v / w", fullwidth=False).filled == {"x"}
+
+
+def test_text_typed_next_to_a_missing_token_does_not_resolve_it():
+    """미치환 토큰 옆에 친 글자로는 해소되지 않는다 — 토큰 글자가 사라져야 한다(Codex 4182765572)."""
+    base = "{{x}} end"
+    marks = (CardMark("missing", "x", 0, 5),)
+
+    for edited in ("{{x}}! end", "!{{x}} end", "{{x}}{{x}} end"):
+        result = edit_card(base, marks, edited, fullwidth=False)
+        assert result.resolved == frozenset(), edited
+        mark = result.marks[0]
+        assert edited[mark.start:mark.end] == "{{x}}", edited  # 표식은 토큰만 덮는다
+
+    assert edit_card(base, marks, "값 end", fullwidth=False).resolved == {"x"}
+    # 다른 글자로 바꿔 쳤으면 x 의 토큰은 복사본에 없다 — x 는 고친 것이다.
+    assert edit_card(base, marks, "{{y}} end", fullwidth=False).resolved == {"x"}
+
+
+def test_replacing_literal_text_beside_a_blank_does_not_fill_the_blank():
+    """빈 자리 옆 원문 글자를 바꾼 편집은 그 빈 자리를 채운 것이 아니다(리뷰 미보고 동류)."""
+    base = "금액:원"
+    marks = (CardMark("blank", "amt", 3, 3),)
+
+    replaced = edit_card(base, marks, "금액;원", fullwidth=False)
+    assert replaced.filled == frozenset()
+    assert (replaced.marks[0].start, replaced.marks[0].end) == (3, 3)
+
+    assert edit_card(base, marks, "금액:5원", fullwidth=False).filled == {"amt"}
+
+
+def test_repeated_literal_text_still_anchors_an_unambiguous_insertion():
+    """되풀이 글자 사이 삽입도 덜 고친 정렬로 자리를 찾는다(Codex 4182765581 재현)."""
+    base = "AAA"  # A{{x}}A{{y}}A, 둘 다 빈 값
+    marks = (CardMark("blank", "x", 1, 1), CardMark("blank", "y", 2, 2))
+
+    result = edit_card(base, marks, "ABAA", fullwidth=False)
+
+    assert result.filled == {"x"}
+    by_name = {m.name: m for m in result.marks}
+    assert "ABAA"[by_name["x"].start:by_name["x"].end] == "B"
+    assert by_name["y"].start == by_name["y"].end == 3
+
+
+def test_ambiguous_insertions_never_count_as_filled():
+    """어느 자리의 글자인지 단정할 수 없으면 채우지 않은 것으로 남긴다 — 확인이 계속 묻는다."""
+    adjacent = (CardMark("blank", "x", 2, 2), CardMark("blank", "y", 2, 2))  # {{x}}{{y}}
+    assert edit_card("가 끝", adjacent, "가 값끝", fullwidth=False).filled == frozenset()
+
+    slides = (CardMark("blank", "x", 2, 2),)  # "AA" 사이 빈 자리에 "A" — 옆 원문과 구별 불가
+    assert edit_card("AAAA", slides, "AAAAA", fullwidth=False).filled == frozenset()
+
+    beside_value = (CardMark("fill", "a", 0, 1), CardMark("blank", "b", 1, 1))  # {{a}}{{b}}
+    assert edit_card("값 끝", beside_value, "값추가 끝", fullwidth=False).filled == frozenset()
+
+
+def test_filling_several_blanks_in_one_card_still_counts_each():
+    """한 카드에서 빈 자리 여럿을 채우는 보통의 편집은 보수 판정 뒤에도 각각 채움이다."""
+    base = "수신: \n건명: \n끝"
+    marks = (CardMark("blank", "a", 4, 4), CardMark("blank", "b", 9, 9))
+    edited = "수신: 총무과\n건명: 복사기\n끝"
+
+    result = edit_card(base, marks, edited, fullwidth=False)
+
+    assert result.filled == {"a", "b"}
+    assert [edited[m.start:m.end] for m in result.marks] == ["총무과", "복사기"]
+
+
+# ------------------------------------------------------------------ plain_edit(전각 정렬 되돌림)
+def test_plain_edit_restores_alignment_spaces_and_keeps_typed_characters():
+    """정렬된 표시본을 고친 글 → 정렬 전 글(Codex 4182765557).
+
+    앱이 넣은 전각 공백은 반각 둘로 돌아가고, 사용자가 친 전각 공백은 친 그대로 남는다.
+    """
+    plain = "항목:    값 V"
+    marks = (CardMark("fill", "v", 9, 10),)
+    shown = edit_card(plain, marks, plain, fullwidth=True).text
+    assert shown == "항목:　　값 V"
+
+    assert plain_edit(shown, plain, shown + "!") == plain + "!"
+    assert plain_edit(shown, plain, shown) == plain           # 쳤다 지운 편집은 원문 그대로
+    assert plain_edit(shown, plain, shown.replace("값", "　값")) == "항목:    　값 V"
+    assert plain_edit(plain, plain, plain + "!") == plain + "!"  # 정렬이 꺼져 있으면 그대로
+
+
+# ------------------------------------------------------------------ CardEdits.text_rev
+def test_text_rev_rises_only_when_an_unedited_row_shows_new_text():
+    """편집이 없는 행의 원문이 바뀌면 세대가 오르고, 편집 중인 행·접힌 행은 그대로다(Codex 4182765591)."""
+    edits = CardEdits()
+    first = edits.text_rev(0, "09:00")
+    assert edits.text_rev(0, "09:00") == first          # 같은 원문 — 같은 세대
+
+    second = edits.text_rev(0, "09:01")                 # 분 경계 — 표면이 문서를 갈아 끼운다
+    assert second != first
+
+    edits.put(0, "09:01 고침", "09:01")
+    assert edits.text_rev(0, "09:02") == second         # 편집 중인 행은 표면 문서가 정본
+
+    edits.put(0, "09:02", "09:02")                      # 지금 원문과 같아져 접혔다
+    assert edits.text_rev(0, "09:02") == second         # 표면 문서가 이미 그 글 — 다시 끼우지 않는다
+    assert edits.text_rev(None, "x") == 0

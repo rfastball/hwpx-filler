@@ -372,6 +372,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 제품 명령이 없는 누르기(독·팝오버 열기, 시트 체크, 상단 이동)의 UI 사실 보고(#1127) —
         # 웹은 「지금 단계의 상자 컨트롤을 눌렀다」만 싣고, 그 단계가 끝났는지는 Python 이 정한다.
         "observe_ui": _schema("scenario_id checkpoint anchor"),
+        # 지금 단계의 상자 컨트롤이 열린 메뉴 안에 있었는데 눌리지 않은 채 사라졌다는 UI 사실(#1149 리뷰) —
+        # 그 메뉴를 여는 단계로 되돌릴지는 Python 이 정한다.
+        "observe_ui_closed": _schema("scenario_id checkpoint anchor"),
         "cleanup_preview": _schema(),
         "cleanup": _schema("token"),
         "reset_progress": _schema("confirm"),

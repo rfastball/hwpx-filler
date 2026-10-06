@@ -261,6 +261,12 @@ source_write_set = ["src/hwpxfiller/viewmodel/txt_card.py"]
 oracle_kind = "structural"
 
 [[unit]]
+module = "hwpxfiller.viewmodel.txt_card_diff"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/viewmodel/txt_card_diff.py"]
+oracle_nodeid = "tests/test_txt_card_edit.py"
+
+[[unit]]
 module = "hwpxfiller.viewmodel.txt_card_edit"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/txt_card_edit.py"]

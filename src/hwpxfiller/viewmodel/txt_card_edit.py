@@ -3,33 +3,28 @@
 검토·복사 작업대의 본문은 편집기다 — 사용자는 복사하기 전에 그 행의 복사본만 고칠 수 있다
 (템플릿·데이터·연결은 바뀌지 않는다). 그때도 「〈빈 값〉이 어디 있었고 채워졌는가」는 표면이
 아니라 여기가 판정한다: 표식(값·빈 값·비워 둠·미치환)은 렌더 세그먼트에서 나고, 편집본 위의
-자리는 원문→편집본 차이로 **사상**한다. 표면은 받은 좌표에 장식만 얹는다.
-
-사상 규칙은 하나다 — 표식의 시작은 그 자리에 끼어든 글자 **앞**에, 끝은 **뒤**에 붙는다. 그래서
-빈 값(길이 0)의 자리에 친 글자는 그 표식의 범위가 되고, 그 범위에 공백 아닌 글자가 있으면
-「채웠다」로 본다. 미치환 토큰(``{{이름}}``)은 그 글자가 바뀌었으면 「고쳤다」로 본다.
+자리는 원문→편집본 차이로 **사상**한다. 표면은 받은 좌표에 장식만 얹는다. 사상·채움·해소의
+규칙(보수 판정)은 :mod:`~hwpxfiller.viewmodel.txt_card_diff` 가 진다.
 
 전각 정렬(결정 17)은 **표식 밖**(템플릿 원문 자리)에만 건다 — :func:`align_segments` 가 값을
-건드리지 않는 것과 같은 규율을 편집본에도 지킨다.
+건드리지 않는 것과 같은 규율을 편집본에도 지킨다. 판정과 보관은 언제나 **정렬 전 글**에 서고,
+정렬은 표시·복사 글자를 지을 때만 건다(되돌리기가 원래 반각 공백으로 돌아가게).
 """
 
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, replace
-from difflib import SequenceMatcher
 
 from ..domain.text_render import (
-    SEG_BLANK, SEG_LITERAL, SEG_MISSING, align_fullwidth, has_space_run, render_segments,
+    SEG_BLANK, SEG_LITERAL, align_fullwidth, has_space_run, render_segments,
 )
+from .txt_card_diff import MARK_DECLARED, map_marks, plain_edit, resolved_names
 
 __all__ = [
     "MARK_DECLARED", "CardEdits", "CardMark", "CardView", "EditedCard", "base_marks", "card_view",
-    "edit_card", "raw_card", "utf16_marks",
+    "edit_card", "plain_edit", "raw_card", "utf16_marks",
 ]
-
-#: 확정-비움(「비워 둠」 선언) 자리 — 렌더는 빈 값과 같지만 복사 전 확인에서 빠진다.
-MARK_DECLARED = "declared"
 
 
 @dataclass(frozen=True)
@@ -66,15 +61,6 @@ def base_marks(segments, declared: "frozenset[str] | set[str]") -> "tuple[CardMa
     return tuple(marks)
 
 
-def _map(pos: int, ops, *, right: bool) -> int:
-    """원문 좌표 → 편집본 좌표. 끼어든 글자는 ``right`` 면 앞(표식 안), 아니면 뒤에 둔다."""
-    hits = [op for op in ops if op[1] <= pos <= op[2]]
-    tag, i1, _i2, j1, j2 = hits[-1] if right else hits[0]
-    if tag == "equal":
-        return j1 + (pos - i1)
-    return j2 if right else j1
-
-
 def _align_outside(text: str, marks: "tuple[CardMark, ...]") -> "tuple[str, tuple[CardMark, ...]]":
     """표식 밖 조각만 전각 치환하고 표식 좌표를 새 길이에 맞춘다."""
     out: "list[str]" = []
@@ -103,30 +89,15 @@ def _outside_has_space_run(text: str, marks: "tuple[CardMark, ...]") -> bool:
 def edit_card(
     base: str, marks: "tuple[CardMark, ...]", edited: str, *, fullwidth: bool,
 ) -> EditedCard:
-    """원문 ``base``(표시 그대로)와 그 표식 → 편집본 ``edited`` 의 판정.
+    """정렬 전 원문 ``base`` 와 그 표식 → 정렬 전 편집본 ``edited`` 의 판정.
 
-    ``fullwidth`` 면 편집본의 표식 밖 자리에 전각 정렬을 건다(이미 정렬된 글자는 그대로다 —
-    치환 뒤에는 연속 공백이 남지 않는다). 연속 공백 린트는 치환 **전** 편집본으로 잰다.
+    ``fullwidth`` 면 편집본의 표식 밖 자리에 전각 정렬을 건다. 연속 공백 린트는 치환 **전**
+    편집본으로 잰다.
     """
-    ops = SequenceMatcher(None, base, edited, autojunk=False).get_opcodes() or [
-        ("equal", 0, 0, 0, 0)
-    ]
-    mapped = []
-    for mark in marks:
-        start = _map(mark.start, ops, right=False)
-        mapped.append(replace(mark, start=start, end=max(start, _map(mark.end, ops, right=True))))
-    mapped_marks = tuple(mapped)
-    filled = frozenset(
-        m.name for m in mapped_marks
-        if m.kind in (SEG_BLANK, MARK_DECLARED) and edited[m.start:m.end].strip()
-    )
-    resolved = frozenset(
-        m.name for m, o in zip(mapped_marks, marks, strict=True)
-        if m.kind == SEG_MISSING and edited[m.start:m.end] != base[o.start:o.end]
-    )
+    mapped_marks, filled = map_marks(base, marks, edited)
     space_run = _outside_has_space_run(edited, mapped_marks)
     text, shown = _align_outside(edited, mapped_marks) if fullwidth else (edited, mapped_marks)
-    return EditedCard(text, shown, filled, resolved, space_run)
+    return EditedCard(text, shown, filled, resolved_names(base, marks, edited), space_run)
 
 
 def _utf16(text: str, offset: int) -> int:
@@ -147,13 +118,17 @@ class CardView:
 
     #: 표시 = 복사 텍스트(편집본이 있으면 그것, 전각 정렬까지 끝난 글자).
     text: str
-    #: 편집 전 원문(렌더 그대로) — 봉인 물질화 대조의 대상.
+    #: 편집 전 원문(전각 정렬까지 건 렌더) — 봉인 물질화 대조의 대상.
     base: str
     marks: "tuple[CardMark, ...]"
     missing_fields: "list[str]"
     #: 게이트 결손 — 확정-비움과 편집본에서 채운 빈 자리를 뺀다.
     empty_fields: "list[str]"
     space_run: bool
+    #: 정렬 전 글 — 편집본(있으면) 아니면 원문. 표면이 보낸 글은 이 축으로 되돌려 보관한다.
+    plain: str
+    #: 정렬 전 원문 — 편집본이 이것과 같아지면 편집이 없는 것으로 접는다.
+    plain_base: str
 
 
 def card_view(
@@ -162,20 +137,25 @@ def card_view(
 ) -> CardView:
     """렌더 1건(:class:`~hwpxfiller.viewmodel.txt_card.CardRender`) 위에 그 행의 편집본을 얹는다.
 
+    ``rendered`` 는 **정렬 전** 렌더다(``fullwidth=False``) — 정렬은 여기서 표시 글자에만 건다.
     ``gate_empty`` 는 확정-비움을 뺀 게이트 결손이다(:func:`~hwpxfiller.viewmodel.txt_card.
     gate_empty_fields` — 판정 단일 출처를 여기서 다시 세우지 않는다).
     """
-    base = "".join(seg.text for seg in rendered.segments)
+    assert not rendered.fullwidth  # 정렬된 렌더 위에서 편집을 판정하면 되돌리기가 깨진다
+    plain = "".join(seg.text for seg in rendered.segments)
     marks = base_marks(rendered.segments, declared)
+    base, base_shown = _align_outside(plain, marks) if fullwidth else (plain, marks)
     missing = list(rendered.report.missing_fields)
     if edit is None:
-        return CardView(base, base, marks, missing, list(gate_empty), rendered.space_run)
-    edited = edit_card(base, marks, edit, fullwidth=fullwidth)
+        return CardView(
+            base, base, base_shown, missing, list(gate_empty), rendered.space_run, plain, plain,
+        )
+    edited = edit_card(plain, marks, edit, fullwidth=fullwidth)
     return CardView(
         edited.text, base, edited.marks,
         [name for name in missing if name not in edited.resolved],
         [name for name in gate_empty if name not in edited.filled],
-        edited.space_run,
+        edited.space_run, edit, plain,
     )
 
 
@@ -190,20 +170,43 @@ class CardEdits:
 
     ``epoch`` 는 표면이 들고 있는 문서를 **갈아 끼워야** 하는 전이(되돌리기)에서만 오른다 —
     편집 왕복의 메아리로는 오르지 않는다(캐럿이 튄다).
+
+    :meth:`text_rev` 는 편집이 없는 행의 원문이 **바깥 사정으로** 바뀐 것(「오늘 날짜」 분 경계 등)을
+    세대로 낸다 — 같은 행·보기·정렬이어도 새 원문이면 표면이 문서를 갈아 끼워야 한다. 편집이 있는
+    행은 표면의 문서가 정본이라 세대가 오르지 않는다.
     """
 
     def __init__(self) -> None:
         self._texts: "dict[int, str]" = {}
         self.epoch = 0
+        #: 행 → (표면에 마지막으로 낸 정렬 전 원문, 그 세대).
+        self._seen: "dict[int, tuple[str, int]]" = {}
+        self._generation = 0
 
     def get(self, index: "int | None") -> "str | None":
         return None if index is None else self._texts.get(index)
 
     def put(self, index: int, text: str, unedited: str) -> None:
-        """편집본을 받는다. 원문과 같아지면 편집이 없는 것으로 접는다."""
+        """편집본을 받는다. 원문과 같아지면 편집이 없는 것으로 접는다.
+
+        접힐 때는 표면의 문서가 **지금 원문 그대로**다 — 그 원문을 본 것으로 적어 두어, 그사이
+        원문이 바뀌었다고 세대를 올려 문서를 다시 갈아 끼우지 않게 한다(친 글자가 튄다).
+        """
         self._texts.pop(index, None)
         if text != unedited:
             self._texts[index] = text
+        elif index in self._seen:
+            self._seen[index] = (unedited, self._seen[index][1])
+
+    def text_rev(self, index: "int | None", unedited: str) -> int:
+        """그 행 문서의 세대 — 편집이 없는 행의 원문이 지난번에 낸 것과 다르면 오른다."""
+        if index is None:
+            return 0
+        seen = self._seen.get(index)
+        if seen is None or (index not in self._texts and seen[0] != unedited):
+            self._generation += 1
+            seen = self._seen[index] = (unedited, self._generation)
+        return seen[1]
 
     def revert(self, index: int) -> None:
         if self._texts.pop(index, None) is not None:

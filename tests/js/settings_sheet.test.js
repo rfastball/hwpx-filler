@@ -70,6 +70,7 @@ function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT,
         subscribe: () => () => {},
         getSnapshot: () => ({ entry: { visible: entryVisible } }),
         setEntryVisible: (value) => { calls.entryVisible.push(value); },
+        notify: () => {},
       },
       currentTheme: theme,
       currentScale: scale,
@@ -349,4 +350,41 @@ test("튜토리얼 버튼 표시를 누르면 반대 값으로 백엔드 동사�
   assert.equal(input.checked, true);
   input.onChange();
   assert.deepEqual(calls.entryVisible, [false], "켜짐에서 누르면 꺼짐 값으로 동사가 나가야 합니다.");
+});
+
+/* 쓰기 실패(#1152 리뷰) — 포트는 실패 HostResult 를 거절로 돌려준다. 면은 그 사유를 그대로 알리고
+ * 체크박스는 스냅샷 값에 남는다(조용한 무변경 금지 · 새 문안 없음). */
+test("튜토리얼 버튼 표시 쓰기가 실패하면 백엔드 사유를 알린다", async () => {
+  const { props } = ports("system", "normal", FOLDER, ROOT, true);
+  const notices = [];
+  props.tutorial = {
+    ...props.tutorial,
+    setEntryVisible: () => Promise.reject(new Error("tutorial set_entry_visible: 디스크가 가득 찼습니다")),
+    notify: (message) => { notices.push(message); },
+  };
+  const found = [];
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.type === "function") {
+      let rendered;
+      try { rendered = node.type(node.props); } catch { return; }
+      walk(rendered);
+      return;
+    }
+    if (node.props) {
+      if (node.props.id === "settingsTutorialEntry") found.push(node.props);
+      walk(node.props.children);
+    }
+  };
+  walk(SettingsSheetView(props));
+  found[0].onChange();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(notices, ["tutorial set_entry_visible: 디스크가 가득 찼습니다"]);
+
+  notices.length = 0;
+  props.tutorial.setEntryVisible = () => { throw new Error("동기 실패"); };
+  found[0].onChange();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(notices, ["동기 실패"], "동기 예외도 같은 길로 알린다");
 });

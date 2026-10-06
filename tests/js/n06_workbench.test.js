@@ -13,7 +13,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
     저장」·결과 → 규칙 겨눔은 표와 함께 걷혔다(#1148) — 다시 생기면 여기서 붉어진다. */
 const SURFACE = [
   "init", "leaveTo", "editBinding", "editTemplate", "model", "draftModel",
-  "copyCard", "editCard", "setComposing", "revertCard",
+  "copyCard", "editCard", "setComposing", "revertCard", "flushEdits",
   "step", "setCurrent", "setView", "setTargetFont", "toggleAdvance", "setFullwidth",
   "guarded", "doc", "notify",
 ];
@@ -341,4 +341,72 @@ test("원래대로 — 그 행에 미뤄 둔 편집은 버리고 revert_card 한
   h.controller.editCard(0, "버릴 글자");
   await h.controller.revertCard(0);
   assert.deepEqual(sentEdits(h), [["revert_card", { index: 0 }]], "버린 편집을 보내지 않는다");
+});
+
+/* ================= 8. 편집 착지 실패(Codex 4182765540·4182765566) ================= */
+
+/** 첫 `set_card_text` 를 `fails` 번 거절하는 하니스 — 그 뒤로는 착지한다. */
+function failingEdits(fails, extra = {}) {
+  let left = fails;
+  return harness({
+    snapshot: OPEN,
+    onDispatch: (_s, action) => {
+      if (action === "set_card_text" && left > 0) { left -= 1; throw new Error("편집 착지 실패"); }
+      if (action === "copy_precheck") return { token: "t", missing_fields: [], empty_fields: [] };
+      if (action === "leave_guard") return { armed: false };
+      return {};
+    },
+    ...extra,
+  });
+}
+
+test("착지 실패 — 복사는 멈추고(옛 글자를 복사하지 않는다) 실패를 알리며, 다음 복사가 같은 편집을 다시 보낸다", async () => {
+  const h = failingEdits(1);
+  h.controller.editCard(0, "고친 본문");
+  await h.controller.copyCard();
+  assert.deepEqual(h.actions(), ["set_card_text"], "사전확인·복사로 넘어가지 않는다");
+  assert.equal(h.log.some((row) => row[0] === "invoke"), false, "클립보드 쓰기 0");
+  assert.deepEqual(h.notices, ["편집 착지 실패"], "실패는 알린다");
+
+  await h.controller.copyCard();
+  assert.deepEqual(sentEdits(h).slice(1), [
+    ["set_card_text", { index: 0, text: "고친 본문" }], ["copy_precheck", {}],
+  ], "실패한 편집을 다시 보내고 착지한 뒤에야 복사한다");
+  assert.deepEqual(h.log.find((row) => row[0] === "invoke"), ["invoke", "copy_clipboard", "workbench", "t"]);
+});
+
+test("착지 실패 — 이탈·이동도 멈춘다(가드가 셀 수 없는 편집을 말없이 버리지 않는다)", async () => {
+  const h = failingEdits(2);
+  h.controller.editCard(0, "고친 본문");
+  await h.controller.leaveTo("job");
+  assert.deepEqual(h.actions(), ["set_card_text"], "가드를 묻지도, 세션을 닫지도 않는다");
+  assert.deepEqual(h.navigations, []);
+
+  await h.controller.step(1);
+  assert.deepEqual(h.actions(), ["set_card_text", "set_card_text"], "이동하지 않는다");
+  assert.equal(h.notices.length, 2);
+
+  await h.controller.step(1);
+  assert.deepEqual(h.actions().slice(2), ["set_card_text", "step"], "착지한 뒤에 옮긴다");
+});
+
+test("미뤄 둔 편집 — 행마다 따로 남고, 창 닫기 관문은 착지 여부를 받는다", async () => {
+  const h = failingEdits(1);
+  h.controller.editCard(0, "첫 행");
+  h.controller.editCard(1, "둘째 행");
+  assert.equal(await h.controller.flushEdits(), false, "하나라도 착지하지 못하면 거짓");
+  assert.deepEqual(sentEdits(h), [
+    ["set_card_text", { index: 0, text: "첫 행" }], ["set_card_text", { index: 1, text: "둘째 행" }],
+  ], "다른 행의 편집이 덮여 사라지지 않는다");
+  assert.equal(await h.controller.flushEdits(), true, "남은 편집을 다시 보내 착지했다");
+  assert.deepEqual(sentEdits(h)[2], ["set_card_text", { index: 0, text: "첫 행" }]);
+  assert.equal(await h.controller.flushEdits(), true, "보낼 것이 없으면 참");
+  assert.equal(sentEdits(h).length, 3);
+});
+
+test("자동 다음 — 그 푸시보다 미뤄 둔 편집이 먼저 착지한다", async () => {
+  const h = harness({ snapshot: OPEN });
+  h.controller.editCard(0, "고친 본문");
+  await h.controller.toggleAdvance(true);
+  assert.deepEqual(h.actions(), ["set_card_text", "toggle_advance"]);
 });

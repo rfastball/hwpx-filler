@@ -6,6 +6,8 @@
 
 type Obj = Record<string, unknown>;
 /** Table-cell coordinate in the Studio (camelCase) and on the Python wire (outermost table first). */
+/** A document line in host client coordinates (what a popover anchors to). */
+export type HostLineRect = { left: number; top: number; bottom: number };
 export type StudioCellPath = Array<{ parentParagraph: number; control: number; cell: number; paragraph: number }>;
 export type WireCellPath = Array<{ parent_paragraph: number; control: number; cell: number; paragraph: number }>;
 /** Studio 선택(구역 하나)의 Python 좌표 — 문단·글자 위치, 표 칸이면 그 경로. */

@@ -3618,14 +3618,6 @@ text = "원래 작업으로 돌아오지 못했습니다: {}. 연습 종료를 �
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding.py"
-text = "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
-text = "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/onboarding.py"
 text = "튜토리얼 전환을 다시 시도하세요."
 
 [[sentence]]
@@ -3683,6 +3675,10 @@ text = "연습 파일 4건이 준비됐습니다."
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_practice.py"
 text = "연습 파일이 준비되지 않았습니다. 예제로 시작하세요."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/onboarding_practice.py"
+text = "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/onboarding_seed.py"

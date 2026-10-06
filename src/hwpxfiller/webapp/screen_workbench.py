@@ -42,7 +42,9 @@ from ..viewmodel.filter_state import sniff_column_kinds
 from ..viewmodel.mapping_state import MappingModel
 from ..viewmodel.selection_state import SelectionModel
 from ..viewmodel.txt_card import gate_empty_fields, render_card
-from ..viewmodel.txt_card_edit import CardEdits, CardView, card_view, raw_card, utf16_marks
+from ..viewmodel.txt_card_edit import (
+    CardEdits, CardView, card_view, plain_edit, raw_card, utf16_marks,
+)
 from ..viewmodel.tutorial_state import Milestone
 from ..viewmodel.txt_queue import TxtQueueModel
 from ..viewmodel.work_mode import WORK_MODE_TEXT, work_mode_label
@@ -105,6 +107,11 @@ class TargetFontSetting:
         """선언 변경 — **저장이 먼저**(영속 실패 시 상태 불변 + 브리지 경보)."""
         save_draft_target_font(font)  # 검증도 여기 단일 출처(열거형·문안 사본 금지)
         self._value = font
+
+
+def _record_at(records: "list[dict]", index: "int | None") -> dict:
+    """고정 사본의 그 행(없으면 빈 레코드)."""
+    return records[index] if index is not None and 0 <= index < len(records) else {}
 
 
 class WorkbenchController:
@@ -305,12 +312,6 @@ class WorkbenchController:
         order = self.queue.display_order()
         return order.index(cur) if cur is not None and cur in order else -1
 
-    def _current_record(self) -> dict:
-        cur = self.queue.current
-        if cur is None or not (0 <= cur < len(self.records)):
-            return {}
-        return self.records[cur]
-
     def _rules_signature(self) -> str:
         """지금 카드를 만드는 규칙의 지문 — **보이는 문장을 바꾸는 것 전부**를 담는다.
 
@@ -347,12 +348,15 @@ class WorkbenchController:
         )
 
     def _card_view(self, index: "int | None", now: "datetime | None" = None) -> CardView:
-        """행 하나의 본문 판정 — 렌더(원문) 위에 그 행의 편집본을 얹는다(판정은 링1)."""
+        """행 하나의 본문 판정 — 렌더(원문) 위에 그 행의 편집본을 얹는다(판정은 링1).
+
+        렌더는 **정렬 전**이다: 편집의 판정·보관은 정렬 전 글에 서고, 전각 정렬은 판정기가
+        표시·복사 글자를 지을 때만 건다(되돌리기가 원래 반각으로 돌아가게).
+        """
         assert self.mapping is not None
-        record = self.records[index] if index is not None and 0 <= index < len(self.records) else {}
         rendered = render_card(
-            self._card_text, self.mapping, record,
-            fullwidth=self._fullwidth, now=now if now is not None else self._clock(),
+            self._card_text, self.mapping, _record_at(self.records, index),
+            fullwidth=False, now=now if now is not None else self._clock(),
         )
         return card_view(
             rendered, frozenset(self.mapping.declared_empty_fields()),
@@ -421,9 +425,13 @@ class WorkbenchController:
             "text": shown,
             "marks": utf16_marks(shown, shown_marks),
             "edited": cur in self._edits,
-            # 표면이 문서를 **갈아 끼울** 때만 바뀐다(행·보기·전각·되돌리기). 편집 왕복의
-            # 메아리는 같은 키라 표면이 들고 있는 문서·캐럿을 건드리지 않는다.
-            "text_key": f"{cur}|{self.view}|{int(self._fullwidth)}|{self._edits.epoch}",
+            # 표면이 문서를 **갈아 끼울** 때만 바뀐다(행·보기·전각·되돌리기, 그리고 편집이 없는
+            # 행의 원문이 바깥 사정으로 바뀐 것 — 「오늘 날짜」 분 경계). 편집 왕복의 메아리는
+            # 같은 키라 표면이 들고 있는 문서·캐럿을 건드리지 않는다.
+            "text_key": (
+                f"{cur}|{self.view}|{int(self._fullwidth)}|{self._edits.epoch}"
+                f"|{self._edits.text_rev(cur, view.plain_base)}"
+            ),
             "missing_fields": view.missing_fields,
             # 게이트·완료 노트가 소비하는 결손 — **확정-비움은 뺀다**(결정 12). 편집본에서
             # 채운 빈 자리도 뺀다. 표식은 그대로 남아 어디가 빈 값이었는지 보인다.
@@ -571,6 +579,10 @@ class WorkbenchController:
 
         정체는 payload 의 ``index`` 다(작업점이 아니다): 친 글자가 늦게 도착하는 사이 「다음」이
         먼저 착지해도 편집이 남의 행에 붙지 않는다.
+
+        받은 글은 표면에 보인 글(전각 정렬이 켜져 있으면 정렬된 글)을 고친 것이다 — 앱이 넣은
+        전각 공백은 정렬 전 반각으로 되돌려 보관한다. 그래야 정렬을 끄면 원래 공백으로 돌아가고,
+        쳤다 지운 편집이 원문과 같아져 접힌다.
         """
         self._require_open()
         if self.view != "filled":  # 원문 보기는 읽기 전용이다 — 채운 모습만 복사된다
@@ -578,7 +590,8 @@ class WorkbenchController:
         index = int(p["index"])
         if not 0 <= index < len(self.records):
             raise ValueError(f"없는 항목입니다: {index}")
-        self._edits.put(index, str(p["text"]), self._card_view(index).base)
+        view = self._card_view(index)
+        self._edits.put(index, plain_edit(view.text, view.plain, str(p["text"])), view.plain_base)
 
     def _do_revert_card(self, p: dict) -> None:
         """「원래대로」 — 그 행의 편집본을 버리고 원문으로 되돌린다."""
@@ -628,6 +641,15 @@ class WorkbenchController:
                 "검토·복사 작업대의 복사 진행 또는 임시로 고친 본문"
                 if self.leave_guard()["armed"] else ""
             )
+
+    def close_flush_required(self) -> bool:
+        """창 종료 전에 표면의 **미뤄 둔 편집**을 먼저 받아야 하는가 — 세션이 열려 있으면 그렇다.
+
+        친 글자는 쉼(또는 한글 조합) 뒤에야 도착하므로, 여기 착지한 편집만 보는
+        :meth:`close_guard_reason` 은 그 사이의 X 를 「잃을 것 없음」으로 통과시킨다. 이 표식이
+        서면 창 종료는 웹으로 가서 편집을 정산한 뒤 가드를 다시 묻는다(저작 작업대와 같은 규약).
+        """
+        return self.is_open
 
     def _do_leave_guard(self, p: dict) -> dict:
         return self.leave_guard()
@@ -718,7 +740,7 @@ class WorkbenchController:
         assert self._txt_materialization is not None
         try:
             return self._txt_materialization(
-                self.job_name, self._current_record(), self.copy_token(), now
+                self.job_name, _record_at(self.records, self.queue.current), self.copy_token(), now
             )
         except Exception as exc:  # noqa: BLE001 — 복사 차단 사유로 접는다(조용한 성공 0)
             return None, f"문서를 만들지 못했습니다: {exc}"

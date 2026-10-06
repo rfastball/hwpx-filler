@@ -13,6 +13,7 @@ import {
   ColumnValues,
   createPanelRefresher,
   setAllBoxes,
+  shouldReportPanelFailure,
   syncColumnPanel,
   valueChecked,
   valuesFromBoxes,
@@ -105,7 +106,7 @@ test("다시 묻기: 값 누름 뒤 도착한 옛 답은 버리고, 실패는 �
   const refresher = createPanelRefresher({
     fetch: (column) => new Promise((resolve, reject) => resolvers.push({ column, resolve, reject })),
     apply: (column, data) => applied.push([column, data]),
-    fail: (error) => failed.push(String(error)),
+    fail: (column, error) => failed.push([column, String(error)]),
   });
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   refresher.refresh("메모");
@@ -124,5 +125,12 @@ test("다시 묻기: 값 누름 뒤 도착한 옛 답은 버리고, 실패는 �
   refresher.refresh("메모");
   resolvers[3].reject(new Error("알 수 없는 열"));
   await tick();
-  assert.deepEqual(failed, ["Error: 알 수 없는 열"]);
+  assert.deepEqual(failed, [["메모", "Error: 알 수 없는 열"]]);
+});
+
+test("늦게 도착한 실패는 그 열이 지금 열린 패널과 같을 때만 통보한다(#1139 회귀)", () => {
+  // A 패널의 다시 묻기가 떠 있는 채 사용자가 B 를 열면, A 의 늦은 실패가 B 를 닫아선 안 된다.
+  assert.equal(shouldReportPanelFailure({ column: "메모", data: null }, "메모"), true, "같은 열 — 통보·닫기");
+  assert.equal(shouldReportPanelFailure({ column: "담당자", data: { options: [] } }, "메모"), false, "B 가 열린 뒤 도착한 A 의 실패");
+  assert.equal(shouldReportPanelFailure(null, "메모"), false, "패널을 닫은 뒤 도착한 실패");
 });

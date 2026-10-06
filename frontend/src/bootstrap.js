@@ -368,6 +368,9 @@ export function bootProduct() {
       "close-request": async (payload) => {
         try {
           await AuthoringController.flushAll();
+          /* 작업대의 미뤄 둔 편집(쉼·한글 조합 중)도 착지시킨 뒤 가드를 묻는다. 착지하지 못한 편집은
+             아직 화면에만 있다 — 실패는 이미 알렸으니 닫지 않고 창을 남긴다. */
+          if (!(await WorkbenchController.flushEdits())) return bridge.cancelWindowClose();
           const state = await AuthoringController.closeState();
           if (state && !state.armed) return bridge.confirmWindowClose();
           return AppCloseGuard.prompt(state || payload.state);
@@ -574,7 +577,11 @@ export function bootProduct() {
             tutorial: {
               subscribe: (listener) => runtime.model("tutorial").subscribe(listener),
               getSnapshot: () => runtime.model("tutorial").getSnapshot(),
-              setEntryVisible: (visible) => client.dispatch("tutorial", "set_entry_visible", { visible }),
+              /* 실패는 HostResult 로 resolve 된다 — 값으로 풀어 거절로 바꿔야 면이 백엔드 사유를
+                 알린다(조용한 무변경 금지). */
+              setEntryVisible: (visible) => client.dispatch("tutorial", "set_entry_visible", { visible })
+                .then((result) => expectHostValue(result, "tutorial set_entry_visible")),
+              notify: (message) => window.alert(message),
             },
           }),
       ],

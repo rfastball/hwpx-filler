@@ -1046,6 +1046,98 @@ def test_close_guard_reason_mentions_edits(tmp_path):
     assert ctrl.close_guard_reason() == "검토·복사 작업대의 복사 진행 또는 임시로 고친 본문"
 
 
+def _open_with(tmp_path: Path, template: str, mappings, rows, clock=None):
+    reg = JobRegistry(tmp_path / "jobs")
+    ctrl = WorkbenchController(
+        reg, lambda s, snap: None,
+        clock=clock or (lambda: datetime(2026, 8, 11, 12, 34, 56)),
+        target_font=TargetFontSetting(),
+    )
+    tpl = tmp_path / "작업.txt"
+    tpl.write_text(template, encoding="utf-8")
+    job = Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=mappings))
+    reg.save(job)
+    ctrl.open(reg.load(job.name), rows)
+    return ctrl
+
+
+def test_copy_precheck_keeps_a_repeated_blank_until_every_occurrence_is_filled(tmp_path):
+    """같은 빈 값이 두 번 나오면 하나만 채워서는 복사 전 확인이 그 이름을 놓지 않는다(Codex 4182765550)."""
+    ctrl = _open_with(
+        tmp_path, "수신: {{수신}} / 참조: {{수신}}",
+        [FieldMapping(template_field="수신", source="부서")], [(0, {"부서": ""})],
+    )
+    text = ctrl.snapshot()["card"]["text"]
+    assert text == "수신:  / 참조: "
+
+    _send(ctrl, "set_card_text", {"index": 0, "text": "수신: 총무과 / 참조: "})
+    assert _send(ctrl, "copy_precheck", {})["empty_fields"] == ["수신"]
+
+    _send(ctrl, "set_card_text", {"index": 0, "text": "수신: 총무과 / 참조: 회계과"})
+    assert _send(ctrl, "copy_precheck", {})["empty_fields"] == []
+
+
+def test_edits_under_fullwidth_are_kept_unaligned(tmp_path):
+    """전각 정렬 중의 편집은 정렬 전 글로 보관한다(Codex 4182765557).
+
+    「되돌리기」(정렬 끄기)는 원래 반각 공백으로 돌아가고, 쳤다 지운 편집은 「수정됨」으로 남지 않는다.
+    """
+    ctrl = _open_with(
+        tmp_path, "항목:    {{값}}", [FieldMapping(template_field="값", source="값")],
+        [(0, {"값": "V"})],
+    )
+    plain = ctrl.snapshot()["card"]["text"]
+    assert plain == "항목:    V"
+    _send(ctrl, "set_fullwidth", {"value": True})
+    aligned = ctrl.snapshot()["card"]["text"]
+    assert aligned == "항목:　　V"
+
+    _send(ctrl, "set_card_text", {"index": 0, "text": aligned + "!"})
+    assert ctrl._edits.get(0) == plain + "!"
+    assert ctrl.snapshot()["card"]["text"] == aligned + "!"   # 보이는 것 = 복사되는 것
+
+    _send(ctrl, "set_fullwidth", {"value": False})
+    assert ctrl.snapshot()["card"]["text"] == plain + "!"
+
+    _send(ctrl, "set_fullwidth", {"value": True})
+    _send(ctrl, "set_card_text", {"index": 0, "text": aligned})  # 친 글자를 지웠다
+    card = ctrl.snapshot()["card"]
+    assert card["edited"] is False and card["text"] == aligned
+    assert ctrl.leave_guard()["armed"] is False
+
+
+def test_text_key_changes_when_an_unedited_rows_text_changes_by_the_clock(tmp_path):
+    """같은 행·보기·정렬이어도 원문이 바뀌면 표면이 문서를 갈아 끼운다(Codex 4182765591).
+
+    편집 중인 행은 표면 문서가 정본이라 그대로이고, 분 경계 뒤 첫 편집의 메아리도 키를 바꾸지
+    않는다(친 글자·캐럿이 튀지 않게).
+    """
+    now = [datetime(2026, 8, 11, 12, 34, 56)]
+    ctrl = _open_with(
+        tmp_path, "시각: {{작성}}\n수신: {{수신}}",
+        [FieldMapping(template_field="작성", source="", type="today", fmt="%H:%M"),
+         FieldMapping(template_field="수신", source="부서")],
+        [(0, {"부서": "총무과"}), (1, {"부서": "회계과"})], clock=lambda: now[0],
+    )
+    before = ctrl.snapshot()["card"]
+    assert "12:34" in before["text"]
+
+    now[0] = datetime(2026, 8, 11, 12, 35, 1)
+    _send(ctrl, "toggle_advance", {"value": True})
+    after = ctrl.snapshot()["card"]
+    assert "12:35" in after["text"]
+    assert after["text_key"] != before["text_key"]
+
+    now[0] = datetime(2026, 8, 11, 12, 36, 1)      # 보던 문서는 12:35 — 그 위에 친다
+    _send(ctrl, "set_card_text", {"index": 0, "text": after["text"] + "!"})
+    edited = ctrl.snapshot()["card"]
+    assert edited["edited"] is True and edited["text_key"] == after["text_key"]
+
+    now[0] = datetime(2026, 8, 11, 12, 37, 1)
+    _send(ctrl, "toggle_advance", {"value": False})
+    assert ctrl.snapshot()["card"]["text_key"] == after["text_key"]
+
+
 def test_action_registry_includes_the_card_edit_verbs() -> None:
     from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
 

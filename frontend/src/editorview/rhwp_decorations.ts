@@ -4,8 +4,7 @@
  * 자리 신원을 든다. 링크 표지(「데이터로 필드 찾기」 제안·보류, #1158)를 누르면 Studio 가 그 표지의 차례를 알리고, 여기서
  * 자리 신원으로 바꿔 호스트에 넘긴다 — 신원은 Studio 로 가지 않는다(검사기가 모르는 키를 거절한다). */
 import { DECORATION_LIMIT, fitMarkers, problemMarkers, proposalMarkers } from "./rhwp_marks.ts";
-import type { Marker } from "./rhwp_marks.ts";
-import type { HostLineRect } from "./rhwp_editor.ts";
+import type { HostLineRect, Marker } from "./rhwp_marks.ts";
 
 type Obj = Record<string, unknown>;
 type ClientRect = { x: number; y: number; width: number; height: number };

@@ -16,6 +16,7 @@ from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
+from hwpxfiller.webapp import onboarding as onboarding_module
 from hwpxfiller.webapp.onboarding import OnboardingController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
 from hwpxfiller.webapp.screen_authoring import AuthoringController
@@ -69,24 +70,30 @@ class _StubTutorial:
         return False
 
 
+def _onboarding_actions() -> set[str]:
+    tree = ast.parse(textwrap.dedent(inspect.getsource(OnboardingController._dispatch)))
+    actions = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare) or not isinstance(node.left, ast.Name) or node.left.id != "action":
+            continue
+        for comparator in node.comparators:
+            if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                actions.add(comparator.value)
+            elif isinstance(comparator, (ast.Set, ast.Tuple)):
+                actions.update(item.value for item in comparator.elts
+                               if isinstance(item, ast.Constant) and isinstance(item.value, str))
+    # 위치만 바꾸는 액션은 표(``_PROGRESS_ACTIONS``)로 넘긴다 — ``_dispatch`` 가 그 표를 실제로 읽는지도 본다.
+    assert "_PROGRESS_ACTIONS" in {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    return actions | set(onboarding_module._PROGRESS_ACTIONS)
+
+
 def _controller_actions(controller: type) -> set[str]:
     """Collect the effective dispatch surface, including inherited mixins."""
 
     if controller is EditorController:
         return _editor_actions()
     if controller is OnboardingController:
-        tree = ast.parse(textwrap.dedent(inspect.getsource(OnboardingController._dispatch)))
-        actions = set()
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Compare) or not isinstance(node.left, ast.Name) or node.left.id != "action":
-                continue
-            for comparator in node.comparators:
-                if isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
-                    actions.add(comparator.value)
-                elif isinstance(comparator, (ast.Set, ast.Tuple)):
-                    actions.update(item.value for item in comparator.elts
-                                   if isinstance(item, ast.Constant) and isinstance(item.value, str))
-        return actions
+        return _onboarding_actions()
 
     owners = controller.__mro__
     if controller is JobController:

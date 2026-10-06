@@ -350,9 +350,6 @@ function_complexity = 15
 [budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
 function_complexity = 46
 
-[budget."frontend/src/screens/workbench.ts::createWorkbenchController.copyCard"]
-function_complexity = 11
-
 [budget."frontend/src/selftest/probes/boot_routing_overlay.js::createBootRoutingOverlayProbes.setup"]
 function_complexity = 23
 
@@ -1233,14 +1230,8 @@ function_complexity = 14
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
 class_methods = 34
 
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._dispatch"]
-function_complexity = 11
-
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
 function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._preflight"]
-function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
 function_complexity = 13

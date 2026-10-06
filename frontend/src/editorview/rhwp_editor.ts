@@ -1,6 +1,7 @@
 import { createStudio } from "../../vendor/rhwp/editor/index.js";
 import { DECORATION_LIMIT, markerAt, studioCellPath, wireSelection } from "./rhwp_marks.ts";
-import type { Marker, WireSelection } from "./rhwp_marks.ts";
+import type { HostLineRect, Marker, WireSelection } from "./rhwp_marks.ts";
+export type { HostLineRect } from "./rhwp_marks.ts";
 import { decorationLedger } from "./rhwp_decorations.ts";
 import type { SpotClick } from "./rhwp_decorations.ts";
 export { DECORATION_LIMIT } from "./rhwp_marks.ts";
@@ -56,7 +57,6 @@ export type RhwpMountSpec = {
 /** One range-pick point on the Python wire: a body paragraph of a section entry and a character offset. */
 export type PickPoint = { entry: string; paragraph: number; offset: number; cell: boolean };
 /** One text line in host client coordinates (the line's top and bottom at a horizontal position). */
-export type HostLineRect = { left: number; top: number; bottom: number };
 /** Studio zoom mode: fit the page width to the editor, or a fixed percent. */
 export type RhwpZoom = "fit" | 50 | 75 | 100;
 const zoomCommand = (zoom: RhwpZoom) => zoom === "fit" ? "view:zoom-fit-width" : `view:zoom-${zoom}`;
