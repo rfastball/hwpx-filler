@@ -21,14 +21,17 @@ export async function probePclmRegistration(ctx, { byId, isHidden, textOf, typeV
     byId(ctx, "poolRegView").querySelectorAll(".pool-reg-sheet-list input"));
   out.pclm_reg_db_prefill = dbInput.value;
   out.pclm_reg_no_sheets_before_db = sheetList().length === 0;
-  /* 사용자가 DB 자리를 적고 칸을 떠나면 그 자리에서 시트를 나열한다(호출자의 inspect 대역). */
-  dbInput.focus();
+  /* 사용자가 DB 자리를 적고 칸을 떠나면 그 자리에서 시트를 나열한다(호출자의 inspect 대역).
+     칸 떠남은 `focusout` 사건으로 직접 낸다 — `blur()` 는 창이 OS 초점을 쥐지 않으면 사건을
+     내지 않아(백그라운드 WebView2) 나열이 조건 없이 빠진다. 대기는 고정 시간이 아니라 시트가
+     설 때까지이고, 끝내 서지 않으면 던지지 않고 0 을 되읽는다(게이트가 그 키로 실패한다). */
   typeValue(ctx, dbInput, "C:/d/pclm.db");
-  dbInput.blur();
-  for (let i = 0; i < 50 && sheetList().length === 0; i += 1) await ctx.sleep(10);
+  dbInput.dispatchEvent(new ctx.win.FocusEvent("focusout", { bubbles: true }));
+  for (let i = 0; i < 300 && sheetList().length === 0; i += 1) await ctx.sleep(10);
   const viewSelect = byId(ctx, "poolRegView");
   const sheetInputs = sheetList();
   out.pclm_reg_view_options = sheetInputs.length;
+  if (sheetInputs.length < 2) return out;
   out.pclm_reg_view_text = sheetInputs.map((input) => textOf(input.nextElementSibling)).join("|");
   out.pclm_reg_view_label = textOf(viewSelect.querySelector("legend"));
   out.pclm_reg_initial_empty = sheetInputs.every((input) => !input.checked)
