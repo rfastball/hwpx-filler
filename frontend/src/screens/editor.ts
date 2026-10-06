@@ -274,12 +274,6 @@ function DataPool(props: {
         className: "btn sm", id: "editorPoolBrowse", "data-busy-lock": true, key: "browse",
         onClick: () => controller.guarded(() => controller.pickData()),
       }, "파일 찾아보기…"),
-      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937) — 두 좌표 모두 폼이
-         묻고 스냅샷이 미리 실을 것이 없으므로 진입은 늘 열려 있다. */
-      h("button", {
-        className: "btn sm", id: "editorPoolPclm", "data-busy-lock": true, key: "pclm",
-        onClick: () => controller.openPclm(),
-      }, "계약 목록(.db) 등록…"),
       /* 「이 데이터 고정…」은 **고정할 것이 있을 때만** 선다 — 풀에서 고른 데이터는 이미
          고정돼 있고, 아무것도 안 골랐으면 겨눌 것이 없다. 그 사실을 드는 값이 곧 세션 행이다. */
       sessionRow ? h("button", {

@@ -31,7 +31,7 @@ Windows pywebview/WebView2 안에서 실행하는 웹 UI다. 브라우저 SaaS�
 
 ### Capabilities and Constraints
 
-입력은 `.xlsx`, `.xlsm`, `.csv`와 계약 목록 SQLite다. 기준 환경은 Windows 11 x64와
+입력은 `.xlsx`, `.xlsm`, `.csv`, 계약 목록 SQLite(`.db`·`.pclm`)다. 기준 환경은 Windows 11 x64와
 WebView2 Runtime이다. 생성에는 한글 프로그램이 필요 없지만 결과 파일을 열려면 HWPX
 지원 앱이 필요하다. 한국어 UI의 표현은 [화면 규칙](ui-style.md)을 따른다.
 
@@ -73,7 +73,7 @@ WebView2 Runtime이다. 생성에는 한글 프로그램이 필요 없지만 결
 나라장터 항목은 숨기지 않고 미지원 사유를 알린다.
 API 테스트는 키나 실 서비스 대신 fixture를 사용한다.
 
-로컬 SQLite의 계약 목록(pclm)은 동결 대상이 아니다. 고정 허용목록 없이 DB의 뷰·표를 시트로
+로컬 계약 목록(pclm)은 동결 대상이 아니다. 고정 허용목록 없이 DB의 뷰·표를 시트로
 나열하고, 그 DB에 없는 시트는 등록·읽기에서 거절한다.
 등록 목록·버전은 [생성 참조](reference/runtime.md)에만 둔다.
 

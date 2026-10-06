@@ -155,9 +155,6 @@ module_statements = 327
 [budget."frontend/src/screens/data_picker.ts::PoolRegistrationDialog"]
 function_complexity = 22
 
-[budget."frontend/src/screens/data_picker.ts::createDataPickerController.browseFile"]
-function_complexity = 12
-
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.inspectRegSheets"]
 function_complexity = 20
 
@@ -227,10 +224,10 @@ function_complexity = 16
 function_complexity = 17
 
 [budget."frontend/src/screens/editor_controller.ts"]
-module_statements = 569
+module_statements = 563
 
 [budget."frontend/src/screens/editor_controller.ts::createEditorController"]
-function_statements = 95
+function_statements = 94
 
 [budget."frontend/src/screens/editor_controller.ts::createEditorController.doSave"]
 function_complexity = 11
@@ -1145,7 +1142,7 @@ class_methods = 21
 function_complexity = 22
 
 [budget."src/hwpxfiller/webapp/app.py"]
-module_statements = 684
+module_statements = 683
 
 [budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
 class_methods = 39
@@ -1416,7 +1413,7 @@ module_statements = 1134
 function_complexity = 22
 
 [budget."tests/test_web_selftest_gate.py"]
-module_statements = 1310
+module_statements = 1309
 
 [budget."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
 class_methods = 83

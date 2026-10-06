@@ -2887,7 +2887,7 @@ export function createEditorWorkbenchDataProbes() {
             && pinSheets.querySelectorAll(".pool-reg-sheet-list input").length === 2;
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
-          Object.assign(out, await probePclmRegistration(ctx, { byId, isHidden, textOf, typeValue }));
+          Object.assign(out, await probePclmRegistration(ctx, { byId, textOf, stubBridgeInvoke }));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(

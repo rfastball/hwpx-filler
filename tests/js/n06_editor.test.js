@@ -185,7 +185,7 @@ function harness(cfg) {
     navigation,
     poolRegistration: {
       openRegDialog: (options) => { trace.push(["poolReg.open", options]); },
-      openPclm: () => { trace.push(["poolReg.pclm"]); },
+      openPclm: (db) => { trace.push(["poolReg.pclm", db]); },
       openDetail: async (key) => { trace.push(["poolReg.detail", key]); },
     },
     notify: (message) => notices.push(String(message)),
@@ -1724,7 +1724,8 @@ test("우 열은 `pool.column` 을 좌 열과 같은 `.pitem` 문법으로 그�
   assert.ok(!d2.includes(" disabled"), "끊긴 행이 `disabled` 라 클릭이 오지 않습니다");
   assert.ok(markup.includes("참조가 끊겼습니다"), "사유가 목록에서 사라졌습니다");
   /* 바닥 동사 줄 — 좌표는 불변이고, 「이 데이터 고정…」은 세션 행이 없으면 서지 않는다. */
-  assert.ok(markup.includes('id="editorPoolBrowse"') && markup.includes('id="editorPoolPclm"'));
+  // 계약 목록(.db·.pclm)도 「파일 찾아보기…」 하나가 받는다 — 전용 진입은 걷혔다.
+  assert.ok(markup.includes('id="editorPoolBrowse"') && !markup.includes('id="editorPoolPclm"'));
   assert.equal(markup.includes('id="editorPoolPin"'), false,
     "고정할 것이 없는데 「이 데이터 고정…」이 섰습니다");
   /* 「새로 읽기」도 대칭이다 — 우 열에도 같은 문이 선다. */

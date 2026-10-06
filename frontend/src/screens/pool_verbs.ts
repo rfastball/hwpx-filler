@@ -66,7 +66,8 @@ export function poolRefusalText(name: string, reason: string): string {
  *  basis)·pin 모드 잠금·pclm 좌표가 한 벌이라, 두 번째 구현을 세우면 그 한 벌이 갈린다. */
 export type PoolRegistrationPort = {
   openRegDialog(options: Obj): void;
-  openPclm(): void;
+  /** 계약 목록 등록 폼을 파일 고르기가 돌려준 DB 자리로 연다. */
+  openPclm(db: string): void;
   /** 등록 데이터 「자세히…」 — 시트의 주인도 데이터 선택 컨트롤러다(등록 폼과 같은 근거).
    *
    *  `#poolDetailModal` 은 셸 레벨 overlay 하나이고, 그것을 여는 문이 두 곳(고르기 우 열·

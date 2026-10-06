@@ -6,6 +6,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import { createContextMenu } from "./context_menu.ts";
 import type { ContextMenuItem, ContextMenuPopoverPort } from "./context_menu.ts";
+import { pickDataFile } from "./data_file_pick.ts";
 import { invokePathAction } from "./path_actions.ts";
 import {
   POOL_DATA_GONE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
@@ -988,15 +989,13 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   async function pickData(): Promise<void> {
     if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return;
-    let result = await invoke("pick_data_file", SCREEN) as any;
-    if (result && typeof result === "object" && result.needs_sheet) {
-      result = await deps.services.sheetPicker.current().choose(SCREEN, result);
-      if (result === null) return;                             // 취소 = 중단(첫 시트 강등 없음)
-    }
-    if (typeof result === "string" && result.startsWith("ERROR:")) {
-      noticeSave(result.slice(6).trim());
-      return;
-    }
+    /* 응답 해석은 데이터 선택 면과 한 벌이다. 시트 확정 취소는 중단(첫 시트 강등 없음),
+       계약 목록 파일(.db·.pclm)은 데이터 선택 컨트롤러의 등록 폼으로 넘긴다(포트 위임). */
+    const picked = await pickDataFile(invoke, SCREEN, {
+      sheetPicker: deps.services.sheetPicker.current(),
+      openContractList: (db) => deps.poolRegistration.openPclm(db),
+    });
+    if (picked.kind === "error") noticeSave(picked.message);
   }
 
   /** 고정한 데이터 하나를 이 작업의 데이터로 — 파일 피커와 **같은 선행 규율**을 지킨다:
@@ -1112,9 +1111,6 @@ export function createEditorController(deps: EditorControllerDeps) {
   function openSettings(): void {
     deps.modal.open(SETTINGS_MODAL_ID, {});
   }
-
-  /** 「계약 목록(.db) 등록…」 — 등록 폼의 주인은 데이터 선택 컨트롤러다(포트 위임). */
-  function openPclm(): void { deps.poolRegistration.openPclm(); }
 
   /** 「이 데이터 고정…」 — 파일로 연 데이터를 풀에 남긴다(`#poolRegModal` pin 모드). */
   function openPin(): void {
@@ -1270,7 +1266,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     useLibraryTemplate, importTemplate, pickData,
     usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
     poolAction, resolveDuplicate, poolNoticeAction: poolVerbs.noticeAction, findDataItem,
-    openPin, openPclm, openSettings,
+    openPin, openSettings,
     tplModel, poolModel,
     confirmSuggested, chooseDataColumn, chooseDisplay, takePendingConstFocus,
     discardPatch, cancelNewDraft,

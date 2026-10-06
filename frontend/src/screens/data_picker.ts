@@ -8,6 +8,7 @@ import type { BridgeClient } from "../runtime/client.ts";
 import { ContextMenu, createContextMenu } from "./context_menu.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { invokePathAction } from "./path_actions.ts";
+import { pickDataFile } from "./data_file_pick.ts";
 import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
 import type { ScreenRuntime } from "./runtime.ts";
@@ -184,19 +185,21 @@ export function createDataPickerController(args: {
     if (!(await session.confirmSwap())) return;
     patch({ loading: true, status: "파일 선택 창에서 파일을 고르세요…", level: "" });
     try {
-      let result = await invoke("pick_data_file", session.screen);
-      if (result && typeof result === "object" && result.needs_sheet) {
-        result = await services.sheetPicker.current().choose(session.screen, result);
-        if (result === null) {
-          patch({ status: "시트 선택을 취소했습니다 — 데이터는 그대로입니다.", level: "" });
-          return;
-        }
-      }
-      if (result === null) { patch({ status: "", level: "" }); return; }
-      if (typeof result === "string" && result.startsWith("ERROR:")) {
-        patch({ status: `⚠ 파일을 읽을 수 없습니다: ${result.slice(6).trim()}`, level: "danger" });
+      /* 응답 해석은 편집기 입구와 한 벌이다 — 계약 목록 파일(.db·.pclm)은 Python 이 등록
+         갈래로 돌려주고 그때 여기서 DB 자리를 채운 등록 폼이 열린다(지금 데이터는 그대로). */
+      const picked = await pickDataFile(invoke, session.screen, {
+        sheetPicker: services.sheetPicker.current(), openContractList: openPclm,
+      });
+      if (picked.kind === "sheet_cancelled") {
+        patch({ status: "시트 선택을 취소했습니다 — 데이터는 그대로입니다.", level: "" });
         return;
       }
+      if (picked.kind === "error") {
+        patch({ status: `⚠ 파일을 읽을 수 없습니다: ${picked.message}`, level: "danger" });
+        return;
+      }
+      if (picked.kind === "none") { patch({ status: "", level: "" }); return; }
+      const result = picked.value;
       /* 「지금 쓰는 데이터」는 여기서 다시 짓지 않는다(③b): 마운트는 이미 Python 에서
          성사했고 그 재진술은 작업 스냅샷의 `data_row` 가 든다 — 세션은 그 값을 **읽는
          함수**만 들고 있으므로 다음 렌더가 저절로 새 행을 그린다. */
@@ -240,8 +243,9 @@ export function createDataPickerController(args: {
       error: "",
     };
     emitReg();
-    /* 첫 빈 좌표에 선다 — 엑셀은 파일 경로, 계약 목록은 DB 자리(기본 자리 프리필은 걷혔다). */
-    const focusId = options.pinMode ? "poolRegName" : reg.mode === "pclm" ? "poolRegDb" : "poolRegPath";
+    /* 첫 빈 좌표에 선다 — 엑셀은 파일 경로, 고정(pin)과 계약 목록은 이름(계약 목록의 DB 자리는
+       파일 고르기가 이미 채웠다). */
+    const focusId = options.pinMode || reg.mode === "pclm" ? "poolRegName" : "poolRegPath";
     modal.open("poolRegModal", { initialFocus: args.doc.getElementById(focusId) });
     void inspectRegSheets();
   }
@@ -296,11 +300,11 @@ export function createDataPickerController(args: {
     });
   }
 
-  /* 계약 목록 등록 — DB 자리는 사용자가 적고, 그 DB 의 시트는 백엔드가 그 자리에서
-     나열한다(`inspect_sheets`). 다른 프로그램의 설치 자리를 기본으로 채우던 프리필은
-     걷혔다 — 웹은 경로도 시트 목록도 리터럴로 들지 않는다. */
-  function openPclm(): void {
-    openRegDialog({ title: "계약 목록 등록", okLabel: "등록", mode: "pclm", db: "", view: "" });
+  /* 계약 목록 등록 — 파일 고르기가 돌려준 DB 자리(`.db`·`.pclm`)를 채워 연다. 그 DB 의
+     시트는 백엔드가 그 자리에서 나열한다(`inspect_sheets`) — 웹은 경로도 시트 목록도
+     리터럴로 들지 않는다. */
+  function openPclm(db: string): void {
+    openRegDialog({ title: "계약 목록 등록", okLabel: "등록", mode: "pclm", db, view: "" });
   }
 
   async function submitReg(): Promise<void> {
@@ -614,13 +618,6 @@ function dialogHost(
         className: "btn sm", id: "dataPickerBrowse", "data-busy-lock": true, key: "browse",
         onClick: () => { void controller.browseFile(); },
       }, "파일 찾아보기…"),
-      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937) — 두 좌표 모두 폼이
-         묻고 스냅샷이 미리 실을 것이 없으므로 진입은 늘 열려 있다. 라벨의 괄호는 **확장자**다:
-         저쪽 프로그램 이름(pclm)은 이 제품의 표면 어휘가 아니라 표면에 세우지 않는다. */
-      h("button", {
-        className: "btn sm", id: "dataPickerPclm", "data-busy-lock": true, key: "pclm",
-        onClick: controller.openPclm,
-      }, "계약 목록(.db) 등록…"),
       /* 「이 데이터 등록…」은 **고정할 것이 있고 아직 고정되지 않았을 때만** 선다: 풀에서
          고른 데이터는 이미 등록된 참조라 다시 고정하면 같은 파일의 참조가 둘로 갈린다. */
       sessionRow && !seen.data_pool_key ? h("button", {

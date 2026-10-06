@@ -299,6 +299,54 @@ def test_reads_while_the_writer_holds_the_database_open(tmp_path):
         writer.close()
 
 
+#: 계약 목록 앱이 자기 파일에 찍는 SQLite application_id(``"PCLM"``) — 저쪽 계약의 값 그대로.
+PCLM_APPLICATION_ID = 0x50434C4D
+
+
+def _build_pclm_file(path: Path) -> sqlite3.Connection:
+    """계약 목록 앱이 내는 ``.pclm`` 그대로 — application_id·WAL, 체크포인트 전(-wal 에만 행).
+
+    쓰는 쪽 연결을 열어 둔 채 돌려준다(저쪽 창이 열린 상태). 자동 체크포인트를 끄므로
+    행은 본 파일이 아니라 ``-wal`` 에만 있다 — 읽기 전용 소비자가 WAL 을 함께 읽어야 보인다.
+    """
+    writer = sqlite3.connect(path)
+    writer.execute(f"PRAGMA application_id = {PCLM_APPLICATION_ID};")
+    writer.execute("PRAGMA journal_mode=WAL;")
+    writer.execute("PRAGMA wal_autocheckpoint=0;")
+    columns = ", ".join(f'"{name}" TEXT' for name in COLUMNS)
+    writer.execute(f"CREATE TABLE 계약 ({columns});")
+    writer.execute(f'CREATE VIEW "{VIEW}" AS SELECT * FROM 계약;')
+    writer.commit()
+    placeholders = ", ".join("?" for _ in COLUMNS)
+    writer.executemany(f"INSERT INTO 계약 VALUES ({placeholders});", ROWS)
+    writer.commit()
+    return writer
+
+
+def test_pclm_file_in_wal_with_application_id_lists_and_loads(tmp_path):
+    """``.pclm`` 은 확장자만 다른 같은 SQLite 다 — 읽기 전용으로 열어 시트를 나열하고 읽는다.
+
+    확장자·application_id 를 따지지 않는다(형식 판정은 SQLite 가 연다/못 연다 하나). 저쪽
+    창이 열린 채 체크포인트 전이어도 WAL 의 행까지 보인다.
+    """
+    db = tmp_path / "계약목록.pclm"
+    writer = _build_pclm_file(db)
+    try:
+        assert Path(f"{db}-wal").exists()
+        probe = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            assert probe.execute("PRAGMA application_id;").fetchone()[0] == PCLM_APPLICATION_ID
+            assert probe.execute("PRAGMA journal_mode;").fetchone()[0] == "wal"
+        finally:
+            probe.close()
+        assert list_sqlite_sheets(db) == [VIEW, "계약"]
+        source = PclmDataSource(db=db, view=VIEW)
+        assert source.records() == [dict(zip(COLUMNS, row, strict=True)) for row in ROWS]
+        assert source.source_pointer() == f"sqlite:{db}#{VIEW}"
+    finally:
+        writer.close()
+
+
 # ------------------------------------------------------------------ 없는 자료
 
 

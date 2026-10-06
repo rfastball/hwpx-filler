@@ -45,7 +45,7 @@ from ..external.template_root import TemplateRoot, migrate_legacy_text_templates
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 이 조립부와 작업 공간 조립(workspace_graph)만 한다.
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
-from ..data.factory import source_for_path, source_from_pool_item
+from ..data.factory import is_contract_list_file, source_for_path, source_from_pool_item
 from ..application.dataset_pool import DatasetPoolRow
 from ..domain.dataset_reference import reference_for_sheet, reference_sheets
 from ..viewmodel.edit_session import (  # 편집기 착지 탭·데이터 인계 사유(계약 §5.1 어휘)
@@ -58,7 +58,7 @@ from ..external.artifact_observation import (  # 안착 문서 되읽기 커널(
 )
 from ..external.atomic import write_bytes_atomic
 # 확장자 단일 출처(RC-34) — Qt-free 상수
-from ..viewmodel.file_filters import EXCEL_FILTER_PATTERN, HWPX_FILTER, HWPX_FILTER_PATTERN
+from ..viewmodel.file_filters import DATA_FILE_FILTERS, EXCEL_FILE_FILTERS, HWPX_FILTER, HWPX_FILTER_PATTERN
 from ..host.native import single_instance
 from ..host.native.clipboard import set_clipboard_text
 from ..host.native.debug import log
@@ -86,9 +86,8 @@ WINDOW_TITLE = "문서나르미"  # 창 제목(#258 제품명) = 파일 다이�
 DEFAULT_WINDOW_WIDTH = 1440
 DEFAULT_WINDOW_HEIGHT = 900
 
-# 파일 선택 다이얼로그 필터 — pick_data_file·pick_pool_data_file 공유 단일 출처(둘 다
-# "엑셀/CSV 데이터" 참조를 다루므로 필터가 같다; 확장자 자체의 단일 출처는 EXCEL_FILTER_PATTERN).
-_EXCEL_OR_ANY_FILTERS = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+# 데이터 파일 고르기의 필터(파일 고르기 입구 DATA_FILE_FILTERS · 등록 폼 찾아보기 EXCEL_FILE_FILTERS)는
+# 설명·패턴 모두 viewmodel/file_filters.py 가 단일 출처로 소유한다(RC-34).
 # 템플릿 필터 — pick_template_path(재연결) 전용. 가져오기는 F8 통일로
 # _LIBRARY_IMPORT_FILTERS 를 쓴다(§10.17.2 판정 C — hwpx·txt·RAW 수용).
 _TEMPLATE_FILTERS = [("HWPX 템플릿", "*.hwpx"), ("모든 파일", "*.*")]
@@ -423,17 +422,25 @@ class WebFrontend:
         목록을 실은 ``{"needs_sheet": True, ...}`` 를 돌려줘 웹이 시트를 확정받게 한다.
         확정된 시트로의 실제 로드는 :meth:`load_data_sheet` 가 담당한다.
 
+        계약 목록 파일(``.db``·``.pclm`` — :func:`~hwpxfiller.data.factory.is_contract_list_file`)
+        은 읽지 않고 ``{"contract_list": True, "path": ...}`` 를 돌려준다 — 그 종류는 시트(뷰·표)를
+        사람이 골라 등록해야 쓸 수 있으므로 웹은 DB 자리를 채운 등록 폼을 연다. 갈래 판정은
+        여기 하나이고 웹은 확장자로 되추측하지 않는다.
+
         성사 반환은 **descriptor**(``label·path·sheet·rows``, U2 §2.7 3행)다 — 데이터
         선택 면이 닫히지 않고 「현재 데이터」를 재진술하려면 이 호출의 결과만으로 고정
         버튼(`origin==="file" && path`)이 서야 한다.
         """
         tutorial_token = self._controller("tutorial").observation_token()
         log(f"pick_data_file: enter screen={screen}")
-        filters = _EXCEL_OR_ANY_FILTERS
-        path = _file_dialog(filters, initial_path=self._controller("tutorial").file_picker_hint("data", screen))
+        path = _file_dialog(
+            DATA_FILE_FILTERS, initial_path=self._controller("tutorial").file_picker_hint("data", screen))
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
             return None
+        if is_contract_list_file(path):
+            return self._observe_tutorial(screen, "pick_data_file", {"path": path},
+                                          {"contract_list": True, "path": path}, token=tutorial_token)
         # 메타데이터 조회(ambiguous_sheets)와 로드를 같은 예외 변환 경계 안에 둔다 — 손상·잠긴
         # xlsx 의 BadZipFile/OSError 가 pywebview Promise 로 날것으로 새면 웹 핸들러가 못 잡아
         # 사용자에게 조용해진다(confirm-or-alarm). 모호하면 로드 전에 시트 확정 요구로 빠진다.
@@ -692,8 +699,7 @@ class WebFrontend:
         ``pick_data_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 등록은 참조
         저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
         """
-        filters = _EXCEL_OR_ANY_FILTERS
-        return _file_dialog(filters, initial_path=self._controller("tutorial").file_picker_hint("data"))
+        return _file_dialog(EXCEL_FILE_FILTERS, initial_path=self._controller("tutorial").file_picker_hint("data"))
 
     def pick_template_path(self) -> "str | None":
         """템플릿 다시 연결(#67) '찾아보기' → **경로만** 반환(``pick_pool_data_file`` 미러).
