@@ -95,5 +95,37 @@ def test_workspace_round_trip_and_damaged_file(tmp_path, monkeypatch):
     assert workspace.load_entry_visible() is False, "a rejected value never reaches the file"
     (tmp_path / "tw" / "entry.json").write_text("{", encoding="utf-8")
     assert workspace.load_entry_visible() is True and len(alerts) == 1, "damage is alarmed and opens shown"
-    (tmp_path / "tw" / "entry.json").write_text('{"visible": "no"}', encoding="utf-8")
-    assert workspace.load_entry_visible() is True
+    for shape in ('{"visible": "no"}', '{"visible": 0}', '{}', '[false]', 'false'):
+        alerts.clear()
+        (tmp_path / "tw" / "entry.json").write_text(shape, encoding="utf-8")
+        assert workspace.load_entry_visible() is True, shape
+        assert len(alerts) == 1 and "판독 실패" in alerts[0], f"a wrong shape is damage, not a silent default: {shape}"
+
+
+def test_toggle_writes_only_its_own_setting_and_pushes_the_new_value(app, monkeypatch):
+    """#1152 리뷰: 학습 기록 쓰기 실패가 토글을 반쯤 적용된 실패로 만들지 않는다."""
+    tutorial = app.controllers["tutorial"]
+    pushes = []
+    monkeypatch.setattr(tutorial, "_push", lambda screen, snap: pushes.append(snap))
+
+    def broken(_value):
+        raise OSError("progress.json 쓰기 실패")
+    monkeypatch.setattr(tutorial.workspace, "save_progress", broken)
+    result = app.dispatch("tutorial", "set_entry_visible", {"visible": False})
+    assert result is None
+    assert tutorial.workspace.load_entry_visible() is False
+    assert pushes and pushes[-1]["entry"]["visible"] is False, "the snapshot carries the value now true"
+
+
+def test_failed_toggle_write_changes_nothing_and_is_reported(app, monkeypatch):
+    tutorial = app.controllers["tutorial"]
+    pushes = []
+    monkeypatch.setattr(tutorial, "_push", lambda screen, snap: pushes.append(snap))
+
+    def broken(_value):
+        raise OSError("entry.json 쓰기 실패")
+    monkeypatch.setattr(tutorial.workspace, "save_entry_visible", broken)
+    with pytest.raises(OSError):
+        app.dispatch("tutorial", "set_entry_visible", {"visible": False})
+    assert tutorial.progress.entry_visible is True and app.initial("tutorial")["entry"]["visible"] is True
+    assert not pushes

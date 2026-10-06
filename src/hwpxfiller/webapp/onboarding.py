@@ -11,21 +11,32 @@ from pathlib import Path
 from copy import deepcopy
 from contextlib import nullcontext
 import threading
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from ..external.tutorial_practice import ORIGINALS, PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
 from ..viewmodel.tutorial_lessons import BY_ID, LessonProgress
 from .onboarding_guide import (
-    advance_current, guide_beat, observe_ui_press, picker_hint, rewind_unmet_inputs, rewind_unopened_template,
+    advance_current, guide_beat, observe_ui_closed, observe_ui_press, picker_hint, rewind_on_entry, rewind_unmet_inputs,
 )
 from .onboarding_match_results import match_event
 from .onboarding_practice import (
     NO_RETURN_SCREEN, capture_return, merge_practice_snapshot, note_practice_save, practice_resources,
-    restore_screen, start_fresh,
+    restore_screen, start_fresh, transition_loss,
 )
 from .onboarding_settings import reset_progress, set_entry_visible
+
+#: Actions that change the guidance position in place; the controller then persists and emits it.
+_PROGRESS_ACTIONS: dict[str, Callable[[Any, dict], object]] = {
+    "observe_ui": observe_ui_press,
+    "observe_ui_closed": observe_ui_closed,
+    "next": lambda tutorial, _payload: tutorial._next(),
+    "reset_progress": reset_progress,
+    "later": lambda tutorial, _payload: tutorial.progress.later(),
+    "pause": lambda tutorial, _payload: tutorial.progress.pause(),
+    "skip": lambda tutorial, _payload: tutorial.progress.pause(),
+}
 
 
 def first_launch_candidate(home: Path) -> bool:
@@ -134,9 +145,9 @@ class OnboardingController:
             self._pending_transition = {"token": token, "action": action, "scenario_id": scenario,
                                         "basis": self._transition_basis(),
                                         "context": capture_return(self, screen) if self._return_context is None else None}
-        dirty = screen == "editor" and self._editor().has_unsaved_work()
-        return {"ok": True, "transition_token": token, "needs_confirm": dirty, "target_screen": destination,
-                "confirm_text": "저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?" if dirty else ""}
+        loss = transition_loss(self, screen, action, scenario)
+        return {"ok": True, "transition_token": token, "needs_confirm": bool(loss), "target_screen": destination,
+                "confirm_text": loss}
 
     def _transition_basis(self) -> tuple:
         job = self._job()
@@ -147,8 +158,9 @@ class OnboardingController:
         self._job().raise_if_generating_before_swap("튜토리얼을 전환하세요")
         token = payload.get("transition_token")
         if token is None:
-            if self._editor().has_unsaved_work():
-                raise ValueError("저장하지 않은 작업 편집 내용이 사라집니다. 계속할까요?")
+            loss = transition_loss(self, "editor", action, payload.get("scenario_id"))
+            if loss:
+                raise ValueError(loss)
             return capture_return(self, "job") if self._return_context is None else None
         pending = self._pending_transition
         if (not pending or token != pending["token"] or action != pending["action"]
@@ -229,20 +241,16 @@ class OnboardingController:
             return self._enter(action, payload)
         if action in {"cleanup_preview", "cleanup"}:
             return self._legacy_cleanup(action, payload)
-        if action == "observe_ui":
-            observe_ui_press(self, payload)
-        elif action == "next":
-            self._next()
-        elif action == "reset_progress":
-            reset_progress(self, payload)
-        elif action == "later":
-            self.progress.later()
-        elif action in {"pause", "skip"}:
-            self.progress.pause()
-        elif action == "set_entry_visible":
+        if action == "set_entry_visible":
+            # A settings value, not progress (#1147): only its own file is written, so a failed write leaves
+            # nothing half-applied, and the snapshot carries the value that is now true.
             set_entry_visible(self, payload)
-        else:
+            self._emit()
+            return None
+        step = _PROGRESS_ACTIONS.get(action)
+        if step is None:
             raise ValueError(f"알 수 없는 tutorial 액션: {action!r}")
+        step(self, payload)
         self._persist()
         self._emit()
         return None
@@ -268,8 +276,8 @@ class OnboardingController:
             # The escape route exists exactly while a practice workspace is the active one.
             if context is not None and self.switch.practice_home is not None:
                 self._return_context = context
-        # A lesson resumed in a rebuilt workspace has no authoring document open yet.
-        rewind_unopened_template(self)
+        # A lesson resumed in a rebuilt workspace has no authoring document and no open menu yet.
+        rewind_on_entry(self)
         self._persist()
         self._emit()
         beat = self.snapshot()["beat"] or {}

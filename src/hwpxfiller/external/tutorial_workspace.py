@@ -43,6 +43,11 @@ def _legacy_progress(raw: dict) -> dict:
             "selected": raw.get("selected"), "records": kept}
 
 
+def _damaged_entry(detail: object) -> bool:
+    settings.alert(f"튜토리얼 버튼 표시 설정 판독 실패 — 표시로 엽니다: {detail!r}")
+    return True
+
+
 class TutorialWorkspace:
     """학습 기록 왕복과 과정별 연습 홈의 준비·확인."""
 
@@ -69,16 +74,18 @@ class TutorialWorkspace:
 
     # ------------------------------------------------------------ 튜토리얼 버튼 표시(#1147)
     def load_entry_visible(self) -> bool:
-        """미저장은 표시(기본)다. 손상은 알리고 표시로 연다 — 버튼을 잃으면 다시 켤 길이 설정뿐이다."""
+        """미저장은 표시(기본)다. 손상은 알리고 표시로 연다 — 버튼을 잃으면 다시 켤 길이 설정뿐이다.
+
+        읽히지만 앱이 쓰지 않는 형태(``{"visible": "no"}``·목록 등)도 손상이다 — 조용히 표시로 열지 않는다.
+        """
         try:
             raw = json.loads((self.root / _ENTRY).read_text(encoding="utf-8"))
         except FileNotFoundError:
             return True
         except (OSError, ValueError) as exc:
-            settings.alert(f"튜토리얼 버튼 표시 설정 판독 실패 — 표시로 엽니다: {exc!r}")
-            return True
+            return _damaged_entry(exc)
         visible = raw.get("visible") if isinstance(raw, dict) else None
-        return visible if isinstance(visible, bool) else True
+        return visible if isinstance(visible, bool) else _damaged_entry(raw)
 
     def save_entry_visible(self, visible: bool) -> None:
         if not isinstance(visible, bool):

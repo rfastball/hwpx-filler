@@ -271,6 +271,7 @@ export const SCREEN_ACTIONS = {
     restart: { required: ["scenario_id"], optional: ["transition_token"] },
     next: { required: [], optional: [] },
     observe_ui: { required: ["anchor", "checkpoint", "scenario_id"], optional: [] },
+    observe_ui_closed: { required: ["anchor", "checkpoint", "scenario_id"], optional: [] },
     cleanup_preview: { required: [], optional: [] },
     cleanup: { required: ["token"], optional: [] },
     reset_progress: { required: ["confirm"], optional: [] },
