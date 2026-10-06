@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "bb88fef69921022772e3b6ca0f43658b4be65c45e4d001169bc6bcf81974de96"
+source_sha256 = "9cb67468b94489954a04f4c8450f3bcd2061e25210e59b77f3e9caba427716e5"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -217,7 +217,7 @@ id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/artifact_view_session.py", "src/hwpxfiller/webapp/job_execution_session.py", "src/hwpxfiller/webapp/txt_materialization.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py", "tests/test_txt_materialization.py"]
-source_sha256 = "85f8726c0c30f56ec7f55305f6383d7754d625dc398590f59564f411257565a5"
+source_sha256 = "1434816e63182a4eac8c93a4dcdd268335cc62b7919a97bb8e09c247b22f163e"
 body_sha256 = "1b6a81cdde54f190e0e302cbf2b2b5e6263a0d4fd730f963ddcc54517012dc03"
 
 [[topic]]
