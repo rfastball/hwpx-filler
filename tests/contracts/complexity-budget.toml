@@ -350,9 +350,6 @@ function_complexity = 15
 [budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
 function_complexity = 46
 
-[budget."frontend/src/screens/workbench.ts::createWorkbenchController.copyCard"]
-function_complexity = 11
-
 [budget."frontend/src/selftest/probes/boot_routing_overlay.js::createBootRoutingOverlayProbes.setup"]
 function_complexity = 23
 

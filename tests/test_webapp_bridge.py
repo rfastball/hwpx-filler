@@ -173,12 +173,50 @@ def test_clean_authoring_tab_flushes_frontend_buffer_before_window_close(tmp_pat
     assert requests == [{"armed": False, "reasons": []}]
 
 
+def test_open_workbench_flushes_frontend_edits_before_window_close(tmp_path, monkeypatch):
+    """작업대가 열려 있으면 깨끗해도 X 는 웹으로 간다(Codex 4182765566).
+
+    친 글자는 쉼·한글 조합 뒤에야 착지하므로 여기서 본 가드는 「잃을 것 없음」일 수 있다 — 웹이
+    미뤄 둔 편집을 정산한 뒤 가드를 다시 묻는다. 세션이 없으면 그 왕복이 없다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    assert frontend._handle_window_closing() is None
+    wb = _open_workbench(frontend, tmp_path)
+    assert frontend.close_guard_state() == {"armed": False, "reasons": []}
+    requests = []
+
+    class ImmediateTimer:
+        daemon = False
+
+        def __init__(self, _delay, fn, args=()):
+            self.fn, self.args = fn, args
+
+        def start(self):
+            self.fn(*self.args)
+
+    monkeypatch.setattr("hwpxfiller.webapp.app.threading.Timer", ImmediateTimer)
+    monkeypatch.setattr(frontend, "_show_close_prompt", requests.append)
+    assert wb.close_flush_required() is True
+    assert frontend._handle_window_closing() is False
+    assert requests == [{"armed": False, "reasons": []}]
+
+    wb.close()
+    assert wb.close_flush_required() is False
+
+
 def _armed_workbench(frontend, tmp_path):
     """작업대 세션을 열어 복사 진행 1건을 만든다 — 창 종료 가드 무장의 최소 경로.
 
     「기안」 사망(F6 PR-B)으로 가드 무장의 헤드리스 표본이 작업대로 승계됐다
     (붙여넣기 원문 대신 복사 진행 = 잃을 것).
     """
+    wb = _open_workbench(frontend, tmp_path)
+    wb.note_copied(wb._card_view(wb.queue.current))  # 2건 중 1건 복사 = 진행 소실 위험
+    return wb
+
+
+def _open_workbench(frontend, tmp_path):
+    """진행도 편집도 없는 작업대 세션 — 가드는 꺼져 있지만 세션은 열려 있다."""
     from hwpxfiller.domain.job import Job
     from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 
@@ -190,7 +228,6 @@ def _armed_workbench(frontend, tmp_path):
                   FieldMapping(template_field="수신", source="부서")]))
     wb.registry.save(job)
     wb.open(wb.registry.load("기안"), [(0, {"부서": "총무과"}), (1, {"부서": "회계과"})])
-    wb.note_copied(wb._card_view(wb.queue.current))  # 2건 중 1건 복사 = 진행 소실 위험
     return wb
 
 

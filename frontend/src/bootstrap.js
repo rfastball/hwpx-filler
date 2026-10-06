@@ -368,6 +368,9 @@ export function bootProduct() {
       "close-request": async (payload) => {
         try {
           await AuthoringController.flushAll();
+          /* 작업대의 미뤄 둔 편집(쉼·한글 조합 중)도 착지시킨 뒤 가드를 묻는다. 착지하지 못한 편집은
+             아직 화면에만 있다 — 실패는 이미 알렸으니 닫지 않고 창을 남긴다. */
+          if (!(await WorkbenchController.flushEdits())) return bridge.cancelWindowClose();
           const state = await AuthoringController.closeState();
           if (state && !state.armed) return bridge.confirmWindowClose();
           return AppCloseGuard.prompt(state || payload.state);

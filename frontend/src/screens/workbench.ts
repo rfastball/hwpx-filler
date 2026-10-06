@@ -85,6 +85,18 @@ const MARK_CLASS: Record<string, string> = {
 /** 길이 0 표식의 표지 문구 — 빈 값(데이터가 빈 칸)과 비워 둠(일부러 비운 선언)을 가른다. */
 const HOLE_LABEL: Record<string, string> = { blank: "〈빈 값〉", declared: "〈비워 둠〉" };
 
+/** 복사 전 확인이 물을 결손 — 사전확인 응답의 두 목록을 문장으로 옮길 뿐 다시 판정하지 않는다. */
+function copyBlockers(pre: Obj): string[] {
+  const blockers: string[] = [];
+  if (pre.missing_fields && pre.missing_fields.length) {
+    blockers.push(`채우지 못한 항목: ${pre.missing_fields.join(", ")}`);
+  }
+  if (pre.empty_fields && pre.empty_fields.length) {
+    blockers.push(`값이 빈 항목: ${pre.empty_fields.join(", ")}`);
+  }
+  return blockers;
+}
+
 /** Python 표식 → 편집면 표식. 빈 자리에 글자를 치면 그 범위는 값 칠로 바뀐다. */
 export function cardMarks(marks: readonly Obj[] | null | undefined): LintpadMark[] {
   return (marks || []).map((mark) => {
@@ -149,18 +161,28 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
   }
 
   /* ---- 본문 임시 편집 — 친 글자는 쉼 뒤에 한 번, 한글 조합이 끝난 뒤에 보낸다 ---- */
-  let pendingEdit: { index: number; text: string } | null = null;
+  /** 행 → 아직 Python 에 맡기지 못한 전문(행마다 마지막 것 하나). */
+  const pendingEdits = new Map<number, string>();
   let editTimer: ReturnType<typeof setTimeout> | undefined;
   let composing = false;
 
-  /** 미뤄 둔 편집을 지금 체인에 세운다 — 이동·복사·이탈·되돌리기가 먼저 부른다. */
-  function flushEdit(): Promise<unknown> {
+  /** 미뤄 둔 편집을 지금 체인에 세운다 — 이동·복사·이탈·창 닫기·되돌리기가 먼저 부른다.
+   *
+   *  참 = 전부 착지했다. 실패는 알리고, 그 편집은 (더 새 편집이 없으면) 다시 미뤄 둔다 — 보이는
+   *  글자가 Python 에 없는 채로 복사·이탈·창 닫기가 진행되면 옛 글자를 복사하거나 고친 글을 말없이
+   *  잃는다. 그래서 부르는 쪽은 거짓이면 멈추고, 다음 정산이 같은 편집을 다시 보낸다. */
+  function flushEdit(): Promise<boolean> {
     clearTimeout(editTimer);
-    const edit = pendingEdit;
-    pendingEdit = null;
-    if (edit === null) return Promise.resolve();
-    return sendWb("set_card_text", { index: edit.index, text: edit.text })
-      .catch((error) => deps.notify(String((error as Obj)?.message || error)));
+    const edits = [...pendingEdits];
+    pendingEdits.clear();
+    return Promise.all(edits.map(([index, text]) => sendWb("set_card_text", { index, text }).then(
+      () => true,
+      (error) => {
+        if (!pendingEdits.has(index)) pendingEdits.set(index, text);
+        deps.notify(String((error as Obj)?.message || error));
+        return false;
+      },
+    ))).then((landed) => landed.every(Boolean));
   }
 
   function scheduleEdit(): void {
@@ -170,33 +192,34 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
 
   /** 편집면이 친 결과(전문). 정체는 그 문서가 선 행 `index` 다 — 작업점이 아니다. */
   function editCard(index: number, text: string): void {
-    pendingEdit = { index, text };
+    pendingEdits.set(index, text);
     if (!composing) scheduleEdit();
   }
 
   function setComposing(on: boolean): void {
     composing = on;
-    if (!on && pendingEdit !== null) scheduleEdit();
+    if (!on && pendingEdits.size > 0) scheduleEdit();
   }
 
   /** 「원래대로」 — 그 행에 미뤄 둔 편집은 버리고 원문으로 되돌린다. */
   async function revertCard(index: number): Promise<void> {
-    if (pendingEdit !== null && pendingEdit.index === index) {
-      clearTimeout(editTimer);
-      pendingEdit = null;
-    }
+    pendingEdits.delete(index);
     await flushEdit();
     await sendWb("revert_card", { index });
   }
 
-  /** 상태를 옮기는 동작 앞에 미뤄 둔 편집을 정산한다(체인 순서가 곧 착지 순서다). */
-  function afterEdit<T>(send: () => Promise<T>): Promise<T> {
-    void flushEdit();
+  /** 상태를 옮기는 동작 앞에 미뤄 둔 편집을 정산한다(체인 순서가 곧 착지 순서다). 착지하지
+   *  못했으면 옮기지 않는다 — 그 편집은 아직 이 문서에만 있고, 실패는 이미 알렸다. */
+  async function afterEdit<T>(send: () => Promise<T>): Promise<T | undefined> {
+    if (!(await flushEdit())) return undefined;
     return send();
   }
 
   /** 대상 글꼴 — 고른 값을 곧바로 보이고(초안), 응답이 그 값을 확정하거나 되돌린다. */
   async function setTargetFont(font: string): Promise<void> {
+    /* 글꼴 응답도 카드를 다시 그린다 — 친 글자가 그 푸시보다 먼저 착지하게 체인에 먼저 세운다
+       (글꼴은 본문 글자를 바꾸지 않으므로 착지 실패가 이 선택을 막지는 않는다 — 실패는 알린다). */
+    void flushEdit();
     draft = typeInto(draft, TARGET_FONT_FIELD, font);
     const session = draft.session;
     const issued = issueToken(draft, TARGET_FONT_FIELD);
@@ -216,17 +239,13 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
   }
 
   async function copyCard(): Promise<void> {
-    /* 방금 친 글자·이동·보기가 아직 날아가는 중일 수 있다 — 착지한 **뒤에** 무엇을 복사할지 묻는다. */
-    void flushEdit();
+    /* 방금 친 글자·이동·보기가 아직 날아가는 중일 수 있다 — 착지한 **뒤에** 무엇을 복사할지 묻는다.
+       편집이 착지하지 못했으면 복사하지 않는다: Python 이 가진 옛 글자가 클립보드로 나간다. */
+    const flushed = flushEdit();
     await deps.chain.settle(WB_CHAIN);
+    if (!(await flushed)) return;
     const pre = await dispatch(SCREEN, "copy_precheck", {});
-    const blockers: string[] = [];
-    if (pre.missing_fields && pre.missing_fields.length) {
-      blockers.push(`채우지 못한 항목: ${pre.missing_fields.join(", ")}`);
-    }
-    if (pre.empty_fields && pre.empty_fields.length) {
-      blockers.push(`값이 빈 항목: ${pre.empty_fields.join(", ")}`);
-    }
+    const blockers = copyBlockers(pre);
     if (blockers.length) {
       const accepted = await deps.modal.confirm({
         title: "이대로 복사할까요?",
@@ -248,8 +267,9 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
    *
    *  가드가 「잃을 것 없음」이라고 답하려면 **대기 중인 발신까지** 세고 답해야 한다. */
   async function confirmLeave(): Promise<boolean> {
-    void flushEdit();
+    const flushed = flushEdit();
     await deps.chain.settle(WB_CHAIN);
+    if (!(await flushed)) return false;   // 고친 글이 아직 화면에만 있다 — 가드가 그것을 셀 수 없다
     const guard = await dispatch(SCREEN, "leave_guard", {});
     if (!guard || !guard.armed) return true;
     return deps.modal.confirm({
@@ -317,12 +337,15 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
     editCard,
     setComposing,
     revertCard,
-    step: (delta: number): Promise<Obj> => afterEdit(() => sendWb("step", { delta })),
-    setCurrent: (index: number): Promise<Obj> => afterEdit(() => sendWb("set_current", { index })),
-    setView: (view: string): Promise<Obj> => afterEdit(() => sendWb("set_view", { view })),
+    /** 창 닫기 관문이 부른다 — 미뤄 둔 편집을 착지시키고 성공 여부를 돌려준다. */
+    flushEdits: (): Promise<boolean> => flushEdit(),
+    step: (delta: number) => afterEdit(() => sendWb("step", { delta })),
+    setCurrent: (index: number) => afterEdit(() => sendWb("set_current", { index })),
+    setView: (view: string) => afterEdit(() => sendWb("set_view", { view })),
     setTargetFont,
-    toggleAdvance: (value: boolean): Promise<Obj> => sendWb("toggle_advance", { value }),
-    setFullwidth: (value: boolean): Promise<Obj> => afterEdit(() => sendWb("set_fullwidth", { value })),
+    /* 자동 다음도 푸시를 낸다 — 그 푸시가 (분 경계 등으로) 문서를 갈아 끼우기 전에 친 글자를 먼저 맡긴다. */
+    toggleAdvance: (value: boolean) => afterEdit(() => sendWb("toggle_advance", { value })),
+    setFullwidth: (value: boolean) => afterEdit(() => sendWb("set_fullwidth", { value })),
     guarded,
     doc: deps.doc,
     notify: deps.notify,
