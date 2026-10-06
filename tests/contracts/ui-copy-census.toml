@@ -1023,10 +1023,6 @@ text = "{} 정리할까요?"
 
 [[sentence]]
 file = "frontend/src/screens/pool_verbs.ts"
-text = "계약 목록 정보를 아직 읽지 못했습니다. 잠시 뒤 다시 여세요."
-
-[[sentence]]
-file = "frontend/src/screens/pool_verbs.ts"
 text = "데이터를 찾을 수 없습니다. {}"
 
 [[sentence]]

@@ -894,23 +894,22 @@ def test_register_pclm_three_branches_and_stale_confirm(tmp_path):
     assert "needs_confirm" not in ctrl.dispatch("register_pclm", payload)
 
 
-def test_register_pclm_without_db_pins_the_default_place(tmp_path, monkeypatch):
-    """db 를 비우면 「기본 자리」로 해석돼 opts 에 박힌다 — 조회와 등록이 같은 자리를 본다."""
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
-    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
-    _pclm_db(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db", views=("v_계약_v1",))
-    ctrl, reg, _ = _controller(tmp_path)
-    res = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
-    assert res["ok"] is True
-    key = _rows(ctrl)[0]["key"]
-    assert reg.load(key).opts == {
-        "db": str(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"),
-        "view": "v_계약_v1",
-    }
-    # 같은 뜻의 재등록(빈 db)은 2건이 아니라 「이미 고정」으로 접힌다.
-    again = ctrl.dispatch("register_pclm", {"name": "기본 자리", "view": "v_계약_v1"})
-    assert again["ok"] is True and len(_rows(ctrl)) == 1
+def test_register_pclm_without_db_is_refused_not_guessed(tmp_path):
+    """db 를 비우면 거절한다 — 다른 프로그램의 설치 자리를 기본으로 추측하지 않는다.
+
+    시트 나열(``inspect_sheets``)도 같은 거절을 재진술한다.
+    """
+    ctrl, _reg, _ = _controller(tmp_path)
+    for payload in (
+        {"name": "자리 없음", "view": "v_계약_v1"},
+        {"name": "자리 없음", "db": "", "view": "v_계약_v1"},
+        {"name": "자리 없음", "db": "", "view": "v_계약_v1", "views": ["v_계약_v1"]},
+    ):
+        res = ctrl.dispatch("register_pclm", payload)
+        assert res == {"ok": False, "error": "파일 경로가 비어 있습니다."}
+        assert _rows(ctrl) == [] and _result(ctrl)["level"] == "danger"
+    inspected = ctrl.dispatch("inspect_sheets", {"kind": "pclm", "path": ""})
+    assert inspected == {"ok": False, "error": "파일 경로가 비어 있습니다."}
 
 
 def test_register_pclm_unknown_view_is_worded_not_raised(tmp_path):
@@ -993,43 +992,14 @@ def test_pclm_duplicates_merge_through_the_same_confirm_path(tmp_path):
     assert [r["name"] for r in _rows(ctrl)] == ["최신 계약"]
 
 
-def test_pclm_snapshot_block_lists_the_sheets_of_the_default_db(tmp_path, monkeypatch):
-    """스냅샷이 기본 DB 자리와 **그 DB 가 실제로 가진 시트**를 낸다 — 그 둘뿐이다.
+def test_pool_snapshot_carries_no_default_pclm_place(tmp_path):
+    """스냅샷은 계약 목록의 기본 자리도, 그 자리 DB 의 시트도 싣지 않는다.
 
-    고정 허용목록은 걷혔다(사용자 결정 2026-09-30): 목록은 뷰 먼저, 다음 표이고 각 항목은
-    시트 이름 하나다(제목·설명표 없음 — 엑셀 시트처럼 이름이 곧 표시명이다).
+    DB 자리는 사용자가 등록 폼에 적은 것뿐이고 시트는 그 자리를 ``inspect_sheets`` 로
+    나열한다 — 다른 프로그램의 설치 자리를 미리 읽어 두지 않는다.
     """
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
-    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
-    default_db = tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
-    _pclm_db(default_db, views=("v_통합_v2", "v_접수_v1"))
     ctrl, _reg, _ = _controller(tmp_path)
-    block = ctrl.initial()["pclm"]
-    assert block["default_db"] == str(default_db)
-    assert block["views"] == [
-        {"name": "v_통합_v2"}, {"name": "v_접수_v1"}, {"name": "계약"},
-    ]
-    assert tuple(block) == ("default_db", "views")
-
-
-@pytest.mark.parametrize("broken", ["missing", "not-sqlite"])
-def test_pclm_snapshot_block_opens_with_no_sheets_when_the_db_is_unusable(
-    tmp_path, monkeypatch, broken,
-):
-    """기본 자리의 DB 가 없거나 못 읽으면 ``views`` 는 빈 목록 — 스냅샷은 실패하지 않는다.
-
-    폼은 그대로 열리고, 그 파일 문제는 등록 게이트가 기존 문장으로 재진술한다.
-    """
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
-    default_db = tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db"
-    if broken == "not-sqlite":
-        default_db.parent.mkdir(parents=True)
-        default_db.write_bytes(b"not a database" * 20)
-    ctrl, _reg, _ = _controller(tmp_path)
-    block = ctrl.initial()["pclm"]
-    assert block == {"default_db": str(default_db), "views": []}
+    assert "pclm" not in ctrl.initial()
 
 
 def test_targeting_gate_leaves_pclm_sheets_to_the_real_load_and_still_freezes_nara(tmp_path):

@@ -31,26 +31,28 @@ import sqlite3
 import urllib.request
 from pathlib import Path
 
-# 기본 자리는 링0 이 소유한다(:mod:`hwpxfiller.domain.pclm_views`) — 등록 게이트
-# (Application)와 이 어댑터가 **같은 자리**를 봐야 하는데 Application 은 바깥 링을
-# import 할 수 없기 때문이다. 여기서 계속 re-export 하므로 기존 소비자는 그대로다.
-from ..domain.pclm_views import default_pclm_db
-
 __all__ = [
     "PclmDataSource",
-    "default_pclm_db",
     "list_sqlite_sheets",
 ]
+
+
+def _db_path(db: "str | Path | None") -> Path:
+    """사용자가 고른 DB 자리 — 비었으면 거절한다(다른 프로그램의 설치 자리를 추측하지 않는다).
+
+    ``Path("")`` 는 현재 폴더(``.``)라 그대로 두면 엉뚱한 자리를 열려 든다. 빈 자리는
+    구판 참조의 손상이지 「기본 자리」가 아니다 — 결속 복원
+    (:func:`~hwpxfiller.data.factory.source_for_binding`)과 같은 문장으로 거절한다.
+    """
+    if not db:  # None·"" — 경로 객체는 비지 않는다
+        raise ValueError("데이터 참조에 경로가 없습니다.")
+    return Path(db)
 
 
 def _connect(db: Path) -> sqlite3.Connection:
     """``db`` 를 읽기 전용으로 연다 — 부재는 ``FileNotFoundError``, 열기 실패는 ``RuntimeError``."""
     if not db.exists():
-        raise FileNotFoundError(
-            f"pclm 자료를 찾지 못했습니다: {db}\n"
-            "계약 목록 앱을 한 번 실행했는지 확인하세요. "
-            "다른 자료를 읽으려면 db= 로 그 경로를 짚습니다."
-        )
+        raise FileNotFoundError(f"pclm 자료를 찾지 못했습니다: {db}")
     # 드라이브 문자·공백·한글이 섞인 경로를 URI 로 옮긴다. 문자열을 이어 붙이면
     # 경로 안의 ? 나 # 이 URI 의 문법으로 읽혀 엉뚱한 파일을 열거나 실패한다.
     uri = f"file:{urllib.request.pathname2url(str(db))}?mode=ro"
@@ -81,14 +83,15 @@ def _sheets_of(connection: sqlite3.Connection, db: Path) -> "list[str]":
     return [n for k, n in visible if k == "view"] + [n for k, n in visible if k == "table"]
 
 
-def list_sqlite_sheets(db: "str | Path | None" = None) -> "list[str]":
+def list_sqlite_sheets(db: "str | Path") -> "list[str]":
     """SQLite DB 가 가진 시트(뷰 먼저, 다음 표) — 등록 폼과 등록 게이트가 고를 목록.
 
-    :param db: SQLite 파일. ``None`` 이면 :func:`default_pclm_db`.
+    :param db: SQLite 파일 — 사용자가 고른 자리.
+    :raises ValueError: 자리가 비었다.
     :raises FileNotFoundError: 파일이 없다.
     :raises RuntimeError: 열 수 없거나 SQLite 가 아니다.
     """
-    path = Path(db) if db is not None else default_pclm_db()
+    path = _db_path(db)
     connection = _connect(path)
     try:
         return _sheets_of(connection, path)
@@ -104,7 +107,8 @@ def _quote(name: str) -> str:
 class PclmDataSource:
     """SQLite DB 의 시트 하나(뷰 또는 표)를 :class:`~hwpxfiller.domain.data_source.DataSource` 로 낸다.
 
-    :param db: SQLite 파일. ``None`` 이면 :func:`default_pclm_db`.
+    :param db: SQLite 파일 — 사용자가 고른 자리. 비어 있으면(구판 참조의 빈 ``db``) 생성
+        시점에 ``ValueError`` 다 — 다른 프로그램의 설치 자리를 추측하지 않는다.
     :param view: 시트 이름 — 그 DB 의 뷰 또는 표. 없는 이름은 로드 때 ``ValueError``
         (쓸 수 있는 시트를 재진술한다). 키 이름 ``view`` 는 저장된 참조(``opts={db, view}``)
         와의 호환을 위해 그대로 둔다.
@@ -112,11 +116,11 @@ class PclmDataSource:
 
     def __init__(
         self,
-        db: "str | Path | None" = None,
+        db: "str | Path",
         *,
         view: str,
     ) -> None:
-        self.db = Path(db) if db is not None else default_pclm_db()
+        self.db = _db_path(db)
         self.view = view
         self._fields: "list[str]" = []
         self._records: "list[dict[str, str]]" = []

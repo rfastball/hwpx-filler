@@ -308,6 +308,8 @@ def _load_records(
     if args.source == "pclm":
         from .data.pclm import PclmDataSource, list_sqlite_sheets
 
+        # --db 생략은 소스·나열이 ValueError 로 거절하고 최상위 번역 경계가 [오류] 로 옮긴다 —
+        # 다른 프로그램의 설치 자리를 추측하던 기본 자리는 걷혔다.
         # 시트마다 한 줄의 뜻이 달라 문서 건수가 갈린다 — 고르지 않은 채로 한 면을
         # 추측하면 계약 20건 대신 품목 200건이 조용히 나온다. 그래서 그 DB 의 시트
         # 목록(뷰 먼저, 다음 표 — 고정 허용목록은 걷혔다)을 보이고 멈춘다.
@@ -331,8 +333,8 @@ def _load_records(
             # traceback 으로 흘리지 않는다(RC-16). 파일 부재는 OSError 라 최상위 번역
             # 경계가 받는다.
             ap.error(str(exc))
-        # 생략된 --db 의 실경로를 소스가 해석한 그대로 되뇐다 — 어디를 읽었는지가
-        # 조용하면 다른 DB 를 읽고도 알 수 없다(경로 재해석 금지, src.db 가 단일 출처).
+        # 읽은 DB 의 경로를 소스가 든 그대로 되뇐다 — 어디를 읽었는지가 조용하면 다른 DB 를
+        # 읽고도 알 수 없다(경로 재해석 금지, src.db 가 단일 출처).
         print(f"[계약 목록] {src.db} 의 {src.view} 에서 {len(records)}건", file=sys.stderr)
         return records
 
@@ -489,7 +491,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--page", type=int, default=1, help="나라장터 페이지 번호(기본 1)")
     # 계약 목록(pclm) 옵션(--source pclm)
     ap.add_argument("--db", default=None,
-                    help="pclm SQLite 경로 (생략 시 기본 자리, --source pclm)")
+                    help="pclm SQLite 경로 (필수, --source pclm)")
     ap.add_argument("--view", default=None,
                     help="pclm 시트(뷰·표) 이름 (필수, --source pclm). 이름 목록은 미지정 시 안내")
     args = ap.parse_args(argv)

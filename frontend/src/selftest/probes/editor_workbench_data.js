@@ -88,6 +88,7 @@
  */
 
 import { ERROR_CODES } from "../runner.js";
+import { probePclmRegistration } from "./pclm_registration.js";
 import { probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
 
 export const D_CLUSTER = "D";
@@ -1588,7 +1589,6 @@ function tplBase(overrides) {
 function poolBase(rows, extra) {
   const list = rows || [];
   return {
-    pclm: { default_db: "C:/d/pclm.db", views: [] },
     /* 항목 상세 존(고르기 열 공용 ④) — 검토 전에는 `null` 이 정상이다. */
     detail: (extra || {}).detail || null,
     column: {
@@ -2820,17 +2820,6 @@ export function createEditorWorkbenchDataProbes() {
               ],
               empty_hint: "", count_label: "3개", result: { text: "", level: "muted" },
             },
-            /* 등록 폼이 물어야 할 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. `views` 는
-               기본 DB 를 실제로 나열한 시트다(뷰 먼저, 다음 표 — 고정 허용목록·제목표는
-               사용자 결정 2026-09-30 으로 걷혔다). 항목은 시트 이름 하나다. */
-            pclm: {
-              default_db: "C:/AppData/Local/Pclm/pclm.db",
-              views: [
-                { name: "v_통합_v2" },
-                { name: "v_접수_v1" },
-                { name: "계약" },
-              ],
-            },
             detail: null,
           });
           await ctx.sleep(0);                      // pool external-store → portal DOM 커밋
@@ -2849,15 +2838,20 @@ export function createEditorWorkbenchDataProbes() {
           /* 상태 동사는 행 안 버튼이 아니라 ⋯ 메뉴가 든다(고르기 열과 같은 어포던스).
              실클릭으로 열어 그 목록을 되읽는다 — 목록을 짓는 자리와 여는 자리가 갈리면
              메뉴에 항목을 더하고 배선을 잊은 날이 조용히 지나간다. */
+          /* 모달 입장 전이(opacity·transform)가 끝난 뒤에 ⋯ 를 연다 — 전이 중에 연 메뉴는 첫 항목
+             초점이 조상 스크롤을 일으키고, 공용 Popover 의 바깥 scroll 닫힘이 그 메뉴를 곧바로 걷는다
+             (첫 행 메뉴가 빈 목록으로 읽히던 간헐 실패의 원인). 열림·닫힘도 한 turn 양보가 아니라
+             **메뉴 항목이 서고 걷힐 때까지** 기다린다. 닫힌 메뉴는 DOM 에서 빠지므로(ContextMenu 가
+             null) 앞 행 항목을 다음 행으로 읽지 않는다. */
+          await waitFor(ctx, () => !byId(ctx, "dataPickerModal").querySelector(".modal-card")
+            .getAnimations({ subtree: true }).some((animation) => animation.playState === "running"), 50, 20);
           const rowMenu = async (key) => {
+            const items = () => ctx.doc.querySelectorAll("#dataPickerRowMenu button");
             host.querySelector(`.job-more[data-key="${key}"]`).click();
-            await ctx.sleep(0);
-            const menu = ctx.doc.getElementById("dataPickerRowMenu");
-            const labels = menu
-              ? Array.prototype.map.call(menu.querySelectorAll("button"), (b) => textOf(b))
-              : [];
+            const labels = await waitFor(ctx, () => items().length > 0, 50, 20)
+              ? Array.prototype.map.call(items(), (b) => textOf(b)) : [];
             host.querySelector(`.job-more[data-key="${key}"]`).click();  // 같은 트리거 = 닫기
-            await ctx.sleep(0);
+            await waitFor(ctx, () => items().length === 0, 50, 20);
             return labels;
           };
           const k1Menu = await rowMenu("k1");
@@ -2893,30 +2887,7 @@ export function createEditorWorkbenchDataProbes() {
             && pinSheets.querySelectorAll(".pool-reg-sheet-list input").length === 2;
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
-          /* 계약 목록 등록 진입 — 파일 피커가 없는 종류라 전용 동사가 「다른 데이터」에 선다.
-             가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 기본 DB
-             자리를 프리필하고 **미선택 시트 목록** 을 세운다(시트는 사용자
-             확정). 라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
-          const pclmEntry = byId(ctx, "dataPickerPclm");
-          out.pclm_entry = !!pclmEntry && !isHidden(ctx, pclmEntry)
-            && pclmEntry.offsetParent !== null && !pclmEntry.disabled;
-          out.pclm_entry_text = textOf(pclmEntry);
-          pclmEntry.click();
-          await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
-          const viewSelect = byId(ctx, "poolRegView");
-          const sheetInputs = Array.from(viewSelect.querySelectorAll(".pool-reg-sheet-list input"));
-          out.pclm_reg_view_options = sheetInputs.length;
-          out.pclm_reg_db_prefill = byId(ctx, "poolRegDb").value;
-          out.pclm_reg_view_text = sheetInputs.map((input) => textOf(input.nextElementSibling)).join("|");
-          out.pclm_reg_view_label = textOf(viewSelect.querySelector("legend"));
-          out.pclm_reg_initial_empty = sheetInputs.every((input) => !input.checked)
-            && byId(ctx, "poolRegOk").disabled;
-          sheetInputs[0].click();
-          await ctx.sleep(0);
-          sheetInputs[1].click();
-          await ctx.sleep(0);
-          out.pclm_reg_multiple_selected = viewSelect.querySelectorAll(".pool-reg-sheet-list input:checked").length === 2
-            && !byId(ctx, "poolRegOk").disabled;
+          Object.assign(out, await probePclmRegistration(ctx, { byId, isHidden, textOf, typeValue }));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(

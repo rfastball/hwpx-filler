@@ -445,8 +445,9 @@ class TestWebSelftestGate:
 
         엑셀과 좌표가 다른 종류라 정적 계약만으로는 「목록에 그려지는가」·「엑셀 전용
         동사가 새지 않는가」를 못 본다. 진입 버튼은 존재가 아니라 **가시**여야 하고
-        (프로브 click 은 hidden 도 통과한다), 열린 폼은 기본 DB 자리를 프리필하되 시트는
-        미선택으로 남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
+        (프로브 click 은 hidden 도 통과한다), 열린 폼은 DB 자리를 비운 채 연다(다른
+        프로그램의 설치 자리를 추측하지 않는다). 적은 자리에서 나열한 시트는 미선택으로
+        남긴다 — 계약면을 조용히 하나 고르면 문서 건수가 어긋난다.
 
         표면 어휘도 여기서 잰다: 체크박스의 **보이는 글자**는 그 DB 의 시트 이름
         그대로다(엑셀 시트처럼 — 제목표는 사용자 결정 2026-09-30 으로 걷혔다). 진입 버튼
@@ -462,7 +463,7 @@ class TestWebSelftestGate:
         assert probe["pclm_entry_text"] == "계약 목록(.db) 등록…", probe
         # 조회된 시트 3개는 미선택이며 사용자가 여러 시트를 선언할 수 있다.
         assert probe["pclm_reg_view_options"] == 3, probe
-        assert probe["pclm_reg_db_prefill"] == "C:/AppData/Local/Pclm/pclm.db", probe
+        assert probe["pclm_reg_db_prefill"] == "" and probe["pclm_reg_no_sheets_before_db"] is True, probe
         assert probe["pclm_reg_view_text"] == "v_통합_v2|v_접수_v1|계약", probe
         assert probe["pclm_reg_view_label"] == "사용할 시트", probe
         assert probe["pclm_reg_initial_empty"] is True, probe

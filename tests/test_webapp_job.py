@@ -6853,19 +6853,12 @@ def _inline_pclm_v2(tmp_path) -> str:
 def test_filter_presets_on_the_real_contract_list_view(tmp_path):
     """계약 목록 `v_통합_v2` 에서 소기업·중소기업을 함께 켜면 고시금액 미만 전부가 보인다.
 
-    실 DB(``%LOCALAPPDATA%\\Pclm\\pclm.db``)가 있으면 **사본**을 겨눈다(원본은 읽지도 쓰지도
-    않는다). 없으면 같은 뷰 이름·서식의 대역으로 같은 단언을 한다 — 건너뛰지 않는다.
+    같은 뷰 이름·서식의 대역 DB 로 단언한다 — 개발 기기에 깔린 다른 프로그램의 자료
+    자리에 기대지 않는다(그 자리를 추측하던 기본 자리는 걷혔다).
     """
-    import os
-
     from hwpxfiller.domain.format_engine import parse_number
 
-    real = Path(os.environ.get("LOCALAPPDATA", "")) / "Pclm" / "pclm.db"
-    if real.is_file():
-        db = str(tmp_path / "pclm_copy.db")
-        shutil.copyfile(real, db)
-    else:
-        db = _inline_pclm_v2(tmp_path)
+    db = _inline_pclm_v2(tmp_path)
     connection = sqlite3.connect(db)
     prices = [row[0] for row in connection.execute('SELECT "추정가격" FROM "v_통합_v2"')]
     connection.close()

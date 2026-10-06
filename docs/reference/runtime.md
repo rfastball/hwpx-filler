@@ -239,7 +239,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `inspect_sheets` | `path` | `kind` |
 | `refresh` | — | — |
 | `register_excel` | `name`, `path` | `sheet`, `sheets`, `note`, `confirm`, `basis` |
-| `register_pclm` | `name`, `view` | `db`, `views`, `note`, `confirm`, `basis` |
+| `register_pclm` | `name`, `db`, `view` | `views`, `note`, `confirm`, `basis` |
 | `relink` | `key`, `path` | `sheet`, `sheets`, `note`, `name`, `confirm`, `basis` |
 | `resolve_duplicate` | `keep` | `confirm`, `basis` |
 | `review` | `key` | — |
