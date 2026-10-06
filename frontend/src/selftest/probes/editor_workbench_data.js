@@ -2838,15 +2838,16 @@ export function createEditorWorkbenchDataProbes() {
           /* 상태 동사는 행 안 버튼이 아니라 ⋯ 메뉴가 든다(고르기 열과 같은 어포던스).
              실클릭으로 열어 그 목록을 되읽는다 — 목록을 짓는 자리와 여는 자리가 갈리면
              메뉴에 항목을 더하고 배선을 잊은 날이 조용히 지나간다. */
+          /* 열림·닫힘은 한 turn 양보가 아니라 **메뉴 항목이 서고 걷힐 때까지** 기다린다 — 팝오버
+             커밋이 다음 turn 을 넘기면 빈 목록을 읽거나 앞 행의 닫힘이 다음 행 열림과 겹친다.
+             닫힌 메뉴는 DOM 에서 빠지므로(ContextMenu 가 null) 앞 행 항목을 다음 행으로 읽지 않는다. */
           const rowMenu = async (key) => {
+            const items = () => ctx.doc.querySelectorAll("#dataPickerRowMenu button");
             host.querySelector(`.job-more[data-key="${key}"]`).click();
-            await ctx.sleep(0);
-            const menu = ctx.doc.getElementById("dataPickerRowMenu");
-            const labels = menu
-              ? Array.prototype.map.call(menu.querySelectorAll("button"), (b) => textOf(b))
-              : [];
+            await waitFor(ctx, () => items().length > 0, 50, 20);
+            const labels = Array.prototype.map.call(items(), (b) => textOf(b));
             host.querySelector(`.job-more[data-key="${key}"]`).click();  // 같은 트리거 = 닫기
-            await ctx.sleep(0);
+            await waitFor(ctx, () => items().length === 0, 50, 20);
             return labels;
           };
           const k1Menu = await rowMenu("k1");
