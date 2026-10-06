@@ -44,7 +44,7 @@ class Group:
     transform: str
     reason: str = ""
     note: str = ""
-    only: str | None = None
+    only: str | None = None  # 계약 키 「only」 — 규칙 v2 는 정하지 않는다(라벨 자리가 있는 묶음은 보류되지 않는다)
     links_existing: bool = False
     count_text: str = ""
     spots: list[Spot] = field(default_factory=list)
@@ -107,11 +107,6 @@ def _spot(view: DocumentView, evidence: SpotEvidence) -> Spot:
                 view.where(slot.paragraph))
 
 
-def _only(view: DocumentView, verdict: Grade) -> str | None:
-    only = verdict.only
-    return _spot(view, only).id if only is not None and only.creatable else None
-
-
 def _count_text(verdict: Grade, spots: Sequence[Spot]) -> str:
     if verdict.count_text:
         return verdict.count_text
@@ -139,7 +134,7 @@ def _group(view: DocumentView, verdict: Grade, key: str, transform: str, raw: st
     group = Group(
         id=key, kind=verdict.kind, name=name or verdict.column, column=verdict.column,
         others=list(verdict.others), value=_display_value(verdict.spots[0].text, transform, verdict.spots, view),
-        raw=raw, transform=transform, reason=verdict.reason, note=verdict.note, only=_only(view, verdict),
+        raw=raw, transform=transform, reason=verdict.reason, note=verdict.note,
         links_existing=name in existing, count_text=_count_text(verdict, spots), spots=spots,
     )
     _hold_unmakeable(group, name is not None)
@@ -199,9 +194,9 @@ def propose(paragraphs: Sequence[ParagraphText], row: Mapping[str, str | None], 
             picks: Mapping[str, str] | None = None) -> Proposal:
     """문서 문단과 행 하나로 제안을 짓는다. ``dismissed`` 는 「그대로 두기」 한 (열, 원시 값) 집합이고,
     ``picks`` 는 사람이 같은 값의 열 가운데 고른 열(묶음 열쇠 → 열)이다."""
-    view = DocumentView(paragraphs)
     ordered = {column: row.get(column) for column in columns}
     slots = mask(find_candidates(paragraphs, ordered))
+    view = DocumentView(paragraphs, slots)
     existing = set(existing_fields)
     groups = _one_per_column(_groups(view, slots, ordered, columns, existing, picks or {}))
     # 「그대로 두기」 한 묶음과, 이미 필드가 된 이름의 남은 보류(필드 밖 산문 반복)는 싣지 않는다.

@@ -145,6 +145,13 @@ def label_before(left: str) -> str:
     return (found.group(1) if found else line).strip()
 
 
+def word_windows(line: str) -> list[str]:
+    """앞 낱말 라벨의 좁은 창 — 자리 바로 앞 마지막 1·2·3낱말(「…시스템에 세부품명번호 10자리」의
+    「세부품명번호 10자리」). 20자 창이 산문 앞부분을 끌어와 열과 안 맞을 때 쓴다."""
+    words = line.split()
+    return [" ".join(words[-count:]) for count in (1, 2, 3) if len(words) >= count]
+
+
 def _bigrams(text: str) -> set[str]:
     text = re.sub(r"[\s_\-.]", "", text.lower())
     return {text[i:i + 2] for i in range(len(text) - 1)} or ({text} if text else set())
@@ -204,14 +211,24 @@ def label_matches(label: str, column: str, *, fuzzy: bool) -> str | None:
     """
     if not label or not column:
         return None
-    parts = [part for part in re.split(r"및|/|,|、|ㆍ", label) if len(part) >= 2] or [label]
-    for part in parts:
+    for part in _label_parts(label):
         how = _part_matches(part, column)
         if how is not None:
             return how
     if fuzzy and name_overlap(label, column) >= 0.5:
         return "bigram"
     return None
+
+
+def _label_parts(label: str) -> list[str]:
+    """복합 라벨(「품명 및 수량」·「수량/단위」)의 낱낱 라벨."""
+    return [part for part in re.split(r"및|/|,|、|ㆍ", label) if len(part) >= 2] or [label]
+
+
+def names_literally(label: str, column: str) -> bool:
+    """정규화 ``label`` 의 낱낱 라벨 하나가 정규화 ``column`` 을 글자 그대로 담거나 그 안에 담긴다(「품명」⊂
+    「세부품명」, 「수요기관연락처」⊃「수요기관」) — 동의어 사전·글자쌍으로만 맞는 라벨이 아니다."""
+    return bool(label and column) and any(column in part or part in column for part in _label_parts(label))
 
 
 def _prefix_match(part: str, column: str) -> str | None:
@@ -249,6 +266,10 @@ GENERIC_PREDICATE = re.compile(
 SLOT_VOCAB_REPEATS = 5
 CUE_GENERIC = "generic"
 CUE_FIXED = "fixed"
+#: 「한 값 한 자리」의 약한 단서 — 다른 곳의 ``라벨: 값`` 자리를 산문에서 되풀이한다. 라벨·값만 있는 자리면
+#: 그대로 싣고 문장 속이면 뺀다(묶음을 보류하지 않는다).
+CUE_REPEAT = "repeat"
+_BLANK_DATE = re.compile(r"\s*(?:\.\s+\.\s+\.|년\s+월\s+일)")
 _QUOTES = (("「", "」"), ("『", "』"), ("“", "”"), ("‘", "’"), ("《", "》"), ("〈", "〉"))
 
 
@@ -276,10 +297,12 @@ def _quoted(line_left: str, line_right: str) -> bool:
 
 
 def static_cue(left: str, span: str, right: str, *, repeats: int, prefixes: Sequence[str]) -> str | None:
-    """자리가 고정 문구의 일부라는 단서 — ``CUE_GENERIC``(일반·당위 문장) 또는 ``CUE_FIXED``(그 밖).
+    """자리가 고정 문구의 일부라는 단서 — ``CUE_GENERIC``(일반·당위 문장), ``CUE_FIXED``(그 밖의 고정 문구),
+    ``CUE_REPEAT``(약한 단서).
 
     따옴표 제목 안, 이어지는 라벨 안(「변경 ⟦가능⟧ 여부:」), 인용 법령의 발행처(「(⟦조달청⟧ 고시)」),
-    일반·당위 문장 안, 다른 곳에 라벨 자리가 있는 값의 산문 반복(「한 값 한 자리」).
+    빈 날짜 틀의 머리 숫자, 일반·당위 문장 안은 고정 문구다. 다른 곳에 라벨 자리가 있는 값의 반복
+    (「한 값 한 자리」)은 약한 단서다.
     """
     line_left = left.rsplit("\n", 1)[-1]
     line_right = right.split("\n", 1)[0]
@@ -289,10 +312,12 @@ def static_cue(left: str, span: str, right: str, *, repeats: int, prefixes: Sequ
         return CUE_FIXED
     if re.match(r"\s?(" + "|".join(INSTRUMENTS) + r")(?:[)\s,.」』]|$)", line_right):
         return CUE_FIXED
+    if _BLANK_DATE.match(line_right):
+        return CUE_FIXED  # 빈 날짜 틀(「⟦20⟧  .   .   .」·「⟦20⟧  년  월  일」)의 머리 숫자
     if not is_slot(line_left) and GENERIC_PREDICATE.search(span_sentence(left, span, right)):
         return CUE_GENERIC
     if slot_elsewhere(line_left, repeats=repeats, prefixes=prefixes):
-        return CUE_FIXED
+        return CUE_REPEAT
     return None
 
 
@@ -303,8 +328,18 @@ def slot_elsewhere(line_left: str, *, repeats: int, prefixes: Sequence[str]) -> 
             and any(is_slot(prefix) for prefix in prefixes if prefix != here))
 
 
-def data_cue(span: str, right: str) -> bool:
-    """사건마다 바뀌는 값의 단서 — 전화번호, 직함·계급이 뒤따르는 사람 이름."""
+def number_frame(left: str, right: str) -> bool:
+    """번호 틀 「제⟦…⟧호」 — 바로 왼쪽이 「제」, 바로 오른쪽이 「호·차·회·번」이다(「물품공고 제R26…호」)."""
+    return left.endswith("제") and bool(re.match(r"[호차회번]", right))
+
+
+def data_cue(left: str, span: str, right: str) -> bool:
+    """사건마다 바뀌는 값의 단서 — 전화번호, 직함·계급이 뒤따르는 사람 이름, 번호 틀 안의 값.
+
+    직함이 **앞**에 오는 이름(「주무관 홍길동」)은 단서가 아니다 — 양식에 박힌 담당자 줄일 수 있다.
+    """
+    if number_frame(left, right):
+        return True
     text = span.strip()
     titles = "|".join(TITLES + RANKS)
     if re.fullmatch(r"0\d{1,2}[-.)\s]?\d{3,4}[-.\s]?\d{4}", text):  # [kordoc: recognize.ts inferFieldType]

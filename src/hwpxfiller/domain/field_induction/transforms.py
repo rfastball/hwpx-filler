@@ -1,10 +1,12 @@
-"""값 → 문서 글자 프로그램 11종과 제품 표시 형식(FieldMapping type/fmt) 대응.
+"""값 → 문서 글자 프로그램 12종과 제품 표시 형식(FieldMapping type/fmt) 대응.
 
 ``render(값) == 문서 구간`` 이 추론하는 관계다. 여기 적힌 프로그램만 있다 — 그 밖의 모양은 찾지 않는다.
 실험 엔진 ``core/transforms.py`` 의 이식이며, 제품 값은 언제나 타입 없는 텍스트라 문자열 입력만 다룬다.
 
 제품 대응(``binding``)은 :mod:`hwpxfiller.domain.format_engine` 이 **같은 글자**를 내는 경우에만 쓴다
 (:func:`renderings` 가 렌더 결과를 제품 엔진으로 다시 대조한다). 날짜 전용 형식은 시각이 든 값에 쓰지 않는다.
+연·월 형식(``ym``)은 값의 일부만 남기는 **부분 프로그램**(``partial``)이다 — 후보는 그 열의 온전한 글자가
+문서에 없을 때만 찾는다(:func:`~.candidates.find_candidates`).
 """
 
 from __future__ import annotations
@@ -76,6 +78,12 @@ def _date(fmt: Callable[[_dt.date], str]) -> Callable[[str], str | None]:
     return render
 
 
+def _year_month(value: str) -> str | None:
+    """연·월(제품 ``ym``) — 제품은 시각을 붙이지 않으므로 날짜·일시 값 모두 받는다."""
+    day = as_date(value)
+    return None if day is None else f"{day.year}. {day.month}."
+
+
 def _datetime(fmt: Callable[[_dt.datetime], str]) -> Callable[[str], str | None]:
     def render(value: str) -> str | None:
         moment = as_datetime(value)
@@ -92,6 +100,7 @@ class Transform:
     kind: str  # 제품 FieldMapping.type
     fmt: str  # 제품 FieldMapping.fmt
     _render: Callable[[str], str | None]
+    partial: bool = False  # 값의 일부만 남긴다(연·월) — 같은 달의 다른 날짜 열과 갈리지 않는다
 
     def render(self, value: str) -> str | None:
         return self._render(value)
@@ -125,6 +134,7 @@ TRANSFORMS: dict[str, Transform] = {
                   _date(lambda d: f"{d.year:04d}.{d.month:02d}.{d.day:02d}")),
         Transform("date_dot_spaced", "date", 1.2, "date", "",
                   _date(lambda d: f"{d.year}. {d.month}. {d.day}.")),
+        Transform("date_dot_ym", "date", 1.2, "date", "ym", _year_month, partial=True),
         Transform("date_korean", "date", 1.2, "date", "kor",
                   _date(lambda d: f"{d.year}년 {d.month}월 {d.day}일")),
         Transform("date_korean_padded", "date", 1.3, "date", "%Y년 %m월 %d일",

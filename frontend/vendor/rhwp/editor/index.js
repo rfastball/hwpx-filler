@@ -344,6 +344,21 @@ export class RhwpEditor {
     });
   }
 
+  /**
+   * Clicks on link-like decorations (`proposal`, `held`): the Studio has already selected the decoration's whole
+   * range; `index` is its position in the last `setDecorations` list and `rect` the clicked box in iframe client
+   * coordinates.
+   */
+  onDecorationClick(listener) {
+    if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+    return this._transport.on('decorationClick', (click) => {
+      const rect = click?.rect;
+      if (!Number.isSafeInteger(click?.index) || click.index < 0 || (click.kind !== 'proposal' && click.kind !== 'held')
+          || !rect || !['x', 'y', 'width', 'height'].every((key) => Number.isFinite(rect[key]))) return;
+      listener({ index: click.index, kind: click.kind, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    });
+  }
+
   /** While enabled, a document right-click raises `onContextMenuRequest` instead of the Studio menu. */
   async setContextMenuForwarding(enabled) {
     return this._request('setContextMenuForwarding', { enabled: enabled === true });

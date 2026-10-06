@@ -1,11 +1,12 @@
 import { createStudio } from "../../vendor/rhwp/editor/index.js";
-import { DECORATION_LIMIT, fitMarkers, markerAt, problemMarkers, proposalMarkers, studioCellPath, wireCellPath } from "./rhwp_marks.ts";
-import type { Marker, WireCellPath } from "./rhwp_marks.ts";
+import { DECORATION_LIMIT, markerAt, studioCellPath, wireSelection } from "./rhwp_marks.ts";
+import type { HostLineRect, Marker, WireSelection } from "./rhwp_marks.ts";
+export type { HostLineRect } from "./rhwp_marks.ts";
+import { decorationLedger } from "./rhwp_decorations.ts";
+import type { SpotClick } from "./rhwp_decorations.ts";
 export { DECORATION_LIMIT } from "./rhwp_marks.ts";
 
 type Obj = Record<string, unknown>;
-type Selection = { entry: string; paragraph: number; start_paragraph: number; end_paragraph: number; start: number; end: number;
-  cell_path?: WireCellPath };
 
 const isIndex = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0;
 
@@ -13,16 +14,20 @@ export type RhwpMountSpec = {
   host: HTMLElement; content: string; fileName: string; sectionEntries?: string[];
   /** The caret/selection the Studio reports, with the caret line in host client coordinates when it is visible
    *  (a proposal popover stands beside it, #1156). An empty object = no usable selection. */
-  onChanged: (content: string) => void; onSelectionChanged: (selection: Selection | Obj, caret?: HostLineRect | null) => void;
+  onChanged: (content: string) => void; onSelectionChanged: (selection: WireSelection | Obj, caret?: HostLineRect | null) => void;
   /** The selection end (caret) line in host client coordinates, for UI placed beside the selection (IDE-08).
    *  Reported once a new non-empty selection settles (never while a pointer drag still extends it); null
    *  when the selection collapses or changes, the document is edited, or the reported line moves (scroll,
    *  zoom). The same selection is not re-reported after an edit or a move. */
   onSelectionRect?: (rect: HostLineRect | null) => void;
-  /** The caret (collapsed selection) line moved under an unchanged caret (scroll, zoom, relayout): its new line in
-   *  host client coordinates, or null when it left the frame. A UI anchored to the caret (#1156 proposal popover)
-   *  follows it or hides; the caret itself is not re-reported. */
+  /** The caret (selection end) line moved under an unchanged selection (scroll, zoom, relayout): its new line in
+   *  host client coordinates, or null when it left the frame. A UI anchored to the caret or to a clicked spot (#1156
+   *  proposal popover) follows it or hides; the selection itself is not re-reported. */
   onCaretRect?: (caret: HostLineRect | null) => void;
+  /** A click on a link-like decoration (a #1156 proposal or held spot): the Studio has already selected the spot's
+   *  whole range. `token` is the spot id the decoration was sent with (`setDecorations` proposals), `rect` the clicked
+   *  line in host client coordinates (null when it is outside the frame). */
+  onDecorationClick?: (click: SpotClick) => void;
   onError: (error: unknown) => void; onShortcut?: (shortcut: RhwpShortcut) => void;
   /** Document right-click or keyboard menu key (Shift+F10, ContextMenu) inside the editor, in
    *  host client coordinates (the keyboard menu opens under the caret). Given = the host's menu
@@ -52,7 +57,6 @@ export type RhwpMountSpec = {
 /** One range-pick point on the Python wire: a body paragraph of a section entry and a character offset. */
 export type PickPoint = { entry: string; paragraph: number; offset: number; cell: boolean };
 /** One text line in host client coordinates (the line's top and bottom at a horizontal position). */
-export type HostLineRect = { left: number; top: number; bottom: number };
 /** Studio zoom mode: fit the page width to the editor, or a fixed percent. */
 export type RhwpZoom = "fit" | 50 | 75 | 100;
 const zoomCommand = (zoom: RhwpZoom) => zoom === "fit" ? "view:zoom-fit-width" : `view:zoom-${zoom}`;
@@ -116,19 +120,6 @@ function encodeBase64(bytes: Uint8Array): string {
   return btoa(result);
 }
 
-/** A Studio selection range as the wire selection — null when it spans sections, names no known section, carries a
- *  bad index, or has a table-cell path that cannot be read. Studio reports cellPath only when both edges share one
- *  table cell; paragraphs are then cell-level. */
-function wireSelection(range: any, sectionEntries: readonly string[]): Selection | null {
-  const entry = range && range.start.section === range.end.section ? sectionEntries[range.start.section] : undefined;
-  const cellPath = range?.cellPath ? wireCellPath(range.cellPath) : undefined;
-  if (!entry || cellPath === null) return null;
-  const { start, end } = range;
-  const next: Selection = { entry, paragraph: start.paragraph, start_paragraph: start.paragraph,
-    end_paragraph: end.paragraph, start: start.charOffset, end: end.charOffset, ...(cellPath ? { cell_path: cellPath } : {}) };
-  return [start.paragraph, end.paragraph, next.start, next.end].every(isIndex) ? next : null;
-}
-
 /** The pinned SDK owns the iframe and MessageChannel; this module owns its lifetime. */
 export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   const root = document.documentElement;
@@ -149,8 +140,6 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
   let scheduled = false, exportTimer: number | undefined;
   const sectionEntries = spec.sectionEntries ?? [];
   let zoom: RhwpZoom = spec.zoom ?? 100;
-  // A dropped-marker note goes to the console once per kind per mount (a developer signal, not user copy).
-  const capNoted = new Set<string>();
   try {
     await editor.setAppearance(appearance);
     if (spec.onContextMenu) await editor.setContextMenuForwarding(true);
@@ -230,9 +219,9 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     const collapsed = next.start_paragraph === next.end_paragraph && next.start === next.end;
     // A caret polled mid-press has no line yet; the same caret is reported once more when its line is known (#1156).
     const reported = `${key}${collapsed && !context.rect}`;
-    const line = collapsed ? JSON.stringify(context.rect ?? null) : "";
+    const line = JSON.stringify(context.rect ?? null);
     if (reported !== lastSelection) { lastSelection = reported; caretLine = line; spec.onSelectionChanged(next, visibleRect(context.rect)); }
-    else if (collapsed && line !== caretLine) { caretLine = line; spec.onCaretRect?.(visibleRect(context.rect)); }
+    else if (line !== caretLine) { caretLine = line; spec.onCaretRect?.(visibleRect(context.rect)); }
     reportRect(collapsed || disposed ? "" : key, context.rect);
   };
   // Selection occurs inside the iframe; host-element pointer/key events cannot observe it.
@@ -283,6 +272,9 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     const entry = sectionEntries[point.section];
     if (!disposed && entry) spec.onRangePick!({ entry, paragraph: point.paragraph, offset: point.charOffset, cell: point.cell });
   }) : () => {};
+  // Dropped-marker notes and the spot ids of the decorations last sent; a click on a proposal/held spot comes back
+  // as its spot id (an older pinned SDK has no decoration clicks: spots then open from the caret alone).
+  const decorations = decorationLedger(editor, spec.onDecorationClick, () => disposed, visibleRect);
   // All mounts (editor, trial, comparison) follow the app's theme and font scale.
   const observer = typeof MutationObserver === "function" && root ? new MutationObserver(() => {
     const next = hostAppearance(root);
@@ -429,12 +421,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
       const synthetic = range && marker(highlight?.marker === "option" ? "option" : "slot", "", 'strong', range);
       if (synthetic && markers.length < DECORATION_LIMIT) markers.push(synthetic);
       // 「데이터로 필드 찾기」 제안(#1156)은 띠가 켜진 동안 모든 표시 방식에서 선다 — 넘치면 보류·제안·문제 차례로 덜어 낸다.
-      const fitted = fitMarkers(markers, { ...proposalMarkers(sectionEntries, projection.proposals), problems: problemMarkers(sectionEntries, projection.problems) },
-        (kind, count) => {
-          if (capNoted.has(kind)) return;
-          capNoted.add(kind);
-          console.debug(`rhwp: ${count} ${kind} markers dropped (decoration cap ${DECORATION_LIMIT})`);
-        });
+      const fitted = decorations.fit(markers, sectionEntries, projection);
       // Template mode labels only the field under the caret or pointer (§3.2: labels never hide text);
       // structure mode labels every boundary. A preview range takes every label down.
       await editor.setDecorations(fitted, { labels: documentMode || range ? "none" : projection.mode === "structure" ? "all" : "selected" });
@@ -458,7 +445,7 @@ export async function mountRhwp(spec: RhwpMountSpec): Promise<RhwpHandle> {
     },
     dispose() {
       if (disposed) return;
-      disposed = true; window.clearInterval(timer); window.clearTimeout(refitTimer); cancelScheduled(); off(); offShortcut(); offMenu(); offPick();
+      disposed = true; window.clearInterval(timer); window.clearTimeout(refitTimer); cancelScheduled(); off(); offShortcut(); offMenu(); offPick(); decorations.off();
       observer?.disconnect(); resized?.disconnect();
       editor.destroy();
     },
