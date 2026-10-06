@@ -12,9 +12,10 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
-import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, lessonAction, pressFact } from "../../frontend/src/tutorial/panel.ts";
+import { TutorialCoach, TutorialLessons, TutorialPanel, TutorialSpot, featuredAction, featuredLesson, hudVisible, lessonAction } from "../../frontend/src/tutorial/panel.ts";
+import { closedFact, pressFact } from "../../frontend/src/tutorial/reports.ts";
 import { ANCHORS, SPAN_ANCHORS, anchorSelector } from "../../frontend/src/tutorial/anchors.ts";
-import { createRevealer, measureTarget, placeCoach, pressMissesTarget, spotFrame, visibleRect, watchBoxedPress, watchMissedPress } from "../../frontend/src/tutorial/spotlight.ts";
+import { createRevealer, measureTarget, placeCoach, pressMissesTarget, spotFrame, visibleRect, watchBoxedPress, watchMissedPress, watchTransientClose } from "../../frontend/src/tutorial/spotlight.ts";
 import { COACH_ANCHOR_WAIT, COACH_SWAP, COACH_SWAP_REDUCED, FINALE_COUNT_LAG, FINALE_LEAD, FINALE_STAGGER, SPOT_HOLD, SPOT_JUMP_FADE, countShown, createCoachSwap, createSpotHold, flyFrom, freshIds, playFinale } from "../../frontend/src/tutorial/motion.ts";
 
 const ids = ["first_hwpx", "change_apply", "contract_txt", "purchase_txt", "replace_data", "blank_values", "field_trial", "option_apply"];
@@ -381,6 +382,76 @@ test("only an activation of the boxed control is reported, never intercepted", (
   assert.equal(presses, 1, "elsewhere, dimmed and disabled presses are not presses of the boxed control");
   stop();
   assert.equal(listeners.length, 0);
+});
+
+test("a menu-item beat reports its menu closing unpressed, once; a pressed item's own close is not a report (#1149 review)", () => {
+  const beat = { id: "open_edit", title: "t", body: "b", mode: "action", screen: "editor", target: "menu-item", arg: "edit",
+    transient: true, press: false, placement: "right", can_next: false };
+  const live = { kind: "tutorial-lessons/v1", active: true, paused: false, scenario_id: "field_trial", checkpoint: 2, beat };
+  assert.deepEqual(closedFact(live, "editor"), { scenario_id: "field_trial", checkpoint: 2, anchor: "menu-item" });
+  assert.equal(closedFact({ ...live, paused: true }, "editor"), null, "paused guidance");
+  assert.equal(closedFact({ ...live, beat: { ...beat, transient: false } }, "editor"), null, "a beat outside a menu");
+  assert.equal(closedFact(live, "job"), null, "another screen");
+  assert.equal(pressFact(live, "editor"), null, "the item itself runs a product command");
+
+  const observers = [];
+  const frames = [];
+  const savedObserver = globalThis.MutationObserver;
+  globalThis.MutationObserver = class { constructor(fn) { this.fn = fn; this.on = true; observers.push(this); } observe() {} disconnect() { this.on = false; } };
+  try {
+    const item = () => ({ disabled: false, getAttribute: () => null, getBoundingClientRect: () => box(0, 0, 40, 20),
+      closest: () => null, contains(node) { return node === this; } });
+    let menu = [item()];
+    const listeners = [];
+    const doc = { body: {}, querySelector: () => menu[0] ?? null, querySelectorAll: () => menu,
+      defaultView: { requestAnimationFrame: (fn) => frames.push(fn), cancelAnimationFrame: () => {} },
+      addEventListener: (type, fn) => listeners.push(fn),
+      removeEventListener: (type, fn) => listeners.splice(listeners.indexOf(fn), 1) };
+    let closed = 0;
+    const mutate = () => observers.forEach((observer) => observer.on && observer.fn([]));
+
+    let stop = watchTransientClose(doc, "#menu-item", () => { closed += 1; });
+    frames.shift()();
+    assert.equal(closed, 0, "the open menu is the beat's precondition, holding");
+    menu = [];
+    mutate();
+    mutate();
+    assert.equal(closed, 1, "Escape or an outside press closed the menu: reported once");
+    stop();
+    assert.equal(listeners.length, 0);
+
+    menu = [item()];
+    closed = 0;
+    stop = watchTransientClose(doc, "#menu-item", () => { closed += 1; });
+    listeners[0]({ target: menu[0] });
+    menu = [];
+    mutate();
+    assert.equal(closed, 0, "the boxed item was pressed: its menu closing is that press's result");
+    menu = [item()];
+    mutate();
+    menu = [];
+    mutate();
+    assert.equal(closed, 1, "a reopened menu that closes again unpressed is reported");
+    stop();
+
+    menu = [];
+    closed = 0;
+    frames.length = 0;
+    stop = watchTransientClose(doc, "#menu-item", () => { closed += 1; });
+    frames.shift()();
+    assert.equal(closed, 1, "a beat arriving with its menu already gone is reported on the first frame");
+    stop();
+  } finally {
+    globalThis.MutationObserver = savedObserver;
+  }
+});
+
+test("the HUD waits for the snapshot that carries the toggle; a failed first pull leaves it shown (#1152 review)", () => {
+  assert.equal(hudVisible(null, false), false, "no flash before the first snapshot");
+  assert.equal(hudVisible(null, true), true, "the button is never lost to a failed pull");
+  assert.equal(hudVisible(snapshot({ entry: { visible: false } }), true), false, "the snapshot value wins once it arrives");
+  assert.equal(hudVisible(snapshot(), false), true);
+  assert.doesNotMatch(render(null), /id="tutorialOpen"/);
 });
 
 test("a press outside the ring nudges the coach without intercepting the press", () => {

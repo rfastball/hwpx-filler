@@ -195,6 +195,28 @@ export function watchBoxedPress(doc: Document, selector: string, onPress: () => 
   return () => doc.removeEventListener("click", listener, true);
 }
 
+/** Observe (never intercept) that the boxed control of a transient menu is gone without having been pressed —
+ *  Escape, a press elsewhere or another item closed its menu. Checked once a frame after start and on every DOM
+ *  change; reported at most once. A pressed control's menu closing is the press's own result — unless the menu
+ *  comes back (a new control node) and closes again. The host decides what that means for the beat (#1149 review). */
+export function watchTransientClose(doc: Document, selector: string, onClosed: () => void): () => void {
+  const view = doc.defaultView ?? window;
+  let pressed: Element | null = null;
+  let reported = false;
+  const check = () => {
+    const current = doc.querySelector(selector);
+    if (current && current !== pressed) pressed = null;
+    if (pressed || reported || current) return;
+    reported = true;
+    onClosed();
+  };
+  const stopPress = watchBoxedPress(doc, selector, () => { pressed = visibleElement(doc, selector); });
+  const observer = new MutationObserver(check);
+  observer.observe(doc.body, { childList: true, subtree: true });
+  const frame = view.requestAnimationFrame(check);
+  return () => { stopPress(); observer.disconnect(); view.cancelAnimationFrame(frame); };
+}
+
 function guideOwned(mutation: MutationRecord): boolean {
   return !!(mutation.target as Element).closest?.("#tutorialPanelRoot, #tutorialCoach, .tutorial-spot");
 }

@@ -106,7 +106,9 @@ export const TEMPLATES_ROOT_EMPTY_TEXT = "아직 읽지 못했습니다 — 폴�
 export type SettingsTutorialPort = {
   subscribe(listener: () => void): () => void;
   getSnapshot(): Obj | null;
+  /** 백엔드 실패는 거절로 돌아온다 — 체크박스는 스냅샷 값 그대로 남고 그 사유를 `notify`로 알린다. */
   setEntryVisible(visible: boolean): unknown;
+  notify(message: string): void;
 };
 
 /** 모달 DOM id — 여는 쪽(shell/app.ts)과 닫는 쪽(이 파일)이 같은 상수를 쓴다. */
@@ -375,6 +377,9 @@ export function SettingsSheetView(props: {
             id: "settingsTutorialEntry", type: "checkbox",
             "aria-labelledby": "settingsTutorialEntryLabel",
             checked: props.entryVisible,
-            onChange: () => { void tutorial.setEntryVisible(!props.entryVisible); },
+            onChange: () => {
+              void new Promise((resolve) => { resolve(tutorial.setEntryVisible(!props.entryVisible)); })
+                .catch((error) => tutorial.notify(String((error as Obj)?.message || error)));
+            },
           })))));
 }

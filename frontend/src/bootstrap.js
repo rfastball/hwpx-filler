@@ -574,7 +574,11 @@ export function bootProduct() {
             tutorial: {
               subscribe: (listener) => runtime.model("tutorial").subscribe(listener),
               getSnapshot: () => runtime.model("tutorial").getSnapshot(),
-              setEntryVisible: (visible) => client.dispatch("tutorial", "set_entry_visible", { visible }),
+              /* 실패는 HostResult 로 resolve 된다 — 값으로 풀어 거절로 바꿔야 면이 백엔드 사유를
+                 알린다(조용한 무변경 금지). */
+              setEntryVisible: (visible) => client.dispatch("tutorial", "set_entry_visible", { visible })
+                .then((result) => expectHostValue(result, "tutorial set_entry_visible")),
+              notify: (message) => window.alert(message),
             },
           }),
       ],

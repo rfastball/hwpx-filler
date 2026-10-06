@@ -6,7 +6,8 @@ import { icon } from "../screens/icons.ts";
 import { SPAN_ANCHORS, anchorSelector } from "./anchors.ts";
 import { FLY_SCALE, clockOf, countShown, createCoachSwap, createSpotHold, flyFrom, freshIds, playFinale, prefersReducedMotion } from "./motion.ts";
 import type { FinaleState, HeldSpot } from "./motion.ts";
-import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchBoxedPress, watchLayout, watchMissedPress } from "./spotlight.ts";
+import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchLayout, watchMissedPress } from "./spotlight.ts";
+import { beatReports, watchReport } from "./reports.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
 export type Lesson = {
@@ -18,6 +19,8 @@ export type Lesson = {
 export type TutorialBeat = {
   id: string; title: string; body: string; mode: "explain" | "action" | "finish";
   screen: string | null; entry_screen?: string | null; target: string | null; arg?: string; press?: boolean;
+  /** The boxed control lives in a transient menu: the surface reports it vanishing unpressed (#1149 review). */
+  transient?: boolean;
   placement: "top" | "right" | "bottom" | "left" | "center"; can_next: boolean;
   /** Range beats (`authoring-range`): the text range the host resolved; the template editor paints it. */
   range?: { session_id: string; start: number; end: number } | null;
@@ -322,24 +325,15 @@ function useAnchorBox(doc: Document, root: Element | null, selector: string | nu
   return found;
 }
 
-/** The fact a press beat reports, or null: only a live action beat marked `press`, on its own screen. */
-export function pressFact(snapshot: TutorialSnapshot | null, screen: string | null): Record<string, unknown> | null {
-  const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
-  if (!beat || beat.mode !== "action" || beat.press !== true || !beat.target) return null;
-  if (beat.screen !== null && beat.screen !== screen) return null;
-  return { scenario_id: snapshot!.scenario_id, checkpoint: snapshot!.checkpoint, anchor: beat.target };
-}
-
-/** Report a press on the current beat's own boxed control (a press that runs no product command). The report
- *  carries only the fact — lesson, position and anchor — and the host decides whether the beat is done. */
+/** Report the current beat's UI facts — a press that runs no product command, or its menu closing unpressed. A
+ *  report carries only lesson, position and anchor; the host decides what it means (`reports.ts`). */
 function usePressReport(ports: TutorialPorts, snapshot: TutorialSnapshot | null, screen: string | null, beatSelector: string | null): void {
-  const fact = pressFact(snapshot, screen);
-  const key = fact && beatSelector ? `${fact.scenario_id}|${fact.checkpoint}|${beatSelector}` : "";
+  const reports = beatReports(snapshot, screen);
+  const key = reports.map(([action, fact]) => fact && beatSelector ? `${action}|${fact.scenario_id}|${fact.checkpoint}|${beatSelector}` : "").join(",");
   useEffect(() => {
-    if (!fact || !beatSelector) return undefined;
-    return watchBoxedPress(ports.doc, beatSelector, () => {
-      void Promise.resolve(ports.dispatch("observe_ui", fact)).catch((error) => ports.alarm(String(error)));
-    });
+    if (!beatSelector) return undefined;
+    const stops = reports.flatMap(([action, fact, watch]) => fact ? [watchReport(ports, beatSelector, action, fact, watch)] : []);
+    return () => stops.forEach((stop) => stop());
   }, [ports, key]);
 }
 
@@ -432,11 +426,26 @@ function TutorialHud(props: HudProps): ReactNode {
 }
 
 /** 설정의 「튜토리얼 버튼 표시」 토글(#1147) — HUD·열린 패널을 백엔드가 낸 최종값
- *  그대로 따른다(연습 중이면 토글과 무관하게 true). 여기서 다시 판정하지 않는다. */
-function useHudVisible(snapshot: TutorialSnapshot | null, close: () => void): boolean {
-  const visible = snapshot?.entry?.visible !== false;
+ *  그대로 따른다(연습 중이면 토글과 무관하게 true). 여기서 다시 판정하지 않는다.
+ *  값을 실은 첫 스냅샷 전에는 서지 않는다 — 꺼 둔 버튼이 부팅마다 잠깐 비치지 않게(#1152 리뷰). 첫 당김이
+ *  실패하면 서 있는다: 백엔드의 기본값(표시)과 같고, 버튼을 잃으면 다시 켤 길이 설정뿐이다. */
+export function hudVisible(snapshot: TutorialSnapshot | null, initialFailed: boolean): boolean {
+  return snapshot ? snapshot.entry?.visible !== false : initialFailed;
+}
+
+function useHudVisible(snapshot: TutorialSnapshot | null, initialFailed: boolean, close: () => void): boolean {
+  const visible = hudVisible(snapshot, initialFailed);
   useEffect(() => { if (!visible) close(); }, [visible]);
   return visible;
+}
+
+/** The first pull of the tutorial snapshot; true once it failed (the failure itself is alarmed). */
+function useInitialFailed(ports: TutorialPorts): boolean {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    void ports.loadInitial().catch((error) => { setFailed(true); ports.alarm(String(error)); });
+  }, [ports]);
+  return failed;
 }
 
 /** 열린 과정 목록 패널을 그릴지 — HUD 숨김(#1147)·초대 카드·overlay 점유를 한데 묻는다. */
@@ -454,7 +463,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const [pending, setPending] = useState(false);
   const [resultDismissed, setResultDismissed] = useState(false);
 
-  useEffect(() => { void ports.loadInitial().catch((error) => ports.alarm(String(error))); }, [ports]);
+  const initialFailed = useInitialFailed(ports);
 
   const act = useCallback(async (action: string, payload?: Record<string, unknown>) => {
     if (pending) return false;
@@ -468,7 +477,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     finally { setPending(false); }
   }, [pending, ports]);
 
-  const hudVisible = useHudVisible(snapshot, () => setOpen(false));
+  const hudShown = useHudVisible(snapshot, initialFailed, () => setOpen(false));
 
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
   const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
@@ -530,10 +539,10 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
 
   return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
-    hudVisible
+    hudShown
       ? (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry)
       : null,
-    lessonsPanelOpen(hudVisible, open, snapshot, overlayBusy) ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+    lessonsPanelOpen(hudShown, open, snapshot, overlayBusy) ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
       onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
       } },

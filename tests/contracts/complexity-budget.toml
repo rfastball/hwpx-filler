@@ -1233,14 +1233,8 @@ function_complexity = 14
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
 class_methods = 34
 
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._dispatch"]
-function_complexity = 11
-
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
 function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._preflight"]
-function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
 function_complexity = 13
