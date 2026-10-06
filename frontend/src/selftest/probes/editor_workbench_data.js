@@ -2838,14 +2838,18 @@ export function createEditorWorkbenchDataProbes() {
           /* 상태 동사는 행 안 버튼이 아니라 ⋯ 메뉴가 든다(고르기 열과 같은 어포던스).
              실클릭으로 열어 그 목록을 되읽는다 — 목록을 짓는 자리와 여는 자리가 갈리면
              메뉴에 항목을 더하고 배선을 잊은 날이 조용히 지나간다. */
-          /* 열림·닫힘은 한 turn 양보가 아니라 **메뉴 항목이 서고 걷힐 때까지** 기다린다 — 팝오버
-             커밋이 다음 turn 을 넘기면 빈 목록을 읽거나 앞 행의 닫힘이 다음 행 열림과 겹친다.
-             닫힌 메뉴는 DOM 에서 빠지므로(ContextMenu 가 null) 앞 행 항목을 다음 행으로 읽지 않는다. */
+          /* 모달 입장 전이(opacity·transform)가 끝난 뒤에 ⋯ 를 연다 — 전이 중에 연 메뉴는 첫 항목
+             초점이 조상 스크롤을 일으키고, 공용 Popover 의 바깥 scroll 닫힘이 그 메뉴를 곧바로 걷는다
+             (첫 행 메뉴가 빈 목록으로 읽히던 간헐 실패의 원인). 열림·닫힘도 한 turn 양보가 아니라
+             **메뉴 항목이 서고 걷힐 때까지** 기다린다. 닫힌 메뉴는 DOM 에서 빠지므로(ContextMenu 가
+             null) 앞 행 항목을 다음 행으로 읽지 않는다. */
+          await waitFor(ctx, () => !byId(ctx, "dataPickerModal").querySelector(".modal-card")
+            .getAnimations({ subtree: true }).some((animation) => animation.playState === "running"), 50, 20);
           const rowMenu = async (key) => {
             const items = () => ctx.doc.querySelectorAll("#dataPickerRowMenu button");
             host.querySelector(`.job-more[data-key="${key}"]`).click();
-            await waitFor(ctx, () => items().length > 0, 50, 20);
-            const labels = Array.prototype.map.call(items(), (b) => textOf(b));
+            const labels = await waitFor(ctx, () => items().length > 0, 50, 20)
+              ? Array.prototype.map.call(items(), (b) => textOf(b)) : [];
             host.querySelector(`.job-more[data-key="${key}"]`).click();  // 같은 트리거 = 닫기
             await waitFor(ctx, () => items().length === 0, 50, 20);
             return labels;
