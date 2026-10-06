@@ -46,7 +46,6 @@ from ..domain.dataset_reference import (
     reference_identity,
     reference_sheets,
 )
-from ..domain.pclm_views import default_pclm_db
 from .nara_acquire import validate_range
 
 
@@ -265,15 +264,18 @@ def reference_missing(path: str) -> bool:
 
 
 def resolve_pclm_db(db: str) -> str:
-    """계약 목록 DB 경로 해석 — 빈 값이면 **기본 자리**, 있으면 절대경로.
+    """계약 목록 DB 경로 해석 — 사용자가 적은 자리의 절대경로. 빈 값은 거절한다.
 
     등록(:meth:`DatasetPoolViewModel.register_pclm`)과 그 전 중복 조회가 **같은 자리**를
-    봐야 한다. 두 곳이 각자 빈 값을 해석하면 조회는 기본 자리를, 등록은 빈 문자열을 보고
-    같은 데이터가 2건이 된다. 존재 검사는 하지 않는다 — 참조 등록은 파일을 열지 않고,
-    끊김은 배지(:func:`reference_missing`)와 실행 시점 재읽기가 말한다(``register_excel``
-    과 같은 규율).
+    봐야 한다. 두 곳이 각자 상대경로를 해석하면 같은 데이터가 2건이 된다. 빈 값을 다른
+    프로그램의 설치 자리로 추측하지 않는다 — 그 추측은 외부 프로그램의 배치에 기대는
+    조용한 기본값이라 걷혔다(자리는 사용자가 고른 것뿐이다). 존재 검사는 하지 않는다 —
+    참조 등록은 파일을 열지 않고, 끊김은 배지(:func:`reference_missing`)와 실행 시점
+    재읽기가 말한다(``register_excel`` 과 같은 규율).
     """
-    return os.path.abspath(db) if db else str(default_pclm_db())
+    if not db:
+        raise ValueError("파일 경로가 비어 있습니다.")
+    return os.path.abspath(db)
 
 
 def reference_summary(item: DatasetReference) -> str:
@@ -371,7 +373,14 @@ class DatasetPoolRow:
 
     @property
     def missing(self) -> bool:
-        """이 참조가 가리키는 파일이 자리에 없는가(:func:`reference_missing` 위임)."""
+        """이 참조가 가리키는 파일이 자리에 없는가(:func:`reference_missing` 위임).
+
+        자리가 빈 계약 목록 참조도 끊김이다: 그 종류는 DB 파일 없이는 가리킬 것이 없고,
+        빈 자리를 다른 프로그램의 설치 자리로 추측하던 기본값은 걷혔다(구판 항목이 남긴
+        빈 ``db`` 가 조용히 다른 DB 를 읽지 않게).
+        """
+        if self.kind == "pclm" and not self.locate_path:
+            return True
         return reference_missing(self.locate_path)
 
     def select_block_reason(self) -> str:
@@ -749,15 +758,14 @@ class DatasetPoolViewModel:
         return item
 
     def register_pclm(
-        self, name: str, db: str = "", *, view: str, sheets: "Sequence[str]",
+        self, name: str, db: str, *, view: str, sheets: "Sequence[str]",
         note: str = "", selected_sheets: "list[str] | None" = None,
     ) -> DatasetReference:
         """계약 목록(pclm) 참조 등록 — **DB 경로 + 뷰만** 저장(스냅샷 아님, 실행 때 재읽기).
 
-        ``opts`` 는 **항상 두 키를 채운다**: 빈 ``db`` 는 「기본 자리」라는 뜻이지 「자리
-        미상」이 아니므로 등록 시점에 :func:`resolve_pclm_db` 로 해석해 박는다 — 미기재로
-        두면 나중에 기본 자리가 바뀌었을 때 같은 항목이 조용히 다른 DB 를 가리키고,
-        정체성(같은 데이터인가)도 지어지지 않아 중복 판정이 통째로 죽는다.
+        ``opts`` 는 **항상 두 키를 채운다**: ``db`` 는 사용자가 고른 자리를
+        :func:`resolve_pclm_db` 로 절대경로화해 박고, 빈 값은 그 함수가 거절한다 — 자리
+        없는 참조는 정체성(같은 데이터인가)이 지어지지 않아 중복 판정이 통째로 죽는다.
 
         시트는 여기서 검증한다(등록 시점 확정): ``sheets`` 는 **그 DB 가 실제로 가진**
         시트 목록이다 — 호출자(링2 컨트롤러)가 어댑터

@@ -13,7 +13,7 @@ import type { PoolColumnHost } from "./pool_column.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
-  PCLM_UNAVAILABLE, POOL_DATA_GONE, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
+  POOL_DATA_GONE, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
   poolHeadSub, poolRefusalText,
 } from "./pool_verbs.ts";
 
@@ -232,7 +232,7 @@ export function createDataPickerController(args: {
       sheet: options.sheet || "",
       sheets: options.sheets ?? (initialSheet?.trim() ? [initialSheet.trim()] : []),
       availableSheets: [], inspectedPath: "", inspecting: false, submitting: false,
-      db: options.db ?? (options.mode === "pclm" ? String(poolModel.getSnapshot()?.pclm?.default_db || "") : ""),
+      db: options.db || "",
       view: options.view || "",
       note: options.note || "",
       targetKey: options.targetKey || "",
@@ -240,7 +240,8 @@ export function createDataPickerController(args: {
       error: "",
     };
     emitReg();
-    const focusId = reg.mode === "pclm" || options.pinMode ? "poolRegName" : "poolRegPath";
+    /* 첫 빈 좌표에 선다 — 엑셀은 파일 경로, 계약 목록은 DB 자리(기본 자리 프리필은 걷혔다). */
+    const focusId = options.pinMode ? "poolRegName" : reg.mode === "pclm" ? "poolRegDb" : "poolRegPath";
     modal.open("poolRegModal", { initialFocus: args.doc.getElementById(focusId) });
     void inspectRegSheets();
   }
@@ -295,17 +296,11 @@ export function createDataPickerController(args: {
     });
   }
 
-  /* 계약 목록 등록 — 물어야 할 두 좌표(기본 DB 자리·그 DB 의 시트)는 **스냅샷이 준다**.
-     웹이 시트 목록이나 기본 경로를 리터럴로 들면 DB 의 시트가 바뀔 때 한쪽만 늙는다.
-     블록이 아직 없으면 열지 않고 사유를 말한다(조용한 무반응 금지) — 버튼도 같은
-     판정으로 비활성이라 정상 경로에서는 여기 닿지 않는다. */
+  /* 계약 목록 등록 — DB 자리는 사용자가 적고, 그 DB 의 시트는 백엔드가 그 자리에서
+     나열한다(`inspect_sheets`). 다른 프로그램의 설치 자리를 기본으로 채우던 프리필은
+     걷혔다 — 웹은 경로도 시트 목록도 리터럴로 들지 않는다. */
   function openPclm(): void {
-    const block = poolModel.getSnapshot()?.pclm;
-    if (!block) { patch({ status: `⚠ ${PCLM_UNAVAILABLE}`, level: "danger" }); return; }
-    openRegDialog({
-      title: "계약 목록 등록", okLabel: "등록", mode: "pclm",
-      db: String(block.default_db || ""), view: "",
-    });
+    openRegDialog({ title: "계약 목록 등록", okLabel: "등록", mode: "pclm", db: "", view: "" });
   }
 
   async function submitReg(): Promise<void> {
@@ -619,14 +614,11 @@ function dialogHost(
         className: "btn sm", id: "dataPickerBrowse", "data-busy-lock": true, key: "browse",
         onClick: () => { void controller.browseFile(); },
       }, "파일 찾아보기…"),
-      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937). 스냅샷이 그
-         둘을 아직 안 실었으면 숨기지 않고 비활성 + 사유 병기 — 죽은 버튼을 조용히 두면
-         「눌러도 아무 일 없음」이 결함으로 읽힌다. 라벨의 괄호는 **확장자**다: 저쪽
-         프로그램 이름(pclm)은 이 제품의 표면 어휘가 아니라 표면에 세우지 않는다. */
+      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937) — 두 좌표 모두 폼이
+         묻고 스냅샷이 미리 실을 것이 없으므로 진입은 늘 열려 있다. 라벨의 괄호는 **확장자**다:
+         저쪽 프로그램 이름(pclm)은 이 제품의 표면 어휘가 아니라 표면에 세우지 않는다. */
       h("button", {
         className: "btn sm", id: "dataPickerPclm", "data-busy-lock": true, key: "pclm",
-        disabled: !controller.poolModel.getSnapshot()?.pclm,
-        title: controller.poolModel.getSnapshot()?.pclm ? "" : PCLM_UNAVAILABLE,
         onClick: controller.openPclm,
       }, "계약 목록(.db) 등록…"),
       /* 「이 데이터 등록…」은 **고정할 것이 있고 아직 고정되지 않았을 때만** 선다: 풀에서

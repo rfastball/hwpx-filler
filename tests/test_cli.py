@@ -555,21 +555,15 @@ def test_pclm_fills_documents_from_a_view(tmp_path, capsys):
     assert db in err and "v_통합_v1" in err and "1건" in err  # 어디서 몇 건인지 재진술
 
 
-def test_pclm_default_db_is_resolved_and_said(tmp_path, capsys, monkeypatch):
-    """--db 생략은 기본 자리로 가되 그 실경로를 말한다 — 어느 DB 를 읽었는지 조용하지 않다."""
-    local = tmp_path / "Local"
-    (local / "Pclm").mkdir(parents=True)
-    monkeypatch.setenv("LOCALAPPDATA", str(local))
-    # 기본 자리 해석은 이제 %APPDATA% 의 쪽지(config.json)도 본다 — 개발 기기의 실제
-    # 쪽지가 새어들면 이 테스트가 다른 DB 를 읽는다(홈 격리와 같은 근거).
-    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
-    db = _pclm_db(local / "Pclm" / "pclm.db")
+def test_pclm_requires_an_explicit_db(tmp_path, capsys):
+    """--db 생략은 loud 실패 — 다른 프로그램의 설치 자리를 기본으로 추측하지 않는다."""
     out = tmp_path / "out"
-
-    rc = main(["--template", TEMPLATE, "--source", "pclm", "--view", "v_통합_v1",
-               "--out", str(out), "--pattern", "공고-{{입찰공고번호}}"])
-    assert rc == 0
-    assert db in capsys.readouterr().err
+    with pytest.raises(SystemExit) as caught:
+        main(["--template", TEMPLATE, "--source", "pclm", "--view", "v_통합_v1",
+              "--out", str(out), "--pattern", "공고-{{입찰공고번호}}"])
+    assert caught.value.code == 2
+    assert "--source pclm 에는 --db 가 필요합니다" in capsys.readouterr().err
+    assert not out.exists()  # 조용한 생성 없음
 
 
 def test_pclm_ledger_source_is_a_pointer(tmp_path):

@@ -1588,7 +1588,6 @@ function tplBase(overrides) {
 function poolBase(rows, extra) {
   const list = rows || [];
   return {
-    pclm: { default_db: "C:/d/pclm.db", views: [] },
     /* 항목 상세 존(고르기 열 공용 ④) — 검토 전에는 `null` 이 정상이다. */
     detail: (extra || {}).detail || null,
     column: {
@@ -2820,17 +2819,6 @@ export function createEditorWorkbenchDataProbes() {
               ],
               empty_hint: "", count_label: "3개", result: { text: "", level: "muted" },
             },
-            /* 등록 폼이 물어야 할 좌표 — 실 백엔드 `_pclm_block` 과 같은 모양. `views` 는
-               기본 DB 를 실제로 나열한 시트다(뷰 먼저, 다음 표 — 고정 허용목록·제목표는
-               사용자 결정 2026-09-30 으로 걷혔다). 항목은 시트 이름 하나다. */
-            pclm: {
-              default_db: "C:/AppData/Local/Pclm/pclm.db",
-              views: [
-                { name: "v_통합_v2" },
-                { name: "v_접수_v1" },
-                { name: "계약" },
-              ],
-            },
             detail: null,
           });
           await ctx.sleep(0);                      // pool external-store → portal DOM 커밋
@@ -2894,19 +2882,29 @@ export function createEditorWorkbenchDataProbes() {
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
           /* 계약 목록 등록 진입 — 파일 피커가 없는 종류라 전용 동사가 「다른 데이터」에 선다.
-             가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 기본 DB
-             자리를 프리필하고 **미선택 시트 목록** 을 세운다(시트는 사용자
-             확정). 라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
+             가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 DB 자리를
+             **비운 채** 열리고(다른 프로그램의 설치 자리를 추측하지 않는다), 사용자가 적은
+             자리를 백엔드가 나열하면 **미선택 시트 목록** 을 세운다(시트는 사용자 확정).
+             라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
           const pclmEntry = byId(ctx, "dataPickerPclm");
           out.pclm_entry = !!pclmEntry && !isHidden(ctx, pclmEntry)
             && pclmEntry.offsetParent !== null && !pclmEntry.disabled;
           out.pclm_entry_text = textOf(pclmEntry);
           pclmEntry.click();
           await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
+          const dbInput = byId(ctx, "poolRegDb");
+          const sheetList = () => Array.from(
+            byId(ctx, "poolRegView").querySelectorAll(".pool-reg-sheet-list input"));
+          out.pclm_reg_db_prefill = dbInput.value;
+          out.pclm_reg_no_sheets_before_db = sheetList().length === 0;
+          /* 사용자가 DB 자리를 적고 칸을 떠나면 그 자리에서 시트를 나열한다(위 inspect 대역). */
+          dbInput.focus();
+          typeValue(ctx, dbInput, "C:/d/pclm.db");
+          dbInput.blur();
+          for (let i = 0; i < 50 && sheetList().length === 0; i += 1) await ctx.sleep(10);
           const viewSelect = byId(ctx, "poolRegView");
-          const sheetInputs = Array.from(viewSelect.querySelectorAll(".pool-reg-sheet-list input"));
+          const sheetInputs = sheetList();
           out.pclm_reg_view_options = sheetInputs.length;
-          out.pclm_reg_db_prefill = byId(ctx, "poolRegDb").value;
           out.pclm_reg_view_text = sheetInputs.map((input) => textOf(input.nextElementSibling)).join("|");
           out.pclm_reg_view_label = textOf(viewSelect.querySelector("legend"));
           out.pclm_reg_initial_empty = sheetInputs.every((input) => !input.checked)

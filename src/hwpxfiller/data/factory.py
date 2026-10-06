@@ -36,7 +36,7 @@ def make_source(kind: str, **opts) -> DataSource:
     - ``"excel"``     — ``path=`` (+ 선택 ``sheet``/``header_row``)
     - ``"inline"``    — ``records=[dict...]`` (수기 1건 등 파일 없는 메모리 레코드, UD-25)
     - ``"nara"``      — ``service_key=``·``bgn_dt=``·``end_dt=`` … (조달청 표준 취득)
-    - ``"pclm"``      — ``db=``(생략 시 기본 자리)·``view=`` (SQLite DB 의 시트 = 뷰 또는 표)
+    - ``"pclm"``      — ``db=``(필수 — 비면 거절)·``view=`` (SQLite DB 의 시트 = 뷰 또는 표)
     - ``"pipeline"``  — ``sources=[DataSource...]``·``steps=[<recipe>...]`` (조립 파이프라인)
 
     ``"pipeline"`` 은 **이미 만들어진** ``DataSource`` 목록을 받는다 — 참조(kind+opts)로부터
@@ -58,6 +58,8 @@ def make_source(kind: str, **opts) -> DataSource:
         from .pclm import PclmDataSource
 
         opts.pop("sheets", None)
+        # 자리 키가 빠진 구판 참조도 빈 자리와 같은 거절을 지난다(기본 자리 추측 없음).
+        opts.setdefault("db", "")
         return PclmDataSource(**opts)
     if kind == "pipeline":
         from .pipeline import PipelineSource

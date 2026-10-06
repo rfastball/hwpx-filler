@@ -41,8 +41,8 @@ loud 재진술한다(판정·수치는 Application·어댑터, 문안·확인 UI
 nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register_nara`` 는 보존, 배선만 유보).
 **계약 목록(pclm) 은 동결이 아니다**(ADR N): 나라 동결의 근거는 실 API·비밀값이었고 pclm 은
 네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
-소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **스냅샷**(등록 폼이 물어야
-할 기본 DB 자리와 고르게 할 시트)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
+소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **시트 나열**(사용자가 적은
+DB 자리의 시트 — ``inspect_sheets``)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
 둘은 폼(``#dataPickerPclm`` → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
 (``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 링1
@@ -67,7 +67,6 @@ from ..application.dataset_pool import (
 from ..data.excel import ambiguous_sheet_error, sheet_overview
 from ..data.pclm import list_sqlite_sheets  # 계약 목록 DB 의 시트 나열(등록 폼·게이트 공용)
 from ..domain.dataset_reference import DatasetReference, pclm_identity, reference_sheets
-from ..domain.pclm_views import default_pclm_db
 from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
 from .screens import PushSink
 
@@ -186,35 +185,8 @@ class PoolController:
             })
         return notices
 
-    def _pclm_block(self) -> dict:
-        """계약 목록 등록 폼이 물어야 할 것 — 기본 DB 자리와 **그 DB 의 시트**.
-
-        시트 목록은 하드코딩이 아니라 **기본 자리의 DB 를 실제로 나열한 것**이다
-        (:func:`~hwpxfiller.data.pclm.list_sqlite_sheets` — 뷰 먼저, 다음 표). 고정 허용목록은
-        사용자 결정(2026-09-30)으로 걷혔다: DB 를 엑셀 통합문서처럼 열고, 시트 이름은 그 DB 가
-        가진 이름 그대로 보인다. 웹은 목록을 리터럴로 들지 않고 옮기기만 한다.
-
-        파일이 없거나 읽을 수 없으면 ``views`` 는 빈 목록이다 — 폼은 그대로 열리고, 등록을
-        누르면 게이트(:meth:`_do_register_pclm`)가 그 파일 문제를 기존 문장으로 재진술한다.
-        스냅샷이 그 사유를 따로 들지 않는 것은 판정 자리를 하나로 두기 위해서다. 사용자가 DB
-        자리를 바꿔 적으면 목록은 기본 자리의 것 그대로지만, 등록의 진실은 그 게이트가
-        **적힌 자리의 DB** 로 다시 판정한다.
-
-        나열은 스냅샷 시점(부팅·풀 동작 뒤) 한 번이다 — 렌더마다가 아니라 사건마다 지불한다.
-        """
-        default_db = default_pclm_db()
-        try:
-            sheets = list_sqlite_sheets(default_db)
-        except (OSError, RuntimeError):  # 부재·열기 실패 — 폼은 열고 판정은 등록 게이트가
-            sheets = []
-        return {
-            "default_db": str(default_db),
-            "views": [{"name": sheet} for sheet in sheets],
-        }
-
     def snapshot(self) -> dict:
         return {
-            "pclm": self._pclm_block(),
             # 항목 상세 시트의 재료 한 벌(고르기 열 공용 ④) — `review` 가 세우고 상태 동사가
             # 다시 세운다. 좌 열(`tpl.detail`)과 **같은 자리·같은 수명**이다.
             "detail": self.detail_snapshot(),
@@ -536,18 +508,19 @@ class PoolController:
         않는 정체성 판(:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.
         relabel_confirmed_raw`)을 쓴다(결속 규율 자체는 한 벌이다).
 
-        빈 ``db`` 는 「기본 자리」라는 뜻이라 조회 **전에** 해석한다
+        ``db`` 는 조회 **전에** 절대경로로 해석한다
         (:func:`~hwpxfiller.application.dataset_pool.resolve_pclm_db`) — 조회와 등록이 다른
-        자리를 보면 같은 데이터가 2건이 된다. 시트 검증은 링1 이 소유하고 여기는 그 거절을
+        자리를 보면 같은 데이터가 2건이 된다. 빈 ``db`` 는 그 해석이 거절하고 여기는 그
+        거절을 재진술한다(다른 프로그램의 설치 자리를 추측하지 않는다). 시트 검증은 링1 이 소유하고 여기는 그 거절을
         재진술만 한다(다중 시트 게이트가 엑셀 등록에 서는 자리의 대응물). 링1 이 파일을 열 수
         없으므로 **그 DB 가 실제로 가진 시트 목록**은 여기서 어댑터로 읽어 넘긴다 — 파일 부재·
         열기 실패는 어댑터의 문장 그대로 재진술한다(목록 없이 등록하면 죽은 참조가 선다).
         """
         name = (p.get("name") or "").strip()
-        db = resolve_pclm_db(str(p.get("db") or ""))
         view = str(p.get("view") or "")
         note = p.get("note") or ""
         try:
+            db = resolve_pclm_db(str(p.get("db") or ""))
             selected_sheets = p.get("views")
             available_sheets = None
             if "views" in p:
@@ -632,7 +605,7 @@ class PoolController:
                 )
         except FileNotFoundError:
             return self._stale_item_result(name)
-        except ValueError as exc:  # 빈 이름·DB 에 없는 시트·정체성 중복 백스톱 — 사용자 문구로
+        except ValueError as exc:  # 빈 이름·빈 DB 자리·DB 에 없는 시트·정체성 중복 백스톱 — 사용자 문구로
             self._set_result(str(exc), "danger")
             return {"ok": False, "error": str(exc)}
         except OSError as exc:

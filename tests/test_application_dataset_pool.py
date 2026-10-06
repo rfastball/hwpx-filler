@@ -285,23 +285,24 @@ def test_lifecycle_and_identity_reject_hold_for_both_ports(registry):
     assert vm.is_empty()
 
 
-def test_register_pclm_always_stores_both_opts_and_resolves_the_default_db(
-    registry, monkeypatch, tmp_path
-):
-    """계약 목록 등록은 db·뷰 **두 키를 항상** 채운다 — 빈 db = 「기본 자리」의 해석.
+def test_register_pclm_always_stores_both_opts_and_refuses_an_empty_db(registry, tmp_path):
+    """계약 목록 등록은 db·뷰 **두 키를 항상** 채운다 — 빈 db 는 추측하지 않고 거절한다.
 
-    미기재로 두면 정체성이 지어지지 않아 중복 판정이 통째로 죽고, 나중에 기본 자리가
-    바뀌면 같은 항목이 조용히 다른 DB 를 가리킨다.
+    빈 자리를 다른 프로그램의 설치 자리로 해석하던 기본값은 걷혔다: 자리는 사용자가
+    고른 것뿐이고, 미기재로 두면 정체성이 지어지지 않아 중복 판정이 통째로 죽는다.
     """
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData" / "Local"))
-    # 기본 자리 해석은 %APPDATA% 쪽지(config.json)도 본다 — 개발 기기의 실제 쪽지 격리.
-    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
     vm = _vm(registry)
 
-    item = vm.register_pclm("계약 목록", view="v_통합_v1", sheets=SHEETS, note="기본 자리")
+    with pytest.raises(ValueError, match="파일 경로가 비어 있습니다"):
+        vm.register_pclm("계약 목록", "", view="v_통합_v1", sheets=SHEETS)
+    assert vm.is_empty()
+
+    item = vm.register_pclm(
+        "계약 목록", str(tmp_path / "pclm.db"), view="v_통합_v1", sheets=SHEETS
+    )
     assert item.kind == "pclm"
     assert set(item.opts) == {"db", "view"}
-    assert item.opts["db"] == str(tmp_path / "AppData" / "Local" / "Pclm" / "pclm.db")
+    assert item.opts["db"] == str(tmp_path / "pclm.db")
     assert item.opts["view"] == "v_통합_v1"
     assert vm.find_same_pclm(str(item.opts["db"]), "v_통합_v1") is not None
 

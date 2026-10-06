@@ -92,7 +92,6 @@ function poolSnap(rows, extra) {
   delete opts.notices;
   delete opts.result;
   const snapshot = Object.assign({
-    pclm: { default_db: "C:/d/pclm.db", views: [] },
     detail: null,
   }, opts);
   if (snapshot.column === undefined) {

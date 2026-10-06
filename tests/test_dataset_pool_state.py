@@ -335,6 +335,14 @@ def test_select_block_reason_admits_pclm_and_speaks_its_own_broken_line(tmp_path
     assert "계약 목록 DB 파일" in reason      # 엑셀 전용 동사(「다시 연결」)를 지시하지 않는다
     assert "다시 연결" not in reason
 
+    # 자리가 빈 구판 계약 목록 참조도 끊김이다 — 다른 프로그램의 설치 자리로 추측하지 않는다.
+    for opts in ({"db": "", "view": "v"}, {"view": "v"}):
+        placeless = DatasetPoolRow.from_item(
+            "k4", DatasetReference(name="자리 없음", kind="pclm", opts=opts)
+        )
+        assert placeless.missing is True
+        assert placeless.select_block_reason() == reason
+
     frozen = DatasetPoolRow.from_item(
         "k3", DatasetReference(name="나라", kind="nara", opts={})
     )

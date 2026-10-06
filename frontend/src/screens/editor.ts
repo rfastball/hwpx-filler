@@ -9,7 +9,7 @@ import { invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
 import { SliceCell } from "./slice_popover.ts";
 import {
-  PCLM_UNAVAILABLE, ROW_DETAIL_LABEL, mergeSessionRow, poolHeadSub,
+  ROW_DETAIL_LABEL, mergeSessionRow, poolHeadSub,
 } from "./pool_verbs.ts";
 import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
@@ -274,12 +274,10 @@ function DataPool(props: {
         className: "btn sm", id: "editorPoolBrowse", "data-busy-lock": true, key: "browse",
         onClick: () => controller.guarded(() => controller.pickData()),
       }, "파일 찾아보기…"),
-      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937). 스냅샷이 그
-         둘을 아직 안 실었으면 숨기지 않고 비활성 + 사유 병기 — 죽은 버튼을 조용히 두면
-         「눌러도 아무 일 없음」이 결함으로 읽힌다. */
+      /* 계약 목록은 파일 피커가 아니라 **DB 자리 + 시트**로 겨눈다(#937) — 두 좌표 모두 폼이
+         묻고 스냅샷이 미리 실을 것이 없으므로 진입은 늘 열려 있다. */
       h("button", {
         className: "btn sm", id: "editorPoolPclm", "data-busy-lock": true, key: "pclm",
-        disabled: !(pool || {}).pclm, title: (pool || {}).pclm ? "" : PCLM_UNAVAILABLE,
         onClick: () => controller.openPclm(),
       }, "계약 목록(.db) 등록…"),
       /* 「이 데이터 고정…」은 **고정할 것이 있을 때만** 선다 — 풀에서 고른 데이터는 이미
