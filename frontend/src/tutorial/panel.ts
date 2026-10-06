@@ -7,7 +7,7 @@ import { SPAN_ANCHORS, anchorSelector } from "./anchors.ts";
 import { FLY_SCALE, clockOf, countShown, createCoachSwap, createSpotHold, flyFrom, freshIds, playFinale, prefersReducedMotion } from "./motion.ts";
 import type { FinaleState, HeldSpot } from "./motion.ts";
 import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchLayout, watchMissedPress } from "./spotlight.ts";
-import { usePressReport } from "./reports.ts";
+import { beatReports, watchReport } from "./reports.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
 
 export type Lesson = {
@@ -323,6 +323,18 @@ function useAnchorBox(doc: Document, root: Element | null, selector: string | nu
     return watchLayout(doc, measure);
   }, [doc, root, selector, key, reveal, span, ...deps]);
   return found;
+}
+
+/** Report the current beat's UI facts — a press that runs no product command, or its menu closing unpressed. A
+ *  report carries only lesson, position and anchor; the host decides what it means (`reports.ts`). */
+function usePressReport(ports: TutorialPorts, snapshot: TutorialSnapshot | null, screen: string | null, beatSelector: string | null): void {
+  const reports = beatReports(snapshot, screen);
+  const key = reports.map(([action, fact]) => fact && beatSelector ? `${action}|${fact.scenario_id}|${fact.checkpoint}|${beatSelector}` : "").join(",");
+  useEffect(() => {
+    if (!beatSelector) return undefined;
+    const stops = reports.flatMap(([action, fact, watch]) => fact ? [watchReport(ports, beatSelector, action, fact, watch)] : []);
+    return () => stops.forEach((stop) => stop());
+  }, [ports, key]);
 }
 
 /** A painted text range (#1136) is one element per line: the live beat's box is then their union. */
