@@ -217,7 +217,7 @@ id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/artifact_view_session.py", "src/hwpxfiller/webapp/job_execution_session.py", "src/hwpxfiller/webapp/txt_materialization.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py"]
 tests = ["tests/test_webapp_job_artifact_view.py", "tests/test_txt_materialization.py"]
-source_sha256 = "1434816e63182a4eac8c93a4dcdd268335cc62b7919a97bb8e09c247b22f163e"
+source_sha256 = "02b335fa74566e909b5103da4ab4e3441653571ede839828a8ef3f918c34d28d"
 body_sha256 = "1b6a81cdde54f190e0e302cbf2b2b5e6263a0d4fd730f963ddcc54517012dc03"
 
 [[topic]]

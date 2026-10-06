@@ -50,3 +50,11 @@ test("Python 이 본 문서와 지금 문서가 다르면 받은 표식을 덮�
   });
   assert.equal(marksOf(drawn).length, 3, "옛 문서 기준 표식(빈 목록)이 지금 문서의 표식을 지우지 않는다");
 });
+
+test("편집기는 CRLF 를 한 자리로 접는다 — 그래서 Python 은 본문·표식을 LF 문서 좌표로 낸다", () => {
+  // tests/test_webapp_workbench.py::test_crlf_template_marks_line_up_with_the_editor_document 의 짝.
+  // 원문(CRLF) 좌표의 표식을 받으면 앞선 줄바꿈 수만큼 표지가 뒤로 밀린다(온나라 기안 복사 창 어긋남).
+  const crlf = lintpadDecorations("담당: \r\n비고: \r\n수신 회계과", { marks: MARKS });
+  assert.equal(crlf.doc, DOC);
+  assert.deepEqual(marksOf(crlf), marksOf(lintpadDecorations(DOC, { marks: MARKS })));
+});
