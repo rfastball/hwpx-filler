@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +44,7 @@ from ..domain.dataset_reference import (
     pclm_identity,
     reference_identity,
     reference_sheets,
+    resolve_pclm_db,
 )
 from .nara_acquire import validate_range
 
@@ -261,21 +261,6 @@ def reference_missing(path: str) -> bool:
     렌더당 I/O 가 아니다 — 호출자는 사건 시점(풀 액션·부팅)에만 지불한다.
     """
     return bool(path) and not Path(path).exists()
-
-
-def resolve_pclm_db(db: str) -> str:
-    """계약 목록 DB 경로 해석 — 사용자가 적은 자리의 절대경로. 빈 값은 거절한다.
-
-    등록(:meth:`DatasetPoolViewModel.register_pclm`)과 그 전 중복 조회가 **같은 자리**를
-    봐야 한다. 두 곳이 각자 상대경로를 해석하면 같은 데이터가 2건이 된다. 빈 값을 다른
-    프로그램의 설치 자리로 추측하지 않는다 — 그 추측은 외부 프로그램의 배치에 기대는
-    조용한 기본값이라 걷혔다(자리는 사용자가 고른 것뿐이다). 존재 검사는 하지 않는다 —
-    참조 등록은 파일을 열지 않고, 끊김은 배지(:func:`reference_missing`)와 실행 시점
-    재읽기가 말한다(``register_excel`` 과 같은 규율).
-    """
-    if not db:
-        raise ValueError("파일 경로가 비어 있습니다.")
-    return os.path.abspath(db)
 
 
 def reference_summary(item: DatasetReference) -> str:

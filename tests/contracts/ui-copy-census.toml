@@ -1238,10 +1238,6 @@ file = "src/hwpxfiller/application/dataset_pool.py"
 text = "파일 경로가 비어 있습니다."
 
 [[sentence]]
-file = "src/hwpxfiller/application/dataset_pool.py"
-text = "파일 경로가 비어 있습니다."
-
-[[sentence]]
 file = "src/hwpxfiller/application/field_proposal.py"
 text = "{} ‘{}’ 열과 같은 값입니다."
 

@@ -88,6 +88,7 @@
  */
 
 import { ERROR_CODES } from "../runner.js";
+import { probePclmRegistration } from "./pclm_registration.js";
 import { probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
 
 export const D_CLUSTER = "D";
@@ -2881,40 +2882,7 @@ export function createEditorWorkbenchDataProbes() {
             && pinSheets.querySelectorAll(".pool-reg-sheet-list input").length === 2;
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
-          /* 계약 목록 등록 진입 — 파일 피커가 없는 종류라 전용 동사가 「다른 데이터」에 선다.
-             가시성까지 단언한다(click 은 hidden 도 통과). 열린 폼은 pclm 모드로 DB 자리를
-             **비운 채** 열리고(다른 프로그램의 설치 자리를 추측하지 않는다), 사용자가 적은
-             자리를 백엔드가 나열하면 **미선택 시트 목록** 을 세운다(시트는 사용자 확정).
-             라벨에 저쪽 프로그램 이름이 서지 않는 것도 같이 되읽는다. */
-          const pclmEntry = byId(ctx, "dataPickerPclm");
-          out.pclm_entry = !!pclmEntry && !isHidden(ctx, pclmEntry)
-            && pclmEntry.offsetParent !== null && !pclmEntry.disabled;
-          out.pclm_entry_text = textOf(pclmEntry);
-          pclmEntry.click();
-          await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
-          const dbInput = byId(ctx, "poolRegDb");
-          const sheetList = () => Array.from(
-            byId(ctx, "poolRegView").querySelectorAll(".pool-reg-sheet-list input"));
-          out.pclm_reg_db_prefill = dbInput.value;
-          out.pclm_reg_no_sheets_before_db = sheetList().length === 0;
-          /* 사용자가 DB 자리를 적고 칸을 떠나면 그 자리에서 시트를 나열한다(위 inspect 대역). */
-          dbInput.focus();
-          typeValue(ctx, dbInput, "C:/d/pclm.db");
-          dbInput.blur();
-          for (let i = 0; i < 50 && sheetList().length === 0; i += 1) await ctx.sleep(10);
-          const viewSelect = byId(ctx, "poolRegView");
-          const sheetInputs = sheetList();
-          out.pclm_reg_view_options = sheetInputs.length;
-          out.pclm_reg_view_text = sheetInputs.map((input) => textOf(input.nextElementSibling)).join("|");
-          out.pclm_reg_view_label = textOf(viewSelect.querySelector("legend"));
-          out.pclm_reg_initial_empty = sheetInputs.every((input) => !input.checked)
-            && byId(ctx, "poolRegOk").disabled;
-          sheetInputs[0].click();
-          await ctx.sleep(0);
-          sheetInputs[1].click();
-          await ctx.sleep(0);
-          out.pclm_reg_multiple_selected = viewSelect.querySelectorAll(".pool-reg-sheet-list input:checked").length === 2
-            && !byId(ctx, "poolRegOk").disabled;
+          Object.assign(out, await probePclmRegistration(ctx, { byId, isHidden, textOf, typeValue }));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(

@@ -150,7 +150,7 @@ function_complexity = { value = 38, override = "#1121", reason = "authoring.ts 1
 function_complexity = 12
 
 [budget."frontend/src/screens/data_picker.ts"]
-module_statements = 331
+module_statements = 327
 
 [budget."frontend/src/screens/data_picker.ts::PoolRegistrationDialog"]
 function_complexity = 22
@@ -162,7 +162,7 @@ function_complexity = 12
 function_complexity = 20
 
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.openRegDialog"]
-function_complexity = 18
+function_complexity = 16
 
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.submitReg"]
 function_complexity = 33
@@ -212,9 +212,6 @@ function_complexity = 12
 function_complexity = 13
 
 [budget."frontend/src/screens/editor.ts::DataColumnCell"]
-function_complexity = 11
-
-[budget."frontend/src/screens/editor.ts::DataPool"]
 function_complexity = 11
 
 [budget."frontend/src/screens/editor.ts::EditorFooter"]
@@ -354,7 +351,7 @@ function_complexity = 46
 function_complexity = 23
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js"]
-module_statements = 2202
+module_statements = 2187
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::createEditorWorkbenchDataProbes.run"]
 function_complexity = 53
@@ -581,7 +578,7 @@ function_complexity = 25
 function_complexity = 20
 
 [budget."src/hwpxfiller/application/dataset_pool.py"]
-module_statements = 341
+module_statements = 339
 
 [budget."src/hwpxfiller/application/dataset_pool.py::DatasetPoolViewModel"]
 class_methods = 30
@@ -1312,11 +1309,8 @@ class_methods = 23
 [budget."src/hwpxfiller/webapp/screen_library.py::LibraryController._pairing_detail"]
 function_complexity = 14
 
-[budget."src/hwpxfiller/webapp/screen_pool.py"]
-module_statements = 305
-
 [budget."src/hwpxfiller/webapp/screen_pool.py::PoolController"]
-class_methods = 26
+class_methods = 25
 
 [budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_register_excel"]
 function_complexity = 27
@@ -1437,7 +1431,7 @@ function_complexity = 23
 module_statements = 2123
 
 [budget."tests/test_webapp_job.py"]
-module_statements = 3926
+module_statements = 3921
 
 [budget."tests/test_webapp_job_binding_review.py"]
 module_statements = 993

@@ -37,14 +37,14 @@ __all__ = [
 ]
 
 
-def _db_path(db: "str | Path") -> Path:
+def _db_path(db: "str | Path | None") -> Path:
     """사용자가 고른 DB 자리 — 비었으면 거절한다(다른 프로그램의 설치 자리를 추측하지 않는다).
 
     ``Path("")`` 는 현재 폴더(``.``)라 그대로 두면 엉뚱한 자리를 열려 든다. 빈 자리는
     구판 참조의 손상이지 「기본 자리」가 아니다 — 결속 복원
     (:func:`~hwpxfiller.data.factory.source_for_binding`)과 같은 문장으로 거절한다.
     """
-    if not str(db):
+    if not db:  # None·"" — 경로 객체는 비지 않는다
         raise ValueError("데이터 참조에 경로가 없습니다.")
     return Path(db)
 

@@ -555,14 +555,15 @@ def test_pclm_fills_documents_from_a_view(tmp_path, capsys):
     assert db in err and "v_통합_v1" in err and "1건" in err  # 어디서 몇 건인지 재진술
 
 
-def test_pclm_requires_an_explicit_db(tmp_path, capsys):
+@pytest.mark.parametrize("view", [["--view", "v_통합_v1"], []], ids=["with-view", "no-view"])
+def test_pclm_requires_an_explicit_db(tmp_path, capsys, view):
     """--db 생략은 loud 실패 — 다른 프로그램의 설치 자리를 기본으로 추측하지 않는다."""
     out = tmp_path / "out"
-    with pytest.raises(SystemExit) as caught:
-        main(["--template", TEMPLATE, "--source", "pclm", "--view", "v_통합_v1",
-              "--out", str(out), "--pattern", "공고-{{입찰공고번호}}"])
-    assert caught.value.code == 2
-    assert "--source pclm 에는 --db 가 필요합니다" in capsys.readouterr().err
+    rc = main(["--template", TEMPLATE, "--source", "pclm", *view,
+               "--out", str(out), "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "[오류] 데이터 참조에 경로가 없습니다." in err and "Traceback" not in err
     assert not out.exists()  # 조용한 생성 없음
 
 

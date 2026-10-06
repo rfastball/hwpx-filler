@@ -308,10 +308,8 @@ def _load_records(
     if args.source == "pclm":
         from .data.pclm import PclmDataSource, list_sqlite_sheets
 
-        # DB 자리는 사람이 짚는다 — 다른 프로그램의 설치 자리를 추측하던 기본 자리는
-        # 걷혔다(그 배치에 기대는 조용한 기본값). 나라 소스의 필수 인자 문형 그대로 멈춘다.
-        if not args.db:
-            ap.error("--source pclm 에는 --db 가 필요합니다")
+        # --db 생략은 소스·나열이 ValueError 로 거절하고 최상위 번역 경계가 [오류] 로 옮긴다 —
+        # 다른 프로그램의 설치 자리를 추측하던 기본 자리는 걷혔다.
         # 시트마다 한 줄의 뜻이 달라 문서 건수가 갈린다 — 고르지 않은 채로 한 면을
         # 추측하면 계약 20건 대신 품목 200건이 조용히 나온다. 그래서 그 DB 의 시트
         # 목록(뷰 먼저, 다음 표 — 고정 허용목록은 걷혔다)을 보이고 멈춘다.

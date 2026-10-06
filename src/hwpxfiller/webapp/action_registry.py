@@ -325,7 +325,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "register_excel": _schema("name path", "sheet sheets note confirm basis"),
         # 계약 목록(pclm) 등록 — 엑셀 등록의 거울이되 좌표가 다르다(경로+시트 → DB+뷰).
         # `db` 는 필수다 — 다른 프로그램의 설치 자리를 추측하던 기본 자리는 걷혔고, 빈 값은
-        # 링1 `resolve_pclm_db` 가 거절한다. `view` 도 필수다 — 뷰는 사용자가 고르는
+        # `resolve_pclm_db` 가 거절한다. `view` 도 필수다 — 뷰는 사용자가 고르는
         # 확정이지 기본값으로 추측할 것이 아니다(ADR N).
         "register_pclm": _schema("name db view", "views note confirm basis"),
         # 다시 연결(#67) — 같은 슬롯의 참조 교체(수명 보존). 확인 라운드트립.

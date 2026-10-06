@@ -463,8 +463,7 @@ class TestWebSelftestGate:
         assert probe["pclm_entry_text"] == "계약 목록(.db) 등록…", probe
         # 조회된 시트 3개는 미선택이며 사용자가 여러 시트를 선언할 수 있다.
         assert probe["pclm_reg_view_options"] == 3, probe
-        assert probe["pclm_reg_db_prefill"] == "", probe
-        assert probe["pclm_reg_no_sheets_before_db"] is True, probe
+        assert probe["pclm_reg_db_prefill"] == "" and probe["pclm_reg_no_sheets_before_db"] is True, probe
         assert probe["pclm_reg_view_text"] == "v_통합_v2|v_접수_v1|계약", probe
         assert probe["pclm_reg_view_label"] == "사용할 시트", probe
         assert probe["pclm_reg_initial_empty"] is True, probe
