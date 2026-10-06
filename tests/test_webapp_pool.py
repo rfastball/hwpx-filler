@@ -1217,6 +1217,38 @@ def _pclm_db(path: Path, views: "tuple[str, ...]" = ("v_통합_v1",)) -> str:
     return str(path)
 
 
+def test_pclm_file_registers_lists_and_loads_through_the_pool(tmp_path):
+    """파일 고르기가 넘긴 ``.pclm`` 자리로 시트를 나열하고 등록·읽기까지 — ``.db`` 와 같은 길.
+
+    계약 목록 앱의 실제 모양(application_id·WAL, 그 창이 열린 채 체크포인트 전)을 그대로 둔다.
+    """
+    import sqlite3
+
+    db = tmp_path / "계약목록.pclm"
+    writer = sqlite3.connect(db)
+    try:
+        writer.execute("PRAGMA application_id = 1346587725;")  # 0x50434C4D("PCLM")
+        writer.execute("PRAGMA journal_mode=WAL;")
+        writer.execute("PRAGMA wal_autocheckpoint=0;")
+        writer.execute('CREATE TABLE 계약 ("계약번호" TEXT, "계약건명" TEXT);')
+        writer.execute('CREATE VIEW "v_통합_v2" AS SELECT * FROM 계약;')
+        writer.execute('INSERT INTO 계약 VALUES ("R1", "육군 조달");')
+        writer.commit()
+        ctrl, reg, _ = _controller(tmp_path)
+        inspected = ctrl.dispatch("inspect_sheets", {"kind": "pclm", "path": str(db)})
+        assert inspected == {"ok": True, "sheets": [{"name": "v_통합_v2"}, {"name": "계약"}]}
+        res = ctrl.dispatch("register_pclm", {
+            "name": "계약 목록", "db": str(db), "view": "v_통합_v2", "views": ["v_통합_v2", "계약"],
+        })
+        assert res["ok"] is True
+        key = _rows(ctrl)[0]["key"]
+        item = reg.load(key)
+        assert item.opts["db"] == str(db) and item.opts["view"] == "v_통합_v2"
+        assert source_from_pool_item(item).records() == [{"계약번호": "R1", "계약건명": "육군 조달"}]
+    finally:
+        writer.close()
+
+
 def test_review_publishes_the_detail_zone_and_a_result_line(tmp_path):
     """검토 한 왕복이 상세 존을 세운다(tpl 미러) — 시트가 두 왕복으로 채워지지 않는다."""
     ctrl, _, pushes = _controller(tmp_path)

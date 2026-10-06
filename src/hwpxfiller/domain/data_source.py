@@ -19,13 +19,18 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-__all__ = ["Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "DataSource"]
+__all__ = ["Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "CONTRACT_LIST_FILE_EXTENSIONS", "DataSource"]
 
 Record = "dict[str, str]"
 
 # 파일 겨눔 데이터 소스가 수용하는 확장자 정책의 Domain 정본.
 # concrete factory와 파일 다이얼로그는 이 튜플에서 함께 파생한다(RC-34).
 SUPPORTED_DATA_FILE_EXTENSIONS: "tuple[str, ...]" = (".xlsx", ".xlsm", ".csv")
+
+# 계약 목록(SQLite) 파일 확장자의 Domain 정본. ``.pclm`` 은 같은 SQLite 단일 파일의 다른
+# 이름이다(메일 관문이 ``.db`` 를 막아 계약 목록 쪽이 바꿔 단 이름 — 형식은 같다). 파일
+# 다이얼로그 필터와 파일 고르기의 등록 갈래 판정이 이 튜플에서 함께 파생한다(RC-34).
+CONTRACT_LIST_FILE_EXTENSIONS: "tuple[str, ...]" = (".db", ".pclm")
 
 
 @runtime_checkable

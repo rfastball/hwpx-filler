@@ -246,7 +246,7 @@ export function bootProduct() {
        벌이라 두 번째 구현을 세우면 그 한 벌이 갈린다. 그래서 간선은 값이 아니라 포트다. */
     poolRegistration: {
       openRegDialog: (options) => DataPicker.openRegDialog(options),
-      openPclm: () => DataPicker.openPclm(),
+      openPclm: (db) => DataPicker.openPclm(db),
       /* 「자세히…」의 시트도 같은 근거로 그 컨트롤러가 진다(고르기 열 공용 ④) —
          `#poolDetailModal` 은 셸 레벨 overlay 하나이고 여는 문이 둘이다. */
       openDetail: (key, trigger) => DataPicker.openDetail(key, trigger),

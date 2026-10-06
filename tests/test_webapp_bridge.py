@@ -528,6 +528,41 @@ def test_pick_data_file_single_sheet_loads_directly(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].edit.data_path == str(csv)
 
 
+@pytest.mark.parametrize("screen", ["job", "editor"])
+@pytest.mark.parametrize("ext", [".db", ".pclm", ".PCLM"])
+def test_pick_data_file_routes_contract_list_files_to_registration(tmp_path, monkeypatch, screen, ext):
+    """계약 목록 파일(.db·.pclm)은 읽지 않고 등록 갈래로 돌려준다 — 갈래 판정은 백엔드 하나.
+
+    그 종류는 시트(뷰·표)를 사람이 골라 등록해야 쓸 수 있다. 웹은 ``contract_list`` 를 보고
+    DB 자리를 채운 등록 폼을 열 뿐 확장자로 되추측하지 않는다. 지금 데이터는 그대로다.
+    """
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    picked = tmp_path / f"계약목록{ext}"
+    calls = []
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: calls.append(a) or str(picked))
+
+    assert frontend.pick_data_file(screen) == {"contract_list": True, "path": str(picked)}
+    assert frontend.controllers["editor"].edit.data_path == ""
+    # 한 입구가 두 종류를 다 받는다 — 합집합이 기본 보기, 그다음 종류별, 끝은 모든 파일.
+    from hwpxfiller.viewmodel.file_filters import (
+        CONTRACT_LIST_FILTER_PATTERN, DATA_FILE_FILTER_PATTERN, EXCEL_FILTER_PATTERN,
+    )
+
+    assert calls[-1][0] == [
+        ("데이터 파일", DATA_FILE_FILTER_PATTERN),
+        ("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN),
+        ("계약 목록 자료", CONTRACT_LIST_FILTER_PATTERN),
+        ("모든 파일", "*.*"),
+    ]
+    assert CONTRACT_LIST_FILTER_PATTERN == "*.db;*.pclm"
+    assert DATA_FILE_FILTER_PATTERN == f"{EXCEL_FILTER_PATTERN};{CONTRACT_LIST_FILTER_PATTERN}"
+    # 등록·다시 연결 폼의 「찾아보기」는 엑셀 경로 좌표라 엑셀/CSV 만 연다.
+    frontend.pick_pool_data_file()
+    assert calls[-1][0] == [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+
+
 def test_load_data_sheet_loads_confirmed_sheet(tmp_path, monkeypatch):
     """확정한 시트로 로드 → 그 시트의 필드가 컨트롤러에 반영(descriptor 반환)."""
     frontend = _frontend(tmp_path, monkeypatch)

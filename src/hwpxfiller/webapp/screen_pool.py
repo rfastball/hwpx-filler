@@ -43,7 +43,7 @@ nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register
 네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
 소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **시트 나열**(사용자가 적은
 DB 자리의 시트 — ``inspect_sheets``)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
-둘은 폼(``#dataPickerPclm`` → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
+둘은 폼(파일 고르기의 계약 목록 갈래 → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
 (``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 링1
 (:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.register_pclm`)이 소유하고

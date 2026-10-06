@@ -22,9 +22,13 @@ def _filter_literal_pattern() -> "re.Pattern[str]":
     (txt 저장·매핑 json 등)는 RC-34 스코프 밖이라 게이트하지 않는다.
     Domain 정본에서 파생하므로 확장자가 늘어나면 게이트도 자동으로 따라온다.
     """
-    from hwpxfiller.domain.data_source import SUPPORTED_DATA_FILE_EXTENSIONS
+    from hwpxfiller.domain.data_source import (
+        CONTRACT_LIST_FILE_EXTENSIONS,
+        SUPPORTED_DATA_FILE_EXTENSIONS,
+    )
 
-    exts = [ext.lstrip(".") for ext in SUPPORTED_DATA_FILE_EXTENSIONS] + ["hwpx"]
+    exts = [ext.lstrip(".") for ext in (*SUPPORTED_DATA_FILE_EXTENSIONS, *CONTRACT_LIST_FILE_EXTENSIONS)]
+    exts.append("hwpx")
     return re.compile(r"\(\*\.(?:" + "|".join(map(re.escape, exts)) + r")\b")
 
 
@@ -34,7 +38,7 @@ def test_factory_alias_is_domain_canonical_tuple():
     from hwpxfiller.data.factory import EXCEL_EXTS
     from hwpxfiller.viewmodel.file_filters import EXCEL_EXTS as FILTER_EXTS
 
-    public_api = ("Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "DataSource")
+    public_api = ("Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "CONTRACT_LIST_FILE_EXTENSIONS", "DataSource")
     assert tuple(domain_data_source.__all__) == public_api
     assert domain_data_source.DataSource.field_labels(object()) == {}
 
@@ -57,6 +61,28 @@ def test_excel_filter_derives_from_domain_exts():
     assert EXCEL_FILTER == "엑셀/CSV (" + " ".join(f"*{ext}" for ext in exts) + ")"
     assert EXCEL_FILTER_PATTERN == ";".join(f"*{ext}" for ext in exts)
     assert HWPX_FILTER == "HWPX (*.hwpx)"
+
+
+def test_contract_list_filters_derive_from_domain_exts():
+    """계약 목록 확장자(.db·.pclm)도 Domain 정본 하나에서 필터·갈래 판정이 함께 파생한다."""
+    from hwpxfiller.data.factory import is_contract_list_file
+    from hwpxfiller.domain.data_source import (
+        CONTRACT_LIST_FILE_EXTENSIONS,
+        SUPPORTED_DATA_FILE_EXTENSIONS,
+    )
+    from hwpxfiller.viewmodel.file_filters import (
+        CONTRACT_LIST_FILTER_PATTERN,
+        DATA_FILE_FILTER_PATTERN,
+    )
+
+    assert CONTRACT_LIST_FILE_EXTENSIONS == (".db", ".pclm")
+    assert CONTRACT_LIST_FILTER_PATTERN == ";".join(f"*{ext}" for ext in CONTRACT_LIST_FILE_EXTENSIONS)
+    assert DATA_FILE_FILTER_PATTERN == ";".join(
+        f"*{ext}" for ext in (*SUPPORTED_DATA_FILE_EXTENSIONS, *CONTRACT_LIST_FILE_EXTENSIONS))
+    for ext in CONTRACT_LIST_FILE_EXTENSIONS:
+        assert is_contract_list_file(f"C:/d/a{ext}") and is_contract_list_file(f"C:/d/A{ext.upper()}")
+    for ext in (*SUPPORTED_DATA_FILE_EXTENSIONS, ".hwpx", ".txt", ""):
+        assert not is_contract_list_file(f"C:/d/a{ext}")
 
 
 def test_factory_accepts_exactly_the_public_exts(tmp_path):

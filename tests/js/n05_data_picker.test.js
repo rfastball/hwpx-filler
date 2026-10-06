@@ -503,18 +503,26 @@ test("중복 정리 — 남길 key와 basis를 보존한 2단 왕복이다", asy
 
 /* ── 계약 목록(pclm) 등록 — 엑셀과 좌표만 다른 거울(#937) ──────────────────────────── */
 
-test("계약 목록 진입 — pclm 모드로 열되 DB 자리를 미리 채우지 않고 시트도 비운다", async () => {
-  const h = build();
-  const { result } = await opened(h);
-  h.controller.openPclm();
+test("파일 찾아보기 — 계약 목록 파일은 DB 자리를 채운 등록 폼으로 잇고 데이터는 그대로다", async () => {
+  /* 갈래 판정은 Python 이다(`contract_list`) — 이 면은 확장자를 보지 않는다. 그래서 대역은
+     확장자 없는 경로를 돌려줘도 등록 폼으로 가야 한다. */
+  const h = build({ invoke: async () => ({ contract_list: true, path: "C:/d/계약목록" }) });
+  const loaded = [];
+  const { result } = await opened(h, { onLoaded: (label) => loaded.push(label) });
+  await h.controller.browseFile();
   await tick();
   const reg = h.controller.regModel.getSnapshot();
   assert.equal(reg.mode, "pclm");
-  assert.equal(reg.db, "");              // 다른 프로그램의 설치 자리를 추측하지 않는다
-  assert.equal(reg.view, "");            // 시트는 사용자가 확정한다(첫 항목 기본 금지)
+  assert.equal(reg.db, "C:/d/계약목록");      // 고른 자리 그대로(웹이 고치지 않는다)
+  assert.equal(reg.view, "");                 // 시트는 사용자가 확정한다(첫 항목 기본 금지)
   assert.equal(reg.title, "계약 목록 등록");
-  assert.deepEqual(h.inspectionCalls, [], "적힌 자리가 없으면 나열하지 않는다");
-  h.controller.closeReg(); h.controller.close(); await result;
+  assert.deepEqual(h.inspectionCalls.at(-1), ["pool", "inspect_sheets", { path: "C:/d/계약목록", kind: "pclm" }]);
+  const after = h.controller.model.getSnapshot();
+  assert.equal(after.status, "", "적재 문안이 서지 않는다 — 아무것도 불러오지 않았다");
+  assert.equal(after.loading, false);
+  assert.deepEqual(loaded, [], "등록 갈래는 적재 알림을 내지 않는다");
+  h.controller.closeReg(); h.controller.close();
+  assert.equal(await result, null, "지금 데이터는 바뀌지 않았다");
 });
 
 test("계약 목록 등록 — DB를 검사하고 선언한 views와 기본 view를 전달한다", async () => {
@@ -616,15 +624,15 @@ test("엑셀 폼 렌더 — 파일의 시트를 이름 있는 체크박스로 �
   assert.equal(markup.includes("modal-sub"), false);   // 부제는 두 모드 다 사라졌다
 });
 
-test("데이터 선택 면 — pclm 진입 버튼은 스냅샷에 기대지 않고 늘 열려 있다", async () => {
+test("데이터 선택 면 — 파일 고르기 입구는 「파일 찾아보기…」 하나다", async () => {
   const h = build();
   const a = await opened(h);
   const on = renderToStaticMarkup(
     createElement(DataPickerDialog, { controller: h.controller }));
-  assert.ok(on.includes('id="dataPickerPclm"'), "진입 버튼이 실재해야 한다");
-  assert.equal(/id="dataPickerPclm"[^>]*disabled/.test(on), false, "물을 좌표는 폼이 묻는다");
-  // 괄호는 확장자다 — 저쪽 프로그램 이름은 이 제품의 표면 어휘가 아니다.
-  assert.ok(on.includes("계약 목록(.db) 등록…"), "진입 라벨은 확장자로 말한다");
+  assert.ok(on.includes('id="dataPickerBrowse"') && on.includes("파일 찾아보기…"));
+  // 계약 목록(.db·.pclm)도 같은 입구가 받는다 — 따로 선 진입 버튼은 걷혔다.
+  assert.equal(on.includes('id="dataPickerPclm"'), false, "계약 목록 전용 진입이 다시 섰다");
+  assert.equal(on.includes("계약 목록(.db) 등록…"), false);
   assert.equal(on.includes("계약 목록(pclm)"), false, "프로젝트 이름은 표면에 서지 않는다");
   // 표면 감량(U4) — 다이얼로그 부제와 「다른 데이터」 설명 두 줄은 사라졌다.
   assert.equal(on.includes("modal-sub"), false);

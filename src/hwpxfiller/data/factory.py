@@ -10,12 +10,29 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from ..domain.data_source import DataSource, SUPPORTED_DATA_FILE_EXTENSIONS
+from ..domain.data_source import (
+    CONTRACT_LIST_FILE_EXTENSIONS,
+    DataSource,
+    SUPPORTED_DATA_FILE_EXTENSIONS,
+)
 from .excel import ExcelDataSource
 
 # 기존 공개 import를 보존하는 호환 alias. 수용 정책의 정본은 Domain 값이다.
 EXCEL_EXTS = SUPPORTED_DATA_FILE_EXTENSIONS
 _EXCEL_EXTS = frozenset(SUPPORTED_DATA_FILE_EXTENSIONS)
+_CONTRACT_LIST_EXTS = frozenset(CONTRACT_LIST_FILE_EXTENSIONS)
+
+
+def is_contract_list_file(path: "str | Path") -> bool:
+    """고른 파일이 계약 목록(SQLite ``.db``·``.pclm``)인가 — 파일 고르기의 갈래 판정 한 자리.
+
+    파일 고르기 한 입구가 엑셀/CSV 와 계약 목록을 함께 받는다. 엑셀/CSV 는 곧바로 읽고,
+    계약 목록은 시트(뷰·표)를 사람이 골라야 하므로 등록 폼으로 잇는다 — 그 갈래를 웹이
+    확장자로 되추측하지 않게 판정은 여기 하나다. 형식 검사(SQLite 인가)는 하지 않는다:
+    잘못된 파일은 시트 나열(:func:`~hwpxfiller.data.pclm.list_sqlite_sheets`)이 기존
+    문장으로 거절한다.
+    """
+    return Path(path).suffix.lower() in _CONTRACT_LIST_EXTS
 
 
 def source_for_path(path: "str | Path", **opts) -> DataSource:
