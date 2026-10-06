@@ -13,9 +13,11 @@ from hwpxfiller.viewmodel.txt_card_edit import (
     CardMark,
     base_marks,
     edit_card,
+    editor_card,
+    line_break,
     plain_edit,
     raw_card,
-    utf16_marks,
+    source_text,
 )
 
 
@@ -156,25 +158,76 @@ def test_fullwidth_off_leaves_consecutive_spaces_untouched():
     assert result.space_run is True  # 런 자체는 여전히 참(치환 전 글자로 잰다)
 
 
-# ------------------------------------------------------------------ utf16_marks
-def test_utf16_marks_accounts_for_a_non_bmp_character_before_a_mark():
+# ------------------------------------------------------------------ editor_card(편집기 좌표)
+def test_editor_card_accounts_for_a_non_bmp_character_before_a_mark():
     """BMP 밖 글자(예: 이모지)는 UTF-16 로 2 코드 단위다 — JS 오프셋은 그 단위를 센다."""
     text = "😀X"
     marks = (CardMark("fill", "f", 1, 2),)  # 코드 포인트 좌표(파이썬 str 인덱스)
 
-    out = utf16_marks(text, marks)
+    doc, out = editor_card(text, marks)
 
+    assert doc == text
     assert out == [{"kind": "fill", "name": "f", "start": 2, "end": 3}]
 
 
-def test_utf16_marks_matches_python_offsets_for_bmp_only_text():
-    """BMP 안쪽(한글 포함) 텍스트는 코드 포인트 좌표와 UTF-16 좌표가 같다."""
-    text = "안녕X"
-    marks = (CardMark("fill", "f", 2, 3),)
+def test_editor_card_matches_python_offsets_for_bmp_only_lf_text():
+    """BMP 안쪽(한글 포함) LF 텍스트는 코드 포인트 좌표와 편집기 좌표가 같다."""
+    text = "안녕\nX"
+    marks = (CardMark("fill", "f", 3, 4),)
 
-    out = utf16_marks(text, marks)
+    doc, out = editor_card(text, marks)
 
-    assert out == [{"kind": "fill", "name": "f", "start": 2, "end": 3}]
+    assert doc == text
+    assert out == [{"kind": "fill", "name": "f", "start": 3, "end": 4}]
+
+
+def test_editor_card_folds_crlf_and_cr_to_one_place_like_the_editor():
+    """편집기는 CRLF·CR 을 한 자리(LF)로 접는다 — 표식은 앞선 줄바꿈 수만큼 밀리지 않는다.
+
+    원문(CRLF) 좌표를 그대로 내면 줄마다 한 칸씩 밀려 값 칠·빈 자리 표지가 엉뚱한 글자에 선다.
+    """
+    text = "가: 값\r\n\r\n나: \r다: 😀끝"
+    marks = (
+        CardMark("fill", "가", 3, 4),
+        CardMark("blank", "나", 11, 11),
+        CardMark("fill", "다", 15, 16),
+    )
+
+    doc, out = editor_card(text, marks)
+
+    assert doc == "가: 값\n\n나: \n다: 😀끝"
+    assert [(m["start"], m["end"]) for m in out] == [(3, 4), (9, 9), (13, 15)]
+
+
+def test_line_break_is_the_first_line_break_or_lf():
+    assert line_break("a\r\nb\nc") == "\r\n"
+    assert line_break("a\rb") == "\r"
+    assert line_break("a\nb\r\n") == "\n"
+    assert line_break("한 줄") == "\n"
+
+
+def test_source_text_returns_the_source_for_an_untouched_echo():
+    """손대지 않은 편집기 문서의 메아리는 원문(섞인 줄바꿈까지) 그대로 돌아온다."""
+    source = "가\r\n나\n다\r라"
+    assert source_text(source, "가\n나\n다\n라", "\r\n") == source
+
+
+def test_source_text_keeps_untouched_breaks_and_writes_new_ones_in_the_templates_break():
+    """고치지 않은 자리는 원문 줄바꿈, 새로 친 줄과 붙여 넣은 줄은 템플릿의 줄바꿈이다."""
+    source = "수신: 회계과\r\n건명: \r\n"
+    edited = "수신: 회계과\n건명: 복사기\n임차\n붙임\r\n1부"
+
+    assert source_text(source, edited, "\r\n") == "수신: 회계과\r\n건명: 복사기\r\n임차\r\n붙임\r\n1부"
+
+
+def test_source_text_drops_a_joined_line_break():
+    """줄을 합치면(줄바꿈 삭제) 원문 CRLF 두 글자가 함께 사라진다 — CR 하나가 남지 않는다."""
+    assert source_text("가\r\n나\r\n다", "가나\n다", "\r\n") == "가나\r\n다"
+
+
+def test_source_text_folds_a_received_crlf_instead_of_doubling_the_line():
+    """받은 글에 CRLF 가 있어도(편집기는 보내지 않는다) 원문 줄바꿈과 겹쳐 빈 줄이 생기지 않는다."""
+    assert source_text("가\r\n나", "가\r\n나!", "\r\n") == "가\r\n나!"
 
 
 # ------------------------------------------------------------------ raw_card

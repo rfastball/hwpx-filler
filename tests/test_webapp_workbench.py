@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.viewmodel.txt_card_edit import line_break
 from hwpxfiller.webapp.action_registry import validate_dispatch
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
@@ -137,11 +139,14 @@ def test_copy_keeps_the_work_point_unless_advance_is_on(tmp_path):
 
 
 def test_card_and_clipboard_take_the_same_path(tmp_path):
-    """카드 본문 = 클립보드 텍스트(결정 17 — 링1 공유 통로)."""
+    """카드 본문 = 클립보드 텍스트(결정 17 — 링1 공유 통로).
+
+    카드는 편집기 문서라 줄바꿈만 LF 한 자리로 접혀 있다 — 글자는 클립보드와 같다.
+    """
     ctrl, _, _ = _open(tmp_path)
-    assert _view(ctrl).text == ctrl.snapshot()["card"]["text"]
+    assert _editor_doc(_view(ctrl).text) == ctrl.snapshot()["card"]["text"]
     _send(ctrl, "set_fullwidth", {"value": True})
-    assert _view(ctrl).text == ctrl.snapshot()["card"]["text"]
+    assert _editor_doc(_view(ctrl).text) == ctrl.snapshot()["card"]["text"]
 
 
 def test_raw_view_shows_tokens_without_filling_them(tmp_path):
@@ -989,7 +994,7 @@ def test_editing_a_row_that_is_not_the_current_one_lands_on_that_row(tmp_path):
 
     _send(ctrl, "set_current", {"index": 1})
     card = ctrl.snapshot()["card"]
-    assert card["edited"] is True and card["text"] == other_text + "!!"
+    assert card["edited"] is True and card["text"] == _editor_doc(other_text) + "!!"
 
 
 def test_edit_that_fills_a_blank_clears_it_from_the_gate_but_not_other_blanks(tmp_path):
@@ -1012,7 +1017,8 @@ def test_edit_that_fills_a_blank_clears_it_from_the_gate_but_not_other_blanks(tm
     written: "list[str]" = []
     result = ctrl.copy_to(ctrl.copy_token(), written.append)
     assert result["copied"] is True, result
-    assert written == [edited]
+    # 클립보드는 템플릿 파일의 줄바꿈 그대로다(Windows 의 `write_text` 는 CRLF 로 쓴다).
+    assert written == [edited.replace("\n", line_break(ctrl.template_text))]
 
 
 def test_editing_a_copied_row_marks_it_for_recheck_and_changes_the_copy_token(tmp_path):
@@ -1142,3 +1148,89 @@ def test_action_registry_includes_the_card_edit_verbs() -> None:
     from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
 
     assert {"set_card_text", "revert_card"} <= set(ACTION_REGISTRY["workbench"])
+
+
+# ------------------------------------------------------- 편집기 좌표 = LF(CRLF 템플릿 표식 어긋남)
+def _editor_doc(text: str) -> str:
+    """CodeMirror 가 받은 글을 문서로 접는 모양 — CRLF·CR·LF 가 모두 한 자리(``\n``)다."""
+    return re.sub(r"\r\n?", "\n", text)
+
+
+def _utf16_slice(text: str, start: int, end: int) -> str:
+    units = text.encode("utf-16-le")
+    return units[start * 2:end * 2].decode("utf-16-le")
+
+
+def _open_crlf(tmp_path: Path, body: str, rows):
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "crlf.txt"
+    tpl.write_bytes(body.encode("utf-8"))
+    job = Job(
+        name="crlf",
+        template_path=str(tpl),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="수신", source="부서"),
+            FieldMapping(template_field="건명", source="사업명"),
+        ]),
+    )
+    reg.save(job)
+    ctrl = WorkbenchController(
+        reg, lambda s, snap: None,
+        clock=lambda: datetime(2026, 8, 25, 12, 0, 0),
+        target_font=TargetFontSetting(),
+    )
+    ctrl.open(reg.load("crlf"), rows)
+    return ctrl
+
+
+def test_crlf_template_marks_line_up_with_the_editor_document(tmp_path):
+    """CRLF 템플릿의 표식은 편집기 문서(LF) 좌표에 선다 — 줄마다 한 칸씩 밀리지 않는다.
+
+    편집기(CodeMirror)는 받은 글의 CRLF 를 한 자리로 접는다. 원문(CRLF) 좌표로 표식을 내면
+    앞선 줄바꿈 수만큼 값 칠·빈 자리 표지가 뒤로 밀린다(온나라 기안 복사 창 린트 어긋남).
+    """
+    ctrl = _open_crlf(
+        tmp_path, "수신: {{수신}}\r\n\r\n건명: {{건명}}\r\n끝.\r\n",
+        [(0, {"부서": "회계과", "사업명": ""})],
+    )
+    card = ctrl.snapshot()["card"]
+    doc = _editor_doc(card["text"])
+    assert card["text"] == doc  # 표면이 받는 글이 곧 편집기 문서다
+    fill = next(m for m in card["marks"] if m["name"] == "수신")
+    assert _utf16_slice(doc, fill["start"], fill["end"]) == "회계과"
+    blank = next(m for m in card["marks"] if m["name"] == "건명")
+    assert blank["start"] == blank["end"] == doc.index("건명: ") + len("건명: ")
+
+    _send(ctrl, "set_view", {"view": "raw"})
+    raw = ctrl.snapshot()["card"]
+    token = next(m for m in raw["marks"] if m["name"] == "건명")
+    assert _utf16_slice(raw["text"], token["start"], token["end"]) == "{{건명}}"
+
+
+def test_crlf_edit_from_the_editor_keeps_the_template_line_breaks(tmp_path):
+    """편집기가 보낸 글(LF)은 원문 줄바꿈으로 되돌려 보관·복사한다.
+
+    손대지 않은 문서의 메아리는 편집이 아니고(「수정됨」이 서지 않는다), 친 글자와 새 줄은
+    템플릿의 줄바꿈(CRLF)으로 클립보드에 나간다.
+    """
+    ctrl = _open_crlf(
+        tmp_path, "수신: {{수신}}\r\n건명: {{건명}}\r\n",
+        [(0, {"부서": "회계과", "사업명": ""})],
+    )
+    card = ctrl.snapshot()["card"]
+    doc = _editor_doc(card["text"])
+    _send(ctrl, "set_card_text", {"index": 0, "text": doc})
+    assert ctrl.snapshot()["card"]["edited"] is False
+
+    blank = next(m for m in card["marks"] if m["name"] == "건명")
+    edited = doc[:blank["start"]] + "복사기 임차" + doc[blank["start"]:] + "붙임 1부\n"
+    _send(ctrl, "set_card_text", {"index": 0, "text": edited})
+    after = ctrl.snapshot()["card"]
+    assert after["edited"] is True and after["text"] == edited
+    assert _send(ctrl, "copy_precheck", {})["empty_fields"] == []
+    filled = next(m for m in after["marks"] if m["name"] == "건명")
+    assert _utf16_slice(after["text"], filled["start"], filled["end"]) == "복사기 임차"
+
+    wrote: "list[str]" = []
+    assert ctrl.copy_to(ctrl.copy_token(), wrote.append)["copied"] is True
+    assert wrote == ["수신: 회계과\r\n건명: 복사기 임차\r\n붙임 1부\r\n"]

@@ -43,7 +43,7 @@ from ..viewmodel.mapping_state import MappingModel
 from ..viewmodel.selection_state import SelectionModel
 from ..viewmodel.txt_card import gate_empty_fields, render_card
 from ..viewmodel.txt_card_edit import (
-    CardEdits, CardView, card_view, plain_edit, raw_card, utf16_marks,
+    CardEdits, CardView, card_view, editor_card, line_break, plain_edit, raw_card, source_text,
 )
 from ..viewmodel.tutorial_state import Milestone
 from ..viewmodel.txt_queue import TxtQueueModel
@@ -386,8 +386,10 @@ class WorkbenchController:
 
         cur = self.queue.current
         view = self._card_view(cur)
-        shown, shown_marks = (
-            (view.text, view.marks) if self.view == "filled" else raw_card(self.template_text)
+        # 표면에는 편집기 문서(줄바꿈을 LF 한 자리로 접은 글)와 그 좌표로 낸다 — 원문(CRLF) 좌표
+        # 그대로면 표식이 앞선 줄바꿈 수만큼 밀린다. 복사·대조는 원문 그대로다(`copy_to`).
+        shown, shown_marks = editor_card(
+            *((view.text, view.marks) if self.view == "filled" else raw_card(self.template_text))
         )
         total = len(self.records)
         # 큐 퇴화(승계 — 「기안」 결정 8): 1건이면 순회할 곳이 없어 큐 장치 3종을 숨긴다.
@@ -423,7 +425,7 @@ class WorkbenchController:
             # 값(fill)·빈 값(blank)·비워 둠(declared)·미치환(missing)이다. 표면은 받은 좌표에
             # 장식만 얹는다 — 빈 자리가 채워졌는지도 여기서 판정해 범위로 낸다.
             "text": shown,
-            "marks": utf16_marks(shown, shown_marks),
+            "marks": shown_marks,
             "edited": cur in self._edits,
             # 표면이 문서를 **갈아 끼울** 때만 바뀐다(행·보기·전각·되돌리기, 그리고 편집이 없는
             # 행의 원문이 바깥 사정으로 바뀐 것 — 「오늘 날짜」 분 경계). 편집 왕복의 메아리는
@@ -582,7 +584,8 @@ class WorkbenchController:
 
         받은 글은 표면에 보인 글(전각 정렬이 켜져 있으면 정렬된 글)을 고친 것이다 — 앱이 넣은
         전각 공백은 정렬 전 반각으로 되돌려 보관한다. 그래야 정렬을 끄면 원래 공백으로 돌아가고,
-        쳤다 지운 편집이 원문과 같아져 접힌다.
+        쳤다 지운 편집이 원문과 같아져 접힌다. 편집기 문서는 줄바꿈이 LF 라서, 먼저 원문 줄바꿈으로
+        되돌린다(새로 친 줄은 템플릿의 줄바꿈) — 그래야 CRLF 템플릿이 복사에서도 CRLF 로 남는다.
         """
         self._require_open()
         if self.view != "filled":  # 원문 보기는 읽기 전용이다 — 채운 모습만 복사된다
@@ -591,7 +594,8 @@ class WorkbenchController:
         if not 0 <= index < len(self.records):
             raise ValueError(f"없는 항목입니다: {index}")
         view = self._card_view(index)
-        self._edits.put(index, plain_edit(view.text, view.plain, str(p["text"])), view.plain_base)
+        edited = source_text(view.text, str(p["text"]), line_break(self.template_text))
+        self._edits.put(index, plain_edit(view.text, view.plain, edited), view.plain_base)
 
     def _do_revert_card(self, p: dict) -> None:
         """「원래대로」 — 그 행의 편집본을 버리고 원문으로 되돌린다."""

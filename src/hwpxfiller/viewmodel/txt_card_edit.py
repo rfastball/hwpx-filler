@@ -14,17 +14,23 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass, replace
 
 from ..domain.text_render import (
     SEG_BLANK, SEG_LITERAL, align_fullwidth, has_space_run, render_segments,
 )
-from .txt_card_diff import MARK_DECLARED, map_marks, plain_edit, resolved_names
+from .txt_card_diff import MARK_DECLARED, alignment, map_marks, plain_edit, resolved_names
 
 __all__ = [
     "MARK_DECLARED", "CardEdits", "CardMark", "CardView", "EditedCard", "base_marks", "card_view",
-    "edit_card", "plain_edit", "raw_card", "utf16_marks",
+    "edit_card", "editor_card", "line_break", "plain_edit", "raw_card", "source_text",
 ]
+
+#: 편집기(CodeMirror)가 한 자리(``\n``)로 접는 줄바꿈 — CRLF·CR·LF. 다른 줄 구분 문자는 글자로 남는다.
+_LINE_BREAK = re.compile(r"\r\n?|\n")
+#: 원문의 편집기 글자 한 자리 — CRLF 는 두 글자가 한 자리다.
+_EDITOR_UNIT = re.compile(r"\r\n|[\s\S]")
 
 
 @dataclass(frozen=True)
@@ -100,16 +106,54 @@ def edit_card(
     return EditedCard(text, shown, filled, resolved_names(base, marks, edited), space_run)
 
 
-def _utf16(text: str, offset: int) -> int:
-    return len(text[:offset].encode("utf-16-le")) // 2
+# ---- 편집기 좌표(본문 편집면 이음매)
+# 판정·보관·복사는 원문 줄바꿈(CRLF 템플릿이면 CRLF) 그대로의 글에 선다(S10-04 #861 — 봉인 물질화
+# 대조와 클립보드가 원문을 다룬다). 편집기는 CRLF·CR 을 한 자리로 접은 문서(LF)를 들고, 좌표도 그
+# 문서의 UTF-16 단위다. 그래서 표면에 낼 때 글과 표식을 **함께** 그 문서로 옮기고, 표면이 보낸 글은
+# 원문 줄바꿈으로 되돌려 받는다 — 원문 좌표 그대로 내면 앞선 줄바꿈 수만큼 표식이 뒤로 밀린다
+# (저작 화면이 #1074 에서 고친 것과 같은 원인).
 
 
-def utf16_marks(text: str, marks: "tuple[CardMark, ...]") -> "list[dict]":
-    """표식 → 웹 좌표(UTF-16 코드 단위). JS 문자열 오프셋과 같은 단위로 번역해 넘긴다."""
-    return [
-        {"kind": m.kind, "name": m.name, "start": _utf16(text, m.start), "end": _utf16(text, m.end)}
+def line_break(text: str) -> str:
+    """글의 줄바꿈 모양 — 첫 줄바꿈의 모양이다. 줄바꿈이 없으면 LF(저작 화면과 같은 규칙)."""
+    found = _LINE_BREAK.search(text)
+    return found.group(0) if found else "\n"
+
+
+def _editor_offsets(text: str) -> "list[int]":
+    """원문 자리(코드 포인트) → 편집기 문서 자리(UTF-16). CRLF 는 한 자리, BMP 밖 글자는 두 자리다."""
+    offsets, pos = [], 0
+    for i, ch in enumerate(text):
+        offsets.append(pos)
+        if ch == "\n" and text[i - 1:i] == "\r":
+            continue  # CRLF 의 LF 는 앞 CR 과 한 자리다
+        pos += 2 if ord(ch) > 0xFFFF else 1
+    offsets.append(pos)
+    return offsets
+
+
+def editor_card(text: str, marks: "tuple[CardMark, ...]") -> "tuple[str, list[dict]]":
+    """원문과 그 표식 → (편집기 문서, 웹 표식). 표식 좌표는 그 문서의 UTF-16 단위다."""
+    offsets = _editor_offsets(text)
+    return _LINE_BREAK.sub("\n", text), [
+        {"kind": m.kind, "name": m.name, "start": offsets[m.start], "end": offsets[m.end]}
         for m in marks
     ]
+
+
+def source_text(source: str, edited: str, eol: str) -> str:
+    """편집기 문서를 고친 ``edited`` → 원문 줄바꿈의 글.
+
+    ``source`` 는 그 문서의 원문이다. 고치지 않은 자리는 원문 글자(줄바꿈 포함)를 그대로 가져오고,
+    새로 친 줄바꿈은 ``eol``(템플릿의 줄바꿈)로 쓴다 — 손대지 않은 메아리는 원문 그대로 돌아온다.
+    받은 글도 편집기 문서로 접고 맞춘다(편집기는 CR 을 보내지 않지만, 보내도 줄이 겹치지 않게).
+    """
+    edited = _LINE_BREAK.sub("\n", edited)
+    starts = [m.start() for m in _EDITOR_UNIT.finditer(source)] + [len(source)]
+    return "".join(
+        source[starts[i1]:starts[i2]] if tag == "equal" else edited[j1:j2].replace("\n", eol)
+        for tag, i1, i2, j1, j2 in alignment(_LINE_BREAK.sub("\n", source), edited)
+    )
 
 
 @dataclass(frozen=True)
