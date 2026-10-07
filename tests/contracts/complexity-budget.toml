@@ -1178,31 +1178,6 @@ function_complexity = 15
 [budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator.run_managed"]
 function_complexity = 13
 
-[budget."src/hwpxfiller/webapp/editor_session.py"]
-module_statements = 572
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader"]
-class_methods = 31
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._do_discard_patch"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._ensure_model"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._restore_from"]
-function_complexity = 32
-function_statements = 57
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection"]
-class_methods = 24
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection._pairing_snapshot"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection.prepare"]
-function_complexity = 17
-
 [budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession"]
 class_methods = 39
 

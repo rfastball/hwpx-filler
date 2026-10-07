@@ -134,7 +134,7 @@ class EditorController:
         header_row: int = 0,
         emit_push: bool = True,
     ) -> None:
-        self.loader.load_data_path(path, sheet=sheet, header_row=header_row, emit_push=emit_push)
+        self.loader.data.load_path(path, sheet=sheet, header_row=header_row, emit_push=emit_push)
         if not emit_push:
             self.refresh_panel()
 

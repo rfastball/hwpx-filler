@@ -128,7 +128,7 @@ LIVE_ENTRY_REASONS = frozenset(
 #: 이 사유로 열린 편집 세션의 데이터는 「이전 세션의 잔재」가 아니라 **그 세션이 존재하는
 #: 이유**다. 그래서 두 자리가 이 목록 하나를 읽는다: ①브리지가 진입에 데이터 참조를
 #: 실어 보낼지(``WebFrontend._mounted_data_handoff``) ②편집기가 템플릿 교체를 건너 그
-#: 데이터를 살릴지(``EditorController._anchor_stash``). 사유로 판정하는 이유는 데이터가
+#: 데이터를 살릴지(``EditorDataMount.anchor_stash``). 사유로 판정하는 이유는 데이터가
 #: 있는 세션이라고 다 여기 들지 않기 때문이다 — 관문에서 사람이 직접 고른 데이터는
 #: 종전대로 끊긴다.
 #:
