@@ -17,8 +17,9 @@ import pytest
 from hwpxfiller.domain.dataset_reference import DatasetReference
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.job_store import JobRegistry
+from hwpxfiller.webapp.data_zone import JobDataSession
 from hwpxfiller.webapp.screen_editor import EditorController
-from hwpxfiller.webapp.screens import registered_sheet_tabs
+from hwpxfiller.webapp.screens import corrupt_dataset_text, registered_sheet_tabs
 
 REPO = Path(__file__).resolve().parents[1]
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
@@ -146,3 +147,42 @@ def test_binding_sheet_tabs_do_not_mix_a_relinked_registration_with_the_open_fil
     ctrl.refresh_panel()
 
     assert ctrl.snapshot()["data_sheet_tabs"] == []
+
+
+def test_a_corrupt_registration_is_not_projected_as_a_registration_without_tabs(tmp_path):
+    """손상된 등록을 「시트 선언 없음」(빈 띠)으로 낮추지 않는다 — 막힌 탭과 손상 문장이 선다.
+
+    문장은 풀 목록의 손상 통지와 **같은 함수**가 짓는다(같은 손상을 두 문형으로 말하지 않는다).
+    지워진 등록은 종전대로 띠가 없다. 읽어 둔 데이터는 어느 쪽이든 그대로다.
+    """
+    ctrl, pool = _editor(tmp_path)
+    key = pool.add(DatasetReference(name="월별 공고", kind="excel", opts={
+        "path": str(MULTI_SHEET), "sheet": "공고목록", "sheets": ["공고목록", "낙찰현황"],
+    }))
+    ctrl.loader.load_template_path(str(TPL_COMPILED))
+    assert ctrl.dispatch("use_pool_data", {"key": key})["ok"] is True
+    records = ctrl.edit.records
+
+    pool.slot_path(key).write_text("{깨진 JSON", encoding="utf-8")
+    ctrl.refresh_panel()
+    _entries, corrupted = pool.list_references()
+    assert [entry.file_name for entry in corrupted] == [pool.slot_path(key).name]
+    assert ctrl.snapshot()["data_sheet_tabs"] == [{
+        "key": key, "sheet": "공고목록", "active": True, "selectable": False,
+        "reason": corrupt_dataset_text(corrupted[0].file_name, corrupted[0].error),
+        "damaged": True,
+    }]
+    assert ctrl.edit.records is records
+    # 막힌 탭을 우회해 보내도 마운트 관문이 손상을 그대로 거절한다(상태 불변).
+    refused = ctrl.dispatch("use_pool_data", {"key": key, "sheet": "낙찰현황"})
+    assert refused["ok"] is False and ctrl.edit.records is records
+
+    # 작업 화면 하단 띠도 같은 함수다 — 같은 손상에 같은 막힌 탭을 낸다.
+    zone = JobDataSession(pool)
+    zone.pool_key, zone.path, zone.sheet, zone.kind = key, ctrl.edit.data_path, "공고목록", ""
+    assert zone.sheet_tabs() == ctrl.snapshot()["data_sheet_tabs"]
+
+    pool.slot_path(key).unlink()
+    ctrl.refresh_panel()
+    assert ctrl.snapshot()["data_sheet_tabs"] == []
+    assert zone.sheet_tabs() == []

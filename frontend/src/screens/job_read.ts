@@ -18,6 +18,7 @@ import type { DataPickerController, PickerSessionRead } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
 import { RefreshButton } from "./refresh_button.ts";
 import { SheetTabs } from "./sheet_tabs.ts";
+import { createLatestIntentQueue } from "./latest_intent.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
 import type { JobRunCallbacks, ScreenPorts } from "./ports.ts";
@@ -112,8 +113,8 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   let zoneTail = Promise.resolve();
   let browseTail = Promise.resolve();
   let switching = false;
-  let dataSwitchTail = Promise.resolve();
-  let dataSwitchIntent = 0;
+  /* 연속 데이터 전환은 마지막 대상 하나로 착지한다(편집기 시트 탭과 같은 큐). */
+  const dataSwitches = createLatestIntentQueue();
   let browseGeneration = 0;
   let browseAfterClose: (() => void) | null = null;
   let searchTimer: number | null = null;
@@ -259,26 +260,22 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 
   function switchData(key: string, sheet?: string): Promise<void> {
     if (switching) return Promise.resolve();
-    const intent = ++dataSwitchIntent;
     patchUi({ switchingData: sheet ?? key });
-    const next = dataSwitchTail.then(async () => {
-      if (intent !== dataSwitchIntent) return;
+    return dataSwitches.run(async (isCurrent) => {
       try {
         const current = snapshot();
         if ((current?.data_pool_key === key && (sheet === undefined || current?.data_target?.sheet === sheet))
           || !(await confirmDataSwap())) return;
         await flushPendingEdits();
-        if (intent !== dataSwitchIntent) return;
+        if (!isCurrent()) return;
         const result = await call("job", "load_pool", { key, ...(sheet === undefined ? {} : { sheet }) });
         if (result.ok === false) deps.notify(String(result.error));
       } catch (error) {
         deps.notify(String((error as Obj)?.message || error));
       } finally {
-        if (intent === dataSwitchIntent) patchUi({ switchingData: "" });
+        if (isCurrent()) patchUi({ switchingData: "" });
       }
-    });
-    dataSwitchTail = next;
-    return next;
+    }, undefined);
   }
 
   /* 현재 데이터를 **다시 읽는다**(U4 항목 5 · #932 U4-C). 판정·수치·문안은 전부 Python

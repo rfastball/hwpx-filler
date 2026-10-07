@@ -224,7 +224,7 @@ function_complexity = 16
 function_complexity = 17
 
 [budget."frontend/src/screens/editor_controller.ts"]
-module_statements = 563
+module_statements = 562
 
 [budget."frontend/src/screens/editor_controller.ts::createEditorController"]
 function_statements = 94
@@ -242,7 +242,7 @@ function_complexity = 32
 function_complexity = 14
 
 [budget."frontend/src/screens/job_read.ts"]
-module_statements = 466
+module_statements = 461
 
 [budget."frontend/src/screens/job_read.ts::BrowseRow"]
 function_complexity = 12
@@ -257,7 +257,7 @@ function_complexity = 16
 function_complexity = 15
 
 [budget."frontend/src/screens/job_read.ts::createJobReadController.switchData"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."frontend/src/screens/job_relink.ts::createJobRelink.relinkTemplate"]
 function_complexity = 15

@@ -31,13 +31,24 @@ test("시트 탭은 투영된 행·활성·사유만 렌더하고 행이 없으�
   assert.equal(render({}, {}), "", "선언된 시트가 없으면 띠를 세우지 않는다");
 });
 
-function editorHarness() {
+test("손상된 등록은 막힌 탭과 함께 손상 문장을 띠 아래에 드러낸다", () => {
+  const reason = "⚠ 손상된 등록 데이터: book.dataset.json — Expecting value";
+  const markup = render({ data_sheet_tabs: [
+    { key: "book", sheet: "공고목록", active: true, selectable: false, reason, damaged: true },
+  ] }, { guarded() {}, usePoolData() {} });
+  assert.match(markup, /disabled=""[^>]*>공고목록<\/button><\/div><p class="note dangerbox" role="alert">/);
+  assert.ok(markup.includes(`role="alert">${reason}</p>`), "손상 문장이 툴팁에만 숨어 있습니다");
+  assert.equal(render({ data_sheet_tabs: TABS }, {}).includes("dangerbox"), false);
+});
+
+function editorHarness(options = {}) {
   const trace = [];
   const client = {
     whenReady: () => Promise.resolve(),
     async initial() { return { ok: true, value: { section: "binding", data_sheet_tabs: TABS } }; },
     async dispatch(screen, action, payload) {
       trace.push([screen, action, payload]);
+      if (action === "mapping_reset_stakes") return { ok: true, value: options.stakes || {} };
       return { ok: true, value: action === "use_pool_data" ? { ok: true, label: "월별" } : {} };
     },
     async invoke() { return { ok: true, value: null }; },
@@ -47,7 +58,10 @@ function editorHarness() {
   const controller = createEditorController({
     doc: { getElementById: () => null, querySelector: () => null },
     runtime, client, ports: createScreenPorts(), services: createServiceHandoffPorts(),
-    modal: { confirm: async () => false, prompt: async () => null, open() {}, close() {} },
+    modal: {
+      confirm: (spec) => { trace.push(["confirm", spec.body]); return options.confirm ? options.confirm() : Promise.resolve(false); },
+      prompt: async () => null, open() {}, close() {},
+    },
     popover: { wireDismiss: () => () => {} },
     chain: Intent,
     navigation: { go() {}, refresh: async () => {} },
@@ -72,4 +86,44 @@ test("고른 시트는 확인 질의 뒤 use_pool_data 에 시트를 실어 보�
   /* 우 열의 등록 행 고르기는 종전 그대로 키 하나만 싣는다(기본 시트). */
   assert.equal(await controller.usePoolData("book"), true);
   assert.deepEqual(trace.at(-1), ["editor", "use_pool_data", { key: "book" }]);
+});
+
+const settle = async () => {
+  for (let turn = 0; turn < 8; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+const mounts = (trace) => trace.filter((row) => row[1] === "use_pool_data").map((row) => row[2]);
+
+test("연속 두 번 누르면 마지막으로 누른 시트 하나만 마운트한다", async () => {
+  const { controller, trace } = editorHarness();
+  await controller.init();
+  const strip = BindingSheetTabs({ snapshot: controller.model.getSnapshot(), controller });
+  strip.props.onPick(TABS[1]);
+  strip.props.onPick({ ...TABS[1], sheet: "계약현황" });
+  await settle();
+  assert.deepEqual(mounts(trace), [{ key: "book", sheet: "계약현황" }]);
+});
+
+test("앞 선택의 확인을 기다리는 사이 다시 누르면 확인 뒤에도 마지막 대상만 착지한다", async () => {
+  /* 확정 매핑이 있어 매 전환이 확인을 묻는다. 첫 확인이 떠 있는 동안 둘째를 누른다 —
+     확인은 겹쳐 뜨지 않고(차례로 하나씩), 첫 선택은 승인돼도 변이를 보내지 않는다. */
+  const answers = [];
+  const { controller, trace } = editorHarness({
+    stakes: { human: 2 },
+    confirm: () => new Promise((resolve) => answers.push(resolve)),
+  });
+  await controller.init();
+  const first = controller.usePoolData("book", "낙찰현황");
+  await settle();
+  assert.equal(answers.length, 1, "첫 선택의 확인이 떠야 합니다");
+  const second = controller.usePoolData("book", "계약현황");
+  await settle();
+  assert.equal(answers.length, 1, "앞 확인이 끝나기 전에 둘째 확인을 겹쳐 띄우면 안 됩니다");
+  answers[0](true);
+  assert.equal(await first, false, "낡은 선택은 승인돼도 착지하지 않습니다");
+  await settle();
+  assert.equal(answers.length, 2);
+  answers[1](true);
+  assert.equal(await second, true);
+  assert.deepEqual(mounts(trace), [{ key: "book", sheet: "계약현황" }]);
+  assert.equal(trace.filter((row) => row[0] === "confirm").length, 2);
 });
