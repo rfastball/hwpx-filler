@@ -237,6 +237,7 @@ export const SCREEN_ACTIONS = {
     close: { required: [], optional: [] },
   },
   pool: {
+    reorder_sheets: { required: ["key", "sheets"], optional: [] },
     refresh: { required: [], optional: [] },
     review: { required: ["key"], optional: [] },
     archive: { required: ["key"], optional: [] },

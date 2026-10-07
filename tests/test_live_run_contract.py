@@ -86,7 +86,7 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
             start=fake_start,
         ),
     )
-    _stub_app_boot(monkeypatch, tmp_path)
+    frontends = _stub_app_boot(monkeypatch, tmp_path)
 
     order: "list[str]" = []
     alerts: "list[str]" = []
@@ -130,10 +130,12 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     ]
     assert len(alerts) == 1 and "theme failed" in alerts[0]
     assert notices == [], "live theme 경보가 WebView bridge를 다시 열었습니다"
+    assert frontends[-1].controllers["job"]._registered_data is None
 
     window = _FakeWindow()
     monkeypatch.setattr(app_mod.single_instance, "acquire", lambda _home: object())
     assert app_mod.main(argv=[]) == 0
+    assert callable(frontends[-1].controllers["job"]._registered_data)
     window.events.loaded.handlers[0]()
     assert len(notices) == 1 and "theme failed" in notices[0]
     assert len(alerts) == 1, "정상 제품의 창 경보를 durable-only로 강등했습니다"
@@ -516,9 +518,11 @@ def test_a_window_borrowing_run_does_not_install_the_test_surface(monkeypatch, t
 
     assert app_mod.main(argv=[], live=_run(name="quickstart-101")) == 0
     assert not hasattr(frontends[-1], "selftest_claim")
+    assert frontends[-1].controllers["job"]._registered_data is None
 
     assert app_mod.main(argv=["app", "--selftest"]) == 0
     assert hasattr(frontends[-1], "selftest_claim")
+    assert frontends[-1].controllers["job"]._registered_data is None
 
 
 def test_a_live_run_never_mutates_process_state(monkeypatch, tmp_path) -> None:

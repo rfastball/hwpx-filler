@@ -10,22 +10,26 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
+from _output_folder_pick import pick_output_folder
+from tests.test_webapp_job import (
+    _data_csv,
+    _mount_all,
+    _template_change_controller,
+    _unreviewed_session,
+)
+
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.application.prepare_orchestration import APPLY_INTEGRITY_ERROR, ApplyOutcome
-from hwpxfiller.application.selection_compatibility import REVIEW_REQUIRED
 from hwpxfiller.application.template_change_product import (
     PRODUCT_PREPARATION_STATUSES,
-    SOURCE_DRIFT_CHANGED,
-    SOURCE_DRIFT_UNCHANGED,
-    SOURCE_DRIFT_UNKNOWN,
     TemplateChangeProjectionError,
     preparation_view,
     product_preparation_status,
     template_change_zone_actionable,
-    workbench_template_change_verdict,
 )
 from hwpxfiller.application.work_template_state import (
     CHANGE_APPLIED,
@@ -37,13 +41,12 @@ from hwpxfiller.application.work_template_state import (
 )
 from hwpxfiller.application.jobs import load_job
 from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external import template_change as tc
 from hwpxfiller.external.template_change import (
-    NO_SOURCE_DRIFT_JUDGMENT,
     SUPPORTED_MEDIA,
-    SourceDrift,
     TemplateChangeCoordinator,
     TemplateChangeError,
     unsupported_zone,
@@ -101,6 +104,7 @@ def _ready(tmp_path):
     coord = _coordinator(tmp_path, reg)
     first = coord.check("공고서", "k1")
     assert first["preparation"]["status"] == "no_change"
+    tpl = Path(load_job(reg, "공고서").template_path)
     _write_template(tpl, ["공고명", "추정가격"])  # 실물 수정(크기 변화)
     ready = coord.check("공고서", "k2")["preparation"]
     assert ready["status"] == "ready" and ready["change_token"]
@@ -268,7 +272,8 @@ def test_qualification_failure_projects_invalid_with_diagnostics(tmp_path):
     reg, tpl = _seed(tmp_path)
     coord = _coordinator(tmp_path, reg)
     coord.check("공고서", "k1")  # bootstrap
-    tpl.write_bytes(b"broken bytes")  # 원본이 hwpx 가 아니게 손상
+    tpl = Path(load_job(reg, "공고서").template_path)
+    tpl.write_bytes(b"broken bytes")  # 앱 편집본 손상
     view = coord.check("공고서", "k2")["preparation"]
     assert view["status"] == "invalid"
     assert view["diagnostics"]  # Candidate 유래 진단 재진술(빈 fallback 금지)
@@ -342,6 +347,7 @@ def test_txt_check_and_apply_advance_the_same_lifecycle(tmp_path):
     coord = _coordinator(tmp_path, reg)
     first = coord.check("안내문", "k1")
     assert first["ok"] is True and first["preparation"]["status"] == "no_change"
+    tpl = Path(load_job(reg, "안내문").template_path)
     zone = coord.zone("안내문", "txt", False)
     assert zone["supported"] and zone["checkable"] and zone["epoch"] == 1
 
@@ -371,6 +377,7 @@ def test_txt_structure_marker_diagnostics_project_invalid_with_reasons(tmp_path)
     reg, tpl = _seed_txt(tmp_path)
     coord = _coordinator(tmp_path, reg)
     coord.check("안내문", "k1")  # bootstrap(정상 표기)
+    tpl = Path(load_job(reg, "안내문").template_path)
     tpl.write_text("{{#항목 s1 첨부}}\n내용 {{공고명}}\n", encoding="utf-8")  # 닫는 마커 없음
     view = coord.check("안내문", "k2")["preparation"]
     assert view["status"] == "invalid" and view["change_token"] is None
@@ -384,6 +391,7 @@ def test_txt_encoding_failure_is_a_loud_diagnostic_not_an_empty_structure(tmp_pa
     reg, tpl = _seed_txt(tmp_path)
     coord = _coordinator(tmp_path, reg)
     coord.check("안내문", "k1")
+    tpl = Path(load_job(reg, "안내문").template_path)
     tpl.write_bytes("본문 {{공고명}}".encode("cp949"))  # 온나라 기안 txt 의 흔한 인코딩
     view = coord.check("안내문", "k2")["preparation"]
     assert view["status"] == "invalid"
@@ -404,124 +412,100 @@ def test_txt_bootstrap_failure_disables_check_until_repaired(tmp_path):
     assert coord.check("깨진안내", "k2")["preparation"]["status"] == "no_change"
 
 
-def test_txt_applied_work_survives_later_source_edits_with_a_loud_note(tmp_path):
-    """적용 뒤 원본을 고쳐도 Work 는 안 움직이고, 그 사실을 시끄럽게 알린다(#681 F1 동형)."""
-    reg, tpl = _seed_txt(tmp_path)
+def test_applied_txt_uses_its_owned_copy_after_original_changes(tmp_path):
+    reg, original = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    assert coord.check("안내문", "k1")["preparation"]["status"] == "no_change"
+    applied = Path(load_job(reg, "안내문").template_path)
+    assert applied != original
+    assert applied.name == original.name
+    before = applied.read_bytes()
+
+    original.write_text("외부 원본 수정 {{공고명}}", encoding="utf-8")
+    assert coord.check("안내문", "k2")["preparation"]["status"] == "no_change"
+    original.unlink()
+    assert coord.zone("안내문", "txt", False)["actionable"] is False
+    assert applied.read_bytes() == before
+
+
+def test_applied_txt_edits_are_the_explicit_change_source(tmp_path):
+    reg, _original = _seed_txt(tmp_path)
     coord = _coordinator(tmp_path, reg)
     coord.check("안내문", "k1")
-    assert coord.source_drift("안내문") == SourceDrift(SOURCE_DRIFT_UNCHANGED, None)
-    tpl.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
-    token = coord.check("안내문", "k2")["preparation"]["change_token"]
-    coord.apply("안내문", token)
-    staged_before = coord.zone("안내문", "txt", False)["epoch"]
-
-    tpl.write_text("적용 뒤 다시 고침 {{공고명}}\n", encoding="utf-8")
-    assert coord.zone("안내문", "txt", False)["epoch"] == staged_before  # Work 무변경
-    drift = coord.source_drift("안내문")
-    assert drift.state == SOURCE_DRIFT_CHANGED
-    assert drift.note and "캡처" in drift.note
-
-
-# ─── 존 노출 술어(#932 B5) ─────────────────────────────────────────────────
-
-
-def test_unbootstrapped_work_has_no_drift_judgment(tmp_path):
-    """미부트스트랩은 「안 갈렸다」가 아니라 **판정 불성립**이다 — 대조할 캡처본이 없다."""
-    reg, _tpl = _seed_txt(tmp_path)
-    coord = _coordinator(tmp_path, reg)
-    assert coord.source_drift("안내문") is NO_SOURCE_DRIFT_JUDGMENT
-
-
-def test_zone_stands_down_once_the_source_is_unchanged(tmp_path):
-    """U4 12번의 실제 요구 — 준비를 마쳤고 원본 그대로면 존은 자기 발로 내려온다."""
-    reg, _tpl = _seed_txt(tmp_path)
-    coord = _coordinator(tmp_path, reg)
-    coord.check("안내문", "k1")
-    zone = coord.zone("안내문", "txt", False)
-    assert zone["preparation"]["status"] == "no_change"
-    assert zone["source_drift"] == SOURCE_DRIFT_UNCHANGED
-    assert zone["actionable"] is False
-
-
-def test_zone_stands_when_the_source_was_edited(tmp_path):
-    """확인을 **누르지 않아도** 존이 스스로 선다 — B5 가 요구한 「앱이 알아서 안다」."""
-    reg, tpl = _seed_txt(tmp_path)
-    coord = _coordinator(tmp_path, reg)
-    coord.check("안내문", "k1")
-    tpl.write_text("한글에서 고친 본문 {{공고명}}\n", encoding="utf-8")
-    zone = coord.zone("안내문", "txt", False)
-    assert zone["source_drift"] == SOURCE_DRIFT_CHANGED
-    assert zone["actionable"] is True
-
-
-def test_unreadable_source_is_unknown_and_still_stands(tmp_path):
-    """「모른다」를 「없다」로 접지 않는다 — 읽지 못한 원본은 존을 세우고 사유를 든다."""
-    reg, tpl = _seed_txt(tmp_path)
-    coord = _coordinator(tmp_path, reg)
-    coord.check("안내문", "k1")
-    tpl.unlink()  # 원본이 사라져 값싸게 대조할 수 없다
-    drift = coord.source_drift("안내문")
-    assert drift.state == SOURCE_DRIFT_UNKNOWN
-    assert drift.note  # 재진술 없는 침묵 금지
+    applied = Path(load_job(reg, "안내문").template_path)
+    applied.write_text("앱 편집본 {{공고명}}\n추가 {{담당자}}", encoding="utf-8")
+    coord = _coordinator(tmp_path, reg)  # 다시 열어도 미적용 편집분을 덮어쓰지 않는다.
+    prepared = coord.check("안내문", "k2")["preparation"]
+    assert prepared["status"] == "ready"
     assert coord.zone("안내문", "txt", False)["actionable"] is True
+    assert coord.apply("안내문", prepared["change_token"])["status"] == "applied"
+    assert applied.read_text(encoding="utf-8").startswith("앱 편집본")
 
 
-def test_zone_stands_while_a_prepared_change_waits(tmp_path):
-    """``ready`` 는 종결이 아니다 — 적용이라는 미이행 동사가 남아 있으면 숨기지 않는다."""
-    _reg, _tpl, coord, _token = _ready(tmp_path)
-    zone = coord.zone("공고서", "hwpx", False)
-    assert zone["preparation"]["status"] == "ready"
-    assert zone["actionable"] is True
-
-
-def test_every_zone_branch_carries_the_same_keys(tmp_path):
-    """키 부재 분기 금지 — 표면이 ``"actionable" in z`` 로 갈리면 갈래 하나가 조용히 사라진다."""
-    reg = JobRegistry(tmp_path / "jobs")
-    tpl = tmp_path / "깨진.txt"
-    tpl.write_bytes(b"\xff\xfe\x00\x00")
-    reg.save(Job(name="깨진안내", template_path=str(tpl)))
+def test_existing_work_migrates_from_applied_blob_without_old_file(tmp_path):
+    reg, original = _seed_txt(tmp_path)
     coord = _coordinator(tmp_path, reg)
-    coord.check("깨진안내", "k1")  # bootstrap 실패 기록
-    branches = [
-        unsupported_zone(),
-        coord.zone("깨진안내", "txt", False),          # initialization_required
-        coord.zone("깨진안내", "없는매체", False),      # unsupported
-    ]
-    for zone in branches:
-        assert {"actionable", "source_drift"} <= set(zone), zone
+    coord.check("안내문", "k1")
+    applied = Path(load_job(reg, "안내문").template_path)
+    expected = applied.read_bytes()
+    reg.relink_template("안내문", str(original))
+    applied.unlink()
+    original.unlink()
+
+    reopened = _coordinator(tmp_path, reg)
+    assert Path(load_job(reg, "안내문").template_path).read_bytes() == expected
+    assert reopened.check("안내문", "k2")["preparation"]["status"] == "no_change"
 
 
-def test_initialization_failure_zone_still_stands(tmp_path):
-    """비활성 + 사유 병기가 이 존의 몫이라, 숨기면 왜 안 도는지 물을 자리가 사라진다."""
-    reg = JobRegistry(tmp_path / "jobs")
-    tpl = tmp_path / "깨진.txt"
-    tpl.write_bytes(b"\xff\xfe\x00\x00")
-    reg.save(Job(name="깨진안내", template_path=str(tpl)))
+def test_failed_applied_copy_retires_old_link_without_blocking_other_work(tmp_path, monkeypatch):
+    reg, original = _seed_txt(tmp_path)
+    healthy_source = tmp_path / "정상.txt"
+    healthy_source.write_text("정상 {{공고명}}", encoding="utf-8")
+    reg.save(Job(name="정상", template_path=str(healthy_source)))
     coord = _coordinator(tmp_path, reg)
-    coord.check("깨진안내", "k1")
-    zone = coord.zone("깨진안내", "txt", False)
-    assert zone["reason"] == "initialization_required"
-    assert zone["checkable"] is False and zone["actionable"] is True
+    coord.check("안내문", "bad-k1")
+    coord.check("정상", "good-k1")
+    broken_asset = Path(load_job(reg, "안내문").template_path)
+    healthy_asset = Path(load_job(reg, "정상").template_path)
+    expected = healthy_asset.read_bytes()
+    reg.relink_template("안내문", str(original))
+    reg.relink_template("정상", str(healthy_source))
+    broken_asset.unlink()
+    healthy_asset.unlink()
+    original.write_text("외부에서 바뀐 원본", encoding="utf-8")
+    healthy_source.unlink()
+
+    write_blob = tc.AppliedTemplateAsset._write_blob
+
+    def fail_one(self, path, exact):
+        if path == broken_asset:
+            raise OSError("copy failed")
+        write_blob(self, path, exact)
+
+    monkeypatch.setattr(tc.AppliedTemplateAsset, "_write_blob", fail_one)
+    reopened = _coordinator(tmp_path, reg)
+    assert Path(load_job(reg, "안내문").template_path) == broken_asset
+    assert not broken_asset.exists()
+    assert original.read_text(encoding="utf-8") == "외부에서 바뀐 원본"
+    assert healthy_asset.read_bytes() == expected
+    with pytest.raises(FileNotFoundError):
+        reopened.ensure_bootstrapped("안내문")
 
 
-def test_new_product_statuses_default_to_standing():
-    """어휘가 늘면 기본은 **세움**이다 — 등록을 잊은 status 가 구획을 조용히 지우지 않는다."""
-    settled = {"no_change", "applied", "invalid", "rejected"}
+def test_zone_shows_only_pending_applied_work(tmp_path):
+    reg, _original = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")
+    assert coord.zone("안내문", "txt", False)["actionable"] is False
+    assert "source_drift" not in coord.zone("안내문", "txt", False)
+
+
+def test_template_change_zone_actionable_uses_preparation_status():
     for status in PRODUCT_PREPARATION_STATUSES:
         actionable = template_change_zone_actionable(
             supported=True, reason="", preparation_status=status,
-            source_drift=SOURCE_DRIFT_UNCHANGED,
         )
-        assert actionable is (status not in settled), status
-
-
-def test_unsupported_media_never_stands():
-    """capability 밖은 술어 이전의 문제다 — drift 가 무엇이든 존은 없다."""
-    for drift in (SOURCE_DRIFT_CHANGED, SOURCE_DRIFT_UNKNOWN, None):
-        assert template_change_zone_actionable(
-            supported=False, reason="unsupported_media",
-            preparation_status=None, source_drift=drift,
-        ) is False
+        assert actionable is (status not in {"no_change", "applied", "invalid", "rejected"})
 
 
 # ─── 자동 준비(#932 B5) ────────────────────────────────────────────────────
@@ -620,61 +604,6 @@ def test_projection_refuses_ready_without_change_and_unknown_change():
         product_preparation_status(_prep("READY"), "몰라")
 
 
-@pytest.mark.parametrize(
-    ("product_status", "expected"),
-    [
-        # 확인이 결론 없이 끝난 여섯 — 다시 확인하면 지워진다.
-        ("error", REVIEW_REQUIRED),
-        ("interrupted", REVIEW_REQUIRED),
-        ("conflict", REVIEW_REQUIRED),
-        ("source_changed", REVIEW_REQUIRED),
-        ("changed_while_checking", REVIEW_REQUIRED),
-        ("superseded", REVIEW_REQUIRED),
-        # 결론이 있는 것들 — 확인을 다시 시켜도 지워지지 않으므로 확인 요구로 세우지 않는다.
-        ("ready", None),  # 해소 동사는 **적용**이다(확인 요구로 세우면 막다른 길).
-        ("no_change", None),
-        ("applied", None),
-        ("invalid", None),
-        ("rejected", None),
-        ("checking", None),  # 진행 중 — 사용자 조치가 아니다.
-        (None, None),  # 확인한 적 없음 — 대조할 변경이 없다.
-    ],
-)
-def test_workbench_template_change_verdict_table(product_status, expected):
-    """제품 status → 작업대 verdict(#912 D2). 기준은 「확인이 이 상태를 지우는가」 하나다."""
-    assert workbench_template_change_verdict(product_status) == expected
-
-
-def test_workbench_verdict_covers_every_product_status():
-    """어휘가 늘면 이 판정도 함께 늘어야 한다 — 조용한 기본값으로 새 status 를 삼키지 않는다."""
-    for status in PRODUCT_PREPARATION_STATUSES:
-        assert workbench_template_change_verdict(status) in (REVIEW_REQUIRED, None)
-
-
-@pytest.mark.parametrize(
-    ("drift", "expected"),
-    [
-        (SOURCE_DRIFT_CHANGED, REVIEW_REQUIRED),   # 원본이 갈렸다 — 캡처본으로 조용히 밀지 않는다
-        (SOURCE_DRIFT_UNKNOWN, REVIEW_REQUIRED),   # 모른다 — 모르는 채 미는 것이 곧 조용한 추측
-        (SOURCE_DRIFT_UNCHANGED, None),
-        (None, None),                              # 판정 불성립(미부트스트랩)
-    ],
-)
-def test_source_drift_raises_the_same_review_requirement(drift, expected):
-    """드리프트도 확인 요구를 세운다(#932 B5).
-
-    존이 조치가 있을 때만 서게 된 뒤로 「원본을 고쳤는데 그 사실을 못 본 채 생성」할 창이
-    생겼다 — 생성은 캡처된 bytes 를 쓰므로(#681 F1) 그 창이 곧 조용한 오생성이다. 막되
-    좌초시키지 않는다: 복구 동사(`#jobTplCheck`)는 같은 판정이 세우는 존 안에 있다.
-    """
-    assert workbench_template_change_verdict(None, drift) == expected
-
-
-def test_unsettled_status_stands_regardless_of_drift():
-    """두 축은 독립이다 — 드리프트가 없어도 미종결 확인은 그대로 요구를 세운다."""
-    assert workbench_template_change_verdict("error", SOURCE_DRIFT_UNCHANGED) == REVIEW_REQUIRED
-
-
 def test_view_drops_change_token_unless_ready():
     view = preparation_view(
         _prep("READY"), CHANGE_APPLIED,
@@ -698,7 +627,9 @@ def test_work_state_read_port_returns_none_for_a_missing_aggregate(tmp_path):
     from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
 
     store = AtomicWorkTemplateStateStore(tmp_path / "works")
-    port = tc._WorkStateReadPort(store)
+    from hwpxfiller.external.applied_template_asset import _WorkStateReadPort
+
+    port = _WorkStateReadPort(store)
     assert port.load("missing-work-id") is None
 
 
@@ -791,3 +722,71 @@ def test_bootstrap_failure_does_not_release_authority_it_did_not_issue(tmp_path,
     assert result == {"ok": False, "reason": "initialization_required"}
     assert released == []  # issued_now=False — 이 호출은 발급하지 않았으니 돌려주지 않는다
     assert reg.load("깨진작업").authority_id == "w-preexisting"  # 좀비 롤백 대상이 아니다
+
+
+def test_a_rule_change_no_longer_refuses_the_run(tmp_path):
+    """규칙이 바뀌어도 실행은 열린다 — 고지가 그 사실을 말할 뿐이다(#957)."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "다른-{{seq:001}}"
+    job.mapping.mappings[0] = FieldMapping(
+        template_field="공고명", type="const", const="수정된 공고명",
+    )
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.on_editor_mapping_saved("공고서")
+    ctrl.dispatch("refresh", {})
+    snap = ctrl.snapshot()
+    assert snap["review"]["required"] is True           # 요구는 서고
+    assert snap["template_change"]["actionable"] is False
+    assert snap["gate"]["enabled"] is True              # 게이트는 열려 있다
+    assert ctrl.generate()["ok"] is True
+
+
+@pytest.mark.parametrize("adds_field", [False, True])
+def test_template_apply_only_requires_missing_field_bindings(tmp_path, adds_field):
+    """적용 후 재확인 없이 실행하며, 실제로 늘어난 필드의 미연결만 막는다."""
+    ctrl, _ = _template_change_controller(tmp_path, managed=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    pick_output_folder(ctrl, out)
+    ready = ctrl.refresh_panel()
+    assert ready["managed_hwpx"] is True
+    assert ready["workbench_observation"]["create_action"]["enabled"] is True
+
+    template = Path(ctrl.registry.load("공고서").template_path)
+    if adds_field:
+        _write_template(template, ["공고명", "추정가격", "담당자"])
+    else:
+        template.write_bytes(template.read_bytes() + b"SAME-FIELDS-EDIT")
+    preparation = ctrl.dispatch("template_check", {"request_id": "k2"})["preparation"]
+    assert preparation["status"] == "ready"
+    applied = ctrl.dispatch("template_apply", {"change_token": preparation["change_token"]})
+    assert applied["status"] == "applied"
+
+    if not adds_field:
+        assert ctrl.snapshot()["template_change"]["actionable"] is False
+        assert ctrl.snapshot()["gate"]["enabled"] is True
+        assert ctrl.generate()["ok"] is True
+        return
+
+    blocked = ctrl.refresh_panel()
+    assert blocked["workbench_observation"]["create_action"]["enabled"] is False
+    assert "검증 완료. 생성할 수 있습니다." not in blocked["preflight"]["text"]
+    refused = ctrl.generate()
+    assert refused["ok"] is False, refused
+    assert not list(out.glob("*.hwpx"))
+
+    # 새 판본에 대한 연결 확정(편집기 저장과 같은 사건)이 생성을 다시 연다.
+    ctrl.registry.mutate(
+        "공고서",
+        lambda job: job.mapping.mappings.append(
+            FieldMapping(template_field="담당자", type="const", const="홍길동")
+        ),
+    )
+    ctrl.on_editor_mapping_saved("공고서")
+    reopened = ctrl.refresh_panel()
+    assert reopened["workbench_observation"]["create_action"]["enabled"] is True
+    made = ctrl.generate()
+    assert made["ok"] is True and made["status"] == "completed", made
+    assert len(list(out.glob("*.hwpx"))) == 2

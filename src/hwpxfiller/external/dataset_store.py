@@ -97,6 +97,11 @@ def load_reference(path: "str | Path") -> DatasetReference:
     return DatasetReference.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
+def _check_basis(expected: "str | None", states: "list[dict[str, str]]") -> None:
+    if expected != confirm_basis(states):
+        raise StaleConfirmError("확인 근거가 지금 상태와 다릅니다.")
+
+
 # ------------------------------------------------------------------ 레지스트리
 class DatasetPoolRegistry:
     """데이터셋 풀 레지스트리 — 디렉터리에 항목당 JSON 1개. 데이터 선택 다이얼로그의 원천.
@@ -210,6 +215,17 @@ class DatasetPoolRegistry:
             self.save_at(key, item)
             return item
 
+    def reorder_sheets(self, key: str, sheets: list[str]) -> DatasetReference:
+        """시트 순서만 저장한다. 기본 시트·시트별 필터·선택은 보존한다."""
+        def change(item: DatasetReference) -> None:
+            current = reference_sheets(item)
+            if (not isinstance(sheets, list)
+                    or any(not isinstance(name, str) for name in sheets)
+                    or len(sheets) != len(current) or set(sheets) != set(current)):
+                raise ValueError("등록할 시트와 기본 시트를 확인하세요.")
+            item.opts = {**item.opts, "sheets": list(sheets)}
+        return self.mutate(key, change)
+
     def delete(self, key: str) -> None:
         with self._write_lock:
             p = self.slot_path(key)
@@ -322,10 +338,6 @@ class DatasetPoolRegistry:
         except (FileNotFoundError, ValueError):
             raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {key}") from None
 
-    def _check_basis(self, expected: "str | None", states: "list[dict[str, str]]") -> None:
-        if expected != confirm_basis(states):
-            raise StaleConfirmError("확인 근거가 지금 상태와 다릅니다.")
-
     def archive(self, key: str) -> DatasetReference:
         """보관 전이 — 잠금 안 읽기-수정-쓰기(실행 후보에서만 제외, 참조 보존)."""
         return self.mutate(key, lambda item: item.archive())
@@ -386,7 +398,7 @@ class DatasetPoolRegistry:
             if same is None:
                 raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {name}")
             key, existing = same
-            self._check_basis(expected_basis, [bound_state(key, existing)])
+            _check_basis(expected_basis, [bound_state(key, existing)])
             if sheets is not None:
                 sheet_key = "sheet" if existing.kind == "excel" else "view"
                 opts = {**existing.opts, "sheets": list(sheets), sheet_key: sheets[0] if sheets else ""}
@@ -417,7 +429,7 @@ class DatasetPoolRegistry:
             if same is None:
                 raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {name}")
             key, existing = same
-            self._check_basis(expected_basis, [bound_state(key, existing)])
+            _check_basis(expected_basis, [bound_state(key, existing)])
 
             def _update(current: DatasetReference) -> None:
                 _replace_reference_opts(current, {**current.opts, **opts}, kind="excel")
@@ -493,7 +505,7 @@ class DatasetPoolRegistry:
         """
         with self._write_lock:
             current = self._slot_or_missing(key)
-            self._check_basis(expected_basis, [bound_state(key, current)])
+            _check_basis(expected_basis, [bound_state(key, current)])
             return self._relink_locked(key, path, sheet=sheet, note=note, name=name, sheets=sheets)
 
     def delete_confirmed(self, key: str, *, expected_basis: "str | None") -> DatasetReference:
@@ -503,7 +515,7 @@ class DatasetPoolRegistry:
         """
         with self._write_lock:
             item = self._slot_or_missing(key)
-            self._check_basis(expected_basis, [bound_state(key, item)])
+            _check_basis(expected_basis, [bound_state(key, item)])
             self.delete(key)
             return item
 
@@ -528,7 +540,7 @@ class DatasetPoolRegistry:
             ]
             if target is None or len(group) < 2:
                 raise FileNotFoundError("병합할 중복 등록이 더는 없습니다.")
-            self._check_basis(
+            _check_basis(
                 expected_basis, [bound_state(k, it) for k, it in group]
             )
             kept = dict(group)[keep]

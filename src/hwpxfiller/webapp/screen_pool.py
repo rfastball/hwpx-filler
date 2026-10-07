@@ -66,7 +66,7 @@ from ..application.dataset_pool import (
 )
 from ..data.excel import ambiguous_sheet_error, sheet_overview
 from ..data.pclm import list_sqlite_sheets  # 계약 목록 DB 의 시트 나열(등록 폼·게이트 공용)
-from ..domain.dataset_reference import DatasetReference, pclm_identity, reference_sheets
+from ..domain.dataset_reference import pclm_identity, reference_sheets
 from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
 from .screens import PushSink, corrupt_dataset_text
 
@@ -79,9 +79,7 @@ __all__ = [
 ]
 
 
-def display_reference(item: DatasetReference) -> str:
-    """재진술 문안에 쓰는 **표시용** 참조 요약 — 결속 재료가 아니다(모듈 독스트링 참조)."""
-    return reference_summary(item)
+display_reference = reference_summary
 
 
 class PoolController:
@@ -231,8 +229,7 @@ class PoolController:
         except FileNotFoundError:
             self._detail = None
 
-    def initial(self) -> dict:
-        return self.snapshot()
+    initial = snapshot
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
@@ -245,6 +242,10 @@ class PoolController:
 
     def _do_refresh(self, p: dict) -> None:
         """풀 재스캔 — 다른 표면(CLI 등록 등)의 변경을 되읽는다."""
+        self.vm.refresh()
+
+    def _do_reorder_sheets(self, p: dict) -> None:
+        self.vm.registry.reorder_sheets(p["key"], p["sheets"])
         self.vm.refresh()
 
     # ---- 상태 전이(비파괴 — 확인 없이 즉시, 되돌림 가능)

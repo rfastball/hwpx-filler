@@ -76,19 +76,19 @@ def _parse_time(value: str) -> "tuple[int, int] | None":
     return None
 
 
-def _korean_dt(value: str) -> str:
+def _korean_dt(value: str, *, include_time: bool = True) -> str:
     """한글 날짜 표시(예약코드 ``kor``) — ``2026년 6월 15일 [09:00]``(월/일 비패딩)."""
     dt = parse_dt(value)
     if dt is None:
         return value
     out = f"{dt.year}년 {dt.month}월 {dt.day}일"
     t = re.search(r"\d{1,2}:\d{2}", value)
-    if t:
+    if include_time and t:
         out += f" {t.group(0)}"
     return out
 
 
-def _dot_dt(value: str, *, short: bool = False) -> str:
+def _dot_dt(value: str, *, short: bool = False, include_time: bool = True) -> str:
     """공문서 표준 날짜 표시 — ``2026. 7. 17. [09:00]``(월/일 비패딩·끝점·점 뒤 공백).
 
     ``short=True`` → ``'26.7.17.``(2자리 연도·공백 없는 축약형). 둘 다 strftime 으로는
@@ -102,7 +102,7 @@ def _dot_dt(value: str, *, short: bool = False) -> str:
     else:
         out = f"{dt.year}. {dt.month}. {dt.day}."
     t = re.search(r"\d{1,2}:\d{2}", value)
-    if t:
+    if include_time and t:
         out += f" {t.group(0)}"
     return out
 
@@ -159,11 +159,15 @@ class StdlibFormatEngine:
         ],
         "date": [
             ("표준", ""),                      # 2026. 7. 17. (공문서 표준·기본)
-            ("표준(약식)", "y2"),               # '26.7.17. (2자리 연도 축약·추천 2순위)
+            ("표준(시간 포함)", "datetime"),
+            ("표준(약식)", "y2_date"),          # '26.7.17.
+            ("표준(약식·시간 포함)", "y2"),      # 저장된 y2 코드의 시간 보존
             ("표준(연·월)", "ym"),              # 2026. 7. (공문서 머리의 연·월 표기)
-            ("한글", "kor"),                    # 2026년 6월 15일
+            ("한글", "kor_date"),               # 2026년 6월 15일
+            ("한글(시간 포함)", "kor"),          # 저장된 kor 코드의 시간 보존
             ("ISO", "%Y-%m-%d"),               # 2026-06-15
             ("점", "%Y.%m.%d"),                # 2026.06.15
+            ("점(시간 포함)", "%Y.%m.%d %H:%M"),
             ("연-월", "%Y-%m"),                # 2026-06
             ("시각", "%H:%M"),                 # 18:00 (시각 단독값도 파싱)
             ("날짜+시각", "%Y-%m-%d %H:%M"),    # 2026-06-15 18:00
@@ -204,14 +208,14 @@ class StdlibFormatEngine:
             return value  # 잘못된 서식 코드도 degrade
 
     def _date(self, code: str, value: str) -> str:
-        if not code:
-            return _dot_dt(value)  # 공문서 표준 기본(2026. 7. 17.)
-        if code == "y2":
-            return _dot_dt(value, short=True)  # 예약코드: 축약형('26.7.17.)
+        if code in ("", "datetime"):
+            return _dot_dt(value, include_time=bool(code))
+        if code in ("y2", "y2_date"):
+            return _dot_dt(value, short=True, include_time=code == "y2")
         if code == "ym":
             return _dot_ym(value)  # 예약코드: 연·월(2026. 7.)
-        if code == "kor":
-            return _korean_dt(value)  # 예약코드: 한글 표기(비패딩)
+        if code in ("kor", "kor_date"):
+            return _korean_dt(value, include_time=code == "kor")
         dt = parse_dt(value)
         if dt is None:
             # 날짜가 없으면 시각 단독값('1400'·'18:00')으로 재시도 — 시각 서식용.

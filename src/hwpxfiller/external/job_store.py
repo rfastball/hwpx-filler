@@ -41,7 +41,7 @@ from hwpxfiller.domain.job import (
 )
 from hwpxfiller.domain.mapping import MappingProfile
 from hwpxfiller.host.job_writer_lease import job_write_lock
-from .template_root import TemplateRoot
+from .template_root import TemplateRoot, same_file_identity
 
 # 레지스트리 파일명 slug — 파일시스템 금지문자만 정리(naming.clean_filename 과 동일 규칙).
 _INVALID = re.compile(r'[\\/:*?"<>|\r\n\t]')
@@ -99,16 +99,6 @@ def _lexically_normal(path: "str | Path") -> Path:
     return Path(os.path.normpath(os.fspath(path)))
 
 
-def _key_names_the_same_file(resolved: Path, original: "str | Path") -> bool:
-    """정규화가 같은 파일을 이름하는지 실측. 증명하지 못하면 승격하지 않는다."""
-    try:
-        return os.path.normcase(os.path.realpath(resolved)) == os.path.normcase(
-            os.path.realpath(original)
-        )
-    except OSError:
-        return False
-
-
 def _reject_unsafe_key(key: str) -> None:
     """durable 상대키의 드라이브·루트·``..`` 탈출을 loud 거절한다."""
     path = PureWindowsPath(key)
@@ -131,7 +121,7 @@ def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
         _reject_unsafe_key(key)
     except ValueError:
         return None
-    if (path_n != Path(path) or root_n != Path(root)) and not _key_names_the_same_file(
+    if (path_n != Path(path) or root_n != Path(root)) and not same_file_identity(
         root_n / key, path
     ):
         return None
@@ -206,7 +196,7 @@ def _former_root_of(template_path: str, template_key: str) -> "Path | None":
 
 
 def _resolve_template_link(
-    template_path: str, template_key: str, root: "Path | None"
+    template_path: str, template_key: str, root: "Path | None", authority_id: str = ""
 ) -> str:
     """저장된 링크 둘(절대경로 + 상대키)에서 **지금 열 파일**을 고른다(#348 · U6-A #975).
 
@@ -224,6 +214,8 @@ def _resolve_template_link(
     **읽기는 디스크를 고치지 않는다**(불변): 존재를 *묻기만* 하고 승격은 :func:`encode_job`
     을 지나는 저장에서만 일어난다.
     """
+    if authority_id:
+        return template_path
     if template_path and Path(template_path).exists():
         return template_path
     former_root = _former_root_of(template_path, template_key)
@@ -375,7 +367,7 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
             raise ValueError("'tags' 의 축·값은 모두 문자열이어야 합니다")
         tags[k] = v
     template_path = _resolve_template_link(
-        _str("template_path"), _str("template_key"), root
+        _str("template_path"), _str("template_key"), root, _str("authority_id")
     )
     binding_authority = _str("binding_authority")
     if binding_authority not in ("", JOB_MAPPING_AUTHORITY):
@@ -656,7 +648,9 @@ class JobRegistry:
         """
         return self.mutate(name, lambda job: setattr(job, "tags", dict(tags)))
 
-    def relink_template(self, name: str, path: str) -> Job:
+    def relink_template(
+        self, name: str, path: str, *, expected: "tuple[str, str] | None" = None
+    ) -> Job:
         """템플릿 참조 재지정 — **잠금 안 매체 재판정 + 커밋**의 semantic atomic op(#542 F-1).
 
         사전 게이트는 잠금 밖 사본을 봤고 확인 왕복은 사람 시간이다. 그 사이 다른 재연결
@@ -672,6 +666,8 @@ class JobRegistry:
         new_media = template_media(path)
 
         def _relink(job: Job) -> None:
+            if expected is not None and (job.authority_id, job.template_path) != expected:
+                raise ValueError("문서 작업의 템플릿 연결이 변경되었습니다")
             current = template_media(job.template_path)
             if current in ("hwpx", "txt") and current != new_media:
                 raise CrossMediaRelinkError(job.template_path, new_media)

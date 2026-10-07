@@ -5,8 +5,9 @@
 누름틀 구간(정답)과 제안 자리를 대조한다. 금액 뒤 「원」까지 누름틀이고 제안 자리는 수만인 경우(``53,350,000``
 ⟷ ``53,350,000원``)는 같은 자리로 센다 — 제안은 단위를 값 표시에만 붙인다.
 
-튜토리얼(「물품 구매입찰 공고」 + 공고목록 1행)은 39자리 전부, 시나리오·실제 공고는 이번 규칙이 닿은 수를
-그대로 고정한다(빈 값 자리와, 일자·시각을 나눈 누름틀에 합친 일시 열이 겹치는 자리는 범위 밖).
+튜토리얼(「물품 구매입찰 공고」 + 공고목록 1행)은 데이터 연결 36자리 전부를 되찾고, 개인 고정값 3자리는
+제안하지 않는다. 시나리오·실제 공고는 이번 규칙이 닿은 수를 그대로 고정한다(빈 값 자리와, 일자·시각을
+나눈 누름틀에 합친 일시 열이 겹치는 자리는 범위 밖).
 """
 
 from __future__ import annotations
@@ -31,7 +32,8 @@ SCENARIO = ROOT / "tests" / "corpus" / "scenario"
 _HP = f"{{{HP_NS}}}"
 _FIELD_CONTROL = {f"{_HP}fieldBegin", f"{_HP}fieldEnd"}
 # 튜토리얼 seed 와 같은 열 이름 연결(템플릿 필드 → 데이터 열).
-_SOURCE = {"낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화", "대표계약업체": "계약상대자"}
+_SOURCE = {"게시일": "게시일시", "낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화", "대표계약업체": "계약상대자"}
+_CONSTANTS = {"계약담당자": "홍길동", "계약담당 전화번호": "042-000-0000", "계약담당 팩스번호": "0505-000-0000"}
 
 
 @dataclass(frozen=True)
@@ -44,8 +46,12 @@ class Recall:
 def _mapping(fields: list[str]) -> MappingProfile:
     rows = []
     for name in fields:
-        kind = infer_type(name) if infer_type(name) in {"date", "amount"} else "text"
-        fmt = "ym" if name == "게시일시" and kind == "date" else ""
+        if name in _CONSTANTS:
+            rows.append(FieldMapping(name, "", type="const", const=_CONSTANTS[name]))
+            continue
+        kind = "date" if name == "게시일" else infer_type(name)
+        kind = kind if kind in {"date", "amount"} else "text"
+        fmt = ("ym" if name in {"게시일", "게시일시"} else "datetime") if kind == "date" else ""
         rows.append(FieldMapping(name, _SOURCE.get(name, name), type=kind, fmt=fmt))
     return MappingProfile(mappings=rows)
 
@@ -118,12 +124,13 @@ def recall(template: Path, data: Path, sheet: str, row: int) -> Recall:
     return Recall(list(gold.values()), [text for key, text in gold.items() if key not in found], false)
 
 
-def test_tutorial_notice_row_one_recovers_every_field_place() -> None:
+def test_tutorial_notice_row_one_recovers_every_data_field_place() -> None:
     result = recall(TUTORIAL / "물품 구매입찰 공고.hwpx", TUTORIAL / "공고목록.xlsx", "공고", 0)
     assert len(result.gold) == 39
-    assert result.missed == []
-    # 조달청 담당자 줄(「주무관 홍길동」)의 이름은 템플릿에 박힌 글자다 — 제안 자리가 아니다.
-    assert result.false == []
+    # 개인 고정값은 데이터 열에 없다. 같은 이름의 수요기관 담당자가 있어도 계약담당자로 연결하지 않는다.
+    assert result.missed == ["홍길동", "042-000-0000", "0505-000-0000"]
+    # 최신 양식의 낙찰하한율은 누름틀이 아닌 고정 글자지만, 데이터와 일치하므로 후보로 찾는다.
+    assert result.false == ["86.245"]
 
 
 def test_scenario_bid_notice_row_one() -> None:

@@ -1345,3 +1345,38 @@ def test_state_verbs_reproject_the_open_detail(tmp_path):
     ctrl.dispatch("archive", {"key": other})
     assert ctrl.snapshot()["detail"]["key"] == key
 
+
+def test_registered_pclm_defaults_preserve_existing_order(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import closing
+    from hwpxfiller.webapp import registered_data
+
+    ctrl, registry, _ = _controller(tmp_path)
+    path = tmp_path / "계약자료.pclm"
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute("CREATE TABLE pclm_file(singleton INTEGER, role TEXT, dataset_id TEXT)")
+        conn.execute("INSERT INTO pclm_file VALUES(1, 'work', 'source-id')")
+        for name in ("통합", "접수", "공고", "계약"):
+            conn.execute(f'CREATE VIEW "v_{name}" AS SELECT 1 AS 항목')
+    monkeypatch.setattr(registered_data, "registered_workfile", lambda: (str(path), "source-id"))
+    descriptor = registered_data.registered_data_source(registry)
+    key = descriptor["pool_key"]
+    assert registry.load(key).opts["sheets"] == ["v_통합", "v_접수", "v_공고", "v_계약"]
+    custom = ["v_계약", "v_공고", "v_접수", "v_통합"]
+    ctrl.dispatch("reorder_sheets", {"key": key, "sheets": custom})
+    assert registered_data.registered_data_source(registry) == descriptor
+    assert registry.load(key).opts["sheets"] == custom
+    registry.archive(key)
+    assert registered_data.registered_data_source(registry) is None
+    assert len(registry.list_items()) == 1
+    monkeypatch.setattr(registered_data, "registered_workfile", lambda: (str(path), "wrong-id"))
+    with pytest.raises(ValueError, match="pclm"):
+        registered_data.registered_data_source(registry)
+    monkeypatch.setattr(registered_data, "registered_workfile", lambda: (str(path), "source-id"))
+    for mutation in ("UPDATE pclm_file SET role = 'submission'",
+                     "UPDATE pclm_file SET role = 'work'; DROP VIEW v_계약"):
+        with closing(sqlite3.connect(path)) as conn, conn:
+            conn.executescript(mutation)
+        with pytest.raises(ValueError, match="pclm"):
+            registered_data.registered_data_source(registry)
+

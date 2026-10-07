@@ -17,7 +17,7 @@ import type { BridgeClient } from "../runtime/client.ts";
 import type { DataPickerController, PickerSessionRead } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
 import { RefreshButton } from "./refresh_button.ts";
-import { SheetTabs } from "./sheet_tabs.ts";
+import { SheetTabs, saveSheetOrder } from "./sheet_tabs.ts";
 import { createLatestIntentQueue } from "./latest_intent.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
@@ -495,6 +495,8 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     model,
     poolModel: deps.runtime.model<Obj | null>("pool"),
     switchData,
+    reorderSheets: (key: string, sheets: string[]) => saveSheetOrder(key, sheets, call,
+      () => call("job", "refresh", {}), deps.notify),
     uiModel: {
       getSnapshot: () => ui,
       subscribe(listener: Listener): () => void {
@@ -664,6 +666,7 @@ export function JobDataTabs(props: { controller: JobReadController }): ReactNode
   return h(SheetTabs as any, {
     rows: snapshot?.data_sheet_tabs || [], busy: !!ui.switchingData, locked: !!ui.openingName,
     onPick: (row: Obj) => { void controller.switchData(row.key, row.sheet); },
+    onReorder: (key: string, sheets: string[]) => controller.reorderSheets(key, sheets),
   });
 }
 

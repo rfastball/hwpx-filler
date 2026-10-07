@@ -81,7 +81,7 @@
 .lib-paircard{display:flex;flex-direction:column;gap:var(--sp-6);margin:0 0 var(--sp-12);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-10);background:var(--n-surface-alt)}
-/* 항목 줄 — 차단 해소 동사(「데이터 연결하기…」)가 있을 때만 항목 옆에 선다. */
+/* 항목 줄 — 적용본 편집·데이터 연결 동사를 경로 카드 옆에 둔다. */
 .lib-paircard .side{min-width:0;display:flex;align-items:center;gap:var(--sp-8)}
 .lib-paircard .side .lib-pitem{flex:1;min-width:0}
 .lib-paircard .side > .btn{flex:none}

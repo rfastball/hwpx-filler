@@ -964,7 +964,7 @@ def test_row_projection_matches_what_the_editor_snapshot_used_to_build():
     assert [p["preview_kind"] for p in projections] == ["value", "missing", "value", "none"]
     # 빈 값은 빈칸으로 새지 않는다 — 생성이 실제로 박는 표식이 그대로 온다.
     assert projections[1]["preview"] == "〘미입력·금액〙"
-    assert projections[2]["preview"] == "2026. 6. 15. 18:04"   # today 기본 표시형
+    assert projections[2]["preview"] == "2026. 6. 15."   # today 기본 표시형
     assert [p["row_state"] for p in projections] == [
         "confirmed", "confirmed", "confirmed", "needs_source"]
     assert [p["state_label"] for p in projections] == [
@@ -1035,7 +1035,7 @@ def test_name_token_values_feed_both_filename_previews():
     values = model.name_token_values({"사업명": "청사 냉난방 교체", "빈열": ""},
                                      now=_TODAY_NOW)
     assert values == {
-        "계약명": "청사 냉난방 교체", "금액": "", "작성일": "2026. 6. 15. 18:04",
+        "계약명": "청사 냉난방 교체", "금액": "", "작성일": "2026. 6. 15.",
     }
 
 

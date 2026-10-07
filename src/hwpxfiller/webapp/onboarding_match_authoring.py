@@ -13,6 +13,7 @@ from typing import Any, Callable
 from ..domain.template_authoring_primitives import from_utf16, to_utf16
 from ..external.tutorial_practice import fingerprint
 from .onboarding_match_editor import Matcher, Observation
+from .onboarding_seed import applied_txt_path
 
 __all__ = ["AUTHORING_MATCHERS", "guide_range", "practice_template_open"]
 
@@ -21,21 +22,27 @@ SLOT, INCLUDE, OMIT = "예산재배정", "안내포함", "안내생략"
 _CLOSE_OPTION = "{{/선택}}\n"
 
 
+def _practice_path(tutorial: Any) -> str:
+    if tutorial.progress.selected != "change_apply":
+        return tutorial._asset(TXT)
+    return applied_txt_path(tutorial)
+
+
 def _session(tutorial: Any, obs: Observation) -> Any:
     if obs.screen != "authoring" or not isinstance(obs.result, dict) or obs.result.get("ok") is False:
         return None
     authoring = tutorial.controllers["authoring"]
     session = authoring.sessions.get(authoring.active_id)
-    if session is None or session.media != "txt" or session.source_path != tutorial._asset(TXT):
+    if session is None or session.media != "txt" or session.source_path != _practice_path(tutorial):
         return None
     return session
 
 
 def practice_template_open(tutorial: Any) -> bool:
-    """The practice TXT is the open authoring document, opened as the library template ('저장' writes it in place)."""
+    """The lesson's TXT is open in place: the listed template or the job's applied file."""
     authoring = tutorial.controllers["authoring"]
     session = authoring.sessions.get(authoring.active_id)
-    return (session is not None and session.media == "txt" and session.source_path == tutorial._asset(TXT)
+    return (session is not None and session.media == "txt" and session.source_path == _practice_path(tutorial)
             and session.save_path == session.source_path)
 
 
@@ -50,7 +57,7 @@ def _options(session: Any) -> set:
 
 # ------------------------------------------------------------------ opening the practice TXT
 def _template_opened(tutorial: Any, obs: Observation) -> dict | None:
-    """'내용 편집' on the template list opened the practice TXT for template authoring (#1146)."""
+    """The current lesson's edit control opened its expected TXT for template authoring."""
     opened = obs.action == "open_authoring_document" and _session(tutorial, obs) is not None
     return {} if opened and practice_template_open(tutorial) else None
 
@@ -118,7 +125,7 @@ def guide_range(tutorial: Any, event: str | None) -> dict | None:
     target = _TARGETS.get(event or "")
     authoring = tutorial.controllers["authoring"]
     session = authoring.sessions.get(authoring.active_id)
-    if target is None or session is None or session.media != "txt" or session.source_path != tutorial._asset(TXT):
+    if target is None or session is None or session.media != "txt" or session.source_path != _practice_path(tutorial):
         return None
     text = session.content.decode("utf-8")
     found = target(text)

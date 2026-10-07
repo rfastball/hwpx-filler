@@ -424,3 +424,52 @@ def test_pool_item_restores_a_plain_table_too(tmp_path):
 
     assert src.fields() == list(COLUMNS)
     assert src.source_pointer() == f"sqlite:{db}#계약"
+
+
+def test_registered_workfile_uses_windows_registration_and_validated_pointer(tmp_path, monkeypatch):
+    import json
+    import sys
+    from unittest.mock import MagicMock
+    from hwpxfiller.host import pclm_registration
+
+    registry = MagicMock()
+    registry.QueryValueEx.return_value = ('"C:\\Apps\\계약목록.exe" "%1"', 1)
+    monkeypatch.setitem(sys.modules, "winreg", registry)
+    monkeypatch.setattr(pclm_registration.sys, "platform", "linux")
+    assert pclm_registration.registered_workfile() is None
+    registry.OpenKey.assert_not_called()
+    monkeypatch.setattr(pclm_registration.sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = tmp_path / "Pclm" / "config.json"
+    config.parent.mkdir()
+    data = {"version": 1, "workfile": str(tmp_path / "chosen.pclm"), "datasetId": "identity"}
+    config.write_text(json.dumps(data), encoding="utf-8")
+    assert pclm_registration.registered_workfile() == (data["workfile"], "identity")
+    for command in (None, "", "  "):
+        registry.QueryValueEx.return_value = (command, 1)
+        with pytest.raises(ValueError, match="Pclm.Workfile"):
+            pclm_registration.registered_workfile()
+    registry.QueryValueEx.return_value = ('"C:\\Apps\\계약목록.exe" "%1"', 1)
+    for local in (None, ""):
+        with monkeypatch.context() as scoped:
+            scoped.delenv("LOCALAPPDATA")
+            if local is not None:
+                scoped.setenv("LOCALAPPDATA", local)
+            with pytest.raises(ValueError, match="LOCALAPPDATA"):
+                pclm_registration.registered_workfile()
+    for invalid in ({**data, "version": 2}, {**data, "workfile": "relative.pclm"}, {**data, "datasetId": ""}, []):
+        config.write_text(json.dumps(invalid), encoding="utf-8")
+        with pytest.raises(ValueError, match="작업자료 설정"):
+            pclm_registration.registered_workfile()
+    config.write_text("{bad json", encoding="utf-8")
+    with pytest.raises(ValueError):
+        pclm_registration.registered_workfile()
+    registry.QueryValueEx.side_effect = FileNotFoundError("registered command missing")
+    with pytest.raises(FileNotFoundError, match="registered command missing"):
+        pclm_registration.registered_workfile()
+    registry.QueryValueEx.side_effect = None
+    registry.OpenKey.side_effect = PermissionError("registry access denied")
+    with pytest.raises(PermissionError, match="registry access denied"):
+        pclm_registration.registered_workfile()
+    registry.OpenKey.side_effect = FileNotFoundError
+    assert pclm_registration.registered_workfile() is None

@@ -290,7 +290,7 @@ def test_stale_template_mutation_shows_fresh_current_view(tmp_path: Path) -> Non
     product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
     old_token = product.open_slot_configuration("공고서").current_view.new_configuration_token
     assert old_token is not None
-    _template(tpl, ["공고명", "추정가격"])  # 원본 수정
+    _template(Path(reg.load("공고서").template_path), ["공고명", "추정가격"])  # 적용본 수정
     ready = coord.check("공고서", "k2")["preparation"]
     coord.apply("공고서", ready["change_token"])  # A_new 로 current 전진
 
@@ -322,7 +322,7 @@ def test_valid_token_cannot_bypass_stale_currentness(tmp_path: Path) -> None:
     token = product.open_slot_configuration("공고서").current_view.new_configuration_token
     assert token is not None
 
-    _template(tpl, ["공고명", "추정가격"])  # 원본 수정 → 새 application
+    _template(Path(reg.load("공고서").template_path), ["공고명", "추정가격"])  # 적용본 수정
     ready = coord.check("공고서", "k2")["preparation"]
     coord.apply("공고서", ready["change_token"])  # current 를 A_new 로 전진
 
@@ -491,7 +491,7 @@ def _slot_bearing_work(tmp_path: Path):
     coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
     coord.check("공고서", "k1")
     product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
-    return tpl, coord, product
+    return Path(reg.load("공고서").template_path), coord, product
 
 
 def _advance_to_successor(tpl: Path, coord: TemplateChangeCoordinator) -> None:

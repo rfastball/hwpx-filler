@@ -82,6 +82,32 @@ class Walk:
         return snap["result"]
 
 
+def _notice_rules(walk: Walk) -> dict[str, str]:
+    contacts = {"계약담당자": "홍길동", "계약담당 전화번호": "042-000-0000", "계약담당 팩스번호": "0505-000-0000"}
+    for field, value in contacts.items():
+        walk.step(f"{field}_mode", lambda field=field: walk.send("editor", "set_display",
+                                                     {"index": walk.row(field), "type": "const", "fmt": ""}))
+        # 비어 있거나 다른 행에 적은 값은 이 단계의 입력을 마친 것이 아니다.
+        checkpoint = walk.app.initial("tutorial")["checkpoint"]
+        walk.send("editor", "set_const", {"index": walk.row(field), "const": ""})
+        assert walk.app.initial("tutorial")["checkpoint"] == checkpoint
+        walk.step(f"{field}_value", lambda field=field, value=value: walk.send("editor", "set_const", {"index": walk.row(field), "const": value}))
+        walk.step(f"{field}_confirm", lambda field=field: walk.send("editor", "set_confirmed",
+                                                       {"index": walk.row(field), "confirmed": True}))
+    walk.step("date_source", lambda: walk.send("editor", "set_source",
+                                               {"index": walk.row("게시일"), "source": "게시일시"}))
+    walk.step("date_format", lambda: walk.send("editor", "set_display",
+                                               {"index": walk.row("게시일"), "type": "date", "fmt": "ym"}))
+    walk.step("date_confirm", lambda: walk.send("editor", "set_confirmed",
+                                                {"index": walk.row("게시일"), "confirmed": True}))
+    for field in ("입찰개시일시", "입찰마감일시", "개찰일시", "등록마감일시"):
+        walk.step(f"{field}_format", lambda field=field: walk.send("editor", "set_display",
+                                                       {"index": walk.row(field), "type": "date", "fmt": "datetime"}))
+        walk.step(f"{field}_confirm", lambda field=field: walk.send("editor", "set_confirmed",
+                                                        {"index": walk.row(field), "confirmed": True}))
+    return contacts
+
+
 def test_lesson_one_walks_single_actions_to_three_documents(app, tmp_path):
     walk = Walk(app, "first_hwpx")
     assert walk.ctx["pool_keys"].keys() == {"공고", "계약"}
@@ -96,10 +122,7 @@ def test_lesson_one_walks_single_actions_to_three_documents(app, tmp_path):
                                                   {"index": walk.row("낙찰자결정방법"), "confirmed": True}))
     walk.step("confirm_phone", lambda: walk.send("editor", "set_confirmed",
                                                  {"index": walk.row("담당자 전화번호"), "confirmed": True}))
-    walk.step("date_format", lambda: walk.send("editor", "set_display",
-                                               {"index": walk.row("게시일시"), "type": "date", "fmt": "ym"}))
-    walk.step("date_confirm", lambda: walk.send("editor", "set_confirmed",
-                                                {"index": walk.row("게시일시"), "confirmed": True}))
+    contacts = _notice_rules(walk)
     walk.step("to_filename", lambda: walk.send("editor", "goto_section", {"section": "filename"}))
     walk.step("pattern", lambda: walk.send("editor", "set_pattern", {"pattern": "구매입찰공고-{{입찰공고번호}}"}))
 
@@ -118,18 +141,20 @@ def test_lesson_one_walks_single_actions_to_three_documents(app, tmp_path):
     walk.step("method", lambda: walk.option("낙찰자 결정방법", "고시 미만"))
     pick_output_folder(app.controllers["job"], tmp_path / "out")
     walk.step("generate", lambda: app.generate("job"))
-    # 게시일시는 머리 문구에만 쓰이는 필드라 '표준(연·월)'로 서식한 결과만 시각이 빠지고,
-    # 입찰개시일시처럼 그대로 둔 다른 날짜 필드는 여전히 시각까지 남는다(#1145).
+    # 게시일은 연·월, 입찰 일정은 명시한 시간 포함 서식을 쓴다.
     generated = sorted((tmp_path / "out").glob("*.hwpx"))
     assert generated, "생성된 HWPX 파일이 없습니다."
     with zipfile.ZipFile(generated[0]) as zf:
         section = zf.read("Contents/section0.xml").decode("utf-8")
-    head_idx = section.find("입찰에 부치고자 다음과 같이 공고합니다")
-    assert head_idx != -1
-    head_slice = section[head_idx:head_idx + 400]
-    assert re.search(r"\b2026\. 10\.(?!\s*\d)", head_slice), head_slice
-    assert "{{게시일시}}" not in section
-    assert re.search(r"2026\. 10\. \d{1,2}\. \d{2}:\d{2}", section), "다른 날짜 필드는 시각까지 남아야 합니다."
+    from hwpxfiller.domain.fields import FieldDocument
+
+    values = dict(FieldDocument(section.encode("utf-8")).field_values())
+    assert values["게시일"] == "2026. 10."
+    assert "{{게시일}}" not in section
+    for field in ("입찰개시일시", "입찰마감일시", "개찰일시", "등록마감일시"):
+        assert re.fullmatch(r"2026\. 10\. \d{1,2}\. \d{2}:\d{2}", values[field]), (field, values[field])
+    assert {field: values[field] for field in contacts} == contacts
+    assert "FAX {" not in section and "{{낙찰하한율}}" not in section
     walk.step("result", lambda: walk.send("job", "artifact_open", {"ordinal": 0}))
     result = walk.finished()
     assert result["count"] == 3 and result["next_scenario_id"] == "contract_txt"
@@ -223,6 +248,7 @@ def test_lesson_five_replaces_the_data_file_through_the_editor(app, monkeypatch)
     walk.press("menu")
     walk.step("resuggest", lambda: assert_stakes(walk.send("editor", "mapping_reset_stakes")))
     walk.step("resuggest_confirm", lambda: walk.send("editor", "resuggest_all"))
+    _notice_rules(walk)
     walk.step("confirm_all", lambda: walk.send("editor", "confirm_suggested"))
 
     def save_and_open():
@@ -291,19 +317,30 @@ class Authoring:
 
 
 def _open_practice_txt(walk: Walk) -> None:
-    """The user opens the practice TXT from the template list (#1146): new job → its row's ⋮ → '내용 편집'.
-
-    Nothing is open before that — the lesson never opens it silently. It opens as the library template, so '저장'
-    writes it in place.
-    """
+    """Open the lesson's TXT using the control the guide actually boxes."""
     authoring = walk.app.controllers["authoring"]
-    txt = walk.asset("낙찰자 선정 및 계약체결 안내.txt")
+    source = walk.asset("낙찰자 선정 및 계약체결 안내.txt")
+    if walk.lesson == "change_apply":
+        txt = walk.app.controllers["job"].registry.load(walk.ctx["job_name"]).template_path
+        assert Path(txt).is_relative_to(Path(walk.ctx["home"]) / "template_authority" / "applied")
+        assert txt != source and "예산재배정" in Path(txt).read_text(encoding="utf-8")
+        assert "예산재배정" not in Path(source).read_text(encoding="utf-8")
+        walk.step("pick_job", lambda: walk.send("library", "select_work", {"name": walk.ctx["job_name"]}))
+        walk.step("use_job", lambda: walk.send("job", "prefer_work", {"name": walk.ctx["job_name"]}))
+        walk.step("prepare_rows", lambda: walk.send("job", "set_all"))
+        walk.step("prepare_workbench", lambda: walk.send("job", "open_workbench"))
+        assert walk.app.controllers["workbench"].snapshot()["template_path"] == txt
+    else:
+        txt = source
     assert not any(session.source_path == txt for session in authoring.sessions.values())
-    assert walk.beat()["id"] == "open_list" and walk.beat()["screen"] == "library"
-    walk.step("open_list", lambda: walk.send("editor", "new_session"))
-    assert walk.beat()["arg"] == "낙찰자 선정 및 계약체결 안내.txt"
-    walk.press("open_menu")
-    assert walk.beat()["arg"] == "edit"
+    if walk.lesson != "change_apply":
+        assert walk.beat()["id"] == "open_list" and walk.beat()["screen"] == "library"
+        walk.step("open_list", lambda: walk.send("editor", "new_session"))
+        assert walk.beat()["arg"] == "낙찰자 선정 및 계약체결 안내.txt"
+        walk.press("open_menu")
+        assert walk.beat()["arg"] == "edit"
+    else:
+        assert walk.beat()["screen"] == "workbench"
     walk.step("open_edit", lambda: walk.app.open_authoring_document(txt, True))
     session = authoring.sessions[authoring.active_id]
     assert session.source_path == session.save_path == txt

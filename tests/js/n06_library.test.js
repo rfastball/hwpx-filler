@@ -18,7 +18,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
    함께 배포본에서 걷혔고(#941) `tpl` 채널의 액션·스냅샷 축은 동결로 남는다. */
 const SURFACE = [
   "init", "model", "axis",
-  "toggleFavorite", "runPrimary", "newWork", "editWork", "renameJob",
+  "toggleFavorite", "runPrimary", "newWork", "editWork", "editTemplate", "renameJob",
   "cloneJob", "removeJob", "relink", "revealCorrupt", "deleteCorrupt",
   "doc", "client", "popover", "notify",
 ];
@@ -32,6 +32,7 @@ function build(options = {}) {
   const navigation = [];
   const browse = [];
   const editor = [];
+  const authoring = [];
   const modalCalls = [];
   const menuCalls = [];
   const ports = createScreenPorts();
@@ -47,6 +48,10 @@ function build(options = {}) {
     land(...args) { editor.push(["land", ...args]); },
     restoreEntryFocus(...args) { editor.push(["restoreEntryFocus", ...args]); },
   });
+  ports.authoring.bind({ async open(...args) {
+    authoring.push(args);
+    if (options.authoringError) throw options.authoringError;
+  } });
   const services = createServiceHandoffPorts();
   services.relink.bind({ relinkTemplate: async (...args) => { menuCalls.push(["relink", ...args]); return true; } });
   const runtime = {
@@ -84,7 +89,7 @@ function build(options = {}) {
   });
   return {
     controller, client, ports, jobReadImpl, runtimeCalls, dispatchCalls, invokes,
-    notifications, navigation, browse, editor, modalCalls, menuCalls,
+    notifications, navigation, browse, editor, authoring, modalCalls, menuCalls,
     setSnapshot(value) { snapshot = value; },
   };
 }
@@ -214,6 +219,24 @@ const BOUND_DETAIL = {
   data_bound: true, data_label: "월별.xlsx · 낙찰현황", data_path: "C:/월별.xlsx",
   health_causes: [], pairing_detail: pairingDetail(),
 };
+
+test("적용본 템플릿 편집 — 백엔드 경로만 저작 작업대에 연다", async () => {
+  const detail = { ...BOUND_DETAIL, template_edit_path: "C:/app/applied/t.hwpx" };
+  const h = build({ snapshot: detailSnapshot(detail) });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(markup.includes('id="libraryTemplateEdit"'));
+  assert.ok(markup.includes("템플릿 편집"));
+  await h.controller.editTemplate(detail.name);
+  assert.deepEqual(h.authoring, [[detail.template_edit_path, "library"]]);
+  h.setSnapshot(detailSnapshot({ ...detail, template_edit_path: "" }));
+  await h.controller.editTemplate(detail.name);
+  assert.equal(h.authoring.length, 1);
+  assert.ok(!renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }))
+    .includes('id="libraryTemplateEdit"'));
+  const failed = build({ snapshot: detailSnapshot(detail), authoringError: new Error("열기 실패") });
+  await failed.controller.editTemplate(detail.name);
+  assert.match(failed.notifications[0], /열기 실패/);
+});
 
 test("상세 연결 손잡이 — 가운데 「연결」 줄 하나가 편집기로 가는 문이다(재선택 버튼 없음)", () => {
   /* 2026-09-03 재판정: 「데이터 재선택」 은 「작업 편집」·표 행 클릭과 같은 단계에 착지하던

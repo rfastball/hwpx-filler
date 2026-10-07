@@ -321,7 +321,7 @@ test("편집 — 친 글자는 쉼 뒤 한 번만 보내고, 한글 조합 중�
 test("편집 — 이동·복사·이탈은 미뤄 둔 편집을 **먼저** 체인에 세운다(남의 행에 붙지 않게 index 를 싣는다)", async () => {
   const h = harness({
     snapshot: OPEN,
-    onDispatch: (_s, action) => (action === "copy_precheck" ? { token: "t", missing_fields: [], empty_fields: [] }
+    onDispatch: (_s, action) => (action === "copy_precheck" ? { token: "t", missing_fields: ["수신"], empty_fields: ["비고"] }
       : action === "leave_guard" ? { armed: false } : {}),
   });
   h.controller.editCard(0, "고친 본문");
@@ -331,6 +331,8 @@ test("편집 — 이동·복사·이탈은 미뤄 둔 편집을 **먼저** 체�
   await h.controller.copyCard();
   assert.deepEqual(h.actions().slice(2), ["set_card_text", "copy_precheck"], "복사 사전확인 전에 편집을 정산한다");
   assert.deepEqual(h.log.find((row) => row[0] === "invoke"), ["invoke", "copy_clipboard", "workbench", "t"]);
+  assert.equal(h.log.some((row) => row[0] === "modal.confirm"), false,
+    "빈 값·미채움 표식은 보이되 TXT 복사를 다시 확인으로 막지 않는다");
   h.controller.editCard(1, "또 고침");
   await h.controller.leaveTo("job");
   assert.deepEqual(h.actions().slice(4), ["set_card_text", "leave_guard", "close"], "이탈 가드도 편집 뒤에 묻는다");

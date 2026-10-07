@@ -471,13 +471,8 @@ def _interrupt_current_preparation(tmp_path: Path, work_id: str) -> None:
         )
 
 
-def test_unsettled_template_check_stands_in_the_workbench_observation(tmp_path: Path) -> None:
-    """확인이 종결되지 않은 사실이 **작업대 관찰에** 선다(#912 D2).
-
-    `template_change_verdict` 는 정의·소비·통로가 다 있었는데 프로덕션 전달자가 0 이라
-    `REVIEW_TEMPLATE_CHANGE` 축이 사문이었다. 그래서 「다시 확인하세요」는 템플릿 구획에만
-    서고 작업대는 아무 말도 안 했으며, 사용자는 생성을 눌러 실패한 뒤에야 그것을 알았다.
-    """
+def test_applied_template_drops_stale_check_blockers_from_workbench(tmp_path: Path) -> None:
+    """과거 확인 중단은 현재 적용본의 생성을 막지 않는다."""
     ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
     work_id = ctrl.registry.load("공고서").authority_id
     assert work_id
@@ -489,42 +484,32 @@ def test_unsettled_template_check_stands_in_the_workbench_observation(tmp_path: 
     _interrupt_current_preparation(tmp_path, work_id)
     unsettled = ctrl.workbench_observation()
     assert isinstance(unsettled, DocumentCreationWorkbenchObservation)
-    assert "REVIEW_TEMPLATE_CHANGE" in unsettled.blockers
-    # 그 blocker 가 겨누는 곳은 템플릿 확인 구획이고, 그 구획의 확인 동사는 실제로 활성이다
-    # (지시만 있고 수단이 없는 상태를 만들지 않는다).
+    assert "REVIEW_TEMPLATE_CHANGE" not in unsettled.blockers
     routes = {t.blocker_code: t.route for t in unsettled.deep_link_targets}
-    assert routes["REVIEW_TEMPLATE_CHANGE"] == "workbench.template_change"
+    assert "REVIEW_TEMPLATE_CHANGE" not in routes
     zone = ctrl._template_change.zone("공고서", "hwpx", False)
     assert zone["checkable"] is True
     assert zone["preparation"]["status"] == "interrupted"
-    # 그리고 그 구획이 **실제로 선다**(#932 B5): 존 노출을 드리프트가 판정하게 된 뒤로
-    # 「비활성이 아니라 아예 없는 자리를 가리키는 지시」가 새 결함류로 가능해졌다 —
-    # 미종결 확인은 원본이 그대로여도 존을 세운다는 것이 그 자리를 막는 불변식이다.
-    assert zone["source_drift"] == "unchanged" and zone["actionable"] is True
+    assert "source_drift" not in zone
+    assert zone["actionable"] is True  # 상태는 보이되 실행 blocker는 아니다.
 
 
-def test_source_drift_stands_in_the_workbench_observation(tmp_path: Path) -> None:
-    """앱 밖에서 원본을 고치면 **생성이 막힌다**(#932 B5) — 조용한 오생성 0.
-
-    존이 조치가 있을 때만 서게 된 뒤로, 한글에서 템플릿을 고친 사용자가 그 사실을 못 본 채
-    생성을 누를 창이 생겼다. 생성은 캡처된 bytes 를 쓰므로(#681 F1) 그 창은 「검토한 편집분이
-    반영 안 된 문서」로 착지한다. 그래서 드리프트를 실행 게이트로 올린다 — 좌초시키지는
-    않는다: 이 blocker 의 복구 동사(`#jobTplCheck`)는 같은 판정이 세우는 존 안에 있다.
-    """
+def test_external_source_change_does_not_reenter_applied_work(tmp_path: Path) -> None:
+    """적용 뒤 원본을 바꾸거나 지워도 작업 관찰은 적용본을 유지한다."""
     ctrl, _reg, tpl = _slot_bearing_controller(tmp_path)
     settled = ctrl.workbench_observation()
     assert isinstance(settled, DocumentCreationWorkbenchObservation)
     assert "REVIEW_TEMPLATE_CHANGE" not in settled.blockers
     assert ctrl.snapshot()["template_change"]["actionable"] is False
 
-    _template(tpl, ["공고명"])  # 한글에서 고친 셈 — 앱 밖 편집(미가져오기)
+    _template(tpl, ["공고명"])
+    tpl.unlink()
 
-    drifted = ctrl.workbench_observation()
-    assert isinstance(drifted, DocumentCreationWorkbenchObservation)
-    assert "REVIEW_TEMPLATE_CHANGE" in drifted.blockers
-    # 지시가 겨누는 자리가 실제로 선다 — 없는 자리를 가리키지 않는다(#912 결함류).
+    observed = ctrl.workbench_observation()
+    assert isinstance(observed, DocumentCreationWorkbenchObservation)
+    assert "REVIEW_TEMPLATE_CHANGE" not in observed.blockers
     zone = ctrl.refresh_panel()["template_change"]
-    assert zone["source_drift"] == "changed" and zone["actionable"] is True
+    assert "source_drift" not in zone and zone["actionable"] is False
     assert zone["checkable"] is True
 
 
@@ -583,11 +568,13 @@ def test_failed_initialization_releases_the_authority_it_just_issued(tmp_path: P
     되돌린 뒤의 상태는 **복제 직후와 같다**: 존은 미초기화로 접히고 안내는 실패 기록을 든
     template_change 존 한 곳이 진다. 겪지 않은 권위를 지우는 것이므로 역사를 지어내지 않는다.
     """
-    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
+    ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
     clone = reg.clone("공고서")
+    broken = tmp_path / "미적용 복제본.hwpx"
+    reg.relink_template(clone, str(broken))
     # 실물을 **착석 전에** 깬다: 준비를 착석이 지게 된 뒤로(#932 B5) 초기 등록은 여기서
     # 시도되고 거절된다 — 뒤에 깨면 이미 준비를 마친 뒤라 이 자리가 안 재진다.
-    tpl.write_bytes(b"not a zip")  # 자격 심사가 거절할 실물(복제본은 아직 미부트스트랩)
+    broken.write_bytes(b"not a zip")  # 자격 심사가 거절할 미적용 복제본
     ctrl.dispatch("select_job", {"name": clone})
 
     assert ctrl.dispatch("template_check", {"request_id": "k2"}) == {
@@ -612,9 +599,11 @@ def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> 
     유일한 자리가 함께 사라지기 때문이다. 기록은 작업 이름이 지고 표시 자격은 템플릿 실물
     서명이 가른다 — 이 테스트가 그 두 사실의 합이다(#804 결함 2).
     """
-    ctrl, reg, tpl = _slot_bearing_controller(tmp_path)
+    ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
     clone = reg.clone("공고서")
-    tpl.write_bytes(b"not a zip")  # 착석 전에 깬다(#932 B5 — 준비는 착석이 진다)
+    broken = tmp_path / "미적용 복제본.hwpx"
+    reg.relink_template(clone, str(broken))
+    broken.write_bytes(b"not a zip")  # 미적용 복제본을 착석 전에 깬다.
     ctrl.dispatch("select_job", {"name": clone})
     ctrl.dispatch("template_check", {"request_id": "k2"})
     stuck = ctrl.snapshot()["template_change"]
@@ -622,7 +611,7 @@ def test_repairing_the_template_reopens_the_check_round_trip(tmp_path: Path) -> 
     # 기다리는 동안에도 슬롯 존은 막다른 길이 아니라 **미초기화**로 서 있다.
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is False
 
-    _two_slot_template(tpl)  # 안내대로 원본을 고친다 — 실물 서명이 달라진다
+    _two_slot_template(broken)  # 미적용 복제본을 고친다 — 실물 서명이 달라진다
     reopened = ctrl.refresh_panel()["template_change"]
     assert reopened["checkable"] is True and reopened["diagnostics"] == []
 

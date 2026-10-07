@@ -24,9 +24,11 @@ def test_amount_parses_leniently_and_degrades():
 
 
 def test_date_default_and_strftime_codes():
-    # 빈 코드 = 공문서 표준 기본(월/일 비패딩·끝점·점 뒤 공백), 시각 있으면 보존.
+    # 빈 코드 = 시간 없는 공문서 표준. 시간은 명시적으로 선택한다.
     assert render("date", "", "2026-06-15") == "2026. 6. 15."
-    assert render("date", "", "2026-06-15 18:00") == "2026. 6. 15. 18:00"
+    assert render("date", "", "2026-06-15 18:00") == "2026. 6. 15."
+    assert render("date", "datetime", "2026-06-15 18:00") == "2026. 6. 15. 18:00"
+    assert render("date", "datetime", "2026-06-15") == "2026. 6. 15."
     # strftime 코드.
     assert render("date", "%Y-%m-%d", "2026-6-5") == "2026-06-05"
     assert render("date", "%Y.%m.%d", "2026-06-15") == "2026.06.15"
@@ -38,8 +40,11 @@ def test_date_reserved_codes_short_and_korean():
     # 예약코드 y2 = 축약형(2자리 연도·공백 없음), 비패딩 월/일·끝점.
     assert render("date", "y2", "2026-07-03") == "'26.7.3."
     assert render("date", "y2", "2026-07-03 09:00") == "'26.7.3. 09:00"
+    assert render("date", "y2_date", "2026-07-03 09:00") == "'26.7.3."
     # 예약코드 kor = 한글 표기.
     assert render("date", "kor", "2026-06-15") == "2026년 6월 15일"
+    assert render("date", "kor", "2026-06-15 18:00") == "2026년 6월 15일 18:00"
+    assert render("date", "kor_date", "2026-06-15 18:00") == "2026년 6월 15일"
 
 
 def test_date_reserved_code_year_month():
@@ -92,12 +97,13 @@ def test_presets_are_label_code_pairs():
     assert amount["숫자"] == "{:,}"
     dt = dict(presets("date"))
     assert dt["표준"] == ""            # 공문서 표준(기본)
-    assert dt["표준(약식)"] == "y2"     # 축약형(추천 2순위)
+    assert dt["표준(시간 포함)"] == "datetime"
+    assert dt["표준(약식)"] == "y2_date"
+    assert dt["표준(약식·시간 포함)"] == "y2"
     assert dt["표준(연·월)"] == "ym"    # 공문서 머리의 연·월 표기
-    # 「표준(연·월)」은 「표준(약식)」 바로 다음 자리.
-    labels = [label for label, _ in presets("date")]
-    assert labels[:4] == ["표준", "표준(약식)", "표준(연·월)", "한글"]
-    assert dt["한글"] == "kor"          # 한글은 예약코드로 보존
+    assert dt["한글"] == "kor_date"
+    assert dt["한글(시간 포함)"] == "kor"
+    assert dt["점(시간 포함)"] == "%Y.%m.%d %H:%M"
     assert dt["ISO"] == "%Y-%m-%d"
     # 시각·날짜+시각 프리셋 신설.
     assert dt["시각"] == "%H:%M"

@@ -19,8 +19,9 @@ from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.tutorial_practice import fingerprint
 from ..external.tutorial_workspace import DATA_NAME
+from ..viewmodel.tutorial_lessons import NOTICE_CONSTANTS
 
-__all__ = ["DERIVED", "TXT_NAME", "seed_before_switch", "seed_after_switch"]
+__all__ = ["DERIVED", "TXT_NAME", "applied_txt_path", "seed_before_switch", "seed_after_switch"]
 
 HWPX_NAME = "물품 구매입찰 공고.hwpx"
 TXT_NAME = "낙찰자 선정 및 계약체결 안내.txt"
@@ -28,7 +29,7 @@ PURCHASE_NAME = "계약방법 결정 및 구매추진 안내.txt"
 
 #: 공고서 머리에만 쓰이는 날짜 필드(#1145). 다른 날짜 필드(입찰개시일시 등)는 시각까지
 #: 그대로 두고, 머리 문구에 박히는 이 필드만 공문서 표준 연·월 표시형으로 시드한다.
-HEAD_DATE_FIELD = "게시일시"
+HEAD_DATE_FIELD = "게시일"
 #: `domain.format_engine` 의 예약 표시형 코드 — 「표준(연·월)」(예: 2026. 10.).
 HEAD_DATE_FMT = "ym"
 
@@ -53,7 +54,8 @@ _POOL_SHEETS = ("공고", "계약")
 #: instead of finding the 메모 column off to the right of the table (#1136).
 _POOL_FILTERS = {"first_hwpx": {"공고": [{"name": "소상공인", "state": {"columns": {"메모": {"text": "소상공인"}}}}]}}
 
-_SOURCE_OVERRIDES = {"낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화", "대표계약업체": "계약상대자"}
+_SOURCE_OVERRIDES = {"낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화", "대표계약업체": "계약상대자",
+                     HEAD_DATE_FIELD: "게시일시"}
 _PARAGRAPH = re.compile(r"^3\. .*$", re.MULTILINE)
 _SLOT_BLOCK = ("{{{{#항목 예산재배정 예산재배정}}}}\n{{{{#선택 안내포함 안내포함}}}}\n{paragraph}\n"
                "{{{{/선택}}}}\n{{{{#선택 안내생략 안내생략}}}}\n\n{{{{/선택}}}}\n{{{{/항목}}}}")
@@ -85,21 +87,37 @@ def seed_after_switch(tutorial: Any, lesson_id: str) -> None:
     if lesson_id == "purchase_txt":
         tutorial._editor().load_job(ctx["job_name"])
     if lesson_id == "change_apply":
-        # The job is seated on the original template; the template then gains the item the
-        # previous lesson builds, so the change is there to apply.
+        # Seat the job to create its managed applied file, then edit that exact file.
         tutorial._job().dispatch("prefer_work", {"name": ctx["job_name"]})
+        applied = applied_txt_path(tutorial)
+        if not applied:
+            raise ValueError("연습 파일을 먼저 준비하세요.")
         _rewrite_txt(ctx, lambda text: _PARAGRAPH.sub(
-            lambda match: _SLOT_BLOCK.format(paragraph=match.group(0)), text, count=1))
+            lambda match: _SLOT_BLOCK.format(paragraph=match.group(0)), text, count=1), path=applied)
     # The authoring lessons no longer open the practice TXT here: their first beats have the user open it from the
     # template list (#1146), the way '저장' then writes the library template in place.
     tutorial.switch.refresh()
 
 
-def _rewrite_txt(ctx: dict, change) -> None:
+def applied_txt_path(tutorial: Any) -> str:
+    """The seeded job's app-owned TXT, with no fallback to its retired source."""
+    ctx = tutorial._context()
+    if not ctx.get("job_name") or not ctx.get("home"):
+        return ""
+    try:
+        path = tutorial._job().registry.load(ctx["job_name"]).template_path
+    except (FileNotFoundError, ValueError):
+        return ""
+    root = Path(ctx["home"]) / "template_authority" / "applied"
+    return path if Path(path).resolve().is_relative_to(root.resolve()) else ""
+
+
+def _rewrite_txt(ctx: dict, change, *, path: str | None = None) -> None:
     entry = ctx["assets"][TXT_NAME]
-    path = Path(entry["path"])
-    path.write_text(change(path.read_text(encoding="utf-8")), encoding="utf-8")
-    entry["sha256"] = fingerprint(path)
+    target = Path(path or entry["path"])
+    target.write_text(change(target.read_text(encoding="utf-8")), encoding="utf-8")
+    if path is None:
+        entry["sha256"] = fingerprint(target)
 
 
 def _save_job(tutorial: Any, home: Path, name: str, template: str, data: str, sheet: str) -> None:
@@ -134,9 +152,12 @@ def _mapping(fields: list[str], *, blank_unit: bool) -> MappingProfile:
     def row(field: str) -> FieldMapping:
         if blank_unit and field == "단위":
             return FieldMapping("단위", type="const")  # 일부러 비워 둔 항목(비움 확정)
+        if field in NOTICE_CONSTANTS:
+            return FieldMapping(field, type="const", const=NOTICE_CONSTANTS[field])
         kind = infer_type(field)
         kind = kind if kind in {"date", "amount"} else "text"
-        fmt = HEAD_DATE_FMT if field == HEAD_DATE_FIELD and kind == "date" else ""
+        fmt = (HEAD_DATE_FMT if field == HEAD_DATE_FIELD and kind == "date"
+               else "datetime" if kind == "date" and field.endswith("일시") else "")
         return FieldMapping(field, _SOURCE_OVERRIDES.get(field, field), type=kind, fmt=fmt)
 
     return MappingProfile(mappings=[row(field) for field in fields])

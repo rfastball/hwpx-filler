@@ -228,7 +228,7 @@ def test_no_evidence_before_any_check(tmp_path: Path) -> None:
 
 
 def test_no_evidence_keeps_the_check_verb_after_data_is_mounted(tmp_path: Path) -> None:
-    """데이터가 갖춰져 Primary Action 이 확인으로 넘어와도 같은 동사 하나가 계속 선다(#912 D1)."""
+    """데이터가 갖춰지면 확인 동사와 자동 준비 가능한 생성 요청이 함께 열린다."""
     ctrl = _controller(tmp_path, with_binding=True)
     _mount_rows(ctrl, [{"name": "A"}])
     ctrl.dispatch("set_all", {})
@@ -236,7 +236,7 @@ def test_no_evidence_keeps_the_check_verb_after_data_is_mounted(tmp_path: Path) 
     assert zone["execution_status_code"] == "NO_EVIDENCE"
     assert zone["primary_action"] == "RESOLVE_EXECUTION"
     assert zone["execution_action"]["enabled"] is True
-    assert zone["create_action"]["disabled_reason"] == "필요한 준비를 먼저 완료해 주세요"
+    assert zone["create_action"]["enabled"] is True
 
 
 def test_selected_record_capture_preserves_order_and_never_rereads_source(

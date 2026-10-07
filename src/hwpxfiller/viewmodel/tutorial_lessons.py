@@ -51,7 +51,10 @@ UI_PRESS_EVENTS = frozenset({
 TRANSIENT_TARGETS = frozenset({"menu-item"})
 
 #: Bump when beat lists change: stored checkpoints of an older curriculum point at other beats.
-CURRICULUM = 5
+CURRICULUM = 7
+
+NOTICE_CONSTANTS = {"계약담당자": "홍길동", "계약담당 전화번호": "042-000-0000", "계약담당 팩스번호": "0505-000-0000"}
+NOTICE_DATETIMES = ("입찰개시일시", "입찰마감일시", "개찰일시", "등록마감일시")
 
 _NEW_JOB = "'＋ 새 작업'은 템플릿과 데이터를 묶은 문서 작업을 새로 만듭니다. 누르세요."
 _TO_BINDING = "'다음 ▶'은 템플릿 필드마다 채울 데이터 열을 정하는 '연결 확인' 단계로 넘어갑니다. 누르세요."
@@ -85,12 +88,12 @@ def _use_job() -> Beat:
     return Beat("use_job", "문서 만들기에서 열기", _USE_JOB, "library", "library-use", "job_opened")
 
 
-def _all_rows(what: str) -> Beat:
-    return Beat("rows", "행 모두 고르기", _ALL_ROWS.format(what=what), "job", "row-selection", "rows_selected")
+def _all_rows(what: str, beat_id: str = "rows") -> Beat:
+    return Beat(beat_id, "행 모두 고르기", _ALL_ROWS.format(what=what), "job", "row-selection", "rows_selected")
 
 
-def _open_workbench(event: str = "txt_workbench_opened") -> Beat:
-    return Beat("workbench", "검토·복사 시작", _OPEN_WORKBENCH, "job", "open-workbench", event)
+def _open_workbench(event: str = "txt_workbench_opened", beat_id: str = "workbench") -> Beat:
+    return Beat(beat_id, "검토·복사 시작", _OPEN_WORKBENCH, "job", "open-workbench", event)
 
 
 def _create(beat_id: str, title: str, body: str, command: str) -> Beat:
@@ -115,6 +118,49 @@ def _trial_open() -> Beat:
     return Beat("trial_open", "결과 시험 열기", _TRIAL_OPEN, "authoring", "trial-toggle", "trial_dock_opened")
 
 
+def _contact_constant(field: str, noun: str) -> tuple[Beat, ...]:
+    return (
+        Beat(f"{field}_mode", f"{field} 고정값 선택",
+             f"'{field}'는 사용자마다 정해 두는 값입니다. '데이터 열'에서 '고정값…'을 고르세요.",
+             "editor", "map-source", "notice_constant_mode_set", arg=field),
+        Beat(f"{field}_value", f"{field} 입력",
+             f"실제 작업에서는 본인의 {noun} 적습니다. 연습에서는 {NOTICE_CONSTANTS[field]}을 입력하고 Tab 키를 누르세요.",
+             "editor", "map-constant", "notice_constant_value_set", arg=field),
+        Beat(f"{field}_confirm", f"{field} 확인",
+             "'확인 필요'를 눌러 모든 공고서에 같은 값을 쓰도록 확인하세요.",
+             "editor", "map-confirm", "notice_constant_confirmed", arg=field),
+    )
+
+
+def _notice_datetime(field: str) -> tuple[Beat, ...]:
+    return (
+        Beat(f"{field}_format", f"{field} 시간 표시",
+             f"'{field}'는 시각까지 필요한 일정입니다. 표시형에서 '표준(시간 포함)'을 고르세요.",
+             "editor", "map-format", "notice_datetime_set", arg=field),
+        Beat(f"{field}_confirm", f"{field} 확인",
+             "'확인 필요'를 눌러 날짜와 시각을 함께 표시하도록 확인하세요.",
+             "editor", "map-confirm", "notice_datetime_confirmed", arg=field),
+    )
+
+
+def _notice_rules() -> tuple[Beat, ...]:
+    return (
+        *_contact_constant("계약담당자", "이름을"),
+        *_contact_constant("계약담당 전화번호", "전화번호를"),
+        *_contact_constant("계약담당 팩스번호", "팩스번호를"),
+        Beat("date_source", "게시일 열 고르기", "'게시일'의 '데이터 열'에서 '게시일시'를 고르세요.",
+             "editor", "map-source", "notice_date_source_set", arg="게시일"),
+        Beat("date_format", "게시일 표시형",
+             "'게시일'은 공고서 머리에 적히는 날짜입니다. '게시일'의 표시형에서 '날짜' 아래 "
+             "'표준(연·월)'을 고르세요.",
+             "editor", "map-format", "notice_date_format_set", arg="게시일"),
+        Beat("date_confirm", "게시일 연결 확인",
+             "표시형을 바꾼 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요.",
+             "editor", "map-confirm", "notice_date_confirmed", arg="게시일"),
+        *(beat for field in NOTICE_DATETIMES for beat in _notice_datetime(field)),
+    )
+
+
 LESSONS: tuple[Lesson, ...] = (
     Lesson("first_hwpx", "엑셀로 공고서 만들기",
            "공고서 서식과 엑셀 공고 목록을 연결해 작업을 저장하고, 고른 3행으로 공고서 3건을 만듭니다.", (
@@ -134,13 +180,7 @@ LESSONS: tuple[Lesson, ...] = (
         Beat("confirm_phone", "담당자 전화번호 연결 확인",
              "'담당자 전화번호'에는 '담당자전화' 열이 제안됐습니다. '제안'을 눌러 확인하세요.",
              "editor", "map-confirm", "notice_mapping_confirmed", arg="담당자 전화번호"),
-        Beat("date_format", "게시일시 표시형",
-             "'게시일시'는 공고서 머리에 적히는 날짜입니다. '게시일시'의 표시형에서 '날짜' 아래 "
-             "'표준(연·월)'을 고르세요.",
-             "editor", "map-format", "notice_date_format_set", arg="게시일시"),
-        Beat("date_confirm", "게시일시 연결 확인",
-             "표시형을 바꾼 연결은 '확인 필요'로 표시됩니다. '확인 필요'를 눌러 확인하세요.",
-             "editor", "map-confirm", "notice_date_confirmed", arg="게시일시"),
+        *_notice_rules(),
         Beat("to_filename", "이름·저장 단계로",
              "'다음 ▶'은 작업 이름과 문서 파일 이름을 정하는 단계로 넘어갑니다. 누르세요.",
              "editor", "editor-next", "editor_section_filename"),
@@ -244,6 +284,7 @@ LESSONS: tuple[Lesson, ...] = (
              "'자동 제안 다시 받기'는 새 파일의 열 이름으로 모든 연결을 다시 제안합니다. 누르세요.",
              "editor", "menu-item", "resuggest_asked", arg="resuggest-all"),
         Beat("resuggest_confirm", "다시 받기", "'다시 받기'를 누르세요.", "editor", "dialog-confirm", "rows_resuggested"),
+        *_notice_rules(),
         Beat("confirm_all", "제안 모두 확인", "표 위 '모두 확인' 단추는 제안된 연결을 한 번에 확인합니다. 누르세요.",
              "editor", "confirm-all", "rebind_rows_confirmed"),
         Beat("save", "저장하고 열기",
@@ -318,7 +359,13 @@ LESSONS: tuple[Lesson, ...] = (
     )),
     Lesson("change_apply", "바뀐 서식을 작업에 적용하기",
            "'항목'을 더한 서식을 저장한 작업에 적용하고, 문서 만들기에서 그 '항목'을 골라 채운 문장을 확인합니다.", (
-        *_open_template(),
+        _pick_job("계약 안내 작업"),
+        _use_job(),
+        _all_rows("계약 6행", "prepare_rows"),
+        _open_workbench(beat_id="prepare_workbench"),
+        Beat("open_edit", "템플릿 편집 열기",
+             "'템플릿 편집'은 이 작업의 적용된 서식을 저작 화면에서 엽니다. 누르세요.",
+             "workbench", "wb-edit-template", "practice_template_opened"),
         Beat("impact", "변경 영향 열기",
              "'변경 영향·작업 적용'은 이 서식을 쓰는 저장한 작업에 바뀐 점을 반영하는 패널입니다. 누르세요.",
              "authoring", "impact-tab", "impact_tab_opened", entry_screen="authoring"),

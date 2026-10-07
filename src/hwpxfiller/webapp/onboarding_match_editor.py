@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ..viewmodel.tutorial_lessons import NOTICE_CONSTANTS, NOTICE_DATETIMES
+
 __all__ = ["EDITOR_MATCHERS", "Observation"]
 
 HWPX = "물품 구매입찰 공고.hwpx"
@@ -129,9 +131,42 @@ def _contract_currency(tutorial: Any, obs: Observation) -> dict | None:
 
 
 def _notice_date_format(tutorial: Any, obs: Observation) -> dict | None:
-    row = _rows(tutorial).get("게시일시")
+    row = _rows(tutorial).get("게시일")
     return {} if (_on(obs, "set_display") and _lesson_inputs(tutorial)
                   and row and row.type == "date" and row.fmt == "ym") else None
+
+
+def _notice_date_source(tutorial: Any, obs: Observation) -> dict | None:
+    row = _rows(tutorial).get("게시일")
+    return {} if (_on(obs, "set_source") and _lesson_inputs(tutorial)
+                  and row and row.source == "게시일시") else None
+
+
+def _notice_target(tutorial: Any, obs: Observation, action: str, fields) -> Any:
+    beat = tutorial.progress.beat()
+    field = beat.arg if beat else ""
+    return _rows(tutorial).get(field) if (
+        _on(obs, action) and _lesson_inputs(tutorial) and field in fields
+        and obs.payload.get("index") == _row_index(tutorial, field)) else None
+
+
+def _notice_constant(action: str) -> Matcher:
+    def match(tutorial: Any, obs: Observation) -> dict | None:
+        row = _notice_target(tutorial, obs, action, NOTICE_CONSTANTS)
+        if not row or row.type != "const":
+            return None
+        if action != "set_display" and not row.const.strip():
+            return None
+        return {} if action != "set_confirmed" or row.confirmed else None
+    return match
+
+
+def _notice_datetime(action: str) -> Matcher:
+    def match(tutorial: Any, obs: Observation) -> dict | None:
+        row = _notice_target(tutorial, obs, action, NOTICE_DATETIMES)
+        return {} if (row and row.type == "date" and row.fmt == "datetime"
+                      and (action != "set_confirmed" or row.confirmed)) else None
+    return match
 
 
 def _pattern_set(tutorial: Any, obs: Observation) -> dict | None:
@@ -220,11 +255,16 @@ def _saved(template: str, valid: Callable[[Any, dict], bool]) -> Matcher:
 
 def _notice_saved(edit: Any, rows: dict) -> bool:
     expected = {"낙찰자결정방법": "낙찰방법", "담당자 전화번호": "담당자전화"}
-    date_row = rows.get("게시일시")
     return (edit.pattern == PATTERN
-            and all((row := rows.get(key)) and row.source == source and row.confirmed
-                    for key, source in expected.items())
-            and bool(date_row and date_row.type == "date" and date_row.fmt == "ym" and date_row.confirmed))
+            and all(_row_matches(rows.get(key), source, "", None) for key, source in expected.items())
+            and _notice_rules_ready(rows)
+            and _row_matches(rows.get("게시일"), "게시일시", "date", "ym"))
+
+
+def _notice_rules_ready(rows: dict) -> bool:
+    return (all(_row_matches(rows.get(field), "", "const", None) and rows[field].const.strip()
+                for field in NOTICE_CONSTANTS)
+            and all(_row_matches(rows.get(field), "", "date", "datetime") for field in NOTICE_DATETIMES))
 
 
 def _contract_saved(_edit: Any, rows: dict) -> bool:
@@ -250,8 +290,14 @@ EDITOR_MATCHERS: dict[str, Matcher] = {
     "editor_section_template": _section("template"),
     "notice_row_confirmed": _confirmed("낙찰자결정방법", "낙찰방법"),
     "notice_mapping_confirmed": _notice_mapping,
+    "notice_constant_mode_set": _notice_constant("set_display"),
+    "notice_constant_value_set": _notice_constant("set_const"),
+    "notice_constant_confirmed": _notice_constant("set_confirmed"),
+    "notice_date_source_set": _notice_date_source,
+    "notice_datetime_set": _notice_datetime("set_display"),
+    "notice_datetime_confirmed": _notice_datetime("set_confirmed"),
     "notice_date_format_set": _notice_date_format,
-    "notice_date_confirmed": _confirmed("게시일시", kind="date", fmt="ym"),
+    "notice_date_confirmed": _confirmed("게시일", "게시일시", kind="date", fmt="ym"),
     "notice_pattern_set": _pattern_set,
     "contract_source_chosen": _contract_source,
     "contract_mapping_set": _confirmed("대표계약업체", "계약상대자"),

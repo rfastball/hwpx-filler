@@ -59,6 +59,7 @@ from ..external.job_store import JobRegistry
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import template_compile_status
+from ..host.locations import default_template_authority_dir
 from ..viewmodel.compile_badge import badge_level
 from ..viewmodel.home_state import (
     NO_GROUP_LABEL,
@@ -221,6 +222,14 @@ def _read_first_row(job: "Job") -> FirstRowRead:
     return FirstRowRead(
         state="ready", record=records[0], headers=headers, record_count=len(records),
     )
+
+
+def _editable_applied_template_path(job: Job) -> str:
+    path = job.template_path
+    if not job.authority_id or not path or not Path(path).is_file():
+        return ""
+    root = (default_template_authority_dir() / "applied").resolve()
+    return path if Path(path).resolve().is_relative_to(root) else ""
 
 
 def _job_row_dict(r: JobRow) -> dict:
@@ -524,6 +533,7 @@ class LibraryController:
             # 화면에 없었다(계기판의 짝). 경로 검증은 백엔드 화이트리스트(app.py
             # ``_validate_owned``)가 이미 소유한다 — 신설은 이 한 칸뿐이다.
             "template_path": job.template_path,
+            "template_edit_path": _editable_applied_template_path(job),
             # 데이터 결속의 정체(U4 §2.4) — 템플릿 정체 바로 옆이 제자리다: 「무엇으로
             # 만드는가」의 두 축이고, 한쪽만 보이면 목록이 절반만 말한다. 라벨 성형은
             # 링0 단일 출처(`data_binding_label`)라 표면이 basename·시트 표기를 안 짓는다.

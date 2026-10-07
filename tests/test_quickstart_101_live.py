@@ -1436,6 +1436,21 @@ def test_seeding_copies_committed_assets_without_practice_output(tmp_path) -> No
         assert (home / name).is_dir(), f"시딩 누락: {name}"
     assert driver.generated_documents(home) == [], "시딩 직후 생성물이 있으면 안 됩니다"
     assert not (home / driver.RESULTS_REL).exists()
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.external.job_store import JobRegistry
+
+    applied = home / "template_authority" / "applied" / "work" / "발주요청서.hwpx"
+    applied.parent.mkdir(parents=True)
+    applied.write_bytes(b"applied")
+    JobRegistry(home / "jobs").save(Job(name="발주요청서", template_path=str(applied), authority_id="work"))
+    results = applied.parent / "Results"
+    results.mkdir()
+    for name in ("1.hwpx", "2.hwpx", "3.hwpx"):
+        (results / name).write_bytes(b"generated")
+    old_results = home / driver.RESULTS_REL
+    old_results.mkdir()
+    (old_results / "unmanaged.hwpx").write_bytes(b"old")
+    assert driver.generated_documents(home) == ["1.hwpx", "2.hwpx", "3.hwpx"]
 
 
 def test_sx05_fixture_is_deterministic_canonical_and_three_way() -> None:

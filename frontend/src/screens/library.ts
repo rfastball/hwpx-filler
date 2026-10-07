@@ -188,6 +188,13 @@ export function createLibraryController(deps: LibraryControllerDeps) {
         entry_reason: "library", evidence, return_context: { surface: "library" }, ...extra,
       });
     },
+    async editTemplate(name: string): Promise<void> {
+      const work = selected(name);
+      if (!work?.template_edit_path) return;
+      try {
+        await deps.ports.authoring.current().open(String(work.template_edit_path), "library");
+      } catch (error) { deps.notify(String(error)); }
+    },
     renameJob,
     cloneJob: (name: string) => dispatch("library", "clone_job", { name }),
     removeJob,
@@ -293,9 +300,8 @@ function pairingGlyph(): ReactNode {
     h("path", { d: "M7 10h6" }));
 }
 
-/** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사. `action` 은 차단
- *  상태를 푸는 동사(데이터 미결속의 「연결하기」)만 싣는다 — 정체를 바꾸는 길은 카드가 아니라
- *  가운데 연결 손잡이와 「작업 편집」 이 진다(2026-09-03 재판정). */
+/** 연결 카드의 한 축(템플릿 / 데이터) — 정체 글리프 + 항목 + 경로 동사. `action` 은
+ *  적용본 템플릿 편집 또는 데이터 미결속 해결을 싣는다. 조합 변경은 가운데 손잡이가 진다. */
 function PairSide(props: {
   kind: "template" | "data";
   name: string; sub: ReactNode; path: string; warn?: boolean;
@@ -312,6 +318,14 @@ function PairSide(props: {
         client: controller.client, path, notify: controller.notify,
       }) : null),
     action ?? null);
+}
+
+function templateEditAction(detail: Obj, controller: LibraryController): ReactNode {
+  if (!detail.template_edit_path) return null;
+  return h("button", {
+    className: "btn sm", id: "libraryTemplateEdit", type: "button", "data-busy-lock": true,
+    onClick: () => { void controller.editTemplate(detail.name); },
+  }, "템플릿 편집");
 }
 
 /** 연결 카드 — 「무엇과 무엇이 붙었나」. 좁은 상세 패널이라 편집기의 가로 3열을 **눕힌다**:
@@ -340,6 +354,7 @@ function PairCard(props: {
       path: String(detail.template_path || ""),
       warn: !!card.template_missing || !card.template_bound,
       controller,
+      action: templateEditAction(detail, controller),
     }),
     h("button", {
       type: "button", className: "mid", id: "libraryPairingEdit",

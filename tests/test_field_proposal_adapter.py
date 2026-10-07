@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from lxml import etree
 import pytest
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.domain.field_induction.proposal import propose
-from hwpxfiller.external.hwpx_authoring import analyze_hwpx, apply_hwpx
+from hwpxfiller.external.hwpx_authoring import analyze_hwpx, apply_hwpx, available_commands_hwpx, trial_hwpx
 from hwpxfiller.external.hwpx_field_proposal import apply_authoring_command, read_hwpx, read_txt, spot_location
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -81,12 +82,16 @@ def test_controls_mark_the_editable_end_and_field_values_are_excluded() -> None:
                                             "paragraph": 3, "start": 9, "end": 12})
     paragraphs, _places = read_hwpx(made)
     field = paragraphs[3]
-    assert field.field_spans == ((9, 12),) and field.editable_end == 9
+    assert field.field_spans == ((9, 12),) and field.editable_end > len(field.text)
     _paragraphs, _places, result = proposals(made)
     groups = {group.column: group for group in result.groups}
     assert "수요기관" not in groups  # 이미 필드 값이다
-    # 같은 문단의 뒤 자리는 필드(제어 요소) 뒤라 만들 수 없다 — 보류와 그 이유.
-    assert groups["담당자"].kind == "held" and not groups["담당자"].spots
+    # 기존 누름틀 경계 뒤의 별도 문구는 계속 필드로 만들 수 있다.
+    assert groups["담당자"].spots
+    spot = groups["담당자"].spots[0]
+    location = spot_location("hwpx", made, _places[spot.paragraph], spot.start, spot.end)
+    _, impact = apply_hwpx(made, {"type": "create_field", "name": "담당자", **location})
+    assert impact["captured_text"] == "김다온"
 
 
 def test_text_boxes_are_read_but_never_offered() -> None:
@@ -160,3 +165,33 @@ def test_a_cell_without_an_address_still_reads() -> None:
     paragraphs, places = read_hwpx(package(para(table([bare]))))
     assert paragraphs[1].cell is not None and (paragraphs[1].cell.row, paragraphs[1].cell.col) == (-1, -1)
     assert places[1]["cell_path"][0]["cell"] == 0
+
+
+def test_native_authoring_field_keeps_content_and_trials_value():
+    pkg = package('<hp:p><hp:run charPrIDRef="7"><hp:t>앞 원문 전화 팩스 뒤</hp:t></hp:run></hp:p>')
+    original = pkg.entries["Contents/section0.xml"]
+    result, impact = apply_hwpx(pkg, {
+        "type": "create_field", "entry": "Contents/section0.xml",
+        "paragraph": 0, "start": 2, "end": 4, "name": "내용",
+    })
+    assert impact["captured_text"] == "원문"
+    assert original != result.entries["Contents/section0.xml"]
+    assert analyze_hwpx(result)["fields"][0]["name"] == "내용"
+    assert {key: analyze_hwpx(result)["fields"][0]["occurrences"][0][key] for key in ("start", "end")} == {"start": 2, "end": 4}
+    # 앞서 만든 필드의 제어 경계는 뒤의 별도 문구를 막지 않는다.
+    for start, end, name in ((5, 7, "전화"), (8, 10, "팩스"), (0, 2, "머리")):
+        command = {"type": "create_field", "entry": "Contents/section0.xml",
+                   "paragraph": 0, "start": start, "end": end, "name": name}
+        verdict = next(item for item in available_commands_hwpx(result, command) if item["type"] == "create_field")
+        assert verdict["enabled"] is True
+        result, _ = apply_hwpx(result, command)
+    # 직접 명령도 기존 필드를 겹치거나 감싸는 범위는 원본을 바꾸지 않고 거절한다.
+    before = result.entries["Contents/section0.xml"]
+    for start, end in ((2, 3), (1, 5), (3, 3)):
+        with pytest.raises(ValueError, match="기존 필드가 포함"):
+            apply_hwpx(result, {"type": "create_field", "entry": "Contents/section0.xml",
+                                "paragraph": 0, "start": start, "end": end, "name": "겹침"})
+        assert result.entries["Contents/section0.xml"] == before
+    output = trial_hwpx(result, {"머리": "첫 ", "내용": "새값", "전화": "02-123", "팩스": "02-456"}, {})
+    filled = HwpxPackage.from_bytes(output["bytes"])
+    assert "".join(node.text or "" for node in etree.fromstring(filled.entries[ENTRY]).iter(f"{{{HP}}}t")) == "첫 새값 02-123 02-456 뒤"

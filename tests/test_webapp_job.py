@@ -4809,19 +4809,6 @@ def test_generation_has_no_review_backstop_left(tmp_path):
     assert made == ["doc-001.hwpx", "doc-002.hwpx"]
 
 
-def test_a_rule_change_no_longer_refuses_the_run(tmp_path):
-    """규칙이 바뀌어도 실행은 열린다 — 고지가 그 사실을 말할 뿐이다(#957)."""
-    ctrl, _ = _unreviewed_session(tmp_path)
-    job = ctrl.registry.load("공고서")
-    job.filename_pattern = "다른-{{seq:001}}"
-    ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.work.vm.job.filename_pattern = "다른-{{seq:001}}"   # 세션이 편집 결과를 받은 상태
-    snap = ctrl.snapshot()
-    assert snap["review"]["required"] is True           # 요구는 서고
-    assert snap["gate"]["enabled"] is True              # 게이트는 열려 있다
-    assert ctrl.generate()["ok"] is True
-
-
 def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
     """1R P1 — 배치 중 착지한 에디터 저장이 **한 번도 실행된 적 없는 규칙**을 검토받은
     것으로 만들면 안 된다(조용한 승계). 런의 규칙을 찍으면 요구가 그대로 선다."""
@@ -5403,10 +5390,11 @@ def test_selecting_a_job_prepares_it_without_a_button(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
 
     assert ctrl.registry.load("공고서").authority_id  # 클릭 0회로 준비됐다
-    # 준비를 마쳤고 원본도 그대로다 — 존은 자기 발로 내려온다(U4 12번).
+    # 준비를 마치면 앱 소유 편집본에 연결되고 대기 동사가 없으므로 존은 내려온다.
     snap = ctrl.snapshot()
     assert snap["template_change"]["actionable"] is False
-    assert snap["template_change"]["source_drift"] == "unchanged"
+    assert "source_drift" not in snap["template_change"]
+    assert ctrl.registry.load("공고서").template_path != str(tmp_path / "t.hwpx")
 
 
 def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
@@ -5452,9 +5440,9 @@ def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
     snap = ctrl.snapshot()
     zone = snap["template_change"]
     assert zone["supported"] is True and zone["checkable"] is True
-    # 드리프트 사실은 **존 하나**가 든다(#932 B5 — 종전 top-level 사본은 소비자 0 이었다).
-    # TXT 도 착석이 준비를 지므로 대조가 성립하고, 원본 그대로면 존은 서지 않는다.
-    assert zone["source_drift"] == "unchanged" and zone["source_drift_note"] is None
+    # TXT도 같은 applied-copy lifecycle을 쓴다.
+    assert "source_drift" not in zone
+    assert ctrl.registry.load("안내문").template_path != str(txt)
     assert zone["actionable"] is False
     assert ctrl.registry.load("안내문").authority_id != ""  # 착석이 권위를 발급했다
 
@@ -5462,56 +5450,14 @@ def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
     assert result["ok"] is True and result["preparation"]["status"] == "no_change"
     assert pushes[-1][1]["template_change"]["epoch"] == 1
 
-    txt.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
+    Path(ctrl.registry.load("안내문").template_path).write_text(
+        "본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8"
+    )
     ready = ctrl.dispatch("template_check", {"request_id": "t2"})["preparation"]
     assert ready["status"] == "ready"
     applied = ctrl.dispatch("template_apply", {"change_token": ready["change_token"]})
     assert applied["status"] == "applied"
     assert ctrl.snapshot()["template_change"]["epoch"] == 2
-
-
-def test_a_template_apply_closes_generation_until_the_binding_is_confirmed(tmp_path):
-    """적용된 새 템플릿 판본은 연결을 다시 확정하기 전까지 문서를 만들지 않는다(#1081 PR2).
-
-    종전 이 계약은 slot 없는 legacy admission 의 provenance 판정(NEEDS_CONFIGURATION)이
-    졌다. 문서 생성이 managed 하나가 된 뒤로는 current Application 의 Field Binding 판본이
-    같은 사실을 닫는다 — 클릭 전 표면(작업대 만들기 동사·사전검증)과 직접 호출 둘 다.
-    """
-    ctrl, _ = _template_change_controller(tmp_path, managed=True)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    out = tmp_path / "out"
-    pick_output_folder(ctrl, out)
-    ready = ctrl.refresh_panel()
-    assert ready["managed_hwpx"] is True
-    assert ready["workbench_observation"]["create_action"]["enabled"] is True
-
-    _write_template(tmp_path / "t.hwpx", ["공고명", "추정가격", "담당자"])
-    preparation = ctrl.dispatch("template_check", {"request_id": "k2"})["preparation"]
-    assert preparation["status"] == "ready"
-    applied = ctrl.dispatch("template_apply", {"change_token": preparation["change_token"]})
-    assert applied["status"] == "applied"
-
-    blocked = ctrl.refresh_panel()
-    assert blocked["workbench_observation"]["create_action"]["enabled"] is False
-    assert "검증 완료. 생성할 수 있습니다." not in blocked["preflight"]["text"]
-    refused = ctrl.generate()
-    assert refused["ok"] is False, refused
-    assert not list(out.glob("*.hwpx"))
-
-    # 새 판본에 대한 연결 확정(편집기 저장과 같은 사건)이 생성을 다시 연다.
-    ctrl.registry.mutate(
-        "공고서",
-        lambda job: job.mapping.mappings.append(
-            FieldMapping(template_field="담당자", type="const", const="홍길동")
-        ),
-    )
-    ctrl.on_editor_mapping_saved("공고서")
-    reopened = ctrl.refresh_panel()
-    assert reopened["workbench_observation"]["create_action"]["enabled"] is True
-    made = ctrl.generate()
-    assert made["ok"] is True and made["status"] == "completed", made
-    assert len(list(out.glob("*.hwpx"))) == 2
 
 
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────
@@ -5854,28 +5800,23 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     assert ctrl.work.name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
 
-def test_edited_source_blocks_generation_until_the_change_is_checked(tmp_path):
-    """#681 drift 음성대조 — 원본을 앱 밖에서 고치면(미적용) 캡처본으로 조용히 만들지 않는다.
-
-    생성은 current Application 의 캡처 bytes 를 봉인해 물질화한다. 원본이 갈린 채 그대로
-    만들면 「고친 내용이 반영 안 된 문서」가 조용히 나오므로 원본 드리프트는 실행 게이트다
-    (#932 B5). slot 없는 작업도 managed 하나라 같은 게이트를 지난다(#1081 PR2 — 종전 legacy
-    갈래는 드리프트를 무시하고 캡처본으로 만들었다).
-    """
+@pytest.mark.parametrize("execution_status", ["NO_EVIDENCE", "STALE"])
+def test_external_source_edit_does_not_reenter_applied_work(tmp_path, execution_status):
+    """Former source edits cannot reenter; one generate request seals missing/stale evidence."""
     ctrl, _ = _template_change_controller(tmp_path, managed=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    out = tmp_path / "out"
-    pick_output_folder(ctrl, out)
+    pick_output_folder(ctrl, tmp_path / "out")
     _write_template(tmp_path / "t.hwpx", ["공고명", "추정가격", "담당자"])  # B — 미적용
+    ctrl.execution.invalidate()
+    ctrl.execution.orchestration = replace(
+        ctrl.execution.orchestration, state="IDLE" if execution_status == "NO_EVIDENCE" else "STALE"
+    )
 
     snap = ctrl.refresh_panel()
-    assert snap["template_change"]["source_drift"] == "changed"
-    assert snap["template_change"]["actionable"] is True  # 복구 동사가 선 존
-    assert snap["workbench_observation"]["create_action"]["enabled"] is False
-    refused = ctrl.generate()
-    assert refused["ok"] is False, refused
-    assert not list(out.glob("*.hwpx"))
+    assert snap["workbench_observation"]["execution_status_code"] == execution_status
+    assert snap["workbench_observation"]["create_action"]["enabled"] is True
+    assert ctrl.generate()["ok"] is True and ctrl.execution.sealed_plan_payload is not None
 
 
 def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
@@ -5922,37 +5863,6 @@ def test_generation_recovers_after_repairing_bad_template(tmp_path):
     made = ctrl.generate()
     assert made["ok"] is True and made["status"] == "completed", made
     assert len(list(out.glob("*.hwpx"))) == 2
-
-
-def _drift(ctrl):
-    """새로 관찰한 드리프트 (상태, 문안) — 존이 그 사실의 단일 자리다(#932 B5)."""
-    zone = ctrl.refresh_panel()["template_change"]
-    return zone["source_drift"], zone["source_drift_note"]
-
-
-def test_source_drift_is_flagged_loudly_in_snapshot(tmp_path):
-    """#681 F1: 부트스트랩된 Work 의 원본을 앱 밖에서 편집하면 스냅샷이 시끄럽게 표식한다
-    — 생성은 캡처본을 쓰므로 「검토한 편집분이 조용히 안 반영」을 막는다(confirm-or-alarm)."""
-    from hwpxfiller.application.jobs import load_job
-
-    ctrl, _ = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.dispatch("template_check", {"request_id": "k1"})   # lazy bootstrap(캡처 확립)
-    assert _drift(ctrl) == ("unchanged", None)              # 무편집 = 일관, 경고 없음
-    tp = load_job(ctrl.registry, "공고서").template_path
-    Path(tp).write_bytes(Path(tp).read_bytes() + b"EXTERNAL-EDIT")  # 앱 밖 편집(미가져오기)
-    state, note = _drift(ctrl)
-    assert state == "changed" and note and "캡처된 버전" in note   # 시끄러운 표식
-    assert ctrl.snapshot()["template_change"]["actionable"] is True  # 존이 스스로 선다
-
-
-def test_unbootstrapped_work_shows_no_source_drift(tmp_path):
-    """미부트스트랩 Work 는 원본이 곧 실행본이라 일관 — 경고 없음(그리고 seat 에서 비싼
-    resolve/stage 를 하지 않는다: applied-work 회귀 방지)."""
-    ctrl, _ = _template_change_controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _unprepared_after_select(ctrl)                          # 미부트스트랩 상태(#932 B5)
-    assert _drift(ctrl) == (None, None)                     # 판정 불성립 — 「없다」가 아니다
 
 
 def test_template_change_without_assembly_is_loud_not_silent(tmp_path):
@@ -6934,7 +6844,7 @@ def test_snapshot_reads_the_seat_it_captured_even_if_released_midway(tmp_path, m
     """스냅샷은 시작 때 포획한 활성 작업만 읽는다 — 도중 해제가 빈 이름 조회로 새지 않는다.
 
     결함 재현의 결정적 판: HWPX 패널을 짓는 도중(`vm.refresh`) 앞 작업이 해제되면, 종전에는
-    `_configuration_zones` 가 세션 이름을 다시 읽어 ``source_drift("")`` →
+    `_configuration_zones` 가 세션 이름을 다시 읽어 ``zone("")`` →
     ``jobs/unnamed.job.json`` FileNotFoundError 로 스냅샷째 죽었다.
     """
     ctrl = _two_bound_jobs(tmp_path)
@@ -6947,16 +6857,16 @@ def test_snapshot_reads_the_seat_it_captured_even_if_released_midway(tmp_path, m
 
     monkeypatch.setattr(vm, "refresh", release_midway)
     asked: list[str] = []
-    real_drift = ctrl._template_change.source_drift
+    real_zone = ctrl._template_change.zone
     monkeypatch.setattr(
-        ctrl._template_change, "source_drift",
-        lambda name: (asked.append(name), real_drift(name))[1],
+        ctrl._template_change, "zone",
+        lambda name, *args, **kwargs: (asked.append(name), real_zone(name, *args, **kwargs))[1],
     )
 
     snap = ctrl.refresh_panel()
 
     assert snap["job_name"] == "공고서", "포획한 작업을 끝까지 말해야 한다"
-    assert asked and "" not in asked, f"빈 이름으로 원본 대조를 했다: {asked}"
+    assert asked and "" not in asked, f"빈 이름으로 템플릿 존을 조회했다: {asked}"
     monkeypatch.setattr(vm, "refresh", original)
     assert ctrl.refresh_panel()["job_name"] == "", "다음 스냅샷은 해제된 지금을 말한다"
 

@@ -25,6 +25,7 @@ from hwpxfiller.application.document_creation_vocabulary import (
 from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY
 
 from .surface import ScenarioFailure, StepTimeout, Surface
+from .template_flow import _apply_staged_template, _select_work
 
 #: 캡처 지점 13개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
 #: README 참조·커밋된 ``img/*.png`` 와 3자 대조된다.
@@ -929,53 +930,6 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
         raise ScenarioFailure(f"SX-05 데이터 선택 면이 닫히지 않았습니다 — {state}") from exc
 
 
-def _select_work(surface: Surface, name: str) -> None:
-    selector = f'#jobCandidates button[data-cand={json.dumps(name, ensure_ascii=False)}]'
-    surface.wait(
-        f"!!document.querySelector({json.dumps(selector)})"
-        f" && !document.querySelector({json.dumps(selector)}).disabled",
-        f"{name} 후보 선택 가능",
-        requires=["#jobCandidates"],
-    )
-    surface.click_sel(selector, what=f"{name} 명시 선택")
-    surface.wait(
-        f"document.getElementById('jobActionName').textContent.trim() === {json.dumps(name, ensure_ascii=False)}",
-        f"{name} active Work",
-        requires=["#jobActionName"],
-    )
-
-
-def _apply_staged_template(ctx: ScenarioContext, kind: str) -> None:
-    s = ctx.surface
-    ctx.stage_template(kind)
-    # staging 은 **앱 밖 편집**이다(한글에서 템플릿을 고치는 것과 같은 사건) — push 를 내지
-    # 않으므로 조치가 있을 때만 서는 구획이 아직 침묵한다. 그 사용자 이야기의 나머지 절반,
-    # 「앱으로 돌아온다」를 여기서 실제로 낸다: 셸이 포커스 복귀에 현재 화면을 다시 묻고
-    # (#932 B5), 그때 드리프트가 존을 세운다. 대본이 지어내는 상태가 아니라 사용자가 반드시
-    # 지나는 사건이라 여기 선다.
-    s.js("window.dispatchEvent(new Event('focus')); true;")
-    s.wait(
-        "!!document.getElementById('jobTplCheck')",
-        f"{kind} 앱 복귀 뒤 템플릿 조치 필요 존",
-        timeout=30.0,
-        requires=["#scr-job"],
-    )
-    s.click_sel("#jobTplCheck", what=f"{kind} 템플릿 변경사항 확인")
-    s.wait(
-        "!!document.getElementById('jobTplApply')",
-        f"{kind} 템플릿 적용 가능",
-        timeout=30.0,
-        requires=["#jobTplChange", "#jobTplStatus"],
-    )
-    s.click_sel("#jobTplApply", what=f"{kind} 템플릿 적용")
-    s.wait(
-        "(document.getElementById('jobTplNotice')||{textContent:''}).textContent.includes('적용')",
-        f"{kind} 템플릿 적용 착지",
-        timeout=30.0,
-        requires=["#jobTplChange"],
-    )
-
-
 def run_sx(ctx: ScenarioContext) -> dict:
     """Append SX-05 V1–V4 to the existing journey without another normal boot."""
     s = ctx.surface
@@ -993,7 +947,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.install_dispatch_probe()
 
     # V1: actual canonical labels, opaque ids, no local optimism, fresh backend view.
-    _apply_staged_template(ctx, "initial")
+    _apply_staged_template(ctx, "initial", confirm=True)
     s.wait(
         "document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 3",
         "canonical Slot 세 개",
@@ -1124,7 +1078,8 @@ def run_sx(ctx: ScenarioContext) -> dict:
     _expect(preset_trace, "S9: actual 프리셋 적용 command trace가 없습니다")
 
     # V2: hold the real old-token request, apply successor through the UI, then let it settle stale.
-    ctx.stage_template("successor")
+    _apply_staged_template(ctx, "successor", confirm=False)
+    s.wait("!!document.getElementById('jobTplApply')", "successor 템플릿 적용 준비", timeout=30.0, requires=["#jobTplChange"])
     s.gate_dispatch("select_slot_option", mode="before")
     _pick_option(s, "#cs-opt-1-1", what="old-token Option command")
     s.wait_dispatch_gate("old-token command 보류")
@@ -1136,8 +1091,6 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "content command pending",
         requires=["#jobContentSelectionZone"],
     )
-    s.click_sel("#jobTplCheck", what="successor 템플릿 변경사항 확인")
-    s.wait("!!document.getElementById('jobTplApply')", "successor 템플릿 적용 가능", timeout=30.0, requires=["#jobTplChange"])
     s.click_sel("#jobTplApply", what="successor 템플릿 적용")
     s.wait(
         "(document.getElementById('jobTplNotice')||{textContent:''}).textContent.includes('적용')",

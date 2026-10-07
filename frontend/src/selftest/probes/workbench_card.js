@@ -74,3 +74,31 @@ export async function probeCardEdit(ctx, stubBridgeCall) {
   }
   return res;
 }
+
+/** 빈 값·미채움 표식은 남겨 두되 복사는 확인 없이 사전검사 토큰을 클립보드 거래로 넘긴다. */
+export async function probeCardCopyWithHoles(ctx, { stubBridgeCall, stubBridgeInvoke, settleUntil }) {
+  const calls = [];
+  const dispatch = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+    if (screen === "workbench" && action === "copy_precheck") {
+      calls.push([action, payload]);
+      return Promise.resolve({ token: "copy-probe", missing_fields: ["수신"], empty_fields: ["비고"] });
+    }
+    return real(screen, action, payload);
+  });
+  const invoke = stubBridgeInvoke(ctx, "copyClipboard", "copy_clipboard", () => function (screen, token) {
+    calls.push(["copy_clipboard", screen, token]);
+    return Promise.resolve({ copied: true });
+  });
+  try {
+    ctx.doc.getElementById("wbCopy").click();
+    await settleUntil(ctx, () => calls.length === 2);
+    return {
+      calls,
+      confirmation_open: !ctx.doc.getElementById("confirmModal").classList.contains("hidden"),
+      blank_marker: ctx.doc.querySelectorAll("#wbCard .seg-blank").length,
+    };
+  } finally {
+    invoke.restore();
+    dispatch.restore();
+  }
+}

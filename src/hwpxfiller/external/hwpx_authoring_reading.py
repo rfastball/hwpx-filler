@@ -14,7 +14,7 @@ from ..domain.template_authoring import (
     occurrence_context,
     occurrence_context_parts,
 )
-from ..domain.template_authoring_primitives import REASON_CONTROL_BEFORE
+from ..domain.template_authoring_primitives import REASON_CONTROL_BEFORE, REASON_FIELD_OVERLAP
 
 _HP = f"{{{HP_NS}}}"
 
@@ -279,18 +279,35 @@ def _paragraph_body(paragraph) -> str:
                    for child in run if child.tag == f"{_HP}t")
 
 
+def _editable_fields(paragraph) -> list:
+    """Only paired, plain-text fill fields have zero-width, unambiguous boundaries."""
+    if paragraph.find(f".//{_HP}fieldBegin") is None or not _simple_field_content(paragraph):
+        return []
+    resolution = resolve_field_occurrences("", paragraph.getroottree().getroot())
+    if not resolution.pairing_usable:
+        return []
+    return [item for item in resolution.occurrences
+            if item.paragraph is paragraph and is_fill_target_field_type(item.field_type)]
+
+
+def _editable_field_boundaries(paragraph) -> set:
+    return {control for item in _editable_fields(paragraph)
+            for control in (item.begin_ctrl, item.end_ctrl) if len(control) == 1}
+
+
 def _paragraph_sites(paragraph) -> tuple[list[tuple[etree._Element, int, int]], list[int], str]:
     """Plain text sites of one paragraph, control hazards by offset, and the joined text."""
     sites: list[tuple[etree._Element, int, int]] = []
     hazards: list[int] = []
+    boundaries = _editable_field_boundaries(paragraph)
     length = 0
-    for run in (node for node in paragraph if node.tag == f"{_HP}run"):
+    for run in paragraph.iterchildren(f"{_HP}run"):
         for child in run:
             if child.tag == f"{_HP}t" and not len(child):
                 next_length = length + len(child.text or "")
                 sites.append((child, length, next_length))
                 length = next_length
-            else:
+            elif child not in boundaries:
                 hazards.append(length)
     return sites, hazards, "".join(node.text or "" for node, _, _ in sites)
 
@@ -302,6 +319,12 @@ def _field_range_refusal(sites: list, hazards: list[int], text: str, start: int,
         return "이 문단에는 편집 가능한 텍스트가 없습니다."
     if any(position <= end for position in hazards):
         return REASON_CONTROL_BEFORE
+    paragraph = sites[0][0].getparent().getparent()
+    for field in _editable_fields(paragraph):
+        span = _simple_field_span(field)
+        low, high = span["start"], span["end"]
+        if (low <= start <= high if start == end else low < end and start < high):
+            return REASON_FIELD_OVERLAP
     return None
 
 

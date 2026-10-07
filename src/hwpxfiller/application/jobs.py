@@ -91,7 +91,9 @@ class JobStorePort(Protocol):
     def set_tags(self, name: str, tags: "dict[str, str]") -> Job: ...
     # 템플릿 참조 재지정 — 잠금 안에서 매체 교차를 재판정하고 커밋까지 원자적.
     # 교차면 CrossMediaRelinkError(변경 0건), 구 매체 미상이면 사용 이력 미승계.
-    def relink_template(self, name: str, path: str) -> Job: ...
+    def relink_template(
+        self, name: str, path: str, *, expected: "tuple[str, str] | None" = None
+    ) -> Job: ...
     # 완주 스탬프 — 시각·검토 기준선을 같은 원자 왕복으로. rules=None 은 기준선 불변.
     def stamp_last_run(
         self, name: str, when: str, *, rules: "dict[str, str] | None" = None

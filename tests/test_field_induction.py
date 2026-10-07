@@ -66,7 +66,7 @@ def test_database_date_strings_and_no_date_only_format_on_a_datetime_value() -> 
     out = {t.id: text for t, text in renderings("2026/09/11 10:00:00")}
     assert out["datetime_dot_spaced"] == "2026. 9. 11. 10:00"
     assert out["datetime_korean"] == "2026년 9월 11일 10:00"
-    # 제품 날짜 표시는 시각을 붙인다 — 날짜 전용 형식은 시각이 든 값에 쓰지 않는다(엔진 G절 주의).
+    # 시각이 있는 값을 날짜 전용 형식으로 제안해 시간을 소실시키지 않는다.
     assert not {"date_korean", "date_dot_spaced", "date_iso"} & set(out)
 
 
@@ -106,8 +106,8 @@ def test_binding_labels_come_from_the_product_preset_table() -> None:
     assert labels["date_slash"] == "%Y/%m/%d"  # 프리셋 표에 없는 코드는 코드 자체
     assert labels["date_korean_padded"] == "%Y년 %m월 %d일"
     assert labels["datetime_iso"] == "날짜+시각"
-    assert labels["datetime_dot_spaced"] == "표준"
-    assert labels["datetime_korean"] == "한글"
+    assert labels["datetime_dot_spaced"] == "표준(시간 포함)"
+    assert labels["datetime_korean"] == "한글(시간 포함)"
     assert TRANSFORMS["number_grouping"].binding() == {"type": "amount", "fmt": "{:,}", "label": "숫자"}
 
 

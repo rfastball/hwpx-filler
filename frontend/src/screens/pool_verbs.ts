@@ -252,3 +252,12 @@ export function createPoolVerbs(deps: PoolVerbDeps) {
 
   return { poolAction, resolveDuplicate, review, runVerb, noticeAction };
 }
+
+export async function saveSheetOrder(key: string, sheets: string[],
+  dispatch: (screen: string, action: string, payload: Obj) => Promise<unknown>,
+  refresh: () => Promise<unknown>, notify: (message: string) => void): Promise<void> {
+  try {
+    await dispatch("pool", "reorder_sheets", { key, sheets });
+    await refresh();
+  } catch (error) { notify(String((error as Obj)?.message || error)); }
+}

@@ -41,6 +41,18 @@ test("손상된 등록은 막힌 탭과 함께 손상 문장을 띠 아래에 �
   assert.equal(render({ data_sheet_tabs: TABS }, {}).includes("dangerbox"), false);
 });
 
+test("시트 재정렬은 기존 풀에 순서만 저장하고 편집기 스냅샷을 다시 읽는다", async () => {
+  const { controller, trace } = editorHarness();
+  await controller.init();
+  await controller.reorderSheets("book", ["낙찰현황", "공고목록"]);
+  assert.deepEqual(trace.filter((row) => row[1] === "reorder_sheets"), [
+    ["pool", "reorder_sheets", { key: "book", sheets: ["낙찰현황", "공고목록"] }],
+  ]);
+  const markup = render({ data_sheet_tabs: TABS.slice(0, 2) }, controller);
+  assert.match(markup, /draggable="true"/);
+  assert.match(markup, /aria-keyshortcuts="Alt\+ArrowLeft Alt\+ArrowRight"/);
+});
+
 function editorHarness(options = {}) {
   const trace = [];
   const client = {
