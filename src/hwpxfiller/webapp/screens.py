@@ -17,9 +17,15 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from ..application.jobs import CrossMediaRelinkError, relink_template
-from ..application.dataset_pool import reference_missing as reference_missing
+from ..application.dataset_pool import DatasetPoolRow, reference_missing as reference_missing
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import DatasetReference, reference_for_sheet, reference_identity
+from ..domain.dataset_reference import (
+    DatasetReference,
+    excel_identity,
+    reference_for_sheet,
+    reference_identity,
+    reference_sheets,
+)
 from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
@@ -345,6 +351,32 @@ def registered_dataset_entry(
     except Exception:  # noqa: BLE001 — 표시명은 읽기 실패로 화면을 막지 않는다
         found = None
     return (found[0], found[1].name) if found else ("", "")
+
+
+def registered_sheet_tabs(
+    pool_registry, key: str, *, path: str, sheet: str, kind: str
+) -> list[dict]:
+    """지금 마운트한 등록 하나가 **선언한** 시트만 탭으로 투영한다(작업 화면·편집기 공용).
+
+    목록은 등록 선언(:func:`reference_sheets`)뿐이다 — 파일이 가진 시트 전부를 펼치지 않는다.
+    재연결한 등록과 아직 열린 옛 파일을 한 탭 띠에 섞지 않는다: 종류나 파일 자리가 다르면
+    빈 목록이다. 고를 수 있는가는 등록 행의 판정(``select_block_reason``)을 그대로 싣는다.
+    """
+    if pool_registry is None or not key or not path:
+        return []
+    try:
+        item = pool_registry.load(key)
+    except (FileNotFoundError, ValueError):
+        return []
+    row = DatasetPoolRow.from_item(key, item)
+    if item.kind != (kind or "excel") or excel_identity(row.locate_path) != excel_identity(path):
+        return []
+    reason = row.select_block_reason()
+    return [
+        {"key": key, "sheet": name, "active": name == sheet,
+         "selectable": not reason, "reason": reason}
+        for name in reference_sheets(item) if name
+    ]
 
 
 def registered_dataset_name(pool_registry, *, path: str, sheet: str, kind: str) -> str:

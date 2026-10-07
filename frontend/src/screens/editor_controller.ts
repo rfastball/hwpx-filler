@@ -999,10 +999,11 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   /** 고정한 데이터 하나를 이 작업의 데이터로 — 파일 피커와 **같은 선행 규율**을 지킨다:
-   *  확정 매핑이 걸린 교체는 고르기 **전에** 한 번 묻는다(고른 뒤 되묻는 순서 금지). */
-  async function usePoolData(key: string): Promise<boolean> {
+   *  확정 매핑이 걸린 교체는 고르기 **전에** 한 번 묻는다(고른 뒤 되묻는 순서 금지).
+   *  `sheet` 은 「연결 확인」의 시트 탭이 싣는다 — 같은 등록의 다른 시트도 데이터 교체다. */
+  async function usePoolData(key: string, sheet?: string): Promise<boolean> {
     if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return false;
-    const result = await sendEdit("use_pool_data", { key });
+    const result = await sendEdit("use_pool_data", sheet === undefined ? { key } : { key, sheet });
     if (result.ok === false) {
       noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
       return false;

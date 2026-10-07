@@ -242,7 +242,7 @@ function_complexity = 32
 function_complexity = 14
 
 [budget."frontend/src/screens/job_read.ts"]
-module_statements = 471
+module_statements = 466
 
 [budget."frontend/src/screens/job_read.ts::BrowseRow"]
 function_complexity = 12
@@ -1161,7 +1161,7 @@ function_statements = 89
 function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/data_zone.py"]
-module_statements = 446
+module_statements = 437
 
 [budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession"]
 class_methods = 76
@@ -1179,7 +1179,7 @@ function_complexity = 15
 function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/editor_session.py"]
-module_statements = 575
+module_statements = 572
 
 [budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader"]
 class_methods = 31

@@ -9,6 +9,13 @@ from ..viewmodel.mapping_state import NO_SOURCE_LABEL, SPECIAL_SOURCE_LABEL
 from ..naming import make_output_filename, pattern_uses_seq, seq_token_pads
 
 
+def gate_snapshot(gate) -> "dict | None":
+    """부분 채움 관문의 표면 투영 — 확인할 것이 없으면 ``None``."""
+    if gate is None or not gate.needs_gate():
+        return None
+    return {"message": gate.message(), "unmet": list(gate.unmet_tokens), "acked": gate.is_acked()}
+
+
 def data_column_options(source_fields: list[str]) -> list[dict]:
     options = [
         {"value": "", "label": NO_SOURCE_LABEL, "kind": "none", "field": ""},

@@ -47,7 +47,13 @@ from ..viewmodel.mapping_state import (
 )
 from ..viewmodel.template_manager_state import CONVERT_ACTION_LABEL as RAW_CONVERT_LABEL
 from ..viewmodel.tutorial_state import Milestone
-from .editor_presentation import binding_head, data_column_options, pattern_preview, sample_rows
+from .editor_presentation import (
+    binding_head,
+    data_column_options,
+    gate_snapshot,
+    pattern_preview,
+    sample_rows,
+)
 from .output_folder_zone import output_folder_zone
 from .pool_column import session_data_row
 from .screens import (
@@ -58,6 +64,7 @@ from .screens import (
     load_pool_into,
     pool_reference_quad,
     registered_dataset_entry,
+    registered_sheet_tabs,
 )
 from .template_groups import norm_library_path, rel_key
 
@@ -296,7 +303,7 @@ class EditorProjection:
             "raw_block": self.edit.raw_block,
             "session_detail": self._session_detail(),
             "schema_drift": self._provenance_drift(),
-            "gate": self._gate_snapshot(),
+            "gate": gate_snapshot(self.edit.gate),
             "gate_error": self.edit.gate_error,
             "data_path": self.edit.data_path,
             "data_name": self.data_display_name(),
@@ -304,6 +311,7 @@ class EditorProjection:
             "data_header_row": self.edit.data_header_row,
             "data_kind": self.edit.data_kind,
             "data_pool_key": self.edit.data_pool_key,
+            "data_sheet_tabs": self._sheet_tabs(),
             "record_count": len(self.edit.records),
             "source_fields": self.edit.source_fields,
             "data_column_options": data_column_options(self.edit.source_fields),
@@ -397,11 +405,19 @@ class EditorProjection:
             return ""
         return PROVENANCE_DRIFT_TEXT
 
-    def _gate_snapshot(self) -> "dict | None":
-        g = self.edit.gate
-        if g is None or not g.needs_gate():
-            return None
-        return {"message": g.message(), "unmet": list(g.unmet_tokens), "acked": g.is_acked()}
+    def _sheet_tabs(self) -> list[dict]:
+        """「연결 확인」의 시트 탭 — 작업 화면과 같은 투영이다.
+
+        풀 겨눔 표지가 없으면(저장본을 다시 열었거나 파일로 연 데이터) 등록 정체성으로 찾은
+        슬롯이 그 자리를 잇는다 — 우 열의 「지금 선 행」(``pairing.data_key``)과 같은 조회다.
+        """
+        return registered_sheet_tabs(
+            self._pool_registry,
+            self.edit.data_pool_key or self._registered_data_entry()[0],
+            path=self.edit.data_path,
+            sheet=self.edit.data_sheet,
+            kind=self.edit.data_kind,
+        )
 
     def initial(self) -> dict:
         self.prepare()
@@ -977,7 +993,8 @@ class EditorLoader:
         if self._pool_registry is None:
             return {"ok": False, "error": POOL_UNWIRED_TEXT}
         key = str(p["key"])
-        res = load_pool_into(self._pool_registry, key, self._mount_pool_item)
+        # `sheet` 은 「연결 확인」 시트 탭 — 등록이 선언하지 않은 시트는 마운트 전에 거절된다.
+        res = load_pool_into(self._pool_registry, key, self._mount_pool_item, sheet=p.get("sheet"))
         if not res["ok"]:
             return {"ok": False, "error": res["error"]}
         self.edit.data_pool_key = key

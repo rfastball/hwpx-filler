@@ -17,6 +17,7 @@ import type { BridgeClient } from "../runtime/client.ts";
 import type { DataPickerController, PickerSessionRead } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
 import { RefreshButton } from "./refresh_button.ts";
+import { SheetTabs } from "./sheet_tabs.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
 import type { JobRunCallbacks, ScreenPorts } from "./ports.ts";
@@ -663,20 +664,10 @@ export function JobDataTabs(props: { controller: JobReadController }): ReactNode
   const { controller } = props;
   const snapshot = useJob(controller);
   const ui = useUi(controller);
-  const rows = snapshot?.data_sheet_tabs || [];
-  const activeTab = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    activeTab.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [snapshot?.data_pool_key, snapshot?.data_target?.sheet]);
-  if (!rows.length) return null;
-  return h("div", { className: "data-tabs", role: "group", "aria-label": "사용할 시트",
-    "aria-busy": !!ui.switchingData },
-    ...rows.map((row: Obj) => h("button", {
-      type: "button", key: row.sheet, className: "data-tab", "data-busy-lock": true,
-      ref: row.active ? activeTab : undefined, "aria-pressed": row.active,
-      disabled: row.selectable === false || !!ui.openingName, title: row.reason || row.sheet,
-      onClick: () => { void controller.switchData(row.key, row.sheet); },
-    }, row.sheet)));
+  return h(SheetTabs as any, {
+    rows: snapshot?.data_sheet_tabs || [], busy: !!ui.switchingData, locked: !!ui.openingName,
+    onPick: (row: Obj) => { void controller.switchData(row.key, row.sheet); },
+  });
 }
 
 function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadController }): ReactNode {
