@@ -165,7 +165,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 목록의 정본이 하나가 됐으므로 편집기가 자기 판으로 다시 낼 이유가 없다.
         # (구 `skip_data` 는 여기서 사라졌다 — 데이터 결속이 저장 게이트가 된 이상
         #  「데이터 없이 진행」은 저장할 수 없는 세션으로 가는 링크였다.)
-        "use_pool_data": _schema("key"),
+        # `sheet` = 「연결 확인」의 시트 탭(등록이 선언한 시트만, 아니면 마운트 전 거절).
+        "use_pool_data": _schema("key", "sheet"),
         # (구 `use_all_headers`·`use_none`·`toggle_source_active` 는 U6-C(#977 · U6 §2.5)
         #  에서 사슬째 퇴역 — 「사용할 데이터 열」 선별의 전제(스키마 재활용)가 사라졌고,
         #  매핑되지 않은 열은 자연히 쓰이지 않는다.)

@@ -7,6 +7,7 @@ import { DETAIL_SHEET_EMPTY, DetailSheetFrame } from "./detail_sheet.ts";
 import { NoticeBox } from "./notice_box.ts";
 import { invokePathAction } from "./path_actions.ts";
 import { PreviewCell } from "./preview_cell.ts";
+import { SheetTabs } from "./sheet_tabs.ts";
 import { SliceCell } from "./slice_popover.ts";
 import {
   ROW_DETAIL_LABEL, mergeSessionRow, poolHeadSub,
@@ -653,6 +654,19 @@ function BindingHead(props: { snapshot: Obj; controller: EditorController }): Re
     }, "⋯"));
 }
 
+/** 등록이 선언한 시트를 고르는 탭 — 행·활성·사유는 작업 화면과 같은 Python 투영이다.
+ *  누르면 데이터 교체와 같은 문(`usePoolData`)을 시트와 함께 지난다. 지금 쓰는 시트를 다시
+ *  누르는 것은 무동작이다(우 열의 세션 행 재선택과 같은 자리). */
+export function BindingSheetTabs(props: { snapshot: Obj; controller: EditorController }): ReactNode {
+  const { snapshot, controller } = props;
+  return h(SheetTabs as any, {
+    rows: snapshot.data_sheet_tabs || [],
+    onPick: (row: Obj) => {
+      if (!row.active) controller.guarded(() => controller.usePoolData(String(row.key), String(row.sheet)));
+    },
+  });
+}
+
 function MappingStage(props: {
   snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController;
 }): ReactNode {
@@ -701,11 +715,11 @@ function MappingStage(props: {
         ? h("tfoot", null, h("tr", null, h("td", { colSpan: 5 },
           `사용하지 않는 데이터 열 ${Number(head.unused_columns)}개`)))
         : null)),
-    h(DataPreview as any, { snapshot }));
+    h(DataPreview as any, { snapshot, controller }));
 }
 
-function DataPreview(props: { snapshot: Obj }): ReactNode {
-  const { snapshot } = props;
+function DataPreview(props: { snapshot: Obj; controller: EditorController }): ReactNode {
+  const { snapshot, controller } = props;
   if (!snapshot.record_count) return null;
   const columns = (snapshot.source_fields || []) as string[];
   const sample = (snapshot.sample_rows || []) as any[][];
@@ -722,6 +736,8 @@ function DataPreview(props: { snapshot: Obj }): ReactNode {
             ? h("span", { className: "pv emptyval" }, "(빈 값)")
             : h("span", { className: "pv" }, value));
         })))))),
+    /* 시트 탭은 작업 화면처럼 데이터 표 바로 아래에 선다(엑셀의 시트 탭 자리). */
+    h(BindingSheetTabs as any, { snapshot, controller }),
     snapshot.record_count > sample.length ? h("p", { className: "fields-head muted" },
       `샘플 ${sample.length}행 표시(외 ${snapshot.record_count - sample.length}행)`) : null);
 }

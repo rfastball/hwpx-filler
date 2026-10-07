@@ -181,6 +181,8 @@ paths = [
   "src/hwpxfiller/webapp/screen_editor.py",
   "src/hwpxfiller/webapp/editor_session.py",
   "src/hwpxfiller/webapp/editor_presentation.py",
+  "src/hwpxfiller/webapp/editor_sources.py",
+  "src/hwpxfiller/webapp/editor_transitions.py",
 ]
 
 [scopes.workbench]

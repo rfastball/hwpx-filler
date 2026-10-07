@@ -11,8 +11,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from ..domain.dataset_reference import excel_identity, pclm_identity, reference_sheets, filters_for_sheet
-from ..application.dataset_pool import DatasetPoolRow
+from ..domain.dataset_reference import excel_identity, pclm_identity, filters_for_sheet
 from ..domain.jamo import jamo_find
 from ..external.dataset_store import DatasetPoolRegistry
 from ..viewmodel.filter_state import (
@@ -29,6 +28,7 @@ from ..viewmodel.selection_state import SelectionModel
 from ..viewmodel.record_range import RecordRange, RecordRangeDraft
 from ..viewmodel.work_candidates import bound_jobs
 from .pool_column import session_data_row
+from .screens import registered_sheet_tabs
 
 # 데이터 미겨눔 상태의 필터/테이블 빈 골격 — 표면이 분기 없이 그린다.
 EMPTY_FILTER = {
@@ -373,23 +373,10 @@ class JobDataSession:
         )
 
     def sheet_tabs(self) -> list[dict]:
-        """현재 마운트한 등록 하나가 선언한 시트만 투영한다."""
-        if not self.pool_key or not self.path:
-            return []
-        try:
-            item = self.pool_registry.load(self.pool_key)
-        except (FileNotFoundError, ValueError):
-            return []
-        row = DatasetPoolRow.from_item(self.pool_key, item)
-        # 재연결한 등록과 아직 열린 옛 파일을 한 탭 띠에 섞지 않는다.
-        if item.kind != (self.kind or "excel") or excel_identity(row.locate_path) != excel_identity(self.path):
-            return []
-        reason = row.select_block_reason()
-        return [
-            {"key": self.pool_key, "sheet": sheet, "active": sheet == self.sheet,
-             "selectable": not reason, "reason": reason}
-            for sheet in reference_sheets(item) if sheet
-        ]
+        """현재 마운트한 등록 하나가 선언한 시트만 투영한다(편집기와 같은 함수)."""
+        return registered_sheet_tabs(
+            self.pool_registry, self.pool_key, path=self.path, sheet=self.sheet, kind=self.kind,
+        )
 
     def new_work_handoff(self) -> "tuple[dict, str]":
         """「이 데이터로 새 작업」이 들고 갈 **데이터 참조**와 거절 사유 — 단일 판정.

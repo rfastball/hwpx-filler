@@ -224,7 +224,7 @@ function_complexity = 16
 function_complexity = 17
 
 [budget."frontend/src/screens/editor_controller.ts"]
-module_statements = 563
+module_statements = 562
 
 [budget."frontend/src/screens/editor_controller.ts::createEditorController"]
 function_statements = 94
@@ -242,7 +242,7 @@ function_complexity = 32
 function_complexity = 14
 
 [budget."frontend/src/screens/job_read.ts"]
-module_statements = 471
+module_statements = 461
 
 [budget."frontend/src/screens/job_read.ts::BrowseRow"]
 function_complexity = 12
@@ -257,7 +257,7 @@ function_complexity = 16
 function_complexity = 15
 
 [budget."frontend/src/screens/job_read.ts::createJobReadController.switchData"]
-function_complexity = 14
+function_complexity = 13
 
 [budget."frontend/src/screens/job_relink.ts::createJobRelink.relinkTemplate"]
 function_complexity = 15
@@ -1161,7 +1161,7 @@ function_statements = 89
 function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/data_zone.py"]
-module_statements = 446
+module_statements = 437
 
 [budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession"]
 class_methods = 76
@@ -1177,31 +1177,6 @@ function_complexity = 15
 
 [budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator.run_managed"]
 function_complexity = 13
-
-[budget."src/hwpxfiller/webapp/editor_session.py"]
-module_statements = 575
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader"]
-class_methods = 31
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._do_discard_patch"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._ensure_model"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorLoader._restore_from"]
-function_complexity = 32
-function_statements = 57
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection"]
-class_methods = 24
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection._pairing_snapshot"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/editor_session.py::EditorProjection.prepare"]
-function_complexity = 17
 
 [budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession"]
 class_methods = 39

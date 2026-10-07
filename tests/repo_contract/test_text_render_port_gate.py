@@ -11,8 +11,8 @@ slot-bearing TXT 의 산출물은 이제 **Sealed Plan 이 정한 물질화**를
   :mod:`hwpxfiller.viewmodel.txt_card_edit` — 작업대 본문 표식·행별 임시 편집, #1148 PR B)
 - TXT materializer — 치환의 단일 원천을 소비하는 정당한 주체
 - 작업대(:mod:`hwpxfiller.webapp.screen_workbench`) — 원문 보기와 slotless 카드
-- 편집 세션(:mod:`hwpxfiller.webapp.editor_session`) — 토큰 **미리보기**(빈 레코드), 문서를
-  만들지 않는다
+- 편집기 템플릿 읽기(:mod:`hwpxfiller.webapp.editor_sources`) — 토큰 **미리보기**(빈
+  레코드)로 필드 구성을 센다, 문서를 만들지 않는다
 - CLI(:mod:`hwpxfiller.cli`) — slotless 전용(구간 표기가 있으면 시끄럽게 거절한다)
 
 ``template_fields`` 는 감싸지 않는다: 그것은 「이 템플릿이 참조하는 이름이 무엇인가」를 묻는
@@ -55,7 +55,7 @@ ALLOWED_MODULES = frozenset(
         "src/hwpxfiller/external/text_materialization_conformance.py",
         # 표시 표면(원문 보기·카드·토큰 미리보기)
         "src/hwpxfiller/webapp/screen_workbench.py",
-        "src/hwpxfiller/webapp/editor_session.py",
+        "src/hwpxfiller/webapp/editor_sources.py",
         # slotless 전용 CLI
         "src/hwpxfiller/cli.py",
     }

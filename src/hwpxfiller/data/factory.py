@@ -156,7 +156,7 @@ def source_for_binding(ref: "dict") -> DataSource:
 
     **종류가 해석기를 가르는 자리는 여기 하나다**(U6-F #980): ``""`` 는 파일(엑셀/CSV),
     ``"pclm"`` 은 계약 목록(db+뷰)이다. 종전에는 편집기의 인계 복원
-    (:meth:`~hwpxfiller.webapp.screen_editor.EditorController._load_source_ref`)만 이 분기를
+    (:meth:`~hwpxfiller.webapp.editor_data_mount.EditorDataMount.load_source_ref`)만 이 분기를
     들었는데, 「문서 작업」 상세가 같은 참조로 첫 행을 읽게 되면서 소비자가 둘이 됐다 —
     입구마다 분기를 적으면 한쪽만 db 경로를 엑셀로 오파싱하거나 조용히 빈 세션에 착지한다.
 

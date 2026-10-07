@@ -19,6 +19,7 @@ import {
   emptyDraft, ingestSnapshot, issueToken, markField, rowField, settle, typeInto,
 } from "./editor_state.ts";
 import type { DraftState, RowAxis } from "./editor_state.ts";
+import { createLatestIntentQueue } from "./latest_intent.ts";
 import { SESSION_DATA_KEY } from "./pool_column.ts";
 import type { SlicePort } from "./slice_popover.ts";
 export type Obj = Record<string, any>;
@@ -120,6 +121,29 @@ export function libRowMenuItems(media: string, item: Obj | null): ContextMenuIte
     ? [detail] : [{ action: "edit", label: "내용 편집" }, detail];
 }
 
+/** 2단계 머리의 드문 동사(⋯) 표 — 행 ⋮ 표(`libRowMenuItems`)처럼 스냅샷만 읽는 순수 함수다. */
+function bindingMenuItems(snap: Obj): ContextMenuItem[] {
+  const items: ContextMenuItem[] = [
+    { action: "resuggest-all", label: "자동 제안 다시 받기" },
+    { action: "unconfirm-all", label: "모두 해제", danger: true },
+  ];
+  const undo = Number(snap.unconfirm_undo_count || 0);
+  if (undo) {
+    items.push({
+      action: "restore-confirmed", label: `직전 확인 ${undo}개 복원`,
+      separatorBefore: true,
+    });
+  }
+  return items;
+}
+
+/** 고르기 거절의 착지 — 끌어 놓기는 모아서(`refusals`) 한 번 말하고, 클릭은 바로 알린다.
+ *  좌·우 열 선택이 같은 규칙을 쓴다(종전에는 두 함수가 같은 클로저를 각자 지었다). */
+function refuseInto(refusals: string[] | undefined, text: string, notice: (text: string) => void): boolean {
+  if (refusals) refusals.push(text); else notice(text);
+  return false;
+}
+
 export function createEditorController(deps: EditorControllerDeps) {
   const model = deps.runtime.model<Obj | null>(SCREEN);
   /* 고르기 단계의 두 열은 **자기 채널의 정본을 직접 읽는다**(U6-B #976): 좌 열은 `tpl`,
@@ -137,6 +161,8 @@ export function createEditorController(deps: EditorControllerDeps) {
     invalidField: "", aim: "", aimed: "",
   };
   const libContextMenu = createContextMenu();
+  /* 등록 데이터·시트 탭 전환은 연속으로 눌러도 마지막 대상 하나로 착지한다. */
+  const poolSwitches = createLatestIntentQueue();
   const bindingContextMenu = createContextMenu();
   const draftListeners = new Set<Listener>();
   const viewListeners = new Set<Listener>();
@@ -999,15 +1025,17 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   /** 고정한 데이터 하나를 이 작업의 데이터로 — 파일 피커와 **같은 선행 규율**을 지킨다:
-   *  확정 매핑이 걸린 교체는 고르기 **전에** 한 번 묻는다(고른 뒤 되묻는 순서 금지). */
-  async function usePoolData(key: string): Promise<boolean> {
-    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return false;
-    const result = await sendEdit("use_pool_data", { key });
-    if (result.ok === false) {
-      noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
-      return false;
-    }
-    return true;
+   *  확정 매핑이 걸린 교체는 고르기 **전에** 한 번 묻는다(고른 뒤 되묻는 순서 금지).
+   *  `sheet` 은 「연결 확인」의 시트 탭이 싣는다 — 같은 등록의 다른 시트도 데이터 교체다.
+   *  연속으로 누르면 **마지막 대상**만 착지한다(작업 화면 `switchData` 와 같은 큐): 확인을
+   *  기다리는 사이 더 새 선택이 오면 앞 선택은 변이를 보내지 않고 `false` 로 끝난다. */
+  async function usePoolData(key: string, sheet?: string): Promise<boolean> {
+    return poolSwitches.run(async (isCurrent) => {
+      if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면")) || !isCurrent()) return false;
+      const result = await sendEdit("use_pool_data", sheet === undefined ? { key } : { key, sheet });
+      if (result.ok === false) noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
+      return result.ok !== false;
+    }, false);
   }
 
   /* 고를 수 없는 항목의 거절 문안과 「목록에서 사라졌다」는 **데이터 선택 다이얼로그와
@@ -1024,10 +1052,7 @@ export function createEditorController(deps: EditorControllerDeps) {
    *  반환값은 「이 반쪽이 적용됐는가」다. */
   async function chooseTemplate(key: string, refusals?: string[]): Promise<boolean> {
     const item = libItems().find((row) => String(row.key) === key);
-    const refuse = (text: string): boolean => {
-      if (refusals) refusals.push(text); else noticeSave(text);
-      return false;
-    };
+    const refuse = (text: string): boolean => refuseInto(refusals, text, noticeSave);
     if (item === undefined) return refuse(`템플릿을 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
     if (!item.selectable) {
       return refuse(poolRefusalText(String(item.name), String(item.reason || "")));
@@ -1046,10 +1071,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     /* 재료는 **그리고 있는 그 열**이다(고르기 열 공용 ④) — 다른 존을 곁눈질하면 화면에
        선 사유와 거절이 재진술하는 사유가 서로 다른 출처에서 온다. */
     const row = findDataItem(key);
-    const refuse = (text: string): boolean => {
-      if (refusals) refusals.push(text); else noticeSave(text);
-      return false;
-    };
+    const refuse = (text: string): boolean => refuseInto(refusals, text, noticeSave);
     if (row === null) return refuse(POOL_DATA_GONE);
     if (!row.selectable) {
       return refuse(poolRefusalText(String(row.name), String(row.reason || "")));
@@ -1152,21 +1174,6 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   /* ---- 2단계 머리의 드문 동사(⋯) ---- */
-
-  function bindingMenuItems(snap: Obj): ContextMenuItem[] {
-    const items: ContextMenuItem[] = [
-      { action: "resuggest-all", label: "자동 제안 다시 받기" },
-      { action: "unconfirm-all", label: "모두 해제", danger: true },
-    ];
-    const undo = Number(snap.unconfirm_undo_count || 0);
-    if (undo) {
-      items.push({
-        action: "restore-confirmed", label: `직전 확인 ${undo}개 복원`,
-        separatorBefore: true,
-      });
-    }
-    return items;
-  }
 
   function closeBindingMenu(): void {
     patchView({ bindingMenu: false });

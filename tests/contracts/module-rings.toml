@@ -375,6 +375,18 @@ source_write_set = ["src/hwpxfiller/webapp/editor_session.py"]
 oracle_nodeid = "tests/test_webapp_editor.py"
 
 [[unit]]
+module = "hwpxfiller.webapp.editor_sources"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/editor_sources.py"]
+oracle_nodeid = "tests/test_webapp_editor.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.editor_transitions"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/editor_transitions.py"]
+oracle_nodeid = "tests/test_webapp_editor.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.job_list"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_list.py"]

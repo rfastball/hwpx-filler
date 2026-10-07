@@ -148,7 +148,7 @@ export const SCREEN_ACTIONS = {
     discard_patch: { required: [], optional: ["section"] },
     ack_gate: { required: [], optional: [] },
     dismiss_notice: { required: [], optional: [] },
-    use_pool_data: { required: ["key"], optional: [] },
+    use_pool_data: { required: ["key"], optional: ["sheet"] },
     mapping_reset_stakes: { required: [], optional: [] },
     set_source: { required: ["index", "source"], optional: [] },
     revert_source: { required: ["index"], optional: [] },

@@ -17,9 +17,15 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from ..application.jobs import CrossMediaRelinkError, relink_template
-from ..application.dataset_pool import reference_missing as reference_missing
+from ..application.dataset_pool import DatasetPoolRow, reference_missing as reference_missing
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
-from ..domain.dataset_reference import DatasetReference, reference_for_sheet, reference_identity
+from ..domain.dataset_reference import (
+    DatasetReference,
+    excel_identity,
+    reference_for_sheet,
+    reference_identity,
+    reference_sheets,
+)
 from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import read_text_utf8
@@ -345,6 +351,51 @@ def registered_dataset_entry(
     except Exception:  # noqa: BLE001 — 표시명은 읽기 실패로 화면을 막지 않는다
         found = None
     return (found[0], found[1].name) if found else ("", "")
+
+
+def corrupt_dataset_text(file_name: str, error: str) -> str:
+    """손상된 등록 데이터 파일 1건의 재진술 — 풀 목록 통지와 시트 탭이 같은 문장을 쓴다."""
+    return f"⚠ 손상된 등록 데이터: {file_name} — {error}"
+
+
+def _registration_is_mounted(item: DatasetReference, row: DatasetPoolRow, *, path: str, kind: str) -> bool:
+    """등록이 지금 열린 파일을 그대로 가리키는가 — 재연결한 등록과 옛 파일을 섞지 않는 술어."""
+    return item.kind == (kind or "excel") and excel_identity(row.locate_path) == excel_identity(path)
+
+
+def registered_sheet_tabs(
+    pool_registry, key: str, *, path: str, sheet: str, kind: str
+) -> list[dict]:
+    """지금 마운트한 등록 하나가 **선언한** 시트만 탭으로 투영한다(작업 화면·편집기 공용).
+
+    목록은 등록 선언(:func:`reference_sheets`)뿐이다 — 파일이 가진 시트 전부를 펼치지 않는다.
+    재연결한 등록과 아직 열린 옛 파일을 한 탭 띠에 섞지 않는다: 종류나 파일 자리가 다르면
+    빈 목록이다. 고를 수 있는가는 등록 행의 판정(``select_block_reason``)을 그대로 싣는다.
+
+    지워진 등록은 띠가 없다(지금 데이터는 읽어 둔 그대로다). 그러나 **손상된** 등록을 빈
+    목록으로 접으면 「시트를 선언하지 않은 등록」과 같아 보인다 — 손상을 조용한 정상으로
+    낮추지 않도록 지금 시트 하나를 고를 수 없는 탭으로 세우고 풀 목록과 같은 손상 문장을
+    ``reason`` 에 실어 ``damaged`` 로 표시한다(표면이 그 문장을 띠 아래에 드러낸다).
+    """
+    if pool_registry is None or not key or not path:
+        return []
+    try:
+        item = pool_registry.load(key)
+    except FileNotFoundError:
+        return []
+    except ValueError as exc:
+        reason = corrupt_dataset_text(f"{key}{pool_registry.SUFFIX}", str(exc))
+        return [{"key": key, "sheet": sheet, "active": True,
+                 "selectable": False, "reason": reason, "damaged": True}]
+    row = DatasetPoolRow.from_item(key, item)
+    if not _registration_is_mounted(item, row, path=path, kind=kind):
+        return []
+    reason = row.select_block_reason()
+    return [
+        {"key": key, "sheet": name, "active": name == sheet,
+         "selectable": not reason, "reason": reason}
+        for name in reference_sheets(item) if name
+    ]
 
 
 def registered_dataset_name(pool_registry, *, path: str, sheet: str, kind: str) -> str:

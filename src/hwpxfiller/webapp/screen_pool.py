@@ -68,7 +68,7 @@ from ..data.excel import ambiguous_sheet_error, sheet_overview
 from ..data.pclm import list_sqlite_sheets  # 계약 목록 DB 의 시트 나열(등록 폼·게이트 공용)
 from ..domain.dataset_reference import DatasetReference, pclm_identity, reference_sheets
 from .pool_column import pool_column_view, pool_icon_for_kind, pool_row_view
-from .screens import PushSink
+from .screens import PushSink, corrupt_dataset_text
 
 __all__ = [
     "BOUND_FIELDS",
@@ -161,7 +161,7 @@ class PoolController:
         notices: "list[dict]" = [
             {
                 "level": "danger",
-                "text": f"⚠ 손상된 등록 데이터: {entry.file_name} — {entry.error}",
+                "text": corrupt_dataset_text(entry.file_name, entry.error),
                 "actions": [],
             }
             for entry in self.vm.corrupted()

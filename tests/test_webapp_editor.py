@@ -3021,7 +3021,7 @@ def test_session_row_names_a_pclm_sheet_and_carries_the_header_row(tmp_path):
     ctrl, _pool = _pool_editor(tmp_path)
     db = _pclm_db(tmp_path)
     ctrl.loader.load_template_path(str(TPL_COMPILED))
-    ctrl.loader._adopt_pclm(db, _PCLM_VIEW)
+    ctrl.loader.data.adopt_pclm(db, _PCLM_VIEW)
 
     row = ctrl.snapshot()["pairing"]["data_row"]
     assert row["icon"] == "pclm"
@@ -3068,7 +3068,7 @@ def test_load_source_ref_still_refuses_a_kind_it_cannot_read(tmp_path):
     ctrl, _ = _controller(tmp_path)
 
     with pytest.raises(ValueError, match="복원할 수 없습니다"):
-        ctrl.loader._load_source_ref({"path": "C:/d/x.bin", "sheet": "", "kind": "미래소스"})
+        ctrl.loader.data.load_source_ref({"path": "C:/d/x.bin", "sheet": "", "kind": "미래소스"})
 
 
 def test_whole_session_discard_returns_to_the_saved_pclm_binding(tmp_path):
@@ -3171,7 +3171,8 @@ def test_pairing_counts_are_computed_only_on_the_choosing_stage(tmp_path, monkey
     말하지 않는다.
     """
     calls: list = []
-    import hwpxfiller.webapp.editor_session as mod
+    # 조합 수치는 투영 성형(`editor_presentation.pairing_counts`)이 센다.
+    import hwpxfiller.webapp.editor_presentation as mod
 
     real = mod.pairing_preview
 
@@ -3495,7 +3496,7 @@ def test_the_derived_name_never_carries_a_folder_separator(tmp_path):
     nested = root / "온나라" / "기안.txt"
     nested.write_text("수신: {{수신}}", encoding="utf-8")
     ctrl, _ = _controller(tmp_path)
-    ctrl.projection._template_root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
+    ctrl.projection.library._root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
     ctrl.loader.load_template_path(str(nested))
 
     snap = ctrl.snapshot()
@@ -3538,12 +3539,12 @@ def test_a_changed_display_input_does_not_dirty_an_untouched_draft(tmp_path):
     nested = root / "온나라" / "기안.txt"
     nested.write_text("수신: {{수신}}", encoding="utf-8")
     ctrl, _ = _controller(tmp_path)
-    ctrl.projection._template_root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
+    ctrl.projection.library._root_holder = TemplateRoot(load=lambda: str(root), save=lambda p: None)
     ctrl.loader.load_template_path(str(nested))
     assert ctrl.has_unsaved_work() is False
 
     # 루트가 바뀌어 표시명이 갈린다 — 사람은 아무것도 하지 않았다.
-    ctrl.projection._template_root_holder = TemplateRoot(load=lambda: "", save=lambda p: None)
+    ctrl.projection.library._root_holder = TemplateRoot(load=lambda: "", save=lambda p: None)
     assert ctrl.has_unsaved_work() is False
 
 

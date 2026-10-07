@@ -51,6 +51,8 @@ table.data-preview td{white-space:nowrap}
    배지로, 「타입/고정값」은 그 칸의 select 특수 항목으로, 「상태」는 배지 문안으로 흡수됐다.
    min-width 는 고정 4열 합(790px, 가공 칸 포함) + 유연 미리보기 열의 실용 최소폭이다. */
 .tblwrap{max-height:min(42vh,360px);overflow:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
+/* 「연결 확인」 데이터 표 밑 시트 탭 — 작업 화면처럼 표와 경계·모서리를 잇는다. */
+.tblwrap:has(+.data-tabs){border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}
 table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:1030px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}

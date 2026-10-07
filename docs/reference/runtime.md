@@ -151,7 +151,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `step_preview` | `delta` | — |
 | `unconfirm_all` | — | — |
 | `use_library_template` | `path` | — |
-| `use_pool_data` | `key` | — |
+| `use_pool_data` | `key` | `sheet` |
 
 ### job
 
