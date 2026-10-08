@@ -62,6 +62,23 @@ def _connect(db: Path) -> sqlite3.Connection:
         raise RuntimeError(f"pclm 자료를 열지 못했습니다: {db} ({exc})") from exc
 
 
+def registered_workfile_sheets(path: str, dataset_id: str) -> list[str]:
+    """자동 연결은 외부 config와 같은 신원의 업무 자료·기본 계약면만 받는다."""
+    db = _db_path(path)
+    conn = _connect(db)
+    try:
+        identity = conn.execute(
+            "SELECT role, dataset_id FROM pclm_file WHERE singleton = 1"
+        ).fetchone()
+        sheets = _sheets_of(conn, db)
+        selected = ["v_통합", "v_접수", "v_공고", "v_계약"]
+        if identity != ("work", dataset_id) or any(name not in sheets for name in selected):
+            raise ValueError(f"pclm 자료를 열지 못했습니다: {db}")
+        return selected
+    finally:
+        conn.close()
+
+
 def _sheets_of(connection: sqlite3.Connection, db: Path) -> "list[str]":
     """열린 DB 의 시트 — 뷰 먼저, 다음 표. 각 무리 안은 ``sqlite_master`` 순서 그대로.
 

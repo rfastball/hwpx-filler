@@ -661,6 +661,7 @@ export function BindingSheetTabs(props: { snapshot: Obj; controller: EditorContr
   const { snapshot, controller } = props;
   return h(SheetTabs as any, {
     rows: snapshot.data_sheet_tabs || [],
+    onReorder: (key: string, sheets: string[]) => controller.reorderSheets(key, sheets),
     onPick: (row: Obj) => {
       if (!row.active) controller.guarded(() => controller.usePoolData(String(row.key), String(row.sheet)));
     },

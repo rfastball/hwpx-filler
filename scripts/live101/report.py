@@ -16,10 +16,27 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from hwpxfiller.application.jobs import load_job
+from hwpxfiller.external.job_store import JobRegistry
+
 from .scenario import (
     CAPTURE_POINTS,
     EXPECTED_HWPX,
 )
+
+
+def generated_documents(home: Path) -> list[str]:
+    """Count HWPX outputs beside the named Work's current app-owned template."""
+    registry = JobRegistry(home / "jobs")
+    if not registry.exists("발주요청서"):
+        return []
+    template = Path(load_job(registry, "발주요청서").template_path)
+    if not template.is_relative_to(home / "template_authority" / "applied"):
+        return []
+    results = template.parent / "Results"
+    if not results.is_dir():
+        return []
+    return sorted(p.name for p in results.glob("*.hwpx"))
 
 
 @dataclass(frozen=True)

@@ -88,8 +88,8 @@
  */
 
 import { ERROR_CODES } from "../runner.js";
-import { probePclmRegistration } from "./pclm_registration.js";
-import { probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
+import { probePclmRegistration, probeSheetReorder } from "./pclm_registration.js";
+import { probeCardCopyWithHoles, probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
 
 export const D_CLUSTER = "D";
 
@@ -2418,7 +2418,10 @@ export function createEditorWorkbenchDataProbes() {
           /* 임시 편집(#1148 PR B) — 빈 값 자리에 글자를 치면 그 자리가 값 칠이 되고, 쉼 뒤에 그 행
              index 와 전문이 한 번 나간다. 한글 조합 중에는 보내지 않고 조합이 끝난 뒤 보낸다.
              발신은 스텁으로 받는다(세션 없는 합성 스냅샷이라 실 백엔드는 거절한다). */
-          out.edit = await probeCardEdit(ctx, stubBridgeCall);
+          Object.assign(out, {
+            copy_with_holes: await probeCardCopyWithHoles(ctx, { stubBridgeCall, stubBridgeInvoke, settleUntil }),
+            edit: await probeCardEdit(ctx, stubBridgeCall),
+          });
           const root = ctx.doc.documentElement;
           const scaleBefore = root.getAttribute("data-font-scale");
           try {
@@ -4203,7 +4206,7 @@ export function createEditorWorkbenchDataProbes() {
           await settleUntil(ctx, () => host.querySelector('.wfoot [data-act="next"]').disabled);
           out.half_cta_disabled = host.querySelector('.wfoot [data-act="next"]').disabled;
           out.half_block_reason = textOf(byId(ctx, "editorLinkBlock"));
-          out.error = null;
+          Object.assign(out, { error: null, sheet_reorder: await probeSheetReorder(ctx, { editorBase, stubBridgeCall }) });
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
         } finally {

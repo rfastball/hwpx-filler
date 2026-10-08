@@ -14,6 +14,7 @@ Job 링크 해석이 전부 이 홀더(또는 그 :meth:`TemplateRoot.path` 콜�
 from __future__ import annotations
 
 import shutil
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,16 @@ from hwpxfiller.domain.text_template import TEXT_TEMPLATE_SUFFIX
 from hwpxfiller.host.locations import default_templates_dir
 
 from .settings import load_templates_root, save_templates_root
+
+
+def same_file_identity(resolved: Path, original: "str | Path") -> bool:
+    """Check a library key's physical identity before rebasing its path."""
+    try:
+        return os.path.normcase(os.path.realpath(resolved)) == os.path.normcase(
+            os.path.realpath(original)
+        )
+    except OSError:
+        return False
 
 #: 매체별 루트가 둘이던 시절의 txt 루트 폴더 이름(앱 홈 아래). 지금은 **이관의 출발지로만**
 #: 산다 — 해석기(``host.locations.default_text_templates_dir``)는 U6-A 에서 삭제됐다.

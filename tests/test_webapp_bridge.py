@@ -53,7 +53,7 @@ def test_main_alarms_and_cancels_watchdog_when_window_creation_fails(monkeypatch
     monkeypatch.setattr(app_mod, "web_artifact", lambda: SimpleNamespace(
         artifact_id="test", tree_sha256="test", root=tmp_path, index_path=tmp_path / "index.html"
     ))
-    monkeypatch.setattr(app_mod, "WebFrontend", object)
+    monkeypatch.setattr(app_mod, "WebFrontend", lambda **_kwargs: object())
     monkeypatch.setattr(app_mod, "_selftest_capability_wanted", lambda *_: False)
     monkeypatch.setattr(app_mod, "_alarm", events.append)
     monkeypatch.setattr(app_mod.boot_budget, "detect_runtime_version", lambda: "test")
@@ -95,6 +95,16 @@ def test_authoring_native_file_handoffs_accept_only_selected_or_live_paths(tmp_p
         frontend.save_authoring_document(opened["session_id"], -1)
     with pytest.raises(ValueError, match="변경"):
         frontend.save_authoring_document(opened["session_id"], 0.0)
+    wb = _open_workbench(frontend, tmp_path)
+    frontend.controllers["job"]._template_change.ensure_bootstrapped("기안")
+    wb.open(wb.registry.load("기안"), [(0, {"부서": "총무과"})])
+    applied = wb.snapshot()["template_path"]
+    assert Path(applied).is_relative_to(tmp_path / "template_authority" / "applied")
+    assert frontend.open_authoring_document(applied, True)["content"] == "수신: {{수신}}"
+    foreign = tmp_path / "template_authority" / "applied" / "foreign.txt"
+    foreign.write_text("외부", encoding="utf-8")
+    with pytest.raises(ValueError, match="추적하는 참조"):
+        frontend.open_authoring_document(str(foreign), True)
     options = []
     monkeypatch.setattr(app_mod, "_file_dialog", lambda _filters, **kw: options.append(kw) or None)
     tutorial = frontend.controllers["tutorial"]

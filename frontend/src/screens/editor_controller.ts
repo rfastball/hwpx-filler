@@ -10,7 +10,7 @@ import { pickDataFile } from "./data_file_pick.ts";
 import { invokePathAction } from "./path_actions.ts";
 import {
   POOL_DATA_GONE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
-  dataRowMenuItems, poolRefusalText,
+  dataRowMenuItems, poolRefusalText, saveSheetOrder,
 } from "./pool_verbs.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolRegistrationPort } from "./pool_verbs.ts";
@@ -1270,6 +1270,8 @@ export function createEditorController(deps: EditorControllerDeps) {
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
     /** 우 열의 같은 문(pool 채널) — 두 열이 대칭이라 「새로 읽기」도 양쪽에 선다(③a). */
     refreshPool: (): Promise<Obj> => dispatch("pool", "refresh", {}),
+    reorderSheets: (key: string, sheets: string[]) => saveSheetOrder(key, sheets, dispatch,
+      () => deps.runtime.refresh(SCREEN), deps.notify),
     useLibraryTemplate, importTemplate, pickData,
     usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
     poolAction, resolveDuplicate, poolNoticeAction: poolVerbs.noticeAction, findDataItem,

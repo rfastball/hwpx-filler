@@ -2631,7 +2631,14 @@ class TestWebSelftestGate:
         )
         assert e["drag_over_accepted"] is True, "상대 열 항목 위에서 드롭이 허용되지 않습니다."
         assert e["drag_target_marked"] is True, "드롭 대상 강조(.drop-target)가 서지 않습니다."
-        assert e["drag_target_cleared"] is True, "드롭 뒤 강조가 남았습니다."
+        assert (e["drag_target_cleared"], e["sheet_reorder"]) == (True, {
+            "calls": [
+                ["pool", "reorder_sheets", {"key": "sheet-book", "sheets": ["B", "C", "A"]}],
+                ["pool", "reorder_sheets", {"key": "sheet-book", "sheets": ["B", "A", "C"]}],
+            ],
+            "dragAccepted": True, "keyAccepted": True,
+            "focusWhileSaving": True, "focusAfterSaving": True, "markerCleared": True,
+        }), e["sheet_reorder"]
         assert e["drop_matches_click"] is True, (
             "끌어 놓기가 클릭과 다른 액션을 발행했습니다"
             f" (클릭 {e['click_calls']!r} · 드롭 {e['drop_calls']!r})."
@@ -2795,7 +2802,10 @@ class TestWebSelftestGate:
         assert w["card_width_ratio"] >= 0.95, f"본문 카드가 본체 폭을 못 받습니다: {w['card_width_ratio']!r}"
         # 본문 편집면(#1148 PR B): 값 칠·〈빈 값〉·〈비워 둠〉이 Python 표식대로 갈려 선다.
         assert (w["card_fill"], w["card_blank"], w["card_blank_label"], w["card_declared"],
-                w["card_editable"]) == (1, 1, "〈빈 값〉", "〈비워 둠〉", "true"), w
+                w["card_editable"], w["copy_with_holes"]) == (1, 1, "〈빈 값〉", "〈비워 둠〉", "true", {
+                    "calls": [["copy_precheck", {}], ["copy_clipboard", "workbench", "copy-probe"]],
+                    "confirmation_open": False, "blank_marker": 1,
+                }), w
         assert w["lint_shown"] is True
         # 린트 처방(전각 치환)이 **손잡이로** 서 있는가 — 승계는 표지가 아니라 행동까지다.
         assert w["lint_action"] == "on:전각으로 바꾸기", w["lint_action"]

@@ -186,3 +186,58 @@ def test_a_corrupt_registration_is_not_projected_as_a_registration_without_tabs(
     ctrl.refresh_panel()
     assert ctrl.snapshot()["data_sheet_tabs"] == []
     assert zone.sheet_tabs() == []
+
+
+@pytest.mark.parametrize("remembered,broken", [(False, False), (True, False), (True, True), (False, True)])
+def test_registered_data_boot_keeps_remembered_mount_and_reports_discovery_failure(tmp_path, remembered, broken):
+    from test_webapp_job import _controller, _data_csv
+    ctrl, _ = _controller(tmp_path)
+    csv = _data_csv(tmp_path)
+    discovered = tmp_path / "registered.csv"
+    discovered.write_text("field\nvalue\n", encoding="utf-8")
+    descriptor = {"source": "file", "path": str(discovered), "sheet": "", "header_row": 0, "pool_key": ""}
+    calls = []
+
+    def discover():
+        calls.append(True)
+        if broken:
+            raise ValueError("broken registered source")
+        return descriptor
+
+    ctrl._registered_data = discover
+    if remembered:
+        ctrl._remembered_data_source = {**descriptor, "path": csv}
+    ctrl.initial()
+    assert ctrl.data.path == (csv if remembered else "" if broken else str(discovered))
+    if broken:
+        assert "broken registered source" in ctrl.data.notice_text
+    ctrl.initial()
+    assert calls == [True]
+
+
+def test_sheet_reordering_persists_without_changing_binding_or_filters(tmp_path):
+    from hwpxfiller.domain.dataset_reference import reference_sheets
+    from hwpxfiller.webapp.screens import registered_sheet_tabs
+
+    from test_webapp_pool import _controller
+    ctrl, registry, _ = _controller(tmp_path)
+    path = str(tmp_path / "book.xlsx")
+    Path(path).touch()
+    key = registry.add(DatasetReference(name="book", kind="excel", opts={
+        "path": path, "sheet": "A", "sheets": ["A", "B", "C"],
+    }, filters=[{"name": "keep", "state": {}}],
+        sheet_filters={"B": [{"name": "also keep", "state": {}}]}))
+    before = registry.load(key).to_dict()
+    ctrl.dispatch("reorder_sheets", {"key": key, "sheets": ["C", "A", "B"]})
+    reopened = DatasetPoolRegistry(registry.directory)
+    saved = reopened.load(key)
+    assert reference_sheets(saved) == ["C", "A", "B"]
+    assert saved.opts["sheet"] == "A"
+    assert saved.filters == before["filters"] and saved.sheet_filters == before["sheet_filters"]
+    assert [(r["sheet"], r["active"]) for r in registered_sheet_tabs(
+        reopened, key, path=path, sheet="B", kind="excel",
+    )] == [("C", False), ("A", False), ("B", True)]
+    for invalid in (["A", "B"], ["A", "B", "B"], ["A", "B", "foreign"], "ABC", [[], "B", "C"]):
+        with pytest.raises(ValueError, match="시트"):
+            ctrl.dispatch("reorder_sheets", {"key": key, "sheets": invalid})
+    assert reopened.load(key).to_dict() == saved.to_dict()

@@ -18,6 +18,7 @@ from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external import settings
 from hwpxfiller.external.tutorial_workspace import TutorialWorkspace
 from hwpxfiller.host import locations
+from hwpxfiller.viewmodel.tutorial_lessons import NOTICE_CONSTANTS
 
 
 def _tree(root: Path) -> dict:
@@ -76,7 +77,13 @@ def _first_hwpx_round(app) -> None:
     send("editor", "use_library_template", {"path": template})
     app.load_data_sheet("editor", data, "공고")
     send("editor", "goto_section", {"section": "binding"})
-    send("editor", "confirm_suggested", {})
+    for index, row in enumerate(app.controllers["editor"].edit.model.rows):
+        if row.template_field in NOTICE_CONSTANTS:
+            send("editor", "set_display", {"index": index, "type": "const", "fmt": ""})
+            send("editor", "set_const", {"index": index, "const": NOTICE_CONSTANTS[row.template_field]})
+        elif row.template_field == "게시일":
+            send("editor", "set_source", {"index": index, "source": "게시일시"})
+        send("editor", "set_confirmed", {"index": index, "confirmed": True})
     send("editor", "goto_section", {"section": "filename"})
     send("editor", "set_pattern", {"pattern": "구매입찰공고-{{입찰공고번호}}"})
     send("editor", "set_name", {"name": "튜토리얼 공고서"})

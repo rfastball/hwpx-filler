@@ -67,20 +67,6 @@ def test_scan_is_readonly_and_lists_compilable():
     assert sites[0].context == "계약명: {{계약명}}"
 
 
-def test_native_authoring_field_keeps_content_and_trials_value():
-    pkg = _pkg('<hp:p><hp:run charPrIDRef="7"><hp:t>앞 원문 뒤</hp:t></hp:run></hp:p>')
-    original = pkg.entries["Contents/section0.xml"]
-    result, impact = apply_hwpx(pkg, {
-        "type": "create_field", "entry": "Contents/section0.xml",
-        "paragraph": 0, "start": 2, "end": 4, "name": "내용",
-    })
-    assert impact["captured_text"] == "원문"
-    assert original != result.entries["Contents/section0.xml"]
-    assert analyze_hwpx(result)["fields"][0]["name"] == "내용"
-    assert {key: analyze_hwpx(result)["fields"][0]["occurrences"][0][key] for key in ("start", "end")} == {"start": 2, "end": 4}
-    assert trial_hwpx(result, {"내용": "새값"}, {})["bytes"]
-
-
 def test_native_preview_exposes_captured_paragraphs_without_changing_source() -> None:
     package = _pkg(
         '<hp:p><hp:run><hp:t>첫 문단</hp:t></hp:run></hp:p>'

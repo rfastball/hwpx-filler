@@ -48,13 +48,16 @@ from hwpxcore.bookmark_region import (
 )
 from hwpxcore.package import HwpxPackage
 from hwpxfiller.domain.slot import Slot, SlotOption
+from hwpxfiller.application.jobs import load_job
 from hwpxfiller.external.atomic import write_bytes_atomic
+from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.template_inspection import (
     inspect_hwpx_qualification,
     serialize_slot_metatag,
     serialize_slot_option_metatag,
 )
 from hwpxfiller.webapp import live_run as live_run_contract
+from hwpxfiller.host.locations import default_jobs_dir
 
 from . import capture as capture_mod
 from . import report as report_mod
@@ -267,11 +270,7 @@ def clean_practice_state(home: Path) -> None:
             pass  # 다음 부팅/reset 이 치운다
 
 
-def generated_documents(home: Path) -> "list[str]":
-    results = home / RESULTS_REL
-    if not results.is_dir():
-        return []
-    return sorted(p.name for p in results.glob("*.hwpx"))
+generated_documents = report_mod.generated_documents
 
 
 def sx_template_bytes(base: bytes, *, successor: bool = False) -> bytes:
@@ -552,7 +551,7 @@ def _run_with_home(
     def stage_template(kind: str) -> str:
         if kind not in ("initial", "successor"):
             raise ValueError(f"모르는 SX-05 template stage: {kind!r}")
-        target = home / SX_TEMPLATE_REL
+        target = Path(load_job(JobRegistry(default_jobs_dir()), "발주요청서").template_path)
         write_bytes_atomic(target, sx_template_bytes(base_template, successor=kind == "successor"))
         return str(target)
 
@@ -604,26 +603,6 @@ def _run_with_home(
                 backup.write_bytes(source.read_bytes())
             source.write_text(buffer.getvalue(), encoding="utf-8-sig")
             return str(source)
-        target.write_text(buffer.getvalue(), encoding="utf-8-sig")
-        return str(target)
-        if kind not in ("blank", "release"):
-            raise ValueError(f"모르는 SX-05 data stage: {kind!r}")
-        with source.open(encoding="utf-8-sig", newline="") as stream:
-            reader = csv.DictReader(stream)
-            rows = list(reader)
-            fields = list(reader.fieldnames or ())
-        if not rows or "공고명" not in fields:
-            raise ValueError("SX-05 blank fixture가 공고명 열을 찾지 못했습니다")
-        if kind == "blank":
-            rows[0]["공고명"] = ""
-        else:
-            fields.remove("공고명")
-            for row in rows:
-                row.pop("공고명", None)
-        buffer = io.StringIO(newline="")
-        writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
         target.write_text(buffer.getvalue(), encoding="utf-8-sig")
         return str(target)
 

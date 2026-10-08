@@ -17,6 +17,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _isolate_app_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / ".hwpxfiller-home"))
+    monkeypatch.setattr("hwpxfiller.webapp.registered_data.registered_workfile", lambda: None)
     # 튜토리얼 연습 환경의 기본 위치 전환(#1126)은 메모리 값이다 — 앞 테스트가 연습 중에
     # 끝나도 다음 테스트는 사용자 환경(위 홈)에서 시작한다.
     monkeypatch.setattr("hwpxfiller.host.locations._active_workspace", None)

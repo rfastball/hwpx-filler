@@ -129,7 +129,7 @@ function clamp(value, low, high) {
 /**
  * 렌더되어 측정 가능한 el을 anchor 아래/위에 배치한다.
  * opts.offsetParent가 없으면 fixed 좌표, 있으면 그 요소 기준 absolute 좌표를 쓴다.
- * 실제 getBoundingClientRect 폭·높이로 viewport clamp/flip하고 transform-origin을 트리거로 맞춘다.
+ * 변환 전 레이아웃 폭·높이로 viewport clamp/flip하고 transform-origin을 트리거로 맞춘다.
  */
 function place(el, anchor, opts) {
   opts = opts || {};
@@ -137,9 +137,9 @@ function place(el, anchor, opts) {
   const margin = opts.margin == null ? 4 : opts.margin;
   const ar = typeof anchor.getBoundingClientRect === "function"
     ? anchor.getBoundingClientRect() : anchor;
-  const measured = el.getBoundingClientRect();
-  const width = measured.width;
-  const height = measured.height;
+  // 등장 scale 중의 축소된 rect로 배치하면 원래 크기가 됐을 때 화면 밖으로 밀린다.
+  const width = el.offsetWidth;
+  const height = el.offsetHeight;
   const belowSpace = window.innerHeight - margin - (ar.bottom + gap);
   const aboveSpace = ar.top - gap - margin;
   const below = height <= belowSpace || belowSpace >= aboveSpace;

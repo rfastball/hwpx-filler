@@ -34,15 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from ..domain.job import Job
-from ..application.candidate_revision import (
-    MutableSourceBinding,
-    TemplateLineage,
-    blob_digest,
-)
-from ..application.slot_configuration_context import (
-    SlotConfigurationContextError,
-    resolve_exact_applied_template_input,
-)
+from ..application.candidate_revision import MutableSourceBinding, TemplateLineage
 from ..application.jobs import (
     JobStorePort,
     load_job,
@@ -50,6 +42,7 @@ from ..application.jobs import (
     seat_job_authority_id,
 )
 from ..application.prepare_orchestration import (
+    APPLY_APPLIED,
     APPLY_INTEGRITY_ERROR,
     find_application,
     find_change,
@@ -59,9 +52,6 @@ from ..application.template_qualification import QualificationProfile
 from ..application.template_change_product import (
     CAPABILITY_INITIALIZATION_REQUIRED,
     CAPABILITY_UNSUPPORTED_MEDIA,
-    SOURCE_DRIFT_CHANGED,
-    SOURCE_DRIFT_UNCHANGED,
-    SOURCE_DRIFT_UNKNOWN,
     preparation_view,
     product_apply_status,
     template_change_zone_actionable,
@@ -78,13 +68,13 @@ from ..application.work_template_state import (
     WorkTemplateStateAggregate,
 )
 from .candidate_store import CandidateObjectStore
+from .applied_template_asset import AppliedTemplateAsset
 from .field_binding_store import (
     WorkFieldBindingStore,
 )
 from .work_configuration_store import (
     WorkspaceMetadataStore,
 )
-from .work_template_store import WorkAggregateNotFound
 from .prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
@@ -167,35 +157,6 @@ class _AdvanceResult:
     current_application_id: str
 
 
-@dataclass(frozen=True)
-class SourceDrift:
-    """원본 파일 ↔ 캡처된 applied bytes 대조 결과(#932 B5).
-
-    ``state`` 는 :data:`SOURCE_DRIFT_CHANGED`/``UNCHANGED``/``UNKNOWN`` 또는 **판정 불성립**의
-    ``None`` 이다. ``note`` 는 세울 재진술 한 줄이고 갈리지 않았으면 ``None``.
-    """
-
-    state: "str | None"
-    note: "str | None"
-
-
-#: 판정 불성립 — 미지원 매체·미부트스트랩. 「안 갈렸다」와 다른 값이다.
-NO_SOURCE_DRIFT_JUDGMENT = SourceDrift(None, None)
-
-#: 드리프트 재진술. **동사는 존의 동사와 같다** — 종전 문안은 「다시 가져오세요」로 존
-#: (「변경사항 확인」)과 다른 동사를 지시했는데, 같은 사실을 두 문장이 다르게 지시하면
-#: 그중 하나는 반드시 늙는다(#932 B5).
-_DRIFT_CHANGED_NOTE = (
-    "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. "
-    "편집분을 반영하려면 「변경사항 확인」 뒤 적용하세요."
-)
-#: 「모른다」는 「없다」가 아니다 — 값싸게 못 구한 사실을 그대로 말하고 존을 세운다.
-_DRIFT_UNKNOWN_NOTE = (
-    "원본 파일을 읽지 못해 편집 여부를 확인할 수 없습니다. "
-    "파일 위치와 접근 권한을 확인한 뒤 「변경사항 확인」을 누르세요."
-)
-
-
 def unsupported_zone() -> dict[str, Any]:
     """지원 매체가 아니거나 템플릿 미연결·작업 미선택 — capability 비노출(명시적 unsupported)."""
     return {
@@ -203,8 +164,6 @@ def unsupported_zone() -> dict[str, Any]:
         "reason": CAPABILITY_UNSUPPORTED_MEDIA,
         "checkable": False,
         "actionable": False,
-        "source_drift": None,
-        "source_drift_note": None,
         "diagnostics": [],
         "epoch": None,
         "preparation": None,
@@ -215,19 +174,6 @@ def _authorize(work: DocumentWork, actor: str) -> None:
     """actor 의 Work 접근·Template 변경 권한 — token 과 독립으로 매 요청 확인한다."""
     if actor != LOCAL_ACTOR:
         raise TemplateChangeError(f"actor {actor!r} 는 이 Work 에 접근할 수 없습니다")
-
-
-class _WorkStateReadPort:
-    """``AtomicWorkTemplateStateStore`` → #674 read Port(load()->None on missing)."""
-
-    def __init__(self, store: "AtomicWorkTemplateStateStore") -> None:
-        self._store = store
-
-    def load(self, work_id: str) -> "WorkTemplateStateAggregate | None":
-        try:
-            return self._store.load(work_id)
-        except WorkAggregateNotFound:
-            return None
 
 
 class TemplateChangeCoordinator:
@@ -265,6 +211,10 @@ class TemplateChangeCoordinator:
         self._change_id_by_token: dict[str, tuple[str, str]] = {}
         self._lock = threading.RLock()
         self._manifest_seeded = False
+        self._applied = AppliedTemplateAsset(
+            self._root, registry, self._works, self._candidates, self._quals
+        )
+        self._applied.migrate()
 
     # ─── 시각·인덱스 ────────────────────────────────────────────────────────
 
@@ -396,24 +346,15 @@ class TemplateChangeCoordinator:
         job_name: str,
         media: str,
         template_missing: bool,
-        *,
-        source_drift: "SourceDrift | None" = None,
     ) -> dict[str, Any]:
         """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch·노출 술어.
 
-        ``actionable`` 이 #932 B5 의 산출이다: 이 존은 「확인할 수 있다」는 capability 존이라
-        건수로 숨길 수 없었고(숨기면 확인 개시 입구가 사라진다), 그래서 술어의 입력을 **확인
-        결과가 아니라 원본 드리프트**로 옮겼다. 판정 자체는
+        ``actionable`` 은 현재 준비 상태와 초기화 오류에서 결정한다. 판정 자체는
         :func:`~hwpxfiller.application.template_change_product.template_change_zone_actionable`
         한 곳이고 여기는 재료만 모은다.
-
-        ``source_drift`` 를 인자로 받는 이유는 **한 스냅샷에 원본 해시를 한 번만** 돌리기
-        위해서다 — 같은 판정을 top-level ``source_drift`` 키도 쓴다(`screen_job` 이 한 번
-        구해 양쪽에 나눈다). 안 넘기면 여기서 구한다.
         """
         if media not in SUPPORTED_MEDIA or template_missing:
             return unsupported_zone()
-        drift = self.source_drift(job_name) if source_drift is None else source_drift
         job = load_job(self._registry, job_name)
         work_id = job.authority_id or None
         failure = self._failures().get(job_name)
@@ -429,7 +370,7 @@ class TemplateChangeCoordinator:
                     "diagnostics": failure["diagnostics"],
                     "epoch": None,
                     "preparation": None,
-                }, drift)
+                })
             self._record_failure(job_name, None)
         base = {
             "supported": True,
@@ -440,31 +381,28 @@ class TemplateChangeCoordinator:
             "preparation": None,
         }
         if work_id is None or not self._works.exists(work_id):
-            return self._with_actionable(base, drift)
+            return self._with_actionable(base)
         self._recover(work_id)
         aggregate = self._works.load(work_id)
         base["epoch"] = find_application(
             aggregate, aggregate.work.current_template_application_id
         ).application_epoch
         base["preparation"] = self._current_preparation_view(aggregate, work_id)
-        return self._with_actionable(base, drift)
+        return self._with_actionable(base)
 
     @staticmethod
-    def _with_actionable(zone: dict[str, Any], drift: SourceDrift) -> dict[str, Any]:
-        """존 dict 에 노출 술어와 드리프트 상태를 얹는다 — **모든 갈래가 같은 키 집합**을 낸다.
+    def _with_actionable(zone: dict[str, Any]) -> dict[str, Any]:
+        """존 dict 에 노출 술어를 얹는다 — **모든 갈래가 같은 키 집합**을 낸다.
 
         키 부재 분기를 만들지 않는 것이 이 헬퍼의 존재 이유다: 표면이 ``"actionable" in z`` 로
         갈리기 시작하면 갈래 하나가 빠졌을 때 존이 조용히 사라진다.
         """
-        zone["source_drift"] = drift.state
-        zone["source_drift_note"] = drift.note
         zone["actionable"] = template_change_zone_actionable(
             supported=bool(zone["supported"]),
             reason=str(zone["reason"]),
             preparation_status=(
                 str(zone["preparation"]["status"]) if zone["preparation"] else None
             ),
-            source_drift=drift.state,
         )
         return zone
 
@@ -559,7 +497,7 @@ class TemplateChangeCoordinator:
                 if issued_now:
                     release_job_authority_id(self._registry, job_name, work_id)
                 raise _BootstrapRefused(outcome)
-        return work_id, job
+        return work_id, self._applied.adopt(job_name)
 
     def ensure_bootstrapped(self, job_name: str) -> dict[str, Any]:
         """작업 선택 시의 **자동 준비**(#932 B5) — 「변경사항 확인」의 겸직을 푼다.
@@ -582,6 +520,9 @@ class TemplateChangeCoordinator:
         job = load_job(self._registry, job_name)
         if job.media not in SUPPORTED_MEDIA:
             return {"ok": True, "bootstrapped": False, "reason": CAPABILITY_UNSUPPORTED_MEDIA}
+        if job.authority_id and self._works.exists(job.authority_id):
+            self._applied.adopt(job_name)
+            return {"ok": True, "bootstrapped": False, "reason": ""}
         signature = self._template_signature(job.template_path)
         if not job.template_path or signature is None:
             # 템플릿 실물 부재 — 존이 unsupported 로 서고 복구 동사는 라이브러리 재연결이다.
@@ -592,8 +533,6 @@ class TemplateChangeCoordinator:
                 "ok": False, "bootstrapped": False,
                 "reason": CAPABILITY_INITIALIZATION_REQUIRED,
             }
-        if job.authority_id and self._works.exists(job.authority_id):
-            return {"ok": True, "bootstrapped": False, "reason": ""}  # 이미 섰다 — 작업당 1회
         # **확인 한 바퀴를 그대로 돈다**(bootstrap 만이 아니다). 겸직을 끊는다는 것은 단추가
         # 하던 일을 착석이 대신한다는 뜻이고, 그 일은 bootstrap + capture + qualification +
         # admission 전부다 — managed 실행 admission 이 그 산물을 요구하므로(슬롯 실행
@@ -666,45 +605,6 @@ class TemplateChangeCoordinator:
             advanced.final_job_snapshot,
             advanced.current_application_id,
         )
-
-    def source_drift(self, job_name: str) -> SourceDrift:
-        """부트스트랩된 Work 의 현재 원본 파일 bytes ↔ 캡처된 applied Candidate bytes 대조.
-
-        생성은 캡처본을 쓰므로(#681 F1) 사용자가 「검토한 원본 편집분이 반영 안 됨」을 조용히
-        겪지 않게 하는 것이 원래 목적이었고, #932 B5 부터는 **「템플릿 변경사항」 존이 스스로
-        설지**를 정하는 입력이기도 하다. digest 비교뿐이라 seat 시점에 gate/stage 를 돌리지
-        않는다(applied-work NEEDS_CONFIGURATION 회귀 방지).
-
-        **값싸게 못 구한 경우를 「안 갈렸다」로 접지 않는다**(#932 B5): 종전 구현은 그 갈래를
-        ``None`` 으로 접었는데, 그 위에 숨김 술어를 세우면 읽지 못한 파일이 「변경 없음」으로
-        조용히 통과해 존이 사라진다. 그래서 ``unknown`` 은 사유를 들고 존을 세운다.
-
-        미부트스트랩·미지원 매체는 **판정 불성립**(:data:`NO_SOURCE_DRIFT_JUDGMENT`) —
-        원본이 곧 실행본이라 대조할 캡처본 자체가 없다.
-        """
-        job = load_job(self._registry, job_name)
-        work_id = job.authority_id or None
-        if (
-            job.media not in SUPPORTED_MEDIA
-            or not work_id
-            or not self._works.exists(work_id)
-        ):
-            return NO_SOURCE_DRIFT_JUDGMENT
-        try:
-            aggregate = self._works.load(work_id)
-            applied = resolve_exact_applied_template_input(
-                _WorkStateReadPort(self._works), self._quals, self._candidates,
-                work_id, aggregate.work.current_template_application_id,
-            )
-            # ponytail: 부트스트랩된 Work 는 snapshot 마다 원본을 해시한다(hwpx 는 클 수 있다).
-            # 스냅샷 한 번에 한 번만 돌도록 `screen_job` 이 이 값을 구해 존과 top-level 에
-            # 나눠 준다 — 지연이 더 문제되면 (mtime_ns,size) 로 캐시.
-            source_digest = blob_digest(Path(job.template_path).read_bytes())
-        except (SlotConfigurationContextError, OSError):
-            return SourceDrift(SOURCE_DRIFT_UNKNOWN, _DRIFT_UNKNOWN_NOTE)
-        if source_digest == applied.exact_content_digest:
-            return SourceDrift(SOURCE_DRIFT_UNCHANGED, None)
-        return SourceDrift(SOURCE_DRIFT_CHANGED, _DRIFT_CHANGED_NOTE)
 
     def _advance(
         self,
@@ -877,6 +777,8 @@ class TemplateChangeCoordinator:
         current = find_application(
             aggregate, aggregate.work.current_template_application_id
         )
+        if outcome.result == APPLY_APPLIED and outcome.resulting_application_id == current.application_id:
+            self._applied.adopt(job_name, replace=True)
         return {
             "status": product_apply_status(outcome.result),
             "current_template_application_epoch": current.application_epoch,

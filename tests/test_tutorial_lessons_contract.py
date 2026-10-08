@@ -197,13 +197,21 @@ def _open_template(app, path: str) -> None:
 def test_lesson_nine_starts_with_the_finished_template_and_its_change_pending(app):
     tutorial = app.controllers["tutorial"]
     tutorial.dispatch("select", {"scenario_id": "change_apply"})
-    path = tutorial._context()["assets"]["낙찰자 선정 및 계약체결 안내.txt"]["path"]
+    source = tutorial._context()["assets"]["낙찰자 선정 및 계약체결 안내.txt"]["path"]
+    path = app.controllers["job"].registry.load("계약 안내 작업").template_path
+    assert Path(path).is_relative_to(Path(tutorial._context()["home"]) / "template_authority" / "applied")
+    assert "예산재배정" not in Path(source).read_text(encoding="utf-8")
     text = Path(path).read_text(encoding="utf-8")
     assert "{{#항목 예산재배정 예산재배정}}" in text and "{{#선택 안내생략 안내생략}}\n\n{{/선택}}" in text
     authoring = app.controllers["authoring"]
-    # Nothing is opened silently (#1146): the lesson begins with the way into template authoring.
-    assert not authoring.sessions and app.initial("tutorial")["beat"]["id"] == "open_list"
-    _open_template(app, path)
+    assert not authoring.sessions and app.initial("tutorial")["beat"]["id"] == "pick_job"
+    app.dispatch("library", "select_work", {"name": "계약 안내 작업"})
+    app.dispatch("job", "prefer_work", {"name": "계약 안내 작업"})
+    app.dispatch("job", "set_all", {})
+    app.dispatch("job", "open_workbench", {})
+    assert app.controllers["workbench"].snapshot()["template_path"] == path
+    assert app.initial("tutorial")["beat"]["id"] == "open_edit"
+    app.open_authoring_document(path, True)
     session = authoring.sessions[authoring.active_id]
     assert session.source_path == session.save_path == path
     assert [slot["label"] for slot in session.analysis["slots"]] == ["예산재배정"]

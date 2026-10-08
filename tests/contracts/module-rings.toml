@@ -1,16 +1,5 @@
-# 제품 모듈의 **ring 좌표 계약**이다 — 모듈 하나가 어느 층의 권위를 지는지와, 그 좌표가
-# 강제하는 안쪽→바깥쪽 의존 금지선을 짝 게이트(tests/repo_contract/test_module_rings.py)가
-# 판정한다. 물리 패키지 경계 게이트 4종(domain/application/external/host)이 각 패키지의
-# 방향을 지키고, 이 파일은 그 밖의 모듈 좌표를 소유한다.
-#
-# 유래는 P1 전수 계측(#512~#520)의 P2 handoff 였고 상세 근거는 Git 이력이 소유한다. P2 완주
-# 뒤 P1 부기(baseline·verdict·sunset·remove_when·obligations)는 걷어냈다 — 미이행 obligation
-# 원장은 이슈 #582 가, 나머지 계측 서사는 이력이 진다. 이 파일은 재생성하지 않는다.
 schema = "module-rings/v1"
 
-# 안쪽→바깥쪽 예외는 P2-19R(#576)에서 0 에 도달했다. 게이트가 양방향 exact-match 로 직접
-# 인덱싱하므로 키는 빈 배열로 남긴다 — 새 예외를 여기 적지 않으면 게이트가 빨강이고,
-# 이미 없어진 예외를 남겨 둬도 빨강이다.
 allowed_direction_violation = []
 
 [ring]
@@ -343,6 +332,12 @@ module = "hwpxfiller.webapp.data_zone"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/data_zone.py"]
 oracle_kind = "structural"
+
+[[unit]]
+module = "hwpxfiller.webapp.registered_data"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/registered_data.py"]
+oracle_nodeid = "tests/test_webapp_pool.py::test_registered_pclm_defaults_preserve_existing_order"
 
 [[unit]]
 module = "hwpxfiller.webapp.active_work_session"

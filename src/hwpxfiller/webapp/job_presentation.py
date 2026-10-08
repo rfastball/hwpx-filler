@@ -11,6 +11,7 @@ from ..application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
     RecordValidationSummary,
 )
+from ..application.create_request import can_request_create
 from ..application.workbench_execution_status import CHECKING, NO_EVIDENCE, STALE
 from ..domain.job import work_mode
 from ..domain.mapping import SOURCE_CARRIER_TYPES
@@ -117,7 +118,6 @@ def base_panel_snapshot(
         "browse": browse,
         "range_draft": range_draft,
         "template_change": template_change,
-        "source_drift": None,
         "slot_configuration": slot_configuration,
         "content_presets": content_presets,
     }
@@ -395,6 +395,17 @@ def _record_advisory_notice(summary: RecordValidationSummary) -> str:
     return f"빈 값 {summary.marked_value_count}칸이 있습니다. 문서에는 미입력 표식이 들어갑니다."
 
 
+def _create_action(observation) -> dict:
+    enabled = can_request_create(observation)
+    return {
+        "label": "문서 만들기",
+        "enabled": enabled,
+        "disabled_reason": (
+            None if enabled else observation.create_documents_disabled_reason
+        ),
+    }
+
+
 def serialize_observation(observation, *, execution_status: tuple[str, str]) -> dict:
     """Turn an already-decided workbench observation into JSON-safe values."""
     code, phrase = execution_status
@@ -432,11 +443,7 @@ def serialize_observation(observation, *, execution_status: tuple[str, str]) -> 
             if code in _EXECUTION_RESOLVABLE_STATUS_CODES
             else None
         ),
-        "create_action": {
-            "label": "문서 만들기",
-            "enabled": observation.create_documents_enabled,
-            "disabled_reason": observation.create_documents_disabled_reason,
-        },
+        "create_action": _create_action(observation),
         "blockers": list(observation.blockers),
         "deep_link_targets": [
             {"blocker_code": target.blocker_code, "route": target.route}

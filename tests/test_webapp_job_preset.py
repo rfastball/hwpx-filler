@@ -55,7 +55,7 @@ def _seated(tmp_path: Path):
     token = _token(ctrl)
     token = _select(ctrl, token, _S_KEEP, _O_KEEP, "r1")
     token = _select(ctrl, token, _S_GONE, _O_ONLY, "r2")
-    return ctrl, token, tpl
+    return ctrl, token, Path(ctrl.registry.load("공고서").template_path)
 
 
 def _advance_to_successor(ctrl, tpl: Path) -> None:

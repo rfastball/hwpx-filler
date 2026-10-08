@@ -278,7 +278,7 @@ function_complexity = 23
 function_complexity = 25
 
 [budget."frontend/src/screens/job_run.ts::JobTemplateChange"]
-function_complexity = 28
+function_complexity = 27
 
 [budget."frontend/src/screens/job_run.ts::JobWorkbenchStatus"]
 function_complexity = 33
@@ -489,28 +489,27 @@ function_complexity = 34
 function_complexity = 11
 
 [budget."scripts/live101/driver.py"]
-module_statements = 444
+module_statements = 428
 
 [budget."scripts/live101/driver.py::_run_with_home.drive"]
 function_complexity = 11
 
 [budget."scripts/live101/driver.py::_run_with_home.stage_data"]
-function_complexity = 19
-function_statements = 56
+function_complexity = 13
 
 [budget."scripts/live101/report.py::judge"]
 function_complexity = 48
 function_statements = 68
 
 [budget."scripts/live101/scenario.py"]
-module_statements = 506
+module_statements = 492
 
 [budget."scripts/live101/scenario.py::run"]
 function_statements = 166
 
 [budget."scripts/live101/scenario.py::run_sx"]
 function_complexity = 40
-function_statements = 205
+function_statements = 204
 
 [budget."scripts/ui_copy_census.py::census"]
 function_complexity = 12
@@ -575,7 +574,7 @@ function_complexity = 25
 function_complexity = 20
 
 [budget."src/hwpxfiller/application/dataset_pool.py"]
-module_statements = 339
+module_statements = 307
 
 [budget."src/hwpxfiller/application/dataset_pool.py::DatasetPoolViewModel"]
 class_methods = 30
@@ -993,11 +992,8 @@ function_complexity = 14
 [budget."src/hwpxfiller/external/slot_command_runner.py::_mutate_under_fence"]
 function_complexity = 19
 
-[budget."src/hwpxfiller/external/template_change.py"]
-module_statements = 324
-
 [budget."src/hwpxfiller/external/template_change.py::TemplateChangeCoordinator"]
-class_methods = 29
+class_methods = 28
 
 [budget."src/hwpxfiller/external/text_materialization_conformance.py::apply_txt_execution_plan_in_memory"]
 function_complexity = 17
@@ -1246,10 +1242,10 @@ function_complexity = 15
 function_complexity = 16
 
 [budget."src/hwpxfiller/webapp/screen_job.py"]
-module_statements = 928
+module_statements = 906
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController"]
-class_methods = 112
+class_methods = 110
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController._capture_current_selected_records"]
 function_complexity = 11
@@ -1376,7 +1372,7 @@ function_complexity = 32
 function_complexity = 22
 
 [budget."tests/test_authoring.py"]
-module_statements = 1598
+module_statements = 1589
 
 [budget."tests/test_hwpx_structure_probe.py::test_native_bookmark_encodings_and_durability_observations"]
 function_complexity = 43
@@ -1403,7 +1399,7 @@ function_complexity = 23
 module_statements = 2123
 
 [budget."tests/test_webapp_job.py"]
-module_statements = 3921
+module_statements = 3865
 
 [budget."tests/test_webapp_job_binding_review.py"]
 module_statements = 993

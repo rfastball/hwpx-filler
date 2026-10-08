@@ -57,6 +57,13 @@ class WorkbenchConfiguration:
     binding_review: BindingReviewProjection | None
 
 
+def prepare_for_generate(execution: "JobExecutionSession", work_ref: str) -> None:
+    """A generate request prepares the current Work before execution validation."""
+    if not execution.is_settled_current and execution.orchestration.state != "CHECKING":
+        if execution.start_manual_recovery():
+            execution.run_automatic_seal(work_ref)
+
+
 class JobExecutionSession:
     """실행 봉인 증거와 그 증거에서 만든 준비 캐시의 단일 소유자."""
 

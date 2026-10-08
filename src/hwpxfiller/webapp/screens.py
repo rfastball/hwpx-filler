@@ -182,6 +182,14 @@ def validate_owned_path(path: str, owned: "set[str]", *, base_dir: "str | Path")
     return path
 
 
+def validate_applied_job_template_path(path: str, job_registry, applied_root: Path, *, base_dir: Path) -> str:
+    """An explicit authoring path must be a current job's app-owned applied file."""
+    if not Path(path).resolve().is_relative_to(applied_root.resolve()):
+        raise ValueError("현재 템플릿 목록에 없는 경로입니다.")
+    owned = {norm_path(job.template_path, base_dir) for job in job_registry.list_jobs()}
+    return validate_owned_path(path, owned, base_dir=base_dir)
+
+
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, key: str
 ) -> DatasetReference:

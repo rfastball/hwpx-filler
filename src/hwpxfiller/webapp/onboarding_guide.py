@@ -16,8 +16,8 @@ from .onboarding_match_authoring import guide_range, practice_template_open
 __all__ = ["advance_current", "guide_beat", "picker_hint", "observe_ui_closed", "observe_ui_press",
            "rewind_on_entry", "rewind_unmet_inputs", "rewind_unopened_template"]
 
-#: The first beat of opening the practice TXT from the template list (``tutorial_lessons._open_template``).
-_OPEN_TEMPLATE = "open_list"
+#: The entry beat for reopening the practice TXT after its authoring tab closes.
+_OPEN_TEMPLATE = {"change_apply": "pick_job"}
 
 #: Editor inputs later editor beats stand on: (template file, data sheet). The beats that choose
 #: them are ``template`` and ``data`` in both lessons.
@@ -101,7 +101,8 @@ def rewind_unopened_template(tutorial: Any) -> bool:
     if beat is None or beat.screen != "authoring" or practice_template_open(tutorial):
         return False
     lesson = BY_ID[progress.selected]
-    return any(item.id == _OPEN_TEMPLATE for item in lesson.beats) and progress.rewind(_OPEN_TEMPLATE)
+    first = _OPEN_TEMPLATE.get(progress.selected, "open_list")
+    return any(item.id == first for item in lesson.beats) and progress.rewind(first)
 
 
 def rewind_transient(tutorial: Any) -> bool:

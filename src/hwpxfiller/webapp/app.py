@@ -40,7 +40,7 @@ from ..web_artifact import (
     resolve_web_artifact,
 )
 from ..external.hwpx_engine import make_hwpx_engine
-from ..host.locations import home_dir
+from ..host.locations import default_template_authority_dir, home_dir
 from ..external.template_root import TemplateRoot, migrate_legacy_text_templates
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 이 조립부와 작업 공간 조립(workspace_graph)만 한다.
@@ -75,6 +75,7 @@ from .screens import (
     NO_ROWS_TEXT,
     source_label,
     collect_owned_paths,
+    validate_applied_job_template_path,
     validate_owned_path,
 )
 
@@ -217,7 +218,9 @@ class WebFrontend:
     _job_registry: Any
     _pool_registry: Any
 
-    def __init__(self, template_root: "TemplateRoot | None" = None) -> None:
+    def __init__(
+        self, template_root: "TemplateRoot | None" = None, *, discover_registered_data: bool = True,
+    ) -> None:
         first_launch = first_launch_candidate(home_dir())
         # 창 참조는 비공개(_) — pywebview 의 js_api 자동노출 반영(util.get_functions)이 공개
         # 속성을 dir() 로 재귀 순회하는데, 공개면 Window→native(WinForms)→AccessibilityObject 로
@@ -264,6 +267,7 @@ class WebFrontend:
                 migration_notice=migration_notice if home is None else "",
                 tutorial_ctrl=tutorial_ctrl, generation_lock=generation_lock,
                 hwpx_engine=hwpx_engine,
+                discover_registered_data=discover_registered_data,
             )
 
         def adopt(graph: WorkspaceGraph) -> None:
@@ -717,7 +721,10 @@ class WebFrontend:
         if path:
             media = Path(path).suffix.lower().lstrip(".")
             if not self._controller("tpl").is_live_path(media, path):
-                raise ValueError("현재 템플릿 목록에 없는 경로입니다.")
+                validate_applied_job_template_path(
+                    path, self._job_registry, default_template_authority_dir() / "applied",
+                    base_dir=self._owned_path_base,
+                )
         else:
             hint = self._controller("tutorial").file_picker_hint("template", "authoring")
             path = (_file_dialog(_TEMPLATE_FILTERS, initial_path=hint) if hint
@@ -1276,7 +1283,7 @@ def main(
         selftest_timer.daemon = True
         selftest_timer.start()
 
-    frontend = WebFrontend()
+    frontend = WebFrontend(discover_registered_data=run is None)
 
     # 시험 능력 부착(N-09 · D-07) — **실행이 명시로 요구할 때만**. 정상 실행의 `js_api` 에는
     # 시험 메서드가 아예 없고, 그래서 프런트의 `testHost.available()` 이 거짓이 되어

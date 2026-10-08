@@ -62,6 +62,7 @@ PY_GLOBS = (
     "src/hwpxfiller/external/seal_execution_plan_product.py",
     "src/hwpxfiller/external/seal_execution_plan_service.py",
     "src/hwpxfiller/external/template_change.py",
+    "src/hwpxfiller/external/applied_template_asset.py",
 )
 #: 프런트 source. `frontend/src/selftest/**` 는 프로브·픽스처라 제품 문안이 아니다.
 JS_GLOBS = ("frontend/src/**/*.ts", "frontend/src/**/*.tsx", "frontend/src/**/*.js",

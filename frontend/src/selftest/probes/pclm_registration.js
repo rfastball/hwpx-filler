@@ -38,3 +38,54 @@ export async function probePclmRegistration(ctx, { byId, textOf, stubBridgeInvok
     && !byId(ctx, "poolRegOk").disabled;
   return out;
 }
+
+/** 기존 편집기 창에서 실제 React 탭의 drag·키보드 사건과 저장 왕복 중 초점을 잰다. */
+export async function probeSheetReorder(ctx, { editorBase, stubBridgeCall }) {
+  const client = ctx.services.Client, realInitial = client.initial;
+  const calls = [], rows = ["A", "B", "C"].map((sheet) => ({
+    key: "sheet-book", sheet, active: sheet === "A", selectable: true, reason: "",
+  }));
+  let snapshot = editorBase({ section: "binding", rows: [], data_sheet_tabs: rows,
+    record_count: 1, source_fields: ["항목"], sample_rows: [["표본"]] });
+  let release = null;
+  const tabs = () => Array.from(ctx.doc.querySelectorAll("#scr-editor .data-tab"));
+  const order = () => tabs().map((tab) => tab.textContent).join(",");
+  const pending = () => ctx.doc.querySelector('#scr-editor .data-tabs[aria-busy="true"]');
+  const initial = async (screen) => screen === "editor"
+    ? { ok: true, value: snapshot } : realInitial.call(client, screen);
+  client.initial = initial;
+  const stub = stubBridgeCall(ctx, (real) => async (screen, action, payload) => {
+    if (screen !== "pool" || action !== "reorder_sheets") return real(screen, action, payload);
+    calls.push([screen, action, payload]);
+    snapshot = { ...snapshot, data_sheet_tabs: payload.sheets.map((name) => rows.find((row) => row.sheet === name)) };
+    return new Promise((resolve) => { release = resolve; });
+  });
+  try {
+    ctx.push("editor", snapshot);
+    await ctx.waitFor(() => order() === "A,B,C", { what: "시트탭 세 장", timeoutMs: 1000 });
+    const transfer = new ctx.win.DataTransfer(), source = tabs()[0], target = tabs()[2];
+    source.dispatchEvent(new ctx.win.DragEvent("dragstart", { bubbles: true, dataTransfer: transfer }));
+    const over = new ctx.win.DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer });
+    target.dispatchEvent(over);
+    await ctx.waitFor(() => target.dataset.dropTarget === "true", { what: "드롭 대상 강조", timeoutMs: 1000 });
+    target.dispatchEvent(new ctx.win.DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    await ctx.waitFor(() => calls.length === 1 && pending(), { what: "드롭 저장 대기", timeoutMs: 1000 });
+    release({ ok: true });
+    await ctx.waitFor(() => order() === "B,C,A" && !pending(), { what: "드롭 순서 반영", timeoutMs: 1000 });
+    const keyboardTab = tabs()[2];
+    keyboardTab.focus();
+    const key = new ctx.win.KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true, bubbles: true, cancelable: true });
+    keyboardTab.dispatchEvent(key);
+    await ctx.waitFor(() => calls.length === 2 && pending(), { what: "키보드 순서 저장 대기", timeoutMs: 1000 });
+    const focusWhileSaving = ctx.doc.activeElement === keyboardTab && !keyboardTab.disabled;
+    release({ ok: true });
+    await ctx.waitFor(() => order() === "B,A,C" && !pending(), { what: "키보드 순서 반영", timeoutMs: 1000 });
+    return { calls, dragAccepted: over.defaultPrevented, keyAccepted: key.defaultPrevented,
+      focusWhileSaving, focusAfterSaving: ctx.doc.activeElement === keyboardTab,
+      markerCleared: !ctx.doc.querySelector('#scr-editor [data-drop-target="true"]') };
+  } finally {
+    if (release) release({ ok: true });
+    stub.restore();
+    if (client.initial === initial) client.initial = realInitial;
+  }
+}

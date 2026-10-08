@@ -298,7 +298,7 @@ def test_existing_job_impact_uses_shared_coordinator_after_file_save(tmp_path: P
             self.calls = []
 
         def zone(self, name, media, missing):
-            return {"source_drift": "changed", "actionable": True}
+            return {"actionable": True}
 
         def check(self, name, request_id):
             self.calls.append(("check", name, request_id))
@@ -904,7 +904,7 @@ def test_preview_and_impact_report_structure_delta_and_body_change(tmp_path: Pat
 
     class Change:
         def zone(self, name, media, missing):
-            return {"source_drift": "changed", "actionable": True,
+            return {"actionable": True,
                     "preparation": {"status": "review-required"}}
 
     ctrl = AuthoringController(lambda _name, _snapshot: None, directory=tmp_path / "home",

@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -84,11 +84,9 @@ from ..viewmodel.work_candidates import (
 from .action_registry import ZONE_MUTATIONS
 from .active_work_session import ActiveWorkSession, ActiveWorkView
 from ..external.template_change import (
-    NO_SOURCE_DRIFT_JUDGMENT,
     unsupported_zone,
 )
 from dataclasses import asdict
-from ..application.template_change_product import workbench_template_change_verdict
 from ..application.document_creation_workbench import (
     DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
@@ -117,7 +115,7 @@ from ..external.current_execution_preparation import (
     current_record_identity,
     record_issue,
 )
-from .job_execution_session import JobExecutionSession
+from .job_execution_session import JobExecutionSession, prepare_for_generate
 from .managed_run_result import TEMPLATE_INITIALIZATION_REFUSAL
 from .job_presentation import (
     base_panel_snapshot,
@@ -138,6 +136,7 @@ from ..external.settings import (
     save_last_output_directory,
 )
 from .data_zone import JobDataSession
+from .registered_data import restore_data_session
 from .document_run_coordinator import (
     CompletionStamp,
     DocumentRunCoordinator,
@@ -233,6 +232,7 @@ class JobController:
         workbench_observation=None,
         seal_execution=None,
         tutorial: TutorialSink = unwired_tutorial,
+        registered_data: Callable[[], dict | None] | None = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -263,6 +263,7 @@ class JobController:
         # 저장 폴더와 마지막 데이터는 부팅 때 읽고 각 전용 동사만 갱신한다.
         self._remembered_output_directory = load_last_output_directory()
         self._remembered_data_source = load_last_data_source()
+        self._registered_data = registered_data
         # 자동 복원은 부팅 1회만 수행해 현재 사용자의 선택을 되돌리지 않는다.
         self._boot_data_restored = False
         # 자동 복원 결과는 첫 스냅샷으로만 전달한다.
@@ -778,31 +779,7 @@ class JobController:
         self._tutorial_last_mount = descriptor
 
     def _restore_remembered_data(self) -> None:
-        """부팅 1회 — 기억한 성분으로 데이터를 마운트하고, 실패는 사유를 싣는다.
-
-        **성공은 손으로 마운트한 것과 같은 세션 상태**다(선택 0건·표시순서 기본·필터 재생성)
-        — 같은 진입점(:meth:`load_data_path` / ``_do_load_pool``)을 타기 때문이다. 자동
-        마운트는 사용자가 하던 「파일 다시 고르기」를 대신할 뿐이라 작업 선택·실행 상태는
-        건드리지 않는다(부팅 시점의 그 둘은 어차피 비어 있다).
-
-        **실패에서 기억을 지우지 않는다**: 외장 드라이브·네트워크 경로의 부재는 일시적일 수
-        있고, 지운 기억은 그 드라이브가 돌아와도 되살아나지 않는다. 매 부팅 다시 시도하되
-        사유는 그때마다 문안으로 말한다(조용한 빈 상태 금지).
-        """
-        if self._boot_data_restored:
-            return
-        self._boot_data_restored = True
-        descriptor = self._remembered_data_source
-        if not descriptor or self.data.source_kind:
-            return  # 기억 없음(기존 settings.json) 또는 이미 마운트됨 = 기존 부팅 그대로
-        self._boot_restore_in_progress = True
-        try:
-            refusal = self._mount_remembered_data(descriptor)
-        finally:
-            self._boot_restore_in_progress = False
-        if refusal:
-            self.data.notice_text = refusal
-            self.data.notice_level = "warn"
+        restore_data_session(self, _REMEMBERED_DATA_FAILED)
 
     def _mount_remembered_data(self, descriptor: dict) -> str:
         """기억한 성분으로 마운트 — 성사면 ``""``, 실패면 **사유 문구**(상태는 빈 채).
@@ -1593,11 +1570,21 @@ class JobController:
         if self.work.vm is None:
             self.work.seated_template_application_id = application_id
             return True
-        if restored_job is None or not self.work.can_adopt_seated_identity(
-            self.work.vm.job, restored_job
-        ):
+        if restored_job is None:
             return False
-        self.work.vm.job.authority_id = restored_job.authority_id
+        seated = self.work.vm.job
+        # The first bootstrap has atomically moved this Work's file link to its
+        # app-owned copy. Compare every other seated value before adopting it.
+        if not seated.authority_id and restored_job.authority_id:
+            seated = replace(
+                seated,
+                template_path=restored_job.template_path,
+                template_revision=restored_job.template_revision,
+                previous_rules=restored_job.previous_rules,
+            )
+        if not self.work.can_adopt_seated_identity(seated, restored_job):
+            return False
+        self.work.vm.job = restored_job
         self.work.seated_template_application_id = application_id
         return True
 
@@ -2014,6 +2001,7 @@ class JobController:
         가 진다 — 둘 다 여기서 고정한 ``run_vm``·``run_input`` 만 쓴다(라이브 vm 재참조 금지).
         """
         self.runs.adopt_run_metadata(run)
+        prepare_for_generate(self.execution, self.work.name)
         try:
             observation = self.workbench_observation(
                 run_input=run_input,
@@ -2147,16 +2135,10 @@ class JobController:
         """
         template_change = unsupported_zone()
         if self._template_change is not None:
-            drift = (
-                NO_SOURCE_DRIFT_JUDGMENT
-                if template_missing
-                else self._template_change.source_drift(seat.name)
-            )
             template_change = self._template_change.zone(
                 seat.name,
                 media,
                 template_missing,
-                source_drift=drift,
             )
         slot_configuration = self._slot_configuration_zone(seat.name, template_missing)
         content_presets = self._content_presets_zone(
@@ -2794,42 +2776,12 @@ class JobController:
             active_work_data_bound=not seat.data_unbound,
             record_validation=record_validation,
             delivery=delivery,
-            template_change_verdict=self._template_change_verdict(seat.name),
+            template_change_verdict=None,
             run_delivery_intent=self._effective_run_delivery_intent(
                 self._seat_template_path(seat)
             ),
             context_integrity=context_integrity,
         )
-
-    def _template_change_verdict(self, work_ref: str) -> "str | None":
-        """현재 작업의 템플릿 확인 상태를 읽기 전용으로 투영한다.
-
-        렌더 경로에서 권위를 만들지 않으며 status 판정은 application 함수에 위임한다.
-        """
-        if self._template_change is None or not work_ref:
-            return None
-        try:
-            if load_job(self.registry, work_ref).media != "hwpx":
-                return None
-            preparation = self._template_change.get_current_template_change_preparation(
-                work_ref
-            )
-        except Exception:  # noqa: BLE001 — 조회 실패는 확인 요구가 아니다(context 축 소관).
-            return None
-        status = preparation.get("status") if preparation is not None else None
-        # 드리프트도 같은 요구를 세운다(#932 B5) — 존이 조치가 있을 때만 서게 된 뒤로,
-        # 원본이 갈린 사실을 사용자가 못 본 채 캡처본으로 생성할 창이 생겼다. 판정은 여전히
-        # application 층 한 곳이고 여기는 축을 실어 나르기만 한다.
-        return workbench_template_change_verdict(status, self._source_drift_state(work_ref))
-
-    def _source_drift_state(self, work_ref: str) -> "str | None":
-        """현재 작업의 원본 드리프트 상태 — 읽기 전용(digest 비교뿐, 권위 발급 없음)."""
-        if self._template_change is None or not work_ref:
-            return None
-        try:
-            return self._template_change.source_drift(work_ref).state
-        except Exception:  # noqa: BLE001 — 조회 실패는 요구가 아니다(context 축 소관).
-            return None
 
     def _do_resolve_execution(self, p: dict) -> dict:
         """사용자 요청으로 자동 봉인 경로를 다시 시작한다.

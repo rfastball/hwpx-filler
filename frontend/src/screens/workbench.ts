@@ -6,8 +6,7 @@
 
    **복사할 본문이 화면의 중심이다**(#1148). 이 화면은 필드 연결 표를 들지 않는다 — 연결은
    읽기만 하고, 고치는 일은 머리의 두 문(「연결 편집」→ 편집기 연결 표, 「템플릿 편집」→ 저작
-   작업대)이 화면 밖으로 나가서 한다. 빈 값은 본문 안의 〈빈 값〉 표식과 복사 전 확인이 계속
-   드러낸다.
+   작업대)이 화면 밖으로 나가서 한다. 빈 값은 본문 안의 〈빈 값〉 표식이 계속 드러낸다.
 
    **본문은 그 행 복사본의 임시 편집기다**(#1148 PR B). CodeMirror 편집면(`txt_lintpad.ts` — vendor 를
    아는 유일한 파일)을 빌려 쓰고, 친 글자는 행별로 Python 세션에 맡긴다. 〈빈 값〉·〈비워 둠〉 표지와
@@ -84,18 +83,6 @@ const MARK_CLASS: Record<string, string> = {
 };
 /** 길이 0 표식의 표지 문구 — 빈 값(데이터가 빈 칸)과 비워 둠(일부러 비운 선언)을 가른다. */
 const HOLE_LABEL: Record<string, string> = { blank: "〈빈 값〉", declared: "〈비워 둠〉" };
-
-/** 복사 전 확인이 물을 결손 — 사전확인 응답의 두 목록을 문장으로 옮길 뿐 다시 판정하지 않는다. */
-function copyBlockers(pre: Obj): string[] {
-  const blockers: string[] = [];
-  if (pre.missing_fields && pre.missing_fields.length) {
-    blockers.push(`채우지 못한 항목: ${pre.missing_fields.join(", ")}`);
-  }
-  if (pre.empty_fields && pre.empty_fields.length) {
-    blockers.push(`값이 빈 항목: ${pre.empty_fields.join(", ")}`);
-  }
-  return blockers;
-}
 
 /** Python 표식 → 편집면 표식. 빈 자리에 글자를 치면 그 범위는 값 칠로 바뀐다. */
 export function cardMarks(marks: readonly Obj[] | null | undefined): LintpadMark[] {
@@ -245,16 +232,6 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
     await deps.chain.settle(WB_CHAIN);
     if (!(await flushed)) return;
     const pre = await dispatch(SCREEN, "copy_precheck", {});
-    const blockers = copyBlockers(pre);
-    if (blockers.length) {
-      const accepted = await deps.modal.confirm({
-        title: "이대로 복사할까요?",
-        body: `${blockers.join("\n")}\n\n확정-비움으로 선언한 항목은 여기 세지 않습니다.`,
-        confirmLabel: "그래도 복사",
-        cancelLabel: "돌아가기",
-      });
-      if (!accepted) return;
-    }
     const result = await invoke("copy_clipboard", SCREEN, pre.token) as Obj;
     if (result && result.stale) {
       deps.notify("작업점이 그사이 바뀌어 복사하지 않았습니다. 카드를 확인하고 다시 복사하세요.");

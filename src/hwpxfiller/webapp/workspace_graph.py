@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from .registered_data import registered_data_source
+
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -117,6 +119,7 @@ def build_graph(
     home: "Path | None", push, token: object, *, template_root: TemplateRoot,
     migration_notice: str, tutorial_ctrl: OnboardingController,
     generation_lock: threading.Lock, hwpx_engine,
+    discover_registered_data: bool = True,
 ) -> WorkspaceGraph:
     """한 홈에 결속된 제품 컨트롤러 그래프(#1126) — 사용자 환경과 연습 환경이 같은 조립을 쓴다.
 
@@ -159,6 +162,8 @@ def build_graph(
         clock=datetime.now,
     )
     job_ctrl = JobController(job_registry, push, pool_registry=pool_registry,
+        registered_data=(lambda: registered_data_source(pool_registry))
+        if discover_registered_data and home is None else None,
         clock=datetime.now,
         generation_lock=generation_lock, engine=hwpx_engine,
         text_registry=registry,

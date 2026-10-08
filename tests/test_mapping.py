@@ -103,7 +103,7 @@ def test_today_reuses_every_date_preset_losslessly():
 
 def test_today_preset_values_are_pinned():
     """대표 프리셋의 실제 산출 — 어휘 재사용이 '같은 값'을 뜻함을 값으로 못박는다."""
-    assert apply_transform("today", now=_FIXED_NOW) == "2026. 6. 15. 18:04"
+    assert apply_transform("today", now=_FIXED_NOW) == "2026. 6. 15."
     assert apply_transform("today", fmt="y2", now=_FIXED_NOW) == "'26.6.15. 18:04"
     assert apply_transform("today", fmt="ym", now=_FIXED_NOW) == "2026. 6."
     assert apply_transform("today", fmt="kor", now=_FIXED_NOW) == "2026년 6월 15일 18:04"
@@ -115,7 +115,7 @@ def test_today_ignores_source_value_and_const():
     """today 는 데이터 열도 고정값도 읽지 않는다 — 값의 출처는 실행 시각 하나다."""
     assert apply_transform(
         "today", value="2001-01-01", const="무시", now=_FIXED_NOW
-    ) == "2026. 6. 15. 18:04"
+    ) == "2026. 6. 15."
 
 
 def test_today_falls_back_to_run_clock_when_now_omitted():

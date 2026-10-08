@@ -291,7 +291,7 @@ def test_full_new_job_flow_today_system_token(tmp_path):
     # 소스도 상수도 없는데 내용이 있다 — 이 한 줄이 blank 강등(값 소실)의 회귀 심이다.
     assert row["source"] == "" and row["const"] == ""
     assert row["has_content"] is True
-    assert row["preview"] == "2026. 8. 11. 12:34"      # clock 기준 기본 서식
+    assert row["preview"] == "2026. 8. 11."      # clock 기준 기본 서식
 
     # 표시형만 갈아도 유형은 그 행의 것을 그대로 싣는다 — 한 쌍이 함께 간다(리뷰 1).
     ctrl.dispatch("set_display", {"index": 0, "type": "today", "fmt": "%Y-%m-%d"})

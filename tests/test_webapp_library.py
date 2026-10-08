@@ -453,6 +453,29 @@ def test_detail_of_an_unbound_job_states_the_gap_instead_of_a_blank(tmp_path):
     assert d["data_bound"] is False and d["data_label"] == "" and d["data_path"] == ""
 
 
+def test_detail_offers_authoring_only_for_current_applied_asset(tmp_path, monkeypatch):
+    from hwpxfiller.webapp import screen_library
+
+    root = tmp_path / "authority"
+    applied = root / "applied" / "work" / "template.hwpx"
+    applied.parent.mkdir(parents=True)
+    applied.write_bytes(b"broken but owned")
+    external = tmp_path / "original.hwpx"
+    external.write_bytes(b"external")
+    monkeypatch.setattr(screen_library, "default_template_authority_dir", lambda: root)
+    registry = _reg(tmp_path)
+    registry.save(Job(name="applied", template_path=str(applied), authority_id="work"))
+    registry.save(Job(name="external", template_path=str(external), authority_id="work"))
+    ctrl, _ = _controller(tmp_path, registry=registry)
+    ctrl.dispatch("select_work", {"name": "applied"})
+    assert ctrl.snapshot()["detail"]["template_edit_path"] == str(applied)
+    ctrl.dispatch("select_work", {"name": "external"})
+    assert ctrl.snapshot()["detail"]["template_edit_path"] == ""
+    applied.unlink()
+    ctrl.dispatch("select_work", {"name": "applied"})
+    assert ctrl.snapshot()["detail"]["template_edit_path"] == ""
+
+
 def test_detail_carries_every_health_cause_and_never_the_old_binding_chain(tmp_path):
     """§19.7 "상세에서 모든 실제 원인" + 옛 `detail.bindings` 사슬은 되살아나지 않는다.
 

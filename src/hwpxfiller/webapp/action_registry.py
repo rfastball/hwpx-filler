@@ -314,6 +314,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     # (screen_pool.confirm_basis) — 확정은 그 지문과 지금 상태를 대조해야 하고, 미동봉이면
     # fail-closed 거절이다(고지 없는 삭제·덮어쓰기 봉쇄). 넷이 기제 하나를 공유한다.
     "pool": {
+        "reorder_sheets": _schema("key sheets"),
         "refresh": _schema(),
         # 읽기 전용 검토 → **항목 상세 투영**(고르기 열 공용 ④). `tpl/review` 의 거울이고
         # 좌표만 다르다(경로 ↔ 슬롯 키) — 시트 골격이 하나이므로 그것을 채우는 왕복도
