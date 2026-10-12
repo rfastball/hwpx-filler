@@ -20,8 +20,11 @@ export async function probePclmRegistration(ctx, {
     () => () => Promise.resolve({ contract_list: true, path: "C:/d/pclm.db" }));
   try {
     byId(ctx, "dataPickerBrowse").click();
-    /* 대기는 고정 시간이 아니라 폼이 서고 그 자리의 시트가 나열될 때까지다(호출자의 inspect 대역). */
-    for (let i = 0; i < 300 && sheetList().length === 0; i += 1) await ctx.sleep(10);
+    /* 앞선 수정 폼도 3행이다. 새 미선택 폼의 실제 시트가 설 때까지 기다린다. */
+    await ctx.waitFor(() => !byId(ctx, "poolRegDb").readOnly
+      && sheetList().map((input) => textOf(input.nextElementSibling)).join("|")
+        === "v_통합_v2|v_접수_v1|계약",
+    { what: "계약 목록 신규 등록 시트", timeoutMs: 3000 });
   } finally {
     pick.restore();
   }
