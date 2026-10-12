@@ -329,7 +329,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # `db` 는 필수다 — 다른 프로그램의 설치 자리를 추측하던 기본 자리는 걷혔고, 빈 값은
         # `resolve_pclm_db` 가 거절한다. `view` 도 필수다 — 뷰는 사용자가 고르는
         # 확정이지 기본값으로 추측할 것이 아니다(ADR N).
-        "register_pclm": _schema("name db view", "views note confirm basis"),
+        "register_pclm": _schema("name db view", "views note confirm basis key"),
         # 다시 연결(#67) — 같은 슬롯의 참조 교체(수명 보존). 확인 라운드트립.
         "relink": _schema("key path", "sheet sheets note name confirm basis"),
         # 구판(이름=키) 마이그레이션의 병합 확정 — 남길 슬롯 1건, 확인 라운드트립.

@@ -215,6 +215,65 @@ def test_registered_data_boot_keeps_remembered_mount_and_reports_discovery_failu
     assert calls == [True]
 
 
+def test_registered_pclm_defaults_preserve_existing_order(tmp_path, monkeypatch):
+    from contextlib import closing
+    from hwpxfiller.data.pclm import PclmDataSource
+    from hwpxfiller.webapp import registered_data
+    from test_webapp_pool import _controller
+
+    ctrl, registry, _ = _controller(tmp_path)
+    path = tmp_path / "계약자료.pclm"
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute("CREATE TABLE pclm_file(singleton INTEGER, role TEXT, dataset_id TEXT)")
+        conn.execute("INSERT INTO pclm_file VALUES(1, 'work', 'source-id')")
+        for name in ("통합", "접수", "공고", "계약"):
+            conn.execute(f'CREATE VIEW "v_{name}" AS SELECT 1 AS 항목')
+    monkeypatch.setattr(registered_data, "registered_workfile", lambda: (str(path), "source-id"))
+    descriptor = registered_data.registered_data_source(registry)
+    key = descriptor["pool_key"]
+    assert registry.load(key).opts["sheets"] == ["v_통합", "v_접수", "v_공고", "v_계약"]
+    registry.set_filters(key, [{"name": "통합 필터", "state": {}}], sheet="v_통합")
+    registry.set_filters(key, [{"name": "계약 필터", "state": {}}], sheet="v_계약")
+    custom = ["v_계약", "v_공고", "v_접수", "v_통합"]
+    ctrl.dispatch("reorder_sheets", {"key": key, "sheets": custom})
+    assert registered_data.registered_data_source(registry) == descriptor
+    assert registry.load(key).opts["sheets"] == custom
+    with closing(sqlite3.connect(path)) as conn, conn:
+        conn.execute('CREATE VIEW "u_사용자계약" AS SELECT 2 AS 항목')
+    assert PclmDataSource(path, view="u_사용자계약").records() == [{"항목": "2"}]
+    inspected = ctrl.dispatch("inspect_sheets", {"kind": "pclm", "path": str(path)})
+    assert "u_사용자계약" in [sheet["name"] for sheet in inspected["sheets"]]
+    assert ctrl.dispatch("review", {"key": key})["ok"]
+    assert ctrl.snapshot()["detail"]["sheet_title"] == ", ".join(custom)
+    chosen = [*custom, "u_사용자계약"]
+    payload = {"key": key, "name": "계약 목록", "db": str(path), "view": "v_통합", "views": chosen}
+    first = ctrl.dispatch("register_pclm", payload)
+    assert first["needs_confirm"]
+    assert ctrl.dispatch("register_pclm", {**payload, "confirm": True, "basis": first["basis"]})["ok"]
+    saved = registry.load(key)
+    assert saved.opts["sheets"] == chosen and saved.opts["view"] == "v_통합"
+    assert [preset["name"] for preset in saved.filters] == ["통합 필터"]
+    assert [preset["name"] for preset in saved.sheet_filters["v_계약"]] == ["계약 필터"]
+    assert ctrl.snapshot()["detail"]["sheet_title"] == ", ".join(chosen)
+    assert len(registry.list_items()) == 1
+    refused = ctrl.dispatch("register_pclm", {**payload, "view": "u_사용자계약"})
+    assert not refused["ok"], refused
+    assert registry.load(key).opts["sheets"] == chosen
+    registry.archive(key)
+    assert registered_data.registered_data_source(registry) is None
+    assert len(registry.list_items()) == 1
+    monkeypatch.setattr(registered_data, "registered_workfile", lambda: (str(path), "wrong-id"))
+    with pytest.raises(ValueError, match="pclm"):
+        registered_data.registered_data_source(registry)
+    monkeypatch.setattr(registered_data, "registered_workfile", lambda: (str(path), "source-id"))
+    for mutation in ("UPDATE pclm_file SET role = 'submission'",
+                     "UPDATE pclm_file SET role = 'work'; DROP VIEW v_계약"):
+        with closing(sqlite3.connect(path)) as conn, conn:
+            conn.executescript(mutation)
+        with pytest.raises(ValueError, match="pclm"):
+            registered_data.registered_data_source(registry)
+
+
 def test_sheet_reordering_persists_without_changing_binding_or_filters(tmp_path):
     from hwpxfiller.domain.dataset_reference import reference_sheets
     from hwpxfiller.webapp.screens import registered_sheet_tabs

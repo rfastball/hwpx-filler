@@ -162,13 +162,13 @@ _STATE_ACTIONS = {
 }
 
 
-#: 참조 교체(#67) — **상태가 아니라 종류**가 가르는 관리 동사라 상태표 밖에 선다. 엑셀
-#: 참조만 새 파일로 갈아 끼울 수 있고(계약 목록·나라·조립은 그 동사가 없다), 그래서
-#: :data:`_STATE_ACTIONS` 의 「상태 → 액션」 축으로는 표현되지 않는다.
+#: 참조 수정 동사는 상태와 무관하게 종류가 가르므로 상태표 밖에 둔다.
+#: 엑셀은 파일을 다시 연결하고 계약 목록은 사용할 시트를 다시 고른다.
 RELINK_ACTION = PoolAction("relink", "다시 연결…")
 
-#: ``relink`` 를 가질 수 있는 참조 종류 — 대상이 「사람이 고를 파일 하나」인 것뿐이다.
-_RELINKABLE_KINDS = ("excel",)
+#: 나라·조립에는 참조 수정 동사가 없다.
+_REFERENCE_ACTIONS = {"excel": RELINK_ACTION,
+                      "pclm": PoolAction("register_pclm", "사용할 시트 수정…")}
 
 
 def available_actions(status: str) -> "list[PoolAction]":
@@ -283,9 +283,8 @@ class DatasetPoolRow:
         ``delete``) — 표면이 키→액션 표를 따로 들면 그 표가 늙는다.
         """
         gated = available_actions(self.status)
-        if self.kind in _RELINKABLE_KINDS:
-            return [RELINK_ACTION, *gated]
-        return gated
+        action = _REFERENCE_ACTIONS.get(self.kind)
+        return [action, *gated] if action is not None else gated
 
     @property
     def missing(self) -> bool:

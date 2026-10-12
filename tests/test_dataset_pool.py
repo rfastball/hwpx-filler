@@ -680,7 +680,7 @@ def test_old_store_file_without_filters_loads_and_saves_unchanged(tmp_path):
 
 
 @pytest.mark.parametrize("kind,path_key,sheet_key", [("excel", "path", "sheet"), ("pclm", "db", "view")])
-def test_declared_sheets_keep_filters_separate_across_reload_and_default_change(
+def test_declared_sheets_keep_filters_separate_across_reload_and_default_rules(
     tmp_path, kind, path_key, sheet_key,
 ):
     from hwpxfiller.application.dataset_pool import bound_state, confirm_basis, StaleConfirmError
@@ -710,8 +710,10 @@ def test_declared_sheets_keep_filters_separate_across_reload_and_default_change(
     _, changed = reg.relabel_confirmed_raw(
         ident, "월별 자료", sheets=["2월", "1월"], expected_basis=basis,
     )
-    assert changed.filters == [february]
+    assert changed.opts[sheet_key] == ("1월" if kind == "pclm" else "2월")
+    assert changed.filters == ([_SMALL] if kind == "pclm" else [february])
     assert filters_for_sheet(changed, "1월") == [_SMALL]
+    assert filters_for_sheet(changed, "2월") == [february]
     with pytest.raises(StaleConfirmError):
         reg.relabel_confirmed_raw(
             ident, "덮어쓰기", sheets=["2월"], expected_basis=basis,

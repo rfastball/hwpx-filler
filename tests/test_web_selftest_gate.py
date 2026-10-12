@@ -459,7 +459,10 @@ class TestWebSelftestGate:
         # 종류가 달라도 목록에서 그냥 쓸 수 있다(끊김·보관이 아니면 비활성 사유가 없다).
         assert probe["pclm_row_usable"] is True, probe
         # 「다시 연결」은 경로+시트 좌표의 엑셀 전용 동사 — pclm 행에 서면 거짓 어포던스다.
-        assert probe["pclm_no_relink"] is True, probe
+        assert all(probe[key] is True for key in (
+            "pclm_no_relink", "pclm_sheet_edit_reachable", "pclm_edit_db_locked",
+            "pclm_edit_custom_visible", "pclm_edit_default_locked",
+        )), probe
         assert probe["pclm_entry_gone"] is True, probe
         # 조회된 시트 3개는 미선택이며 사용자가 여러 시트를 선언할 수 있다.
         assert probe["pclm_reg_view_options"] == 3, probe

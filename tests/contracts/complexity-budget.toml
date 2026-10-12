@@ -150,19 +150,13 @@ function_complexity = { value = 38, override = "#1121", reason = "authoring.ts 1
 function_complexity = 12
 
 [budget."frontend/src/screens/data_picker.ts"]
-module_statements = 327
-
-[budget."frontend/src/screens/data_picker.ts::PoolRegistrationDialog"]
-function_complexity = 22
+module_statements = 323
 
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.inspectRegSheets"]
-function_complexity = 20
-
-[budget."frontend/src/screens/data_picker.ts::createDataPickerController.openRegDialog"]
 function_complexity = 16
 
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.submitReg"]
-function_complexity = 33
+function_complexity = 29
 
 [budget."frontend/src/screens/data_zone.ts"]
 module_statements = 696
@@ -574,7 +568,7 @@ function_complexity = 25
 function_complexity = 20
 
 [budget."src/hwpxfiller/application/dataset_pool.py"]
-module_statements = 307
+module_statements = 306
 
 [budget."src/hwpxfiller/application/dataset_pool.py::DatasetPoolViewModel"]
 class_methods = 30
@@ -1284,8 +1278,7 @@ class_methods = 25
 function_complexity = 27
 
 [budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_register_pclm"]
-function_complexity = 38
-function_statements = 55
+function_complexity = 31
 
 [budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_relink"]
 function_complexity = 19

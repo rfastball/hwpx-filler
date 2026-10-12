@@ -401,7 +401,8 @@ class DatasetPoolRegistry:
             _check_basis(expected_basis, [bound_state(key, existing)])
             if sheets is not None:
                 sheet_key = "sheet" if existing.kind == "excel" else "view"
-                opts = {**existing.opts, "sheets": list(sheets), sheet_key: sheets[0] if sheets else ""}
+                default = existing.opts[sheet_key] if existing.kind == "pclm" else sheets[0] if sheets else ""
+                opts = {**existing.opts, "sheets": list(sheets), sheet_key: default}
                 DatasetReference(name=name, kind=existing.kind, opts=opts)
 
                 def _update(current: DatasetReference) -> None:

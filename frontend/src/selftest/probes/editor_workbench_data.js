@@ -2791,9 +2791,10 @@ export function createEditorWorkbenchDataProbes() {
             key: "k3", name: "계약 목록", sub: "DB: pclm.db · 시트 통합", reason: "",
             warns: [], badge_label: "활성", badge_level: "ok", icon: "pclm",
             selectable: true, path: "C:/d/pclm.db",
-            actions: [{ key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
+            actions: [{ key: "register_pclm", label: "사용할 시트 수정…" },
+              { key: "archive", label: "보관" }, { key: "delete", label: "삭제" }],
           };
-          ctx.push("pool", {
+          const poolSnapshot = {
             /* 목록이 읽는 것은 이 존 하나다(고르기 열 공용) — 통지(손상 격리·중복 등록)도
                여기 실린다. 옛 목록 키(`rows`·`count`·`empty`·`corrupted`·`duplicates`·
                최상위 `result`)는 소비자 0 으로 퇴역했다(슬라이스 ⑤). */
@@ -2824,7 +2825,8 @@ export function createEditorWorkbenchDataProbes() {
               empty_hint: "", count_label: "3개", result: { text: "", level: "muted" },
             },
             detail: null,
-          });
+          };
+          ctx.push("pool", poolSnapshot);
           await ctx.sleep(0);                      // pool external-store → portal DOM 커밋
           const host = byId(ctx, "dataPickerPinned");
           /* 목록은 공용 고르기 열이다(③b) — 카드가 아니라 `.pitem` 행이고, 「지금 쓰는
@@ -2865,8 +2867,10 @@ export function createEditorWorkbenchDataProbes() {
           /* 계약 목록 행(#937) — 종류가 달라도 목록에서 그냥 쓸 수 있고, 엑셀 전용 동사인
              「다시 연결」(경로+시트 좌표)은 그 행에 서지 않는다. */
           const k3Menu = await rowMenu("k3");
-          out.pclm_row_usable = !!pitem("k3") && !pitem("k3").hasAttribute("aria-disabled");
-          out.pclm_no_relink = k3Menu.join("|").indexOf("다시 연결") < 0;
+          Object.assign(out, {
+            pclm_row_usable: !!pitem("k3") && !pitem("k3").hasAttribute("aria-disabled"),
+            pclm_no_relink: k3Menu.join("|").indexOf("다시 연결") < 0,
+          });
           /* 행이 슬롯 키를 겨눈다(§5.3 — 이름은 라벨). 키 없는 행은 남의 항목을 겨눈다. */
           out.use_targets_key = host.querySelectorAll(".pitem")[1].dataset.key === "k1";
           /* 손상 격리·중복 등록은 목록 **안**의 존 통지다(문안·수치는 Python). 병합 대상은
@@ -2890,7 +2894,9 @@ export function createEditorWorkbenchDataProbes() {
             && pinSheets.querySelectorAll(".pool-reg-sheet-list input").length === 2;
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
-          Object.assign(out, await probePclmRegistration(ctx, { byId, textOf, stubBridgeInvoke }));
+          Object.assign(out, await probePclmRegistration(ctx, {
+            byId, textOf, stubBridgeInvoke, stubBridgeCall, poolSnapshot, Modal,
+          }));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
           const pickStub = stubBridgeInvoke(
