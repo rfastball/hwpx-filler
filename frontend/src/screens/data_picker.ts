@@ -9,9 +9,9 @@ import { ContextMenu, createContextMenu } from "./context_menu.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { invokePathAction } from "./path_actions.ts";
 import {
-  inspectedRegistrationSheets, selectedRegistrationSheets, registrationSheetError,
-  registrationSubmitDisabled,
+  inspectedRegistrationSheets, newRegistrationState, selectedRegistrationSheets, registrationSheetError,
 } from "./registration_sheets.ts";
+import type { RegState } from "./registration_sheets.ts";
 import { pickDataFile } from "./data_file_pick.ts";
 import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
@@ -83,29 +83,6 @@ type PickerState = {
   detailOpen: boolean;
   /** 그 시트 안에 서는 실패 재진술(`#poolDetailMsg`). */
   detailMessage: string;
-};
-
-/* 등록면은 종류를 **명시로** 든다(#937). `mode` 가 없으면 표면이 어느 좌표를 물어야 할지를
-   path 유무 같은 모양으로 되추측하게 되고, 그러면 같은 판정이 두 곳에 산다. 엑셀은
-   경로+시트, 계약 목록은 DB+뷰 — 좌표가 다를 뿐 확인 왕복(needs_confirm/basis)은 한 벌이다. */
-type RegState = {
-  title: string;
-  okLabel: string;
-  mode: "excel" | "pclm";
-  name: string;
-  path: string;
-  sheet: string;
-  sheets: string[];
-  availableSheets: { name: string }[];
-  inspectedPath: string;
-  inspecting: boolean;
-  submitting: boolean;
-  db: string;
-  view: string;
-  note: string;
-  targetKey: string;
-  pinMode: boolean;
-  error: string;
 };
 
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
@@ -229,23 +206,7 @@ export function createDataPickerController(args: {
 
   function openRegDialog(options: Partial<RegState>): void {
     regRevision++;
-    const initialSheet = options.mode === "pclm" ? options.view : options.sheet;
-    reg = {
-      title: options.title || "데이터 등록",
-      okLabel: options.okLabel || "등록",
-      mode: options.mode || "excel",
-      name: options.name || "",
-      path: options.path || "",
-      sheet: options.sheet || "",
-      sheets: options.sheets ?? (initialSheet?.trim() ? [initialSheet.trim()] : []),
-      availableSheets: [], inspectedPath: "", inspecting: false, submitting: false,
-      db: options.db || "",
-      view: options.view || "",
-      note: options.note || "",
-      targetKey: options.targetKey || "",
-      pinMode: !!options.pinMode,
-      error: "",
-    };
+    reg = newRegistrationState(options);
     emitReg();
     /* 첫 빈 좌표에 선다 — 엑셀은 파일 경로, 고정(pin)과 계약 목록은 이름(계약 목록의 DB 자리는
        파일 고르기가 이미 채웠다). */
@@ -305,6 +266,17 @@ export function createDataPickerController(args: {
     openRegDialog({ title: "계약 목록 등록", okLabel: "등록", mode: "pclm", db, view: "" });
   }
 
+  async function confirmedRegistration(
+    action: string, payload: Obj, okLabel: string, revision: number, result: Obj,
+  ): Promise<Obj | null> {
+    if (!result.needs_confirm) return result;
+    const accepted = await modal.confirm({
+      body: result.confirm_text, confirmLabel: okLabel, cancelLabel: "취소", danger: true,
+    });
+    if (!accepted || reg === null || regRevision !== revision) return null;
+    return dispatch("pool", action, { ...payload, confirm: true, basis: result.basis });
+  }
+
   async function submitReg(): Promise<void> {
     if (reg === null || reg.submitting) return;
     const pclm = reg.mode === "pclm";
@@ -325,28 +297,29 @@ export function createDataPickerController(args: {
     const sheetError = registrationSheetError(reg);
     if (sheetError) { patchReg({ error: sheetError }); return; }
     const revision = regRevision;
-    const okLabel = reg.okLabel;
     patchReg({ submitting: true });
     try {
-      let result = await dispatch("pool", action, payload);
+      const initial = await dispatch("pool", action, payload);
       if (reg === null || regRevision !== revision) return;
-      if (result.needs_confirm) {
-        const accepted = await modal.confirm({
-          body: result.confirm_text, confirmLabel: okLabel, cancelLabel: "취소", danger: true,
-        });
-        if (!accepted || reg === null || regRevision !== revision) return;
-        result = await dispatch("pool", action, { ...payload, confirm: true, basis: result.basis });
-      }
-      if (reg === null || regRevision !== revision) return;
+      const result = await confirmedRegistration(action, payload, reg.okLabel, revision, initial);
+      if (result === null || reg === null || regRevision !== revision) return;
       if (result.ok === false) { patchReg({ error: result.error || "등록하지 못했습니다." }); return; }
+      const refreshScreen = pclm && reg.targetKey ? reg.refreshScreen : "";
       modal.close("poolRegModal");
       reg = null;
       emitReg();
+      await refreshRegisteredTabs(refreshScreen);
     } catch (error) {
       if (regRevision === revision) patchReg({ error: String((error as Obj)?.message || error) });
     } finally {
       if (regRevision === revision) patchReg({ submitting: false });
     }
+  }
+
+  async function refreshRegisteredTabs(screen: RegState["refreshScreen"]): Promise<void> {
+    if (!screen) return;
+    try { await args.runtime.refresh(screen); }
+    catch (error) { notify(String((error as Obj)?.message || error)); }
   }
 
   /* 동사 한 벌은 **고르기 화면과 공유**한다(U6-B #976 · 공용 ⑤ 리뷰) — 같은 `pool` 채널,
@@ -363,7 +336,11 @@ export function createDataPickerController(args: {
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, sheets: row.sheets, note: row.note,
     }),
-    openPclmSheets: (row: Obj) => openRegDialog(pclmSheetEditOptions(row)),
+    openPclmSheets: (row: Obj) => {
+      const owner = state.session?.screen;
+      openRegDialog({ ...pclmSheetEditOptions(row),
+        refreshScreen: owner === "job" || owner === "editor" ? owner : "" });
+    },
     poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
     reveal: (path: string) => invokePathAction({
       client, path, action: "reveal", notify,
@@ -659,64 +636,4 @@ export function DataPickerDialog(props: { controller: DataPickerController }): R
     }));
 }
 
-export function PoolRegistrationDialog(props: { controller: DataPickerController }): ReactNode {
-  const { controller } = props;
-  const state = useSyncExternalStore(
-    controller.regModel.subscribe, controller.regModel.getSnapshot,
-    controller.regModel.getSnapshot);
-  const value = state || {
-    title: "데이터 등록", okLabel: "등록", mode: "excel", name: "", path: "", sheet: "",
-    sheets: [], availableSheets: [], inspectedPath: "", inspecting: false, submitting: false,
-    db: "", view: "", note: "", targetKey: "", pinMode: false, error: "",
-  };
-  const pclm = value.mode === "pclm";
-  return h("div", { className: "modal-card pool-registration", "aria-busy": value.inspecting || value.submitting },
-    h("h3", { id: "poolRegTitle" }, value.title),
-    h("div", { className: "pool-registration-body" },
-    pclm ? null : h("label", { className: "ctl" }, h("span", { className: "lbl" }, "파일 경로(.xlsx/.csv)"),
-      h("span", { className: "row" }, h("input", { className: "field mono spacer", id: "poolRegPath", type: "text",
-        value: value.path, readOnly: value.pinMode, disabled: value.submitting,
-        onBlur: () => { void controller.inspectRegSheets(); },
-        onChange: (event: Obj) => controller.patchReg({ path: event.currentTarget.value }) }),
-      h("button", { className: "btn", id: "poolRegBrowse", type: "button", hidden: value.pinMode,
-        disabled: value.submitting,
-        onClick: () => { void controller.browseRegPath(); } }, "찾아보기…"))),
-    pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "DB 자리"),
-      h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db,
-        readOnly: !!value.targetKey, disabled: value.submitting,
-        onBlur: () => { void controller.inspectRegSheets(); },
-        onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
-    h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
-      h("input", { className: "field", id: "poolRegName", type: "text", value: value.name, disabled: value.submitting,
-        placeholder: "예: 7월 공고목록", onChange: (event: Obj) => controller.patchReg({ name: event.currentTarget.value }) })),
-    !pclm && value.inspectedPath && value.availableSheets.length === 0 ? null : h("fieldset", {
-      className: "pool-reg-sheets", id: pclm ? "poolRegView" : "poolRegSheet", disabled: value.inspecting || value.submitting,
-    }, h("legend", { className: "lbl" }, "사용할 시트"),
-    value.availableSheets.length > 0 ? h("div", { className: "pool-reg-sheet-head" },
-      h("label", { className: "pool-reg-sheet pool-reg-sheet-all" },
-      h("input", { type: "checkbox", checked: value.sheets.length === value.availableSheets.length,
-        ref: (input: HTMLInputElement | null) => {
-          if (input) input.indeterminate = value.sheets.length > 0 && value.sheets.length < value.availableSheets.length;
-        },
-        onChange: (event: Obj) => controller.selectRegSheets(event.currentTarget.checked ? value.availableSheets.map((sheet) => sheet.name) : []) }),
-      h("span", null, "전체 선택")),
-      h("span", { className: "pool-reg-sheet-count" }, `${value.sheets.length}개 시트 선택`)) : null,
-    h("div", { className: "pool-reg-sheet-list" },
-      ...value.availableSheets.map((sheet) => h("label", { className: "pool-reg-sheet", key: sheet.name },
-        h("input", { type: "checkbox", checked: value.sheets.includes(sheet.name),
-          disabled: pclm && !!value.targetKey && sheet.name === value.view,
-          onChange: (event: Obj) => controller.selectRegSheets(event.currentTarget.checked
-            ? [...value.sheets, sheet.name] : value.sheets.filter((name) => name !== sheet.name)) }),
-        h("span", null, sheet.name)))),
-    value.inspecting ? h("p", { className: "capnote", role: "status" }, "읽는 중…") : null,
-    value.sheets.length === 0 && !value.inspecting ? h("p", { className: "capnote" }, "읽을 시트를 고르세요.") : null),
-    h("label", { className: "ctl" }, h("span", { className: "lbl" }, "메모(선택)"),
-      h("input", { className: "field", id: "poolRegNote", type: "text", value: value.note, disabled: value.submitting,
-        onChange: (event: Obj) => controller.patchReg({ note: event.currentTarget.value }) })),
-    h("p", { className: "note dangerbox", role: "alert", style: { display: value.error ? "" : "none" } }, value.error)),
-    h("div", { className: "modal-actions" },
-      h("button", { className: "btn", id: "poolRegCancel", onClick: controller.closeReg }, "취소"),
-      h("button", { className: "btn primary", id: "poolRegOk",
-        disabled: registrationSubmitDisabled(value),
-        onClick: () => { void controller.submitReg(); } }, value.okLabel)));
-}
+export { PoolRegistrationDialog } from "./registration_dialog.ts";

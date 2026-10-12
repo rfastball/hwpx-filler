@@ -1862,35 +1862,37 @@ test("우 열 「자세히…」는 상세 시트 포트로 위임한다(시트�
     "위임한 화면이 검토 왕복까지 스스로 냈습니다");
 });
 
-test("우 열 「다시 연결」 프리필은 `pool/review` 가 낸 상세를 읽는다(옛 목록 소비 0)", async () => {
-  const detail = {
-    key: "d2", name: "지난목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
-    badge_label: "활성", badge_level: "ok", path: "C:/d/지난목록.xlsx", sheet: "물품",
-    sheet_title: "물품", header_row: 2, note: "지난 분기", facts: [], column_count: 0,
-    column_summary: "열 목록을 읽지 못했습니다", columns: [],
-    actions: [{ key: "relink", label: "다시 연결…" }], error: "파일이 없습니다",
-  };
-  const h = harness({
-    initial: async () => snap({ pairing: pairing() }),
-    tpl: tplSnap(),
-    /* 옛 목록(`rows`)에는 **다른 값**을 심는다: 프리필이 그쪽을 곁눈질하면 여기서 갈린다. */
-    pool: poolSnap(DAT_ROWS, { detail }),
-    call: async () => ({}),
-  });
-  await h.controller.init();
-
-  h.controller.toggleLibMenu("dat", "excel", "d2", {});
-  await h.controller.handleLibMenu("act:relink");
-
-  assert.deepEqual(
-    h.trace.filter((row) => row[0] === "dispatch" && row[1] === "pool")
-      .map((row) => [row[2], row[3]]),
-    [["review", { key: "d2" }]],
-    "다시 연결 앞에 검토 왕복이 서지 않았습니다");
-  assert.deepEqual(h.trace.filter((row) => row[0] === "poolReg.open").map((row) => row[1]), [{
-    title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: "d2",
-    name: "지난목록", path: "C:/d/지난목록.xlsx", sheet: "물품", note: "지난 분기",
-  }]);
+test("우 열 재연결·시트 수정 폼은 `pool/review` 상세를 읽고 소유 화면을 전달한다", async () => {
+  for (const [kind, action, detail, expected] of [
+    ["excel", "relink", {
+      key: "d2", name: "지난목록", kind: "excel", kind_label: "엑셀/CSV", status: "active",
+      badge_label: "활성", badge_level: "ok", path: "C:/d/지난목록.xlsx", sheet: "물품",
+      sheet_title: "물품", header_row: 2, note: "지난 분기", facts: [], column_count: 0,
+      column_summary: "열 목록을 읽지 못했습니다", columns: [],
+      actions: [{ key: "relink", label: "다시 연결…" }], error: "파일이 없습니다",
+    }, {
+      title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: "d2",
+      name: "지난목록", path: "C:/d/지난목록.xlsx", sheet: "물품", note: "지난 분기",
+    }],
+    ["pclm", "register_pclm", {
+      key: "d2", name: "계약 목록", kind: "pclm", path: "C:/d/work.pclm",
+      sheet: "v_통합", sheets: ["v_계약", "v_통합"], note: "",
+      actions: [{ key: "register_pclm", label: "사용할 시트 수정…" }],
+    }, {
+      title: "사용할 시트 수정", okLabel: "등록", mode: "pclm", targetKey: "d2",
+      name: "계약 목록", db: "C:/d/work.pclm", view: "v_통합",
+      sheets: ["v_계약", "v_통합"], note: "", refreshScreen: "editor",
+    }],
+  ]) {
+    const h = harness({ initial: async () => snap({ pairing: pairing() }),
+      tpl: tplSnap(), pool: poolSnap(DAT_ROWS, { detail }), call: async () => ({}) });
+    await h.controller.init();
+    h.controller.toggleLibMenu("dat", kind, "d2", {});
+    await h.controller.handleLibMenu(`act:${action}`);
+    assert.deepEqual(h.trace.filter((row) => row[0] === "dispatch" && row[1] === "pool")
+      .map((row) => [row[2], row[3]]), [["review", { key: "d2" }]]);
+    assert.deepEqual(h.trace.filter((row) => row[0] === "poolReg.open").map((row) => row[1]), [expected]);
+  }
 });
 
 test("상세가 다른 항목을 가리키면 다시 연결 폼을 열지 않는다(겨눔 어긋남은 시끄럽게)", async () => {

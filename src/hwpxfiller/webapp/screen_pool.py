@@ -513,8 +513,10 @@ class PoolController:
             msg = f"등록 데이터 저장에 실패했습니다: {exc}"
             self._set_result(msg, "danger")
             return {"ok": False, "error": msg}
-        verb = "갱신" if same is not None else "추가"
-        self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} ({display_reference(item)})")
+        self._set_result(
+            f"등록 데이터를 {'갱신' if same is not None else '추가'}했습니다: "
+            f"{item.name} ({display_reference(item)})"
+        )
         return {"ok": True, "name": item.name}
 
     def _do_register_pclm(self, p: dict) -> dict:
@@ -589,6 +591,7 @@ class PoolController:
                     item = self.vm.relabel_confirmed_raw(
                         ident, name, note=note, sheets=selected_sheets, basis=p.get("basis")
                     )
+                    self._reproject_detail(key)
                 except StaleConfirmError:
                     self.vm.refresh()
                     return self._stale_basis_result()

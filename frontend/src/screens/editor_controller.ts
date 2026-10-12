@@ -1119,7 +1119,9 @@ export function createEditorController(deps: EditorControllerDeps) {
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, note: row.note,
     }),
-    openPclmSheets: (row: Obj) => deps.poolRegistration.openRegDialog(pclmSheetEditOptions(row)),
+    openPclmSheets: (row: Obj) => deps.poolRegistration.openRegDialog({
+      ...pclmSheetEditOptions(row), refreshScreen: "editor",
+    }),
     poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
     reveal: (path: string) => invokePathAction({
       client: deps.client, path, action: "reveal", notify: deps.notify,

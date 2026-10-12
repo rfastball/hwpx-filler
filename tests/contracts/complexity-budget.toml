@@ -152,17 +152,11 @@ function_complexity = 12
 [budget."frontend/src/screens/data_picker.ts"]
 module_statements = 323
 
-[budget."frontend/src/screens/data_picker.ts::PoolRegistrationDialog"]
-function_complexity = 17
-
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.inspectRegSheets"]
 function_complexity = 16
 
-[budget."frontend/src/screens/data_picker.ts::createDataPickerController.openRegDialog"]
-function_complexity = 16
-
 [budget."frontend/src/screens/data_picker.ts::createDataPickerController.submitReg"]
-function_complexity = 30
+function_complexity = 29
 
 [budget."frontend/src/screens/data_zone.ts"]
 module_statements = 696

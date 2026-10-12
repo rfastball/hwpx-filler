@@ -232,6 +232,8 @@ def test_registered_pclm_defaults_preserve_existing_order(tmp_path, monkeypatch)
     descriptor = registered_data.registered_data_source(registry)
     key = descriptor["pool_key"]
     assert registry.load(key).opts["sheets"] == ["v_통합", "v_접수", "v_공고", "v_계약"]
+    registry.set_filters(key, [{"name": "통합 필터", "state": {}}], sheet="v_통합")
+    registry.set_filters(key, [{"name": "계약 필터", "state": {}}], sheet="v_계약")
     custom = ["v_계약", "v_공고", "v_접수", "v_통합"]
     ctrl.dispatch("reorder_sheets", {"key": key, "sheets": custom})
     assert registered_data.registered_data_source(registry) == descriptor
@@ -241,12 +243,18 @@ def test_registered_pclm_defaults_preserve_existing_order(tmp_path, monkeypatch)
     assert PclmDataSource(path, view="u_사용자계약").records() == [{"항목": "2"}]
     inspected = ctrl.dispatch("inspect_sheets", {"kind": "pclm", "path": str(path)})
     assert "u_사용자계약" in [sheet["name"] for sheet in inspected["sheets"]]
+    assert ctrl.dispatch("review", {"key": key})["ok"]
+    assert ctrl.snapshot()["detail"]["sheet_title"] == ", ".join(custom)
     chosen = [*custom, "u_사용자계약"]
     payload = {"key": key, "name": "계약 목록", "db": str(path), "view": "v_통합", "views": chosen}
     first = ctrl.dispatch("register_pclm", payload)
     assert first["needs_confirm"]
     assert ctrl.dispatch("register_pclm", {**payload, "confirm": True, "basis": first["basis"]})["ok"]
-    assert registry.load(key).opts["sheets"] == chosen
+    saved = registry.load(key)
+    assert saved.opts["sheets"] == chosen and saved.opts["view"] == "v_통합"
+    assert [preset["name"] for preset in saved.filters] == ["통합 필터"]
+    assert [preset["name"] for preset in saved.sheet_filters["v_계약"]] == ["계약 필터"]
+    assert ctrl.snapshot()["detail"]["sheet_title"] == ", ".join(chosen)
     assert len(registry.list_items()) == 1
     refused = ctrl.dispatch("register_pclm", {**payload, "view": "u_사용자계약"})
     assert not refused["ok"], refused

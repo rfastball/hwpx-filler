@@ -56,6 +56,7 @@ function build(options = {}) {
   const sheetCalls = [];
   const notifications = [];
   const initialCalls = [];
+  const refreshCalls = [];
   const services = createServiceHandoffPorts();
   services.sheetPicker.bind({
     async choose(screen, request) {
@@ -99,13 +100,17 @@ function build(options = {}) {
         subscribe(listener) { poolListeners.add(listener); return () => poolListeners.delete(listener); },
       }),
       async loadInitial(screen) { initialCalls.push(screen); return pool; },
+      async refresh(screen) {
+        refreshCalls.push(screen);
+        if (options.refreshFails) throw new Error("화면 갱신 실패");
+      },
     },
     client, services, modal,
     notify: (message) => notifications.push(String(message)),
   });
   return {
     controller, client, dispatchCalls, inspectionCalls, invokeCalls, modalCalls, confirms, sheetCalls,
-    notifications, initialCalls,
+    notifications, initialCalls, refreshCalls,
     setPool(value) { pool = value; for (const listener of poolListeners) listener(); },
   };
 }
@@ -717,12 +722,13 @@ function poolWithDetail(overrides) {
 }
 
 test("등록된 계약 목록의 시트 수정은 새 사용자 뷰를 읽고 기존 순서·등록 키를 보존한다", async () => {
-  const sheets = ["v_계약", "v_통합"];
-  const pool = poolWithDetail({ kind: "pclm", path: "C:/d/work.pclm", sheet: "v_통합", sheets,
+  const sheets = ["v_계약", " u_보고서 "];
+  const pool = poolWithDetail({ kind: "pclm", path: "C:/d/work.pclm", sheet: " u_보고서 ", sheets,
     name: "계약 목록", note: "", actions: [{ key: "register_pclm", label: "사용할 시트 수정…" }] });
   pool.column.rows[0].actions = pool.detail.actions;
-  const available = ["v_통합", "u_사용자계약", "v_계약"];
-  const h = build({ pool, inspect: async () => ({ ok: true, sheets: available.map((name) => ({ name })) }) });
+  const available = [" u_보고서 ", "u_사용자계약", "v_계약"];
+  const setup = { pool, inspect: async () => ({ ok: true, sheets: available.map((name) => ({ name })) }) };
+  const h = build(setup);
   const { result } = await opened(h);
   const row = pool.column.rows[0];
   h.dispatchCalls.length = 0;
@@ -735,9 +741,19 @@ test("등록된 계약 목록의 시트 수정은 새 사용자 뷰를 읽고 �
   h.controller.selectRegSheets([...sheets, "u_사용자계약"]);
   await h.controller.submitReg();
   assert.deepEqual(h.dispatchCalls.at(-1), ["pool", "register_pclm", {
-    key: "k1", name: "계약 목록", db: "C:/d/work.pclm", view: "v_통합",
-    views: ["v_계약", "v_통합", "u_사용자계약"], note: "",
+    key: "k1", name: "계약 목록", db: "C:/d/work.pclm", view: " u_보고서 ",
+    views: ["v_계약", " u_보고서 ", "u_사용자계약"], note: "",
   }]);
+  assert.deepEqual(h.refreshCalls, ["job"]);
+  setup.refreshFails = true;
+  h.dispatchCalls.length = 0;
+  h.controller.openRegDialog({ mode: "pclm", targetKey: "k1", refreshScreen: "job",
+    name: "계약 목록", db: "C:/d/work.pclm", view: " u_보고서 ", sheets });
+  await tick();
+  await h.controller.submitReg();
+  assert.equal(h.dispatchCalls.length, 1, "갱신 실패가 저장을 재전송하면 안 됩니다");
+  assert.equal(h.controller.regModel.getSnapshot(), null);
+  assert.deepEqual(h.notifications, ["화면 갱신 실패"]);
   h.controller.close(); await result;
 });
 
@@ -747,6 +763,9 @@ test("계약 목록의 기본 시트가 사라지면 기존 등록 시트 수정
     db: "C:/d/work.pclm", view: "v_통합", sheets: ["v_통합"], note: "" });
   await tick();
   h.controller.selectRegSheets(["u_사용자계약"]);
+  assert.match(h.controller.regModel.getSnapshot().error, /기본 시트를 찾을 수 없습니다/);
+  assert.match(renderToStaticMarkup(createElement(PoolRegistrationDialog, { controller: h.controller })),
+    /기본 시트를 찾을 수 없습니다/);
   await h.controller.submitReg();
   assert.deepEqual(h.dispatchCalls, []);
   assert.match(h.controller.regModel.getSnapshot().error, /기본 시트를 찾을 수 없습니다/);

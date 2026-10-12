@@ -280,7 +280,7 @@ file = "frontend/src/screens/data_picker.ts"
 text = "이름을 입력하세요."
 
 [[sentence]]
-file = "frontend/src/screens/data_picker.ts"
+file = "frontend/src/screens/registration_dialog.ts"
 text = "읽을 시트를 고르세요."
 
 [[sentence]]
