@@ -382,7 +382,7 @@ def test_row_actions_carry_every_verb_the_column_menu_will_show(tmp_path):
     assert [a.key for a in rows["엑셀"].actions()] == ["relink", "archive", "delete"]
     assert [a.label for a in rows["엑셀"].actions()][0] == "다시 연결…"
     # 계약 목록에는 그 동사가 없다 — 참조 교체 대상이 「사람이 고를 파일 하나」가 아니다.
-    assert [a.key for a in rows["계약"].actions()] == ["archive", "delete"]
+    assert [a.key for a in rows["계약"].actions()] == ["register_pclm", "archive", "delete"]
 
     vm.archive(rows["엑셀"].key)
     archived = {r.name: r for r in vm.rows()}["엑셀"]
@@ -469,7 +469,7 @@ def test_review_of_a_contract_list_names_the_sheet_and_reads_its_columns(tmp_pat
     assert "시트: v_통합_v1" in detail.facts()
     assert list(detail.columns) == ["계약번호", "계약건명"]
     # 계약 목록에는 참조 교체 동사가 없다(종류가 가르는 축) — 상세도 목록 행과 같다.
-    assert [a.key for a in detail.actions] == ["archive", "delete"]
+    assert [a.key for a in detail.actions] == ["register_pclm", "archive", "delete"]
 
 
 def test_review_of_an_unknown_key_is_loud(tmp_path):
@@ -477,4 +477,3 @@ def test_review_of_an_unknown_key_is_loud(tmp_path):
     vm = _vm(tmp_path)
     with pytest.raises(FileNotFoundError):
         vm.review("없는키")
-

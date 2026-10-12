@@ -8,8 +8,12 @@
  *  파일 고르기 브리지를 Python 의 등록 갈래 응답(`contract_list`)으로 갈아 **실클릭**하고, 열린
  *  폼이 pclm 모드로 그 DB 자리를 채운 채 그 자리에서 나열한 **미선택 시트 목록** 을 세우는지
  *  되읽는다(시트는 사용자 확정). 갈래 판정은 Python 이라 이 대역이 그 응답을 흉내 낸다. */
-export async function probePclmRegistration(ctx, { byId, textOf, stubBridgeInvoke }) {
+export async function probePclmRegistration(ctx, {
+  byId, textOf, stubBridgeInvoke, stubBridgeCall, poolSnapshot, Modal,
+}) {
   const out = { pclm_entry_gone: !byId(ctx, "dataPickerPclm") };
+  Object.assign(out, await probePclmSheetsEdit(ctx, { poolSnapshot, byId, textOf, stubBridgeCall }));
+  Modal.close("poolRegModal");
   const sheetList = () => Array.from(
     ctx.doc.querySelectorAll("#poolRegView .pool-reg-sheet-list input"));
   const pick = stubBridgeInvoke(ctx, "pickDataFile", "pick_data_file",
@@ -37,6 +41,45 @@ export async function probePclmRegistration(ctx, { byId, textOf, stubBridgeInvok
   out.pclm_reg_multiple_selected = viewSelect.querySelectorAll(".pool-reg-sheet-list input:checked").length === 2
     && !byId(ctx, "poolRegOk").disabled;
   return out;
+}
+
+/** 시작 뒤 추가된 사용자 뷰를 기존 등록의 ⋯ 동사에서 다시 발견하는 실클릭. */
+export async function probePclmSheetsEdit(ctx, { poolSnapshot, byId, textOf, stubBridgeCall }) {
+  const detail = { key: "k3", name: "계약 목록", kind: "pclm", path: "C:/d/pclm.db",
+    sheet: "v_통합_v2", sheets: ["v_접수_v1", "v_통합_v2"], note: "",
+    actions: poolSnapshot.column.rows[2].actions };
+  const stub = stubBridgeCall(ctx, (real) => (screen, action, payload) => {
+    if (screen === "pool" && action === "review" && payload.key === "k3") {
+      ctx.push("pool", { ...poolSnapshot, detail });
+      return Promise.resolve({ ok: true });
+    }
+    if (screen === "pool" && action === "inspect_sheets") {
+      return Promise.resolve({ ok: true, sheets: ["v_통합_v2", "u_사용자계약", "v_접수_v1"]
+        .map((name) => ({ name })) });
+    }
+    return real(screen, action, payload);
+  });
+  try {
+    byId(ctx, "dataPickerPinned").querySelector('.job-more[data-key="k3"]').click();
+    await ctx.waitFor(() => Array.from(ctx.doc.querySelectorAll("#dataPickerRowMenu button"))
+      .some((button) => textOf(button) === "사용할 시트 수정…"),
+      { what: "계약 목록 시트 수정 동사", timeoutMs: 1000 });
+    const menu = Array.from(ctx.doc.querySelectorAll("#dataPickerRowMenu button"))
+      .find((button) => textOf(button) === "사용할 시트 수정…");
+    menu.click();
+    await ctx.waitFor(() => ctx.doc.querySelectorAll("#poolRegView .pool-reg-sheet-list input").length === 3,
+      { what: "사용자 뷰 포함 시트 목록", timeoutMs: 1000 });
+    const inputs = Array.from(ctx.doc.querySelectorAll("#poolRegView .pool-reg-sheet-list input"));
+    return {
+      pclm_sheet_edit_reachable: !!menu,
+      pclm_edit_db_locked: byId(ctx, "poolRegDb").readOnly,
+      pclm_edit_custom_visible: inputs.some((input) => textOf(input.nextElementSibling) === "u_사용자계약"),
+      pclm_edit_default_locked: inputs.some((input) => textOf(input.nextElementSibling) === "v_통합_v2"
+        && input.checked && input.disabled),
+    };
+  } finally {
+    stub.restore();
+  }
 }
 
 /** 기존 편집기 창에서 실제 React 탭의 drag·키보드 사건과 저장 왕복 중 초점을 잰다. */

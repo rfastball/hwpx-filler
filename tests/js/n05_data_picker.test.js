@@ -716,6 +716,42 @@ function poolWithDetail(overrides) {
   };
 }
 
+test("등록된 계약 목록의 시트 수정은 새 사용자 뷰를 읽고 기존 순서·등록 키를 보존한다", async () => {
+  const sheets = ["v_계약", "v_통합"];
+  const pool = poolWithDetail({ kind: "pclm", path: "C:/d/work.pclm", sheet: "v_통합", sheets,
+    name: "계약 목록", note: "", actions: [{ key: "register_pclm", label: "사용할 시트 수정…" }] });
+  pool.column.rows[0].actions = pool.detail.actions;
+  const available = ["v_통합", "u_사용자계약", "v_계약"];
+  const h = build({ pool, inspect: async () => ({ ok: true, sheets: available.map((name) => ({ name })) }) });
+  const { result } = await opened(h);
+  const row = pool.column.rows[0];
+  h.dispatchCalls.length = 0;
+  h.controller.toggleRowMenu(row, { id: "more" });
+  await h.controller.handleRowMenu("act:register_pclm");
+  await tick();
+  assert.deepEqual(h.dispatchCalls.map((call) => call[1]), ["review"]);
+  assert.deepEqual(h.inspectionCalls[0][2], { path: "C:/d/work.pclm", kind: "pclm" });
+  assert.deepEqual(h.controller.regModel.getSnapshot().sheets, sheets);
+  h.controller.selectRegSheets([...sheets, "u_사용자계약"]);
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls.at(-1), ["pool", "register_pclm", {
+    key: "k1", name: "계약 목록", db: "C:/d/work.pclm", view: "v_통합",
+    views: ["v_계약", "v_통합", "u_사용자계약"], note: "",
+  }]);
+  h.controller.close(); await result;
+});
+
+test("계약 목록의 기본 시트가 사라지면 기존 등록 시트 수정은 발신하지 않는다", async () => {
+  const h = build({ inspect: async () => ({ ok: true, sheets: [{ name: "u_사용자계약" }] }) });
+  h.controller.openRegDialog({ mode: "pclm", targetKey: "k1", name: "계약 목록",
+    db: "C:/d/work.pclm", view: "v_통합", sheets: ["v_통합"], note: "" });
+  await tick();
+  h.controller.selectRegSheets(["u_사용자계약"]);
+  await h.controller.submitReg();
+  assert.deepEqual(h.dispatchCalls, []);
+  assert.match(h.controller.regModel.getSnapshot().error, /기본 시트를 찾을 수 없습니다/);
+});
+
 test("행 ⋯ 는 공용 목록 하나다 — 링1 동사 · 「폴더에서 보기」 · 「자세히…」", async () => {
   const h = build({ pool: poolWithDetail() });
   const { result } = await opened(h);

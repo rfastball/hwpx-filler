@@ -285,10 +285,6 @@ text = "읽을 시트를 고르세요."
 
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
-text = "읽을 시트를 고르세요."
-
-[[sentence]]
-file = "frontend/src/screens/data_picker.ts"
 text = "파일 선택 창에서 파일을 고르세요…"
 
 [[sentence]]
@@ -1048,6 +1044,14 @@ text = "제품 화면 stage(main.stage)가 없습니다."
 [[sentence]]
 file = "frontend/src/screens/product_screens.ts"
 text = "데이터를 고르고, 그 데이터로 쓸 문서 작업을 실행합니다."
+
+[[sentence]]
+file = "frontend/src/screens/registration_sheets.ts"
+text = "기본 시트를 찾을 수 없습니다. 계약 목록 파일을 확인하세요."
+
+[[sentence]]
+file = "frontend/src/screens/registration_sheets.ts"
+text = "읽을 시트를 고르세요."
 
 [[sentence]]
 file = "frontend/src/screens/runtime.ts"

@@ -10,7 +10,7 @@ import { pickDataFile } from "./data_file_pick.ts";
 import { invokePathAction } from "./path_actions.ts";
 import {
   POOL_DATA_GONE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
-  dataRowMenuItems, poolRefusalText, saveSheetOrder,
+  dataRowMenuItems, pclmSheetEditOptions, poolRefusalText, saveSheetOrder,
 } from "./pool_verbs.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolRegistrationPort } from "./pool_verbs.ts";
@@ -1119,6 +1119,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, note: row.note,
     }),
+    openPclmSheets: (row: Obj) => deps.poolRegistration.openRegDialog(pclmSheetEditOptions(row)),
     poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
     reveal: (path: string) => invokePathAction({
       client: deps.client, path, action: "reveal", notify: deps.notify,

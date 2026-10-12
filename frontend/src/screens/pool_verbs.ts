@@ -75,6 +75,12 @@ export type PoolRegistrationPort = {
   openDetail(key: string, trigger: HTMLElement | null): Promise<void>;
 };
 
+export function pclmSheetEditOptions(row: Obj): Obj {
+  return { title: "사용할 시트 수정", okLabel: "등록", mode: "pclm",
+    targetKey: row.key, name: row.name, db: row.path, view: row.sheet,
+    sheets: row.sheets, note: row.note };
+}
+
 export type PoolVerbDeps = {
   dispatch(screen: string, action: string, payload?: Obj): Promise<Obj>;
   modal: { confirm(spec: Obj): Promise<boolean> };
@@ -86,6 +92,7 @@ export type PoolVerbDeps = {
   onUse(row: Obj): Promise<unknown> | void;
   /** 「다시 연결」 폼 프리필. */
   openRelink(row: Obj): void;
+  openPclmSheets(row: Obj): void;
   /** 지금 `pool` 채널 스냅샷 — :func:`review` 가 자기가 세운 상세를 되읽는 자리.
    *  값을 얼려 받지 않고 **함수로** 받는다: 왕복 뒤의 스냅샷이라야 방금 세운 것을 본다. */
   poolSnapshot(): Obj | null;
@@ -153,6 +160,7 @@ export function createPoolVerbs(deps: PoolVerbDeps) {
     try {
       if (action === "use") { await deps.onUse(row); return; }
       if (action === "relink") { deps.openRelink(row); return; }
+      if (action === "register_pclm") { deps.openPclmSheets(row); return; }
       if (action === "delete") {
         const first = await deps.dispatch("pool", "delete", { key: row.key });
         if (first.needs_confirm && await deps.modal.confirm({
@@ -230,10 +238,10 @@ export function createPoolVerbs(deps: PoolVerbDeps) {
     if (!action.startsWith("act:")) {
       throw new Error(`알 수 없는 데이터 동사입니다: ${action}`);
     }
-    if (action === "act:relink") {
+    if (action === "act:relink" || action === "act:register_pclm") {
       const detail = await review(key);
       if (detail === null) return;
-      await poolAction("relink", detail);
+      await poolAction(action.slice(4), detail);
       return;
     }
     await poolAction(action.slice(4), row);

@@ -8,6 +8,10 @@ import type { BridgeClient } from "../runtime/client.ts";
 import { ContextMenu, createContextMenu } from "./context_menu.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { invokePathAction } from "./path_actions.ts";
+import {
+  inspectedRegistrationSheets, selectedRegistrationSheets, registrationSheetError,
+  registrationSubmitDisabled,
+} from "./registration_sheets.ts";
 import { pickDataFile } from "./data_file_pick.ts";
 import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
 import type { PoolColumnHost } from "./pool_column.ts";
@@ -15,7 +19,7 @@ import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
   POOL_DATA_GONE, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
-  poolHeadSub, poolRefusalText,
+  pclmSheetEditOptions, poolHeadSub, poolRefusalText,
 } from "./pool_verbs.ts";
 
 type Obj = Record<string, any>;
@@ -268,10 +272,7 @@ export function createDataPickerController(args: {
         return;
       }
       const availableSheets = result.sheets as RegState["availableSheets"];
-      const sheets = reg!.sheets.filter((name) => availableSheets.some((sheet) => sheet.name === name));
-      const initialSheet = (pclm ? reg!.view : reg!.sheet).trim();
-      const selected = sheets.includes(initialSheet) ? initialSheet : sheets[0] || "";
-      patchReg({ availableSheets, sheets, ...(pclm ? { view: selected } : { sheet: selected }), inspectedPath: path });
+      patchReg(inspectedRegistrationSheets(reg!, availableSheets, path));
     } catch (error) {
       if (current()) patchReg({ error: String((error as Obj)?.message || error) });
     } finally {
@@ -281,10 +282,7 @@ export function createDataPickerController(args: {
 
   function selectRegSheets(sheets: string[]): void {
     if (reg === null || reg.inspecting || reg.submitting) return;
-    const selected = reg.availableSheets.map((sheet) => sheet.name).filter((name) => sheets.includes(name));
-    const initialSheet = reg.mode === "pclm" ? reg.view : reg.sheet;
-    const primary = selected.includes(initialSheet) ? initialSheet : selected[0] || "";
-    patchReg({ sheets: selected, ...(reg.mode === "pclm" ? { view: primary } : { sheet: primary }), error: "" });
+    patchReg(selectedRegistrationSheets(reg, sheets));
   }
 
   /** 「이 데이터 등록…」 — 프리필 재료는 **전부 Python 값**이다(③b): 이름·경로는 세션 행,
@@ -316,7 +314,7 @@ export function createDataPickerController(args: {
       : {
         name: reg.name.trim(), path: reg.path.trim(), sheet: reg.sheet.trim(), sheets: [...reg.sheets], note: reg.note.trim(),
       };
-    if (!pclm && reg.targetKey) payload.key = reg.targetKey;
+    if (reg.targetKey) payload.key = reg.targetKey;
     if (pclm) {
       if (!payload.name) { patchReg({ error: "이름을 입력하세요." }); return; }
     } else if (!payload.name || !payload.path) {
@@ -324,10 +322,8 @@ export function createDataPickerController(args: {
       return;
     }
     if (reg.inspecting || !reg.inspectedPath || reg.inspectedPath !== (pclm ? payload.db : payload.path)) return;
-    if ((pclm || reg.availableSheets.length > 0) && reg.sheets.length === 0) {
-      patchReg({ error: "읽을 시트를 고르세요." });
-      return;
-    }
+    const sheetError = registrationSheetError(reg);
+    if (sheetError) { patchReg({ error: sheetError }); return; }
     const revision = regRevision;
     const okLabel = reg.okLabel;
     patchReg({ submitting: true });
@@ -367,6 +363,7 @@ export function createDataPickerController(args: {
       title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
       name: row.name, path: row.path, sheet: row.sheet, sheets: row.sheets, note: row.note,
     }),
+    openPclmSheets: (row: Obj) => openRegDialog(pclmSheetEditOptions(row)),
     poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
     reveal: (path: string) => invokePathAction({
       client, path, action: "reveal", notify,
@@ -685,7 +682,8 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
         disabled: value.submitting,
         onClick: () => { void controller.browseRegPath(); } }, "찾아보기…"))),
     pclm ? h("label", { className: "ctl" }, h("span", { className: "lbl" }, "DB 자리"),
-      h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db, disabled: value.submitting,
+      h("input", { className: "field mono", id: "poolRegDb", type: "text", value: value.db,
+        readOnly: !!value.targetKey, disabled: value.submitting,
         onBlur: () => { void controller.inspectRegSheets(); },
         onChange: (event: Obj) => controller.patchReg({ db: event.currentTarget.value }) })) : null,
     h("label", { className: "ctl" }, h("span", { className: "lbl" }, "이름"),
@@ -706,6 +704,7 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
     h("div", { className: "pool-reg-sheet-list" },
       ...value.availableSheets.map((sheet) => h("label", { className: "pool-reg-sheet", key: sheet.name },
         h("input", { type: "checkbox", checked: value.sheets.includes(sheet.name),
+          disabled: pclm && !!value.targetKey && sheet.name === value.view,
           onChange: (event: Obj) => controller.selectRegSheets(event.currentTarget.checked
             ? [...value.sheets, sheet.name] : value.sheets.filter((name) => name !== sheet.name)) }),
         h("span", null, sheet.name)))),
@@ -718,8 +717,6 @@ export function PoolRegistrationDialog(props: { controller: DataPickerController
     h("div", { className: "modal-actions" },
       h("button", { className: "btn", id: "poolRegCancel", onClick: controller.closeReg }, "취소"),
       h("button", { className: "btn primary", id: "poolRegOk",
-        disabled: value.submitting || value.inspecting || !value.inspectedPath
-          || value.inspectedPath !== (pclm ? value.db : value.path).trim()
-          || ((pclm || value.availableSheets.length > 0) && value.sheets.length === 0),
+        disabled: registrationSubmitDisabled(value),
         onClick: () => { void controller.submitReg(); } }, value.okLabel)));
 }

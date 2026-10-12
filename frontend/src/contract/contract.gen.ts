@@ -245,7 +245,7 @@ export const SCREEN_ACTIONS = {
     delete: { required: ["key"], optional: ["basis", "confirm"] },
     inspect_sheets: { required: ["path"], optional: ["kind"] },
     register_excel: { required: ["name", "path"], optional: ["basis", "confirm", "note", "sheet", "sheets"] },
-    register_pclm: { required: ["db", "name", "view"], optional: ["basis", "confirm", "note", "views"] },
+    register_pclm: { required: ["db", "name", "view"], optional: ["basis", "confirm", "key", "note", "views"] },
     relink: { required: ["key", "path"], optional: ["basis", "confirm", "name", "note", "sheet", "sheets"] },
     resolve_duplicate: { required: ["keep"], optional: ["basis", "confirm"] },
   },

@@ -82,6 +82,23 @@ __all__ = [
 display_reference = reference_summary
 
 
+def _checked_pclm_sheets(db: str, view: str, selected: object) -> list[str]:
+    """등록할 시트 선언을 현재 DB에 대조한다. 파일 실패도 폼의 같은 오류 채널로 보낸다."""
+    if (
+        not isinstance(selected, list) or not selected
+        or any(not isinstance(name, str) or not name for name in selected)
+        or view not in selected
+    ):
+        raise ValueError("읽을 시트를 고르세요.")
+    try:
+        available = list_sqlite_sheets(db)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise ValueError(str(exc)) from exc
+    if any(name not in available for name in selected):
+        raise ValueError("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")
+    return available
+
+
 class PoolController:
     """등록 데이터 수명 — 데이터셋 풀 VM 위임(webview 비의존).
 
@@ -523,23 +540,12 @@ class PoolController:
         try:
             db = resolve_pclm_db(str(p.get("db") or ""))
             selected_sheets = p.get("views")
-            available_sheets = None
-            if "views" in p:
-                if (
-                    not isinstance(selected_sheets, list) or not selected_sheets
-                    or any(not isinstance(name, str) or not name for name in selected_sheets)
-                    or view not in selected_sheets
-                ):
-                    raise ValueError("읽을 시트를 고르세요.")
-                try:
-                    available_sheets = list_sqlite_sheets(db)
-                except (FileNotFoundError, RuntimeError) as exc:
-                    self._set_result(str(exc), "danger")
-                    return {"ok": False, "error": str(exc)}
-                if any(name not in available_sheets for name in selected_sheets):
-                    raise ValueError("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")
-                selected_sheets = [view, *dict.fromkeys(name for name in selected_sheets if name != view)]
+            available_sheets = _checked_pclm_sheets(db, view, selected_sheets) if "views" in p else None
             same = self.vm.find_same_pclm(db, view)
+            if p.get("key") and (
+                same is None or same[0] != p["key"] or same[1].opts.get("view") != view
+            ):
+                return self._stale_item_result(name)
             if same is not None:
                 key, existing = same
                 changes_name = bool(name) and name != existing.name

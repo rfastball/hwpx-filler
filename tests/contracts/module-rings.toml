@@ -337,7 +337,7 @@ oracle_kind = "structural"
 module = "hwpxfiller.webapp.registered_data"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/registered_data.py"]
-oracle_nodeid = "tests/test_webapp_pool.py::test_registered_pclm_defaults_preserve_existing_order"
+oracle_nodeid = "tests/test_webapp_editor_sheet_tabs.py::test_registered_pclm_defaults_preserve_existing_order"
 
 [[unit]]
 module = "hwpxfiller.webapp.active_work_session"

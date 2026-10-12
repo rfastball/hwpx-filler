@@ -7,7 +7,7 @@
 
 | 항목 | 선언 | 원천 |
 |---|---|---|
-| 제품 버전 | `0.14.0` | [pyproject.toml](../../pyproject.toml) |
+| 제품 버전 | `0.14.1` | [pyproject.toml](../../pyproject.toml) |
 | Python 요구 범위 | `>=3.13,<3.14` | [pyproject.toml](../../pyproject.toml) |
 | Python pin | `3.13` | [.python-version](../../.python-version) |
 | Node pin | `24.18.1` | [.node-version](../../.node-version) |
@@ -239,7 +239,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `inspect_sheets` | `path` | `kind` |
 | `refresh` | — | — |
 | `register_excel` | `name`, `path` | `sheet`, `sheets`, `note`, `confirm`, `basis` |
-| `register_pclm` | `name`, `db`, `view` | `views`, `note`, `confirm`, `basis` |
+| `register_pclm` | `name`, `db`, `view` | `views`, `note`, `confirm`, `basis`, `key` |
 | `relink` | `key`, `path` | `sheet`, `sheets`, `note`, `name`, `confirm`, `basis` |
 | `reorder_sheets` | `key`, `sheets` | — |
 | `resolve_duplicate` | `keep` | `confirm`, `basis` |
