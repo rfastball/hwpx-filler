@@ -48,8 +48,6 @@ from ..application.document_creation_workbench import (
 )
 from ..application.execution_compilation import (
     ACTIVE_FIELD_UNBOUND,
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     REQUIRED_SOURCE_KEY_MISSING,
 )
 from ..application.field_binding_input import INACTIVE_ONLY, PRESERVED
@@ -155,8 +153,6 @@ _BINDING_BLOCKERS = frozenset(
     (
         ACTIVE_FIELD_UNBOUND,
         REQUIRED_SOURCE_KEY_MISSING,
-        NEEDS_BINDING_SEMANTIC_MIGRATION,
-        NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     )
 )
 

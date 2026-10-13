@@ -30,8 +30,6 @@ from hwpxfiller.application.jobs import (
 )
 from hwpxfiller.domain.job import (
     DEFAULT_FILENAME_PATTERN,
-    JOB_MAPPING_AUTHORITY,
-    LEGACY_RULE_AXES,
     RULE_AXES,
     Job,
     advance_revisions,
@@ -235,8 +233,6 @@ def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
     ``root`` 는 ``template_key`` 승격이 기준으로 삼을 서식 폴더다(U6-A #975). 미주입이면
     프로세스의 루트 권위(:func:`_resolved_root`)를 쓴다.
     """
-    if job.binding_authority not in ("", JOB_MAPPING_AUTHORITY):
-        raise ValueError(f"알 수 없는 작업 binding_authority: {job.binding_authority!r}")
     return {
         "version": job.version,
         "name": job.name,
@@ -247,7 +243,6 @@ def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
         "template_key": library_key_for(job.template_path, root),
         "filename_pattern": job.filename_pattern,
         "mapping": job.mapping.to_dict(),
-        "binding_authority": job.binding_authority,
         # 데이터 결속 성분(U4 §2.4 재판정, #932 U4-C) — 한 벌로 다닌다. 구 코드는
         # 미지 키로 무시하고, 구 JSON 은 decode 의 기본값으로 「데이터 연결 필요」에 착지한다.
         # 이름 축(구 default_dataset_ref)은 되살아나지 않는다 — 정체성은 경로+시트다(U2 판정 C).
@@ -282,10 +277,6 @@ def _rules_values_or_raise(raw: object) -> dict:
     for name, axes in fields.items():
         if not isinstance(name, str) or not isinstance(axes, dict):
             raise ValueError("'previous_rules.fields' 의 항목은 필드이름→축사전이어야 합니다")
-        # 가공 축(field-binding/v4) 이전에 적힌 기준선은 그 축이 없다 — 「가공 없음」과 같은 뜻이라
-        # ``""`` 로 채워 읽는다(파일은 다시 쓰지 않는다). 그 밖의 모양은 여전히 시끄럽게 거절한다.
-        if set(axes) == set(LEGACY_RULE_AXES):
-            axes = {**axes, "slice": ""}
         if set(axes) != set(RULE_AXES) or not all(
             isinstance(value, str) for value in axes.values()
         ):
@@ -299,15 +290,21 @@ def _rules_values_or_raise(raw: object) -> dict:
     return {"template": template, "filename": filename, "fields": out_fields}
 
 
+def _string_dict_or_raise(raw: object, key: str, values: str) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise ValueError(f"'{key}' 는 사전이어야 하는데 {type(raw).__name__} 입니다")
+    for k, v in raw.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            raise ValueError(f"'{key}' 의 {values}은 모두 문자열이어야 합니다")
+    return dict(raw)
+
+
 def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
-    """durable 로드 경계(구 ``Job.from_dict``) — 누락 필드는 ``.get(기본값)`` 으로 하위호환
-    (구 JSON→기본값)하되, **존재하는데 타입이 깨진** durable 값(문자열 계약 필드가
-    int/list/null 등)은 조용히 통과시키지 않고 loud 하게 던진다. 앱은 늘 str/에스케이프된
-    값만 쓰므로 타입 불일치는 외부 훼손·버그 신호다 — 여기서 격리하면
-    :meth:`JobRegistry.list_jobs` 의 파일단위 격리(RC-05)가 '손상됨' 행으로 표면화한다.
-    무검증 대입은 손상 값을 조용히 통과시켜 뒤늦게 무관한 홈 렌더(혼합타입 ``sorted()``·
-    ``_fmt_iso``)를 터뜨리는 지뢰가 됐다(confirm-or-alarm: 조기 loud 격리 > 지연
-    크래시/무성 오염)."""
+    """현행 durable 작업만 읽고 잘못된 형식은 로드 경계에서 드러낸다."""
+    version = d.get("version")
+    if type(version) is not int or version != 2:
+        raise ValueError(f"지원하지 않는 작업 버전: {version!r}")
+
     def _str(key: str, default: str = "") -> str:
         v = d.get(key, default)
         if not isinstance(v, str):
@@ -345,53 +342,24 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
             raise ValueError(f"작업 필드 '{key}' 는 0 이상이어야 하는데 {v} 입니다")
         return v
 
-    raw_reviewed = d.get("reviewed_rules", {})
-    if not isinstance(raw_reviewed, dict):
-        raise ValueError(
-            f"'reviewed_rules' 는 사전이어야 하는데 {type(raw_reviewed).__name__} 입니다"
-        )
-    reviewed: "dict[str, str]" = {}
-    for k, v in raw_reviewed.items():
-        if not isinstance(k, str) or not isinstance(v, str):
-            raise ValueError("'reviewed_rules' 의 대상·지문은 모두 문자열이어야 합니다")
-        reviewed[k] = v
-
-    raw_tags = d.get("tags", {})
-    if not isinstance(raw_tags, dict):
-        raise ValueError(
-            f"'tags' 는 사전이어야 하는데 {type(raw_tags).__name__} 입니다"
-        )
-    tags: "dict[str, str]" = {}
-    for k, v in raw_tags.items():
-        if not isinstance(k, str) or not isinstance(v, str):
-            raise ValueError("'tags' 의 축·값은 모두 문자열이어야 합니다")
-        tags[k] = v
+    reviewed = _string_dict_or_raise(d.get("reviewed_rules", {}), "reviewed_rules", "대상·지문")
+    tags = _string_dict_or_raise(d.get("tags", {}), "tags", "축·값")
     template_path = _resolve_template_link(
         _str("template_path"), _str("template_key"), root, _str("authority_id")
     )
-    binding_authority = _str("binding_authority")
-    if binding_authority not in ("", JOB_MAPPING_AUTHORITY):
-        raise ValueError(f"알 수 없는 작업 binding_authority: {binding_authority!r}")
     return Job(
         name=_str("name"),
         template_path=template_path,
-        mapping=MappingProfile.from_dict(d.get("mapping", {})),
+        mapping=MappingProfile.from_dict(d["mapping"]),
         filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
-        version=d.get("version", 1),
+        version=version,
         # 데이터 결속 성분(U4 §2.4 재판정) — 없으면 「데이터 연결 필요」 상태로 착지한다.
-        # 여기서 추측해 채우지 않는다: 구판 파일에는 그 정보가 없고, 조용한 추측은 남의
-        # 데이터로 문서를 만드는 길이다. 되살리는 것은 사용자가 편집기에서 한다.
-        # 종류 축의 부재는 ``""`` = 엑셀/CSV 라 구 저장본이 뜻을 잃지 않는다. 비문자열은
-        # ``_str`` 의 loud 규칙 그대로 던진다(훼손을 조용히 통과시키면 어느 어댑터로 읽을지가
-        # 추측이 된다).
+        # 여기서 추측해 채우지 않는다. 되살리는 것은 사용자가 편집기에서 한다.
+        # 종류 축의 부재는 ``""`` = 엑셀/CSV. 비문자열은 ``_str`` 의 loud 규칙으로 거절한다.
         data_path=_str("data_path"),
         data_sheet=_str("data_sheet"),
         data_header_row=_header_row("data_header_row"),
         data_kind=_str("data_kind"),
-        # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로, default_dataset_ref
-        # (#53-A 작업→데이터 결속의 **이름 축**)는 U2 §5.3 판정 D 로 개념째 제거 — 구
-        # JSON 의 해당 키는 미지 키로 무시된다. U4-C 가 결속을 되들였지만 키는 경로+시트라
-        # (판정 C) 이름 축은 부활 대상이 아니다.
         last_run_at=_str("last_run_at"),
         favorited_at=_str("favorited_at"),
         tags=tags,
@@ -401,7 +369,6 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
         template_revision=_revision("template_revision"),
         binding_revision=_revision("binding_revision"),
         previous_rules=_rules_values_or_raise(d.get("previous_rules", {})),
-        binding_authority=binding_authority,
     )
 
 

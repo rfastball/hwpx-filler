@@ -22,7 +22,6 @@ from .work_template_state import (
     PREP_QUALIFYING,
     PREP_READY,
     PREP_SUPERSEDED,
-    OutboxEvent,
     PreparedTemplateChange,
     TemplateChangePreparation,
     WorkTemplateStateAggregate,
@@ -32,11 +31,6 @@ from .work_template_state import (
 # READY 를 supersede 한다. QUALIFYING 을 빠뜨리면 replaced intent 가 recovery 에서 계속 active 로
 # 취급된다(S3-05 가 QUALIFYING 을 in-flight 로 추가하며 함께 갱신).
 _SUPERSEDABLE = frozenset({PREP_CAPTURING, PREP_QUALIFYING, PREP_READY})
-
-# capture worker 를 부르는 durable 신호 — commit 과 원자적으로 outbox 에 남는다. post-commit
-# 콜백이 실패해도 이 record 가 생존해 dispatcher(후속 stage)가 재시도할 수 있다.
-CAPTURE_REQUESTED = "template.capture_requested"
-
 
 def find_preparation_by_request(
     aggregate: WorkTemplateStateAggregate, prepare_request_id: str
@@ -59,11 +53,10 @@ class PreparePins:
 
 @dataclass(frozen=True)
 class PreparePlan:
-    """판정 결과 — 새 aggregate, 대상 Preparation, 새로 생성했는지(worker handoff 게이트)."""
+    """판정 결과 — 새 aggregate 와 대상 Preparation."""
 
     aggregate: WorkTemplateStateAggregate
     preparation: TemplateChangePreparation
-    created: bool
 
 
 def plan_prepare(
@@ -78,7 +71,7 @@ def plan_prepare(
     """(work, prepare_request_id) 멱등 시작 판정. 같은 key 면 mutation 없이 기존 것을 돌려준다."""
     existing = find_preparation_by_request(aggregate, prepare_request_id)
     if existing is not None:
-        return PreparePlan(aggregate, existing, created=False)
+        return PreparePlan(aggregate, existing)
 
     work = aggregate.work
     new_seq = work.prepare_seq + 1
@@ -96,13 +89,7 @@ def plan_prepare(
         started_at=started_at,
     )
     preparations, prepared_changes = _supersede_prior(aggregate)
-    capture_event = OutboxEvent(
-        event_id=f"{preparation_id}:capture",  # preparation 당 1개, 결정론적 identity
-        event_type=CAPTURE_REQUESTED,
-        payload={"preparation_id": preparation_id, "work_id": work.work_id},
-    )
-    # replace() 로 바꾼 필드만 지정한다 — applications·apply_provenance·migration_provenance 같은
-    # 미지정 필드가 자동 보존된다(fresh 생성이 bootstrap provenance 를 조용히 None 으로 덮던 결함 차단).
+    # replace() 로 바꾼 필드만 지정해 Application 이력을 보존한다.
     new_aggregate = replace(
         aggregate,
         aggregate_version=aggregate.aggregate_version + 1,
@@ -111,9 +98,8 @@ def plan_prepare(
         ),
         preparations=(*preparations, new_prep),
         prepared_changes=prepared_changes,
-        outbox_events=(*aggregate.outbox_events, capture_event),
     )
-    return PreparePlan(new_aggregate, new_prep, created=True)
+    return PreparePlan(new_aggregate, new_prep)
 
 
 def _supersede_prior(

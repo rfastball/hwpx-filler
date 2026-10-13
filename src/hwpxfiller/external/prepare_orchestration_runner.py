@@ -88,7 +88,6 @@ from hwpxfiller.application.work_template_state import (
     PREP_SOURCE_BINDING_CHANGED,
     PREP_SUPERSEDED,
     DocumentWork,
-    MigrationProvenance,
     PreparedTemplateChange,
     TemplateChangePreparation,
     WorkTemplateStateAggregate,
@@ -430,8 +429,6 @@ def apply_prepared_change(
     actor: str,
     authorize: "Callable[[DocumentWork, str], None]",
     new_application_id: str,
-    provenance_id: str,
-    outbox_event_id: str,
     applied_at: str,
 ) -> tuple[ApplyOutcome, WorkTemplateStateAggregate]:
     """fence-first public entry — global lock order ``PerWorkFence → Store lease``.
@@ -456,8 +453,6 @@ def apply_prepared_change(
             actor=actor,
             authorize=authorize,
             new_application_id=new_application_id,
-            provenance_id=provenance_id,
-            outbox_event_id=outbox_event_id,
             applied_at=applied_at,
         )
         return outcome, work_store.load(work_id)
@@ -473,8 +468,6 @@ def apply_prepared_change_under_fence(
     actor: str,
     authorize: "Callable[[DocumentWork, str], None]",
     new_application_id: str,
-    provenance_id: str,
-    outbox_event_id: str,
     applied_at: str,
 ) -> ApplyOutcome:
     """Prepared Change 를 fixed base 에서 Work 에 원자 적용한다 — source/qualification 재실행 없음.
@@ -530,8 +523,7 @@ def apply_prepared_change_under_fence(
 
         txn.aggregate = plan_apply(
             aggregate, change,
-            new_application_id=new_application_id, provenance_id=provenance_id,
-            outbox_event_id=outbox_event_id, actor=actor, applied_at=applied_at,
+            new_application_id=new_application_id, actor=actor, applied_at=applied_at,
         )
         holder["outcome"] = ApplyOutcome(APPLY_APPLIED, new_application_id)
     return holder["outcome"]
@@ -580,9 +572,6 @@ def bootstrap_work(
     binding: MutableSourceBinding,
     reader: TemplateSourceReader,
     profile: QualificationProfile,
-    legacy_template_revision: int,
-    legacy_binding_revision: int,
-    legacy_source_reference: str,
     observation_id: str,
     revision_id: str,
     attempt_id: str,
@@ -596,10 +585,9 @@ def bootstrap_work(
     completed_at: str,
     qualified_at: str,
 ) -> BootstrapOutcome:
-    """legacy Job 을 명시적으로 capture→qualify→PASS→INITIALIZATION Application 으로 bootstrap 한다.
+    """첫 Job 을 capture→qualify→PASS→INITIALIZATION Application 으로 등록한다.
 
-    read migration 이 아니다 — legacy Job JSON 은 읽지도 고치지도 않는다(caller 가 legacy counter·
-    source reference 를 넘긴다). capture/qualification 실패는 가짜 Application 을 만들지 않고
+    capture/qualification 실패는 가짜 Application 을 만들지 않고
     TEMPLATE_INITIALIZATION_REQUIRED 로 닫는다(repair 대상). 같은 work_id 재전송은 멱등하다.
     """
     if work_store.exists(work_id):  # 이미 bootstrap 됨 — 멱등 반환
@@ -643,19 +631,12 @@ def bootstrap_work(
     if manifest.media != capture.revision.media:
         return BootstrapOutcome(TEMPLATE_INITIALIZATION_REQUIRED, reason="MEDIA_MISMATCH")
 
-    provenance = MigrationProvenance(
-        bootstrap_request_id=bootstrap_request_id,
-        legacy_template_revision=legacy_template_revision,
-        legacy_binding_revision=legacy_binding_revision,
-        legacy_source_reference=legacy_source_reference,
-        migrated_at=qualified_at,
-    )
     try:
         aggregate = initialize_work(
             work_store, qualification_store, candidate_store,
             work_id=work_id, template_lineage_id=lineage.template_lineage_id,
             application_id=application_id, pass_evidence_id=evidence_id, actor=actor,
-            applied_at=qualified_at, migration_provenance=provenance,
+            applied_at=qualified_at,
         )
     except WorkAggregateExists:  # 동시 bootstrap 경합 — 먼저 commit 한 것으로 화해(멱등)
         return BootstrapOutcome(BOOTSTRAP_OK, work_store.load(work_id))

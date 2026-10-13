@@ -79,7 +79,6 @@ class TemplateController:
         file_store: TemplateFileStore,
         pool_registry,
         template_root: "TemplateRoot | None" = None,
-        migration_notice: str = "",
         hwpx_groups: "TemplateGroupModel | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
         example_data_dir=None,
@@ -104,10 +103,6 @@ class TemplateController:
         # 지난다. VM 에는 Path 가 아니라 콜러블을 준다: 재지정은 설정 하나를 바꾸는 일이고
         # 그 다음 스냅샷이 곧 새 루트여야 한다(사본을 굳혀 들면 선언≠실제가 된다).
         self._template_root = template_root if template_root is not None else TemplateRoot()
-        # 부팅 1회 레거시 TXT 이관의 재진술(U6-A §4). 경보 로그만으로는 **화면에 닿지 않아**
-        # 사용자가 자기 파일이 옮겨진 사실을 모른다 — 그래서 이 프로세스가 사는 동안 서식
-        # 폴더 존의 사유에 병기한다. 값은 조립부가 계산해 넘긴 문자열 그대로다(재판정 없음).
-        self._migration_notice = str(migration_notice or "")
         self.vm = TemplateManagerViewModel(
             self._template_root.path,
             inspect_template=inspect_hwpx_template,
@@ -285,11 +280,7 @@ class TemplateController:
                 "directory": resolution.directory,
                 "source": resolution.source,
                 "source_label": resolution.source_label,
-                # 도출 사유(폴더 부재)와 이관 재진술은 **둘 다** 설 수 있고 서로를 지우지
-                # 않는다 — 줄바꿈으로 병기한다(하나가 다른 하나를 덮으면 조용한 소실이다).
-                "notice": "\n".join(
-                    text for text in (resolution.notice, self._migration_notice) if text
-                ),
+                "notice": resolution.notice,
             },
             # 항목 상세 시트의 재료 한 벌(U6-E #979) — `review` 가 세우고 slot 동사가 다시
             # 세운다. 시트가 열려 있지 않아도 값은 산다(수명은 검토 왕복이지 창이 아니다).

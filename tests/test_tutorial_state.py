@@ -389,14 +389,13 @@ def test_new_tutorial_settings_fail_closed_and_preserve_legacy_bucket(tmp_path):
     from hwpxfiller.external.tutorial_workspace import TutorialWorkspace
 
     settings._save_key("tutorial", "손상")
-    assert settings.load_legacy_tutorial_lessons() == {}
     assert settings.load_tutorial_practice() == {"version": 1, "entries": []}
     settings._save_key("tutorial", {"achieved": ["T0"], "lessons": [], "practice": "broken"})
-    assert settings.load_legacy_tutorial_lessons() == {}
     assert settings.load_tutorial_practice() == {"version": 1, "entries": []}
 
     # #1126: lesson progress lives in the tutorial workspace, never in the user's settings.
     workspace = TutorialWorkspace(tmp_path / "tutorial")
+    assert workspace.load_progress() == {}
     with pytest.raises(ValueError, match="학습 기록"):
         workspace.save_progress({"version": 2})
     with pytest.raises(ValueError, match="연습 파일 기록"):

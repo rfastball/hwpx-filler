@@ -9,6 +9,8 @@ test_seal_orchestration_runner 의 fake World/Resolver 가 커버하던 capture 
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from hwpxfiller.application.candidate_revision import (
@@ -27,13 +29,10 @@ from hwpxfiller.application.execution_capture import (
 )
 from hwpxfiller.application.execution_compilation import SLOT_CONFIGURATION_INCOMPLETE
 from hwpxfiller.application.execution_structure import (
+    LABELED_EXECUTION_QUALIFICATION_PROFILE_ID,
+    LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     build_execution_manifest,
     execution_pass_projection,
-)
-from hwpxfiller.application.field_binding_input import (
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-    FieldBindingRevision,
-    build_field_binding_input,
 )
 from hwpxfiller.application.qualification_evidence import (
     QualificationAttempt,
@@ -47,11 +46,6 @@ from hwpxfiller.application.seal_execution_plan import (
     compile_candidate,
 )
 from hwpxfiller.application.shipping_seal_policy import resolve_shipping_policy
-from hwpxfiller.application.stored_field_binding import (
-    STORE_SCHEMA_VERSION as FB_SCHEMA,
-    ApplicationRevisionPointer,
-    StoredWorkFieldBinding,
-)
 from hwpxfiller.application.stored_work_configuration import (
     STORE_SCHEMA_VERSION as CFG_STORE_SCHEMA,
     StoredWorkConfiguration,
@@ -71,9 +65,9 @@ from hwpxfiller.application.work_template_state import (
 )
 from hwpxfiller.domain.slot_selection import SlotSelection, SlotSelectionSet
 from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.candidate_store import CandidateObjectStore
 from hwpxfiller.external.qualification_store import QualificationObjectStore
-from hwpxfiller.external.field_binding_store import WorkFieldBindingStore
 from hwpxfiller.external.seal_execution_capture_runner import (
     ExecutionCaptureIntegrityError,
     SealExecutionCaptureRunner,
@@ -85,10 +79,8 @@ from tests.test_execution_compilation import (
     APP,
     AT,
     MEDIA,
-    PROFILE,
     WORK,
     WS,
-    _rules,
     _structure,
 )
 
@@ -98,17 +90,15 @@ REVISION_ID = "rev-1"
 OBSERVATION_ID = "obs-1"
 BLOB_BYTES = b"exact-template-bytes"
 CONTRACT = "slot-selection/v1"
+PROFILE = LABELED_EXECUTION_QUALIFICATION_PROFILE_ID
 
 
 # ─── 실 store seed ────────────────────────────────────────────────────────────────────
-def _seed_v2_work(
-    root, *, with_binding: bool = True, with_config: bool = True, revoked: bool = False
-) -> None:
+def _seed_v2_work(root, *, with_config: bool = True, revoked: bool = False) -> None:
     works = AtomicWorkTemplateStateStore(root / "works")
     qual = QualificationObjectStore(root / "qualification")
     cand = CandidateObjectStore(root / "candidates")
     configs = WorkSlotConfigurationStore(root / "slot_configs")
-    bindings = WorkFieldBindingStore(root / "field_bindings")
 
     # candidate: blob → observation → revision(참조 무결성).
     digest = blob_digest(BLOB_BYTES)
@@ -133,6 +123,7 @@ def _seed_v2_work(
     # qualification: v2 manifest + v2 execution PASS Evidence(+ optional revocation).
     qual.put_manifest(
         build_execution_manifest(
+            qualification_profile_id=PROFILE,
             media=MEDIA, adapter_contract_version="a/1", product_rule_version="p/1",
             operation_alphabet_version="o/1", created_at=AT,
         )
@@ -148,7 +139,10 @@ def _seed_v2_work(
         QualificationEvidence(
             evidence_id=EVIDENCE_ID, attempt_id="at-1", revision_id=REVISION_ID,
             qualification_profile_id=PROFILE, result="PASS",
-            structure_projection=execution_pass_projection(_structure()),
+            structure_projection=execution_pass_projection(replace(
+                _structure(),
+                projection_schema_version=LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+            )),
             diagnostics=(), engine_metadata={}, qualified_at=AT,
         )
     )
@@ -176,7 +170,7 @@ def _seed_v2_work(
                     origin=INITIALIZATION, prepared_change_id=None, actor="t", applied_at=AT,
                 ),
             ),
-            preparations=(), prepared_changes=(), apply_provenance=(), outbox_events=(),
+            preparations=(), prepared_changes=(),
         )
     )
 
@@ -197,36 +191,17 @@ def _seed_v2_work(
             )
         )
 
-    if with_binding:
-        binding_input = build_field_binding_input(
-            workspace_instance_id=WS, work_authority_id=WORK, base_template_application_id=APP,
-            binding_rules=_rules(), source_schema_keys=("이름", "금액열", "unused"),
-            raw_record_contract_id="rr/1", captured_at=AT,
-        )
-        revision = FieldBindingRevision(
-            work_authority_id=binding_input.work_authority_id,
-            base_template_application_id=binding_input.base_template_application_id,
-            field_binding_authority_revision=binding_input.field_binding_authority_revision,
-            field_binding_semantic_contract_id=binding_input.field_binding_semantic_contract_id,
-            source_schema_contract_id=binding_input.source_schema_contract_id,
-            raw_record_contract_id=binding_input.raw_record_contract_id,
-            binding_rules=binding_input.binding_rules,
-            source_schema_keys=binding_input.source_schema_keys,
-            canonical_binding_digest=binding_input.canonical_binding_digest,
-            canonical_source_schema_digest=binding_input.canonical_source_schema_digest,
-            captured_at=binding_input.captured_at,
-        )
-        bindings.create(
-            StoredWorkFieldBinding(
-                schema_version=FB_SCHEMA, aggregate_version=1, workspace_instance_id=WS,
-                work_authority_id=WORK,
-                current_by_application=(
-                    ApplicationRevisionPointer(APP, revision.field_binding_authority_revision),
-                ),
-                immutable_binding_revisions=(revision,), migration_drafts=(),
-                application_review_drafts=(), first_seen_command_ledger=(),
-            )
-        )
+def _binding_job() -> Job:
+    mappings = [
+        FieldMapping("성명", source="이름"),
+        FieldMapping("주소", type="const", const="서울"),
+        FieldMapping("항목", type="const", const=""),
+        FieldMapping("금액", source="금액열"),
+    ]
+    return Job(
+        name="job-ref", template_path="managed.hwpx", authority_id=WORK,
+        mapping=MappingProfile(mappings=mappings),
+    )
 
 
 def _runner(root, *, job_for_work=None) -> SealExecutionCaptureRunner:
@@ -235,9 +210,8 @@ def _runner(root, *, job_for_work=None) -> SealExecutionCaptureRunner:
         qualification_store=QualificationObjectStore(root / "qualification"),
         candidate_store=CandidateObjectStore(root / "candidates"),
         slot_config_store=WorkSlotConfigurationStore(root / "slot_configs"),
-        field_binding_store=WorkFieldBindingStore(root / "field_bindings"),
         clock=lambda: AT,
-        job_for_work=job_for_work,
+        job_for_work=job_for_work or (lambda _work: _binding_job()),
     )
 
 
@@ -294,14 +268,6 @@ def test_complete_capture_publishes_end_to_end(tmp_path) -> None:
     # capture 가 fake World 가 publish 하던 것과 같은 basis 로 compile → PlanCandidate.
     candidate = compile_candidate(captured)
     assert isinstance(candidate, PlanCandidate)
-
-
-# ─── domain block: binding 부재 ─────────────────────────────────────────────────────────
-def test_missing_field_binding_is_domain_block(tmp_path) -> None:
-    _seed_v2_work(tmp_path, with_binding=False)
-    result = _capture(tmp_path)
-    assert isinstance(result, CapturedExecutionDomainBlock)
-    assert NEEDS_FIELD_BINDING_APPLICATION_REVIEW in result.normalized_blockers
 
 
 # ─── domain block: slot config 부재(불완전 선택) ────────────────────────────────────────
@@ -385,7 +351,7 @@ def test_missing_evidence_is_generic_context_error(tmp_path) -> None:
                     origin=INITIALIZATION, prepared_change_id=None, actor="t", applied_at=AT,
                 ),
             ),
-            preparations=(), prepared_changes=(), apply_provenance=(), outbox_events=(),
+            preparations=(), prepared_changes=(),
         )
     )
     result = _capture(tmp_path)

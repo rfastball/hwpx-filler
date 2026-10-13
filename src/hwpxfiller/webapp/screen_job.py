@@ -1370,7 +1370,7 @@ class JobController:
         # 권위가 없다면 확인을 시작하지 않는다(실패 정리 뒤 유령 Work ID 재발급 방지).
         if job.media == "hwpx" and was_prepared:
             self._maybe_auto_check(effective_basis_changed=True)
-        elif job.media == "hwpx" and job.binding_authority and job.authority_id:
+        elif job.media == "hwpx" and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
@@ -2433,15 +2433,6 @@ class JobController:
         finally:
             if admitted:
                 self.runs.lock.release()
-
-    def unrepresented_legacy_rules(
-        self, previous: Job, candidate: Job, editor_field_ids: frozenset[str]
-    ) -> tuple[str, ...]:
-        if self.execution.seal_execution is None:
-            return ()
-        return self.execution.seal_execution.unrepresented_legacy_rules(
-            previous, candidate, editor_field_ids
-        )
 
     @_serialized
     def on_editor_mapping_saved(self, work_ref: str) -> dict:

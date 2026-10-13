@@ -31,7 +31,6 @@ from ..application.field_proposal import (
 )
 from ..application.template_authoring_session import AuthoringSession, content_digest
 from ..domain.dataset_reference import STATUS_ACTIVE
-from ..domain.job import JOB_MAPPING_AUTHORITY
 from ..external.hwpx_field_proposal import read_hwpx, read_txt, spot_location
 from ..viewmodel.run_state import resolve_pool_source
 from .screens import load_pool_into
@@ -89,8 +88,7 @@ class ProposalPanel:
         """적용한 템플릿이 작업의 현재 템플릿이 됐으면, 초안이 있는 새 필드의 연결을 작업에 더해 저장한다.
 
         편집기 저장과 같은 규칙이다 — 레지스트리 쓰기 잠금 안에서 디스크의 작업을 다시 읽고 고쳐 저장한다(다른
-        프로세스가 쓰기 소유권을 쥐었으면 잠금이 거절한다). 연결의 권위가 작업 연결(``job-mapping/v1``)인 작업만
-        고친다 — 그렇지 않은 작업의 연결은 다른 판본이 권위라 여기서 쓰면 무시된다.
+        프로세스가 쓰기 소유권을 쥐었으면 잠금이 거절한다).
         """
         if not session.proposal_bindings or self._jobs is None or result.get("status") not in SEEDABLE_APPLY \
                 or result.get("is_current") is False:
@@ -98,8 +96,6 @@ class ProposalPanel:
         fields = {str(item.get("name")) for item in session.analysis.get("fields", [])}
         with self._jobs.write_lock():
             job = self._jobs.load(job_name)
-            if job.binding_authority != JOB_MAPPING_AUTHORITY:
-                return 0
             added = seed_mappings(job.mapping.mappings, fields, session.proposal_bindings)
             if added:
                 job.mapping.mappings.extend(added)

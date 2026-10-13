@@ -42,11 +42,11 @@ _GOLDEN = json.loads(
         encoding="utf-8"
     )
 )
-_V1_KEY = SelectionSemanticBindingKey(
-    "hwpx-template-qualification-v1", "hwpx-structure-projection-v1"
+_HWPX_KEY = SelectionSemanticBindingKey(
+    "hwpx-template-qualification-v4", "hwpx-structure-projection-v4"
 )
-_V3_KEY = SelectionSemanticBindingKey(
-    "hwpx-template-qualification-v3", "hwpx-structure-projection-v3"
+_TXT_KEY = SelectionSemanticBindingKey(
+    "txt-template-qualification-v1", "txt-structure-projection-v1"
 )
 
 
@@ -58,18 +58,25 @@ def _set(pairs: list[tuple[str, list[str]]]) -> SlotSelectionSet:
 
 # ── registry ────────────────────────────────────────────────────────────────
 def test_shipping_bindings_resolve_slot_selection_v1() -> None:
-    for key in (_V1_KEY, _V3_KEY):
+    for key in (_HWPX_KEY, _TXT_KEY):
         manifest = DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(key)
         assert manifest.contract_id == "slot-selection/v1"
         assert manifest.default_selection_policy == EXACTLY_ONE
         assert manifest.supported_selection_policies == (EXACTLY_ONE,)
 
 
-def test_unknown_binding_does_not_fall_back_to_latest() -> None:
+@pytest.mark.parametrize(
+    "key",
+    [
+        SelectionSemanticBindingKey("hwpx-template-qualification-v1", "hwpx-structure-projection-v1"),
+        SelectionSemanticBindingKey("hwpx-template-qualification-v2", "hwpx-structure-projection-v2"),
+        SelectionSemanticBindingKey("hwpx-template-qualification-v3", "hwpx-structure-projection-v3"),
+        SelectionSemanticBindingKey("unknown-profile", "unknown-schema"),
+    ],
+)
+def test_unknown_binding_does_not_fall_back_to_latest(key: SelectionSemanticBindingKey) -> None:
     with pytest.raises(UnsupportedSelectionSemanticContractError):
-        DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(
-            SelectionSemanticBindingKey("unknown-profile", "unknown-schema")
-        )
+        DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(key)
 
 
 def test_registry_rejects_same_key_different_contract() -> None:
@@ -78,7 +85,7 @@ def test_registry_rejects_same_key_different_contract() -> None:
         "slot-selection/v2", "s", "c", EXACTLY_ONE, (EXACTLY_ONE,), "v"
     )
     with pytest.raises(SelectionContractIntegrityError):
-        SelectionSemanticContractRegistry([(_V1_KEY, v1), (_V1_KEY, other)])
+        SelectionSemanticContractRegistry([(_HWPX_KEY, v1), (_HWPX_KEY, other)])
 
 
 def test_registry_rejects_same_contract_id_different_manifest() -> None:
@@ -88,7 +95,7 @@ def test_registry_rejects_same_contract_id_different_manifest() -> None:
     )
     with pytest.raises(SelectionContractIntegrityError):
         SelectionSemanticContractRegistry(
-            [(_V1_KEY, v1), (SelectionSemanticBindingKey("p2", "s2"), clashing)]
+            [(_HWPX_KEY, v1), (SelectionSemanticBindingKey("p2", "s2"), clashing)]
         )
 
 
@@ -121,7 +128,7 @@ def test_registry_rejects_manifest_with_default_outside_supported() -> None:
         "slot-selection/bad", "s", "c", EXACTLY_ONE, (), "v"
     )
     with pytest.raises(SelectionContractIntegrityError):
-        SelectionSemanticContractRegistry([(_V1_KEY, inconsistent)])
+        SelectionSemanticContractRegistry([(_HWPX_KEY, inconsistent)])
 
 
 def test_decode_selection_set_rejects_nonlist_option_ids() -> None:

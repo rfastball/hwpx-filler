@@ -17,7 +17,7 @@ import pytest
 
 from _output_folder_pick import pick_output_folder
 
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job, rules_fingerprints
+from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
@@ -117,7 +117,6 @@ def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
         # 두 자리에 적으면 한쪽만 고쳐지는 날 후보가 조용히 0건이 된다.
         **_bound_to(_data_csv_path(tmp_path)),
         filename_pattern="doc-{{seq:001}}",
-        binding_authority=JOB_MAPPING_AUTHORITY,
     )
     if reviewed:
         # 기준선만 세운다 — `last_run_at` 은 건드리지 않는다: 실행 이력은 순위·완주 스탬프
@@ -1227,7 +1226,6 @@ def _mirror_job(tmp_path) -> JobRegistry:
             FieldMapping(template_field="비고", type="const"),   # 명시적 비움
         ]),
         filename_pattern="doc-{{seq:001}}",
-        binding_authority=JOB_MAPPING_AUTHORITY,
     ))
     return reg
 

@@ -13,8 +13,6 @@ from hwpxfiller.application.execution_capture import (
     EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR,
     FIELD_BINDING_INPUT_INTEGRITY_ERROR,
     MATERIALIZATION_BASE_CONTRACT_ID,
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR,
     QUALIFICATION_PROFILE_REVOKED,
     SELECTION_CONTRACT_INTEGRITY_ERROR,
@@ -407,37 +405,19 @@ def test_incomplete_slot_is_domain_block():
     assert "captured_at" not in _flatten_keys(result.captured_attempt_semantic_projection)
 
 
-def test_legacy_binding_is_migration_block():
-    result = _judge(
-        field_binding_observation=DomainBlockedFieldBinding(
-            NEEDS_BINDING_SEMANTIC_MIGRATION, "legacy"
-        )
-    )
-    assert isinstance(result, CapturedExecutionDomainBlock)
-    assert result.normalized_blockers == (NEEDS_BINDING_SEMANTIC_MIGRATION,)
-
-
-def test_stale_binding_base_is_application_review_block():
-    result = _judge(
-        field_binding_observation=DomainBlockedFieldBinding(
-            NEEDS_FIELD_BINDING_APPLICATION_REVIEW, "stale"
-        )
-    )
-    assert isinstance(result, CapturedExecutionDomainBlock)
-    assert result.normalized_blockers == (NEEDS_FIELD_BINDING_APPLICATION_REVIEW,)
-
-
 def test_both_blocked_lists_both_blockers():
+    from hwpxfiller.application.execution_compilation import ACTIVE_FIELD_UNBOUND
+
     result = _judge(
         selection_observation=DomainBlockedSelection(SLOT_CONFIGURATION_INCOMPLETE, "x"),
         field_binding_observation=DomainBlockedFieldBinding(
-            NEEDS_BINDING_SEMANTIC_MIGRATION, "y"
+            ACTIVE_FIELD_UNBOUND, "y"
         ),
     )
     assert isinstance(result, CapturedExecutionDomainBlock)
     assert set(result.normalized_blockers) == {
         SLOT_CONFIGURATION_INCOMPLETE,
-        NEEDS_BINDING_SEMANTIC_MIGRATION,
+        ACTIVE_FIELD_UNBOUND,
     }
 
 
@@ -497,7 +477,7 @@ def test_wrong_materialization_contract_is_dependency_context_error():
 
 
 def test_execution_structure_schema_must_match_declared_schema():
-    # payload·declared 가 v1 로 일치해도 execution_structure(v2)와 어긋나면 loud 로 막힌다.
+    # payload·declared 가 shipping v4 로 일치해도 execution_structure(v2)와 어긋나면 거절한다.
     struct = _structure()
     with pytest.raises(ExecutionCaptureIntegrityError):
         ExactTemplateQualificationContext(
@@ -509,10 +489,10 @@ def test_execution_structure_schema_must_match_declared_schema():
                 adapter_contract_version="a/1",
                 product_rule_version="p/1",
                 operation_alphabet_version="o/1",
-                projection_schema_version="hwpx-structure-projection-v1",
+                projection_schema_version="hwpx-structure-projection-v4",
                 manifest_payload={},
             ),
-            structure_projection_schema_version="hwpx-structure-projection-v1",
+            structure_projection_schema_version="hwpx-structure-projection-v4",
             template_structure_digest=template_structure_digest(struct),
             execution_structure=struct,
             composition_profile_state="SEALED",
@@ -520,15 +500,15 @@ def test_execution_structure_schema_must_match_declared_schema():
         )
 
 
-def test_v1_structure_schema_rejected_at_construction():
-    # v2-only ExecutionTemplateStructure 와 v1 선언 schema 는 loud integrity 로 막힌다(fail-closed).
+def test_mismatched_structure_schema_rejected_at_construction():
+    # v2 ExecutionTemplateStructure 와 v4 선언 schema 는 integrity 오류로 막힌다.
     struct = _structure()
     with pytest.raises(ExecutionCaptureIntegrityError):
         ExactTemplateQualificationContext(
             pass_evidence_id="ev-1",
             qualification_profile_id=PROFILE,
             qualification_profile_semantic_payload=_payload(),
-            structure_projection_schema_version="hwpx-structure-projection-v1",
+            structure_projection_schema_version="hwpx-structure-projection-v4",
             template_structure_digest=template_structure_digest(struct),
             execution_structure=struct,
             composition_profile_state="SEALED",
@@ -673,7 +653,7 @@ def test_selection_from_different_structure_schema_is_context_error():
                 work_id=WORK,
                 template_application_id=APP,
                 selection_semantic_contract_id=CONTRACT,
-                structure_projection_schema_version="hwpx-structure-projection-v1",
+                structure_projection_schema_version="hwpx-structure-projection-v4",
                 template_structure_digest=STRUCT_DIGEST,
                 source_configuration_version=None,
                 declared_selection_digest=None,

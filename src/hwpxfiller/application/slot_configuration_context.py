@@ -124,7 +124,7 @@ def _label_field(value: object, what: str) -> str | None:
 
 
 def _decode_product_structure(
-    payload: Mapping[str, Any], *, schema: str, include_labels: bool
+    payload: Mapping[str, Any], *, schema: str
 ) -> TemplateStructure:
     try:
         slots_raw = payload["slots"]
@@ -146,11 +146,7 @@ def _decode_product_structure(
                     TemplateOption(
                         id=_str_field(opt["id"], "option.id"),
                         fields=_str_list(opt["fields"], "option.fields"),
-                        label=(
-                            _label_field(opt["label"], "option.label")
-                            if include_labels
-                            else None
-                        ),
+                        label=_label_field(opt["label"], "option.label"),
                     )
                 )
             slots.append(
@@ -158,11 +154,7 @@ def _decode_product_structure(
                     id=_str_field(slot["id"], "slot.id"),
                     shared_fields=_str_list(slot["shared_fields"], "slot.shared_fields"),
                     options=tuple(options),
-                    label=(
-                        _label_field(slot["label"], "slot.label")
-                        if include_labels
-                        else None
-                    ),
+                    label=_label_field(slot["label"], "slot.label"),
                 )
             )
         return TemplateStructure(root_fields=root_fields, slots=tuple(slots))
@@ -172,49 +164,14 @@ def _decode_product_structure(
         ) from exc
 
 
-def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
-    """hwpx-structure-projection-v1 payload → TemplateStructure(project_structure 의 역).
-
-    digest 유효해도 형이 틀린 payload(예: ``root_fields: "title"``)는 조용히 char 로
-    쪼개지 않고 시끄럽게 거절한다 — 이 decoder 가 persisted projection 의 신뢰 경계다.
-    """
-    return _decode_product_structure(payload, schema="v1", include_labels=False)
-
-
-def _decode_structure_v2(payload: Mapping[str, Any]) -> TemplateStructure:
-    """hwpx-structure-projection-v2 payload → TemplateStructure(product structure만).
-
-    S4 는 selection 에 필요한 제품 구조(root/shared/option Field·순서)만 lossless projection
-    하고 composition-only fact(occurrence/region/relation/envelope/resolver)는 S4 Configuration
-    권위로 복제하지 않는다. product_structure 하위 dict 는 v1 payload 와 같은 shape 라 v1
-    decoder 를 재사용한다.
-    """
-    product = payload.get("product_structure")
-    if not isinstance(product, Mapping):
-        raise TemplateStructureIntegrityError(
-            "v2 projection payload 에 product_structure 매핑이 없다"
-        )
-    return _decode_structure_v1(product)
-
-
-def _decode_structure_v3(payload: Mapping[str, Any]) -> TemplateStructure:
-    """hwpx-structure-projection-v3 의 canonical Slot/Option label 을 복원한다."""
-    return _decode_product_structure(payload, schema="v3", include_labels=True)
-
-
 def _decode_structure_v4(payload: Mapping[str, Any]) -> TemplateStructure:
-    """hwpx-structure-projection-v4 payload → TemplateStructure(label 포함 product structure).
-
-    v4 는 v2 의 composition-ready shape 에 canonical label 을 더한 shipping schema 다(#773).
-    S4 는 v2 때와 똑같이 ``product_structure`` 만 읽고 composition-only fact(occurrence/region/
-    relation/envelope/resolver)는 S4 권위로 복제하지 않는다 — 다른 점은 label 뿐이다.
-    """
+    """Shipping HWPX projection 의 label 포함 제품 구조를 복원한다."""
     product = payload.get("product_structure")
     if not isinstance(product, Mapping):
         raise TemplateStructureIntegrityError(
             "v4 projection payload 에 product_structure 매핑이 없다"
         )
-    return _decode_product_structure(product, schema="v4", include_labels=True)
+    return _decode_product_structure(product, schema="v4")
 
 
 def _decode_structure_txt_v1(payload: Mapping[str, Any]) -> TemplateStructure:
@@ -235,7 +192,7 @@ def _decode_structure_txt_v1(payload: Mapping[str, Any]) -> TemplateStructure:
         raise TemplateStructureIntegrityError(
             "txt-v1 projection payload 에 product_structure 매핑이 없다"
         )
-    return _decode_product_structure(product, schema="txt-v1", include_labels=True)
+    return _decode_product_structure(product, schema="txt-v1")
 
 
 class StructureProjectionDecoderRegistry:
@@ -263,9 +220,6 @@ class StructureProjectionDecoderRegistry:
 
 DEFAULT_STRUCTURE_DECODER_REGISTRY = StructureProjectionDecoderRegistry(
     [
-        ("hwpx-structure-projection-v1", _decode_structure_v1),
-        ("hwpx-structure-projection-v2", _decode_structure_v2),
-        ("hwpx-structure-projection-v3", _decode_structure_v3),
         ("hwpx-structure-projection-v4", _decode_structure_v4),
         ("txt-structure-projection-v1", _decode_structure_txt_v1),
     ]

@@ -87,7 +87,6 @@ _PROFILE_SURFACE_TERMS = ("profile", "qualification")
 #: (application 전역을 훑지 않는다: in-memory DTO 를 과포획한다.)
 DURABLE_AGGREGATE_MODULES = (
     "stored_execution_plan.py",
-    "stored_field_binding.py",
     "stored_work_configuration.py",
     "work_slot_configuration.py",
 )
@@ -106,11 +105,6 @@ LEDGER_BASELINE = frozenset(
         # S5F R2-04a(#740): stored_execution_plan 의 first-seen seal request ledger 를 제거했다 —
         # seal 은 historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다(idempotency/
         # replay 소비자 부재). content-addressed Plan history 는 04b 대상으로 남는다.
-        "stored_field_binding.py|current_by_application|ApplicationRevisionPointer",
-        "stored_field_binding.py|immutable_binding_revisions|FieldBindingRevision",
-        "stored_field_binding.py|migration_drafts|CommittedDraftRecord",
-        "stored_field_binding.py|application_review_drafts|CommittedDraftRecord",
-        "stored_field_binding.py|first_seen_command_ledger|FieldBindingIdempotencyRecord",
         "stored_work_configuration.py|processed_requests|IdempotencyRecord",
         "work_slot_configuration.py|configurations|WorkSlotConfigurationDraft",
     }

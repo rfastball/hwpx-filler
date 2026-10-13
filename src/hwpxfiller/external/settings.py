@@ -573,13 +573,6 @@ def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
     _mutate(mutate)
 
 
-def load_legacy_tutorial_lessons() -> dict:
-    """#1126 이전 학습 기록 — 읽기 전용 이관 출처(새 기록은 튜토리얼 전용 저장소에만 쓴다)."""
-    bucket = _read().get("tutorial")
-    raw = bucket.get("lessons") if isinstance(bucket, dict) else None
-    return raw if isinstance(raw, dict) else {}
-
-
 def load_tutorial_practice() -> dict:
     bucket = _read().get("tutorial")
     raw = bucket.get("practice") if isinstance(bucket, dict) else None

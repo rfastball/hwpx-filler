@@ -128,7 +128,7 @@ def _seed_authority(root, case: Case, *, application_id: str = APP) -> None:
                     origin=INITIALIZATION, prepared_change_id=None, actor="t", applied_at=AT,
                 ),
             ),
-            preparations=(), prepared_changes=(), apply_provenance=(), outbox_events=(),
+            preparations=(), prepared_changes=(),
         )
     )
 
@@ -381,7 +381,7 @@ def test_store_backed_structure_resolver_rejects_absent_projection(tmp_path) -> 
                     origin=INITIALIZATION, prepared_change_id=None, actor="t", applied_at=AT,
                 ),
             ),
-            preparations=(), prepared_changes=(), apply_provenance=(), outbox_events=(),
+            preparations=(), prepared_changes=(),
         )
     )
     resolver = store_backed_structure_resolver(

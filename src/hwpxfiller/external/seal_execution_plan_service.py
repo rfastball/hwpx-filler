@@ -6,9 +6,8 @@
 
 배치·공유: :class:`hwpxfiller.webapp.slot_configuration_product.SlotConfigurationProduct`·
 :class:`TemplateChangeCoordinator` 와 **같은 template authority root**(:func:`default_template_authority_dir`)
-아래 같은 subdir 을 연다 — bootstrap 이 세운 Work/Application/PASS Evidence·slot config와
-구판 field binding을 읽는다(별도 스토어 조립 없음). 새 저장본의 실행 Binding은 Job Mapping에서
-읽기 시점에 파생하며 S5 저장소에 다시 쓰지 않는다. :class:`WorkspaceMetadataStore` 는 root 를 직접
+아래 같은 subdir 을 연다 — bootstrap 이 세운 Work/Application/PASS Evidence·slot config를
+읽는다. 실행 Binding은 Job Mapping에서 읽기 시점에 파생한다. :class:`WorkspaceMetadataStore` 는 root 를 직접
 공유해 SlotConfigurationProduct 와 **같은 workspace_instance_id** 를 쓰고, 따라서 per-Work fence
 키(ws, work_id)도 같은 namespace 에 든다.
 
@@ -17,9 +16,7 @@
 조회하지 않고 매 호출 current authority 를 PerWorkFence 하나 아래 재계산한다(``fresh_observation``).
 그래서 이 service 는 route·auth·capture·summary·shipping policy seam 만 결선한다.
 
-구판 Job은 S5 판본과 Mapping을 대조해 충돌·이전 의미 판본을 검토 요구로 닫는다. 명시적
-편집기 저장이 Job Mapping 권위를 세운 뒤에는 모든 규칙(비활성 Field 포함)을 그 저장본에서
-파생하므로 Option 왕복에 추가 확정이나 S5 쓰기가 필요 없다.
+모든 규칙(비활성 Field 포함)은 Job Mapping에서 파생한다.
 """
 
 from __future__ import annotations
@@ -37,17 +34,14 @@ from ..application.jobs import (
     load_job,
 )
 from ..application.execution_composition import RuntimeMaterializerConformanceRegistry
-from ..application.execution_structure import decode_execution_structure
 from ..application.seal_execution_plan import (
     RouteResolutionError,
     SealExecutionPlanCommand,
 )
 from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..domain.job import Job
-from ..domain.job import JOB_MAPPING_AUTHORITY
 from .candidate_store import CandidateObjectStore
 from .job_binding_projection import source_schema_keys as _source_schema_keys
-from .field_binding_store import WorkFieldBindingStore
 from .qualification_store import QualificationObjectStore
 from .runtime_capability import (
     admitted_runtime_conformance_registry,
@@ -63,7 +57,6 @@ from .work_configuration_store import (
     WorkspaceMetadataStore,
 )
 from .work_template_store import AtomicWorkTemplateStateStore
-from .work_template_store import WorkAggregateNotFound
 from .seal_execution_plan_product import (
     RuntimeConformanceBinding,
     SealExecutionPlanProduct,
@@ -115,7 +108,6 @@ class SealExecutionPlanService:
         qualification = QualificationObjectStore(self._root / "qualification")
         candidate = CandidateObjectStore(self._root / "candidates")
         slot_config = WorkSlotConfigurationStore(self._root / "slot_configs")
-        field_binding = WorkFieldBindingStore(self._root / "field_bindings")
         # root 직접 공유 → SlotConfigurationProduct 와 같은 workspace_instance_id.
         self._workspace = WorkspaceMetadataStore(self._root)
 
@@ -126,7 +118,6 @@ class SealExecutionPlanService:
             qualification_store=qualification,
             candidate_store=candidate,
             slot_config_store=slot_config,
-            field_binding_store=field_binding,
             clock=self._seal_clock,
             job_for_work=self._routed_job,
         )
@@ -268,48 +259,6 @@ class SealExecutionPlanService:
         if job.authority_id != work_id:
             raise ValueError("Field Binding capture 의 Work identity 가 이동했습니다")
         return job
-
-    def unrepresented_legacy_rules(
-        self, previous: Job, candidate: Job, editor_field_ids: frozenset[str]
-    ) -> tuple[str, ...]:
-        """Names of still-present S5 rules an explicit Job save cannot carry.
-
-        Called by the editor while it holds the generation lease, before replacing
-        Job JSON. A field removed from the current template is BROKEN, not inactive.
-        """
-        if previous.binding_authority == JOB_MAPPING_AUTHORITY or not previous.authority_id:
-            return ()
-        try:
-            aggregate = self._work_state.load(previous.authority_id)
-        except WorkAggregateNotFound as exc:
-            raise ValueError("이전 Field Binding 의 Work 상태를 확인할 수 없습니다") from exc
-        application_id = aggregate.work.current_template_application_id
-        prior = self._capture._nearest_binding_revision(aggregate, application_id)
-        if prior is None:
-            return ()
-        application = next(
-            (item for item in aggregate.applications if item.application_id == application_id),
-            None,
-        )
-        if application is None:
-            raise ValueError("현재 템플릿 Application 을 확인할 수 없습니다")
-        evidence = self._qualification.get_evidence(application.pass_evidence_id)
-        projection = evidence.structure_projection
-        if projection is None:
-            raise ValueError("현재 템플릿의 Field 구조를 확인할 수 없습니다")
-        structure = decode_execution_structure(projection.payload)
-        present_fields = {
-            occurrence.field_id
-            for occurrence in structure.field_occurrences
-        }
-        saved_fields = {item.template_field for item in candidate.mapping.mappings}
-        return tuple(
-            rule.field_id
-            for rule in prior.binding_rules
-            if rule.field_id in present_fields
-            and rule.field_id in editor_field_ids
-            and rule.field_id not in saved_fields
-        )
 
     def _resolve_route(self, workspace_instance_id: str, work_ref: str) -> str:
         """work_ref → WorkAuthorityId. 부재·손상은 RouteResolutionError(attempt, request 미소비)."""

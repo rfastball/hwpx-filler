@@ -13,7 +13,6 @@ import pytest
 from hwpxfiller.domain.dataset_reference import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
-    STATUS_RETIRED,
     DatasetReference,
     excel_identity,
     filters_for_sheet,
@@ -81,24 +80,6 @@ def test_status_transitions():
     assert it.status == STATUS_ARCHIVED and not it.is_active
     it.activate()
     assert it.is_active
-
-
-def test_retired_status_migrates_to_archived_on_read():
-    """폐기된 retired 상태의 구 .dataset.json 은 읽기 시 archived 로 정준 정규화(#5).
-
-    무손실 forward-마이그레이션 — retired 와 archived 는 실행 후보 여부가 동일했다.
-    loud raise 로 죽지 않고 조용히 접어, durable 참조가 보존된다.
-    """
-    it = DatasetReference.from_dict(
-        {"name": "구은퇴", "kind": "excel", "opts": {"path": "/d.xlsx"}, "status": STATUS_RETIRED}
-    )
-    assert it.status == STATUS_ARCHIVED and not it.is_active
-
-
-def test_retired_not_a_valid_constructed_status():
-    """retired 는 이제 직접 생성할 수 없다(마이그레이션 별칭 전용, #5) — 새 저장 금지."""
-    with pytest.raises(ValueError):
-        DatasetReference(name="x", kind="excel", status=STATUS_RETIRED)
 
 
 def test_from_dict_backward_compatible_defaults():

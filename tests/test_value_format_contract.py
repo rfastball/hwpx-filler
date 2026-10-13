@@ -1,4 +1,4 @@
-"""field-binding/v3 표시형 계약 — 쌍의 모양·렌더 단일 출처·판 framing·legacy migration (#1081 PR0b).
+"""표시형 계약 — 쌍의 모양·렌더 단일 출처·현재 Job Mapping.
 
 legacy Mapping 의 ``type``·``fmt`` 가 문서 글자를 정한다. v3 는 그 결정을 규칙의 표시형 쌍
 (``format_kind`` × ``format_code``)으로 싣고, 렌더는 legacy 와 같은 해석기 하나가 한다.
@@ -8,12 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.application.field_binding_input import (
-    LegacyFieldBindingEntry,
-    build_field_binding_input,
-    legacy_value_format,
-    prepare_legacy_field_binding_migration,
-)
+from hwpxfiller.application.field_binding_input import build_field_binding_input
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
@@ -37,7 +32,11 @@ from hwpxfiller.domain.field_binding import (
     require_field_binding_contract,
     require_value_format,
 )
-from hwpxfiller.domain.mapping import SOURCE_CARRIER_TYPES, apply_transform
+from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import (
+    SOURCE_CARRIER_TYPES, FieldMapping, MappingProfile, apply_transform,
+)
+from hwpxfiller.external.job_binding_projection import mapping_rules
 
 _STRIP = DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP
 
@@ -112,7 +111,11 @@ def test_rule_rejects_a_malformed_kind_pair() -> None:
 )
 def test_render_matches_legacy_apply_transform(legacy_type, fmt, raw, expected) -> None:
     """migration 이 옮긴 쌍 + legacy strip 정책 = legacy ``apply_transform`` 과 같은 글자."""
-    kind, code = legacy_value_format(legacy_type, fmt)
+    (rule,) = mapping_rules(Job(
+        name="job", template_path="template.hwpx",
+        mapping=MappingProfile(mappings=[FieldMapping("field", source="value", type=legacy_type, fmt=fmt)]),
+    ))
+    kind, code = rule.format_kind, rule.format_code
     legacy = apply_transform(legacy_type, raw, "", fmt)
     assert legacy == expected
     assert render_value_format(kind, code, raw.strip()) == legacy
@@ -219,7 +222,7 @@ def test_execution_input_is_always_the_current_contract() -> None:
     assert field_binding.field_binding_semantic_contract_id == FIELD_BINDING_SEMANTIC_VERSION
 
 
-# ─── legacy Mapping → v3 migration ───────────────────────────────────────────────
+# ─── Job Mapping → execution rules ───────────────────────────────────────────────
 @pytest.mark.parametrize(
     ("legacy_type", "fmt", "expected"),
     [
@@ -234,29 +237,31 @@ def test_execution_input_is_always_the_current_contract() -> None:
         ("today", "kor", ("date", "kor")),
     ],
 )
-def test_legacy_value_format_keeps_the_type_decision(legacy_type, fmt, expected) -> None:
-    assert legacy_value_format(legacy_type, fmt) == expected
+def test_job_mapping_keeps_the_type_decision(legacy_type, fmt, expected) -> None:
+    (rule,) = mapping_rules(Job(
+        name="job", template_path="template.hwpx",
+        mapping=MappingProfile(mappings=[FieldMapping("field", source="value", type=legacy_type, fmt=fmt)]),
+    ))
+    assert (rule.format_kind, rule.format_code) == expected
 
 
-def test_legacy_value_format_refuses_unknown_types() -> None:
-    with pytest.raises(FieldBindingInputIntegrityError):
-        legacy_value_format("currency", "")
+def test_job_mapping_refuses_unknown_types() -> None:
+    with pytest.raises(ValueError, match="지원하지 않는 유형"):
+        mapping_rules(Job(
+            name="job", template_path="template.hwpx",
+            mapping=MappingProfile(mappings=[FieldMapping("field", type="currency")]),
+        ))
 
 
-def test_migration_candidates_carry_the_format_pair() -> None:
-    draft = prepare_legacy_field_binding_migration(
-        work_authority_id="work",
-        base_template_application_id="app",
-        legacy_entries=(
-            LegacyFieldBindingEntry("금액", "amount", "금액", "", ""),
-            LegacyFieldBindingEntry("일자", "date", "일자", "", "kor"),
-            LegacyFieldBindingEntry("이름", "text", "이름", "", ""),
-            LegacyFieldBindingEntry("고정", "const", "", "값", ""),
-            LegacyFieldBindingEntry("오늘", "today", "", "", ""),
-        ),
-        captured_at="2026-09-29T00:00:00",
-    )
-    pairs = {c.field_id: (c.format_kind, c.format_code) for c in draft.candidate_rules}
+def test_job_mapping_rules_carry_the_format_pair() -> None:
+    job = Job(name="job", template_path="template.hwpx", mapping=MappingProfile(mappings=[
+        FieldMapping("금액", source="금액", type="amount"),
+        FieldMapping("일자", source="일자", type="date", fmt="kor"),
+        FieldMapping("이름", source="이름"),
+        FieldMapping("고정", type="const", const="값"),
+        FieldMapping("오늘", type="today"),
+    ]))
+    pairs = {rule.field_id: (rule.format_kind, rule.format_code) for rule in mapping_rules(job)}
     assert pairs == {
         "금액": ("amount", ""),
         "일자": ("date", "kor"),
@@ -265,4 +270,3 @@ def test_migration_candidates_carry_the_format_pair() -> None:
         # 「오늘 날짜」는 date 표시형을 공유한다 — 빈 코드는 date 기본 표시라는 결정(#950).
         "오늘": ("date", ""),
     }
-    assert draft.blockers == ()

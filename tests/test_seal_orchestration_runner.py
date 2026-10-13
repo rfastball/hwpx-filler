@@ -599,11 +599,11 @@ def test_decide_final_blocked_candidate_current_not_sealable_raises() -> None:
 def test_domain_block_evidence_provenance_from_observations() -> None:
     from hwpxfiller.application.execution_capture import (
         DomainBlockedFieldBinding,
-        NEEDS_BINDING_SEMANTIC_MIGRATION,
     )
+    from hwpxfiller.application.execution_compilation import ACTIVE_FIELD_UNBOUND
 
     structure = _structure()
-    # selection captured(config ref from selection) + binding blocked(revision unresolved).
+    # selection captured(config ref from selection) + binding blocked.
     block = judge_captured_execution(
         workspace_instance_id=WS, work_authority_id=WORK,
         expected_template_application_id=APP, expected_profile_id=PROFILE,
@@ -611,7 +611,7 @@ def test_domain_block_evidence_provenance_from_observations() -> None:
         template=_template(structure, app=APP),
         selection_observation=CapturedSelection(_snapshot(structure, app=APP)),
         field_binding_observation=DomainBlockedFieldBinding(
-            NEEDS_BINDING_SEMANTIC_MIGRATION, "migration 필요"
+            ACTIVE_FIELD_UNBOUND, "연결 필요"
         ),
         captured_at=AT, policy_block=None,
     )

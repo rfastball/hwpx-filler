@@ -1,6 +1,6 @@
 """S3-04 (#654): idempotent Preparation과 latest-intent supersede 시작 흐름 계약.
 
-판정(plan_prepare)은 순수 층에서, transaction·worker handoff(start_prepare)는 store 위에서 잰다 —
+판정(plan_prepare)은 순수 층에서, transaction(start_prepare)은 store 위에서 잰다 —
 같은 setup(초기화된 aggregate)과 oracle(Preparation 상태·seq·current pointer)을 공유하므로 한
 owner 로 모은다.
 """
@@ -18,7 +18,6 @@ from hwpxfiller.application.candidate_revision import (
     blob_digest,
 )
 from hwpxfiller.application.prepare_template_change import (
-    CAPTURE_REQUESTED,
     PreparePins,
     plan_prepare,
 )
@@ -170,8 +169,6 @@ def test_new_prepare_supersedes_ready_prep_and_prepared_change(tmp_path):
             applications=agg.applications,
             preparations=(ready,),
             prepared_changes=(PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", CHANGE_PREPARED, "t3"),),
-            apply_provenance=(),
-            outbox_events=(),
         )
     _start(store, request_id="RQ2", preparation_id="P2")
     agg = store.load("W1")
@@ -182,16 +179,14 @@ def test_new_prepare_supersedes_ready_prep_and_prepared_change(tmp_path):
 
 # ─── 동시성 ───────────────────────────────────────────────────────────────────
 
-def test_same_key_two_threads_one_preparation_one_worker(tmp_path):
+def test_same_key_two_threads_one_preparation(tmp_path):
     store = _fresh_work(tmp_path)
-    handoffs: list = []
     barrier = threading.Barrier(2)
 
     def run(pid):
         barrier.wait()
         _start(
             store, request_id="RQ1", preparation_id=pid,
-            on_worker_handoff=handoffs.append,
         )
 
     threads = [threading.Thread(target=run, args=(f"P{i}",)) for i in range(2)]
@@ -201,7 +196,6 @@ def test_same_key_two_threads_one_preparation_one_worker(tmp_path):
         t.join()
     agg = store.load("W1")
     assert len(agg.preparations) == 1  # Preparation 1개
-    assert len(handoffs) == 1  # worker handoff 1회
 
 
 def test_different_keys_last_commit_is_current(tmp_path):
@@ -234,8 +228,6 @@ def test_prior_applied_change_not_superseded(tmp_path):
             applications=agg.applications,
             preparations=(applied,),
             prepared_changes=(PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", CHANGE_PREPARED, "t3"),),
-            apply_provenance=(),
-            outbox_events=(),
         )
     _start(store, request_id="RQ2", preparation_id="P2")
     agg = store.load("W1")
@@ -253,20 +245,6 @@ def test_no_client_supplied_base_or_profile_channel():
         assert forbidden not in params
 
 
-def test_failed_worker_handoff_leaves_durable_outbox(tmp_path):
-    # 콜백이 commit 뒤 던져도 CAPTURING prep + capture outbox event 는 durable(재시도 가능).
-    store = _fresh_work(tmp_path)
-
-    def boom(_prep):
-        raise RuntimeError("executor down")
-
-    with pytest.raises(RuntimeError):
-        _start(store, request_id="RQ1", preparation_id="P1", on_worker_handoff=boom)
-    agg = store.load("W1")
-    assert agg.preparations[0].status == PREP_CAPTURING
-    assert [e.event_type for e in agg.outbox_events] == [CAPTURE_REQUESTED]
-
-
 def test_replay_returns_existing_even_if_resolver_now_fails(tmp_path):
     # 멱등 replay 는 resolve_pins 앞에서 short-circuit → resolver 가 이제 실패해도 안 터진다.
     store = _fresh_work(tmp_path)
@@ -279,9 +257,8 @@ def test_replay_returns_existing_even_if_resolver_now_fails(tmp_path):
     assert again.preparation_id == first.preparation_id
 
 
-def test_commit_failure_skips_worker(tmp_path, monkeypatch):
+def test_commit_failure_keeps_previous_work(tmp_path, monkeypatch):
     store = _fresh_work(tmp_path)
-    handoffs: list = []
     import hwpxfiller.external.work_template_store as mod
 
     def boom(*a, **k):
@@ -289,8 +266,7 @@ def test_commit_failure_skips_worker(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "write_text_atomic", boom)
     with pytest.raises(OSError):
-        _start(store, request_id="RQ1", preparation_id="P1", on_worker_handoff=handoffs.append)
-    assert handoffs == []  # commit 실패 → worker 시작 없음
+        _start(store, request_id="RQ1", preparation_id="P1")
     assert store.load("W1").work.current_template_preparation_id is None  # 무손상
 
 
@@ -313,12 +289,12 @@ def test_plan_prepare_pure_idempotent_without_store(tmp_path):
         agg, prepare_request_id="RQ1", pins=PINS,
         preparation_id="P1", execution_session_id="S", started_at="t3",
     )
-    assert plan1.created
+    assert plan1.preparation.preparation_id == "P1"
     replay = plan_prepare(
         plan1.aggregate, prepare_request_id="RQ1", pins=PINS,
         preparation_id="P2", execution_session_id="S", started_at="t9",
     )
-    assert not replay.created
+    assert replay.preparation is plan1.preparation
     assert replay.aggregate is plan1.aggregate  # mutation 없음
 
 

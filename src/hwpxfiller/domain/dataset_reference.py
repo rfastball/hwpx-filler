@@ -18,11 +18,6 @@ STATUS_ACTIVE = "active"
 STATUS_ARCHIVED = "archived"
 _STATUSES = (STATUS_ACTIVE, STATUS_ARCHIVED)
 
-# 구 ``.dataset.json`` 읽기 호환 전용. 새 값으로는 생성·저장하지 않는다.
-STATUS_RETIRED = "retired"
-_LEGACY_STATUS_ALIASES = {STATUS_RETIRED: STATUS_ARCHIVED}
-
-
 def excel_identity(path: "str | Path", sheet: "str | None" = "") -> str:
     """엑셀/CSV 참조 정체성: 정규화 절대 경로 + 확정 시트."""
     return os.path.normcase(os.path.abspath(os.fspath(path))) + "\x1f" + (sheet or "")
@@ -118,9 +113,8 @@ class DatasetReference:
 
     @classmethod
     def from_dict(cls, value: dict) -> Self:
-        """구 retired 값을 archived로 무손실 정규화해 참조를 복원한다."""
+        """저장된 데이터셋 참조를 복원한다."""
         status = value.get("status", STATUS_ACTIVE)
-        status = _LEGACY_STATUS_ALIASES.get(status, status)
         if not isinstance(status, str):
             raise ValueError(f"알 수 없는 데이터셋 상태입니다: {status!r}")
         return cls(
@@ -240,7 +234,6 @@ def reference_identity(item: DatasetReference) -> "str | None":
 __all__ = [
     "STATUS_ACTIVE",
     "STATUS_ARCHIVED",
-    "STATUS_RETIRED",
     "DatasetReference",
     "excel_identity",
     "excel_reference_opts",

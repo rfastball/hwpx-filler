@@ -8,7 +8,7 @@
 
 - 규칙 불변식 — source·constant·가공 없음, date 표시형만, 공백 보존 정책만.
 - 판 framing — v4 에서만 봉인되고(v2·v3 동결) 같은 규칙은 같은 digest, 저장 codec 왕복.
-- legacy migration — ``today`` + date 프리셋 전부가 RUNTIME_DATE 후보가 되고 legacy 와 같은 글자.
+- Job Mapping — ``today`` + date 프리셋 전부가 RUNTIME_DATE 규칙이 되고 같은 글자.
 - 실행 계획 — 규칙만 봉인하고 시각은 싣지 않는다(Plan digest 가 시각과 무관).
 - record validation — caller 가 캡처한 시각 하나로 렌더, 결측·표식 없음, 시각 없으면 닫힘.
 - 파일 이름 — 날짜 토큰·「오늘 날짜」 토큰(Active·inactive)이 배달 시각 하나에서 나온다(RC-02).
@@ -28,10 +28,6 @@ from hwpxfiller.application.execution_compilation import (
     RuntimeDate,
     encode_value_expression,
 )
-from hwpxfiller.application.field_binding_input import (
-    LegacyFieldBindingEntry,
-    prepare_legacy_field_binding_migration,
-)
 from hwpxfiller.application.record_validation import (
     MISSING_VALUE_MARKED,
     RUNTIME_CLOCK_UNAVAILABLE,
@@ -44,7 +40,6 @@ from hwpxfiller.application.record_validation import (
     validate_data_records_against_current_value,
 )
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
-from hwpxfiller.application.stored_field_binding import _decode_rule, _encode_rule
 from hwpxfiller.domain import format_engine
 from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
@@ -64,7 +59,9 @@ from hwpxfiller.domain.field_binding import (
     parse_runtime_clock,
     render_runtime_date,
 )
-from hwpxfiller.domain.mapping import FieldMapping, apply_transform
+from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile, apply_transform
+from hwpxfiller.external.job_binding_projection import mapping_rules
 from hwpxfiller.domain.text_slice import TextSlice
 from tests.test_generation_delivery import (
     _CLOCK,
@@ -162,34 +159,14 @@ def test_runtime_date_digest_is_deterministic_and_distinct() -> None:
     assert FIELD_BINDING_SEMANTIC_VERSION == "field-binding/v5"
 
 
-def test_stored_codec_round_trips_a_runtime_date_rule() -> None:
-    rule = _today(code="%Y.%m.%d")
-    encoded = _encode_rule(rule)
-    assert encoded["binding_kind"] == RUNTIME_DATE and "text_slice" not in encoded
-    assert _decode_rule(encoded) == rule
-
-
-# ─── legacy migration ──────────────────────────────────────────────────────────────
+# ─── Job Mapping projection ────────────────────────────────────────────────────────
 @pytest.mark.parametrize("code", DATE_PRESETS)
-def test_legacy_today_migrates_with_each_date_preset(code) -> None:
-    draft = prepare_legacy_field_binding_migration(
-        work_authority_id="work",
-        base_template_application_id="app",
-        legacy_entries=(LegacyFieldBindingEntry("작성일", "today", "", "", code),),
-        captured_at="2026-09-30T00:00:00",
+def test_job_today_projects_with_each_date_preset(code) -> None:
+    job = Job(
+        name="job", template_path="template.hwpx",
+        mapping=MappingProfile(mappings=[FieldMapping("작성일", type="today", fmt=code)]),
     )
-    assert draft.blockers == ()
-    (candidate,) = draft.candidate_rules
-    rule = FieldBindingRule(
-        candidate.field_id,
-        candidate.binding_kind,
-        POLICY,
-        source_key=candidate.source_key,
-        format_code=candidate.format_code,
-        canonical_constant_value=candidate.canonical_constant_value,
-        format_kind=candidate.format_kind,
-        text_slice=candidate.text_slice,
-    )
+    (rule,) = mapping_rules(job)
     assert rule.binding_kind == RUNTIME_DATE
     # 판본 규칙의 글자 = legacy 「오늘 날짜」의 글자(같은 시각이면).
     assert render_runtime_date(rule.format_code or "", NOW) == apply_transform(

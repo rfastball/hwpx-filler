@@ -1,31 +1,22 @@
-"""Project a saved Job Mapping into the current execution Binding contract."""
+"""Project the saved Job mapping into the execution Binding contract."""
 
 from __future__ import annotations
 
-from hwpxfiller.application.field_binding_input import (
-    FieldBindingInput,
-    LegacyFieldBindingEntry,
-    MigrationCandidateRule,
-    build_field_binding_input,
-    prepare_legacy_field_binding_migration,
-)
+from hwpxfiller.application.field_binding_input import FieldBindingInput, build_field_binding_input
 from hwpxfiller.domain.field_binding import (
+    CONSTANT,
+    DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
+    DOCUMENT_CONTENT_VALUE_POLICY_V1,
+    RUNTIME_DATE,
+    SOURCE,
+    ExactText,
     FieldBindingRule,
     resolve_document_value_policy,
     txt_document_value_policy,
 )
 from hwpxfiller.domain.job import Job
-from hwpxfiller.domain.mapping import MappingProfile
+from hwpxfiller.domain.mapping import TYPES, MappingProfile
 from hwpxfiller.domain.raw_data_record import RAW_RECORD_CONTRACT_ID
-
-
-def legacy_entries(mapping: MappingProfile) -> tuple[LegacyFieldBindingEntry, ...]:
-    return tuple(
-        LegacyFieldBindingEntry(
-            item.template_field, item.type, item.source, item.const, item.fmt, item.slice
-        )
-        for item in mapping.mappings
-    )
 
 
 def source_schema_keys(mapping: MappingProfile) -> tuple[str, ...]:
@@ -38,53 +29,42 @@ def source_schema_keys(mapping: MappingProfile) -> tuple[str, ...]:
     )
 
 
-def rule_from_candidate(
-    candidate: MigrationCandidateRule, *, media: str
-) -> FieldBindingRule:
-    resolve_policy = (
-        txt_document_value_policy if media == "txt" else resolve_document_value_policy
-    )
-    return FieldBindingRule(
-        field_id=candidate.field_id,
-        binding_kind=candidate.binding_kind,
-        document_content_value_policy=resolve_policy(candidate.proposed_policy_id),
-        source_key=candidate.source_key,
-        format_code=candidate.format_code,
-        canonical_constant_value=candidate.canonical_constant_value,
-        format_kind=candidate.format_kind,
-        text_slice=candidate.text_slice,
-    )
-
-
 def mapping_rules(job: Job) -> tuple[FieldBindingRule, ...]:
-    """Validate every saved rule, including inactive fields; do not test run readiness."""
-    draft = prepare_legacy_field_binding_migration(
-        work_authority_id=job.authority_id or "draft-work",
-        base_template_application_id="draft-application",
-        legacy_entries=legacy_entries(job.mapping),
-        captured_at="draft",
-    )
-    if draft.blockers:
-        raise ValueError(f"Mapping 규칙을 옮길 수 없습니다: {draft.blockers!r}")
-    rules = tuple(rule_from_candidate(item, media=job.media) for item in draft.candidate_rules)
-    # The builder checks one rule per field and canonical source keys. The draft
-    # identifiers are only structural validation; no Application is read or written.
-    build_field_binding_input(
-        workspace_instance_id="draft-workspace",
-        work_authority_id=job.authority_id or "draft-work",
-        base_template_application_id="draft-application",
-        binding_rules=rules,
-        source_schema_keys=source_schema_keys(job.mapping),
-        raw_record_contract_id=RAW_RECORD_CONTRACT_ID,
-        captured_at="draft",
-    )
-    return rules
+    """Translate every saved Mapping rule, including inactive template fields."""
+    policy = txt_document_value_policy if job.media == "txt" else resolve_document_value_policy
+    rules: list[FieldBindingRule] = []
+    for item in job.mapping.mappings:
+        if item.type == "const":
+            rules.append(FieldBindingRule(
+                item.template_field, CONSTANT,
+                policy(DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id),
+                canonical_constant_value=ExactText(item.const),
+            ))
+        elif item.type == "today":
+            rules.append(FieldBindingRule(
+                item.template_field, RUNTIME_DATE,
+                policy(DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id),
+                format_kind="date", format_code=item.fmt,
+            ))
+        elif item.type in {"text", "date", "amount"}:
+            format_kind = None if item.type == "text" and not item.fmt else item.type
+            rules.append(FieldBindingRule(
+                item.template_field, SOURCE,
+                policy(DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP.policy_id),
+                source_key=item.source,
+                format_kind=format_kind,
+                format_code=None if format_kind is None else item.fmt,
+                text_slice=item.slice,
+            ))
+        else:
+            raise ValueError(f"지원하지 않는 유형: {item.type!r} (지원: {TYPES})")
+    return tuple(rules)
 
 
 def job_binding_input(
     job: Job, workspace_id: str, application_id: str, captured_at: str
 ) -> FieldBindingInput:
-    """Make a revision-keyed immutable execution input from the atomic Job JSON."""
+    """Build the exact execution input from the atomic Job JSON."""
     return build_field_binding_input(
         workspace_instance_id=workspace_id,
         work_authority_id=job.authority_id,

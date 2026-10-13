@@ -27,7 +27,6 @@ from hwpxfiller.application.document_creation_vocabulary import (
     DEFAULT_COLLISION_POLICY,
 )
 from hwpxfiller.application.jobs import Job
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -116,7 +115,7 @@ def _controller(
     """
     root = default_template_authority_dir()
     if seed:
-        _seed_v2_work(root, with_binding=with_binding)
+        _seed_v2_work(root)
     reg = JobRegistry(tmp_path / "jobs")
     # 기본 template_path 는 상대 경로다 — 저장 폴더 기본값이 서지 **않는** 형상(U3-06 #879).
     # 기본값 도출을 재는 테스트만 전체 경로를 건넨다.
@@ -132,7 +131,6 @@ def _controller(
             FieldMapping("항목", type="const", const=""),
             FieldMapping("금액", source="금액열"),
         ]) if with_binding else MappingProfile()),
-        binding_authority=JOB_MAPPING_AUTHORITY if with_binding else "",
     ))
     reg.assign_authority_id(WORK_REF, WORK)
     kwargs = dict(
@@ -1579,14 +1577,14 @@ def test_verdicts_from_current_work_observation() -> None:
         work_authority_ref="w",
         current_sealability="DOMAIN_BLOCKED",
         observed_at="t",
-        normalized_blockers_or_policy=("NEEDS_FIELD_BINDING_APPLICATION_REVIEW",),
+        normalized_blockers_or_policy=("ACTIVE_FIELD_UNBOUND",),
     )
     v = execution_verdicts_from_fresh(obs)
     assert v.current_work_sealability == "DOMAIN_BLOCKED"
     assert v.admission.state == "NOT_ADMITTED"  # 미봉인 → 정직한 NOT_ADMITTED(READY 아님)
 
     assert v.normalized_blockers_or_policy == (
-        "NEEDS_FIELD_BINDING_APPLICATION_REVIEW",
+        "ACTIVE_FIELD_UNBOUND",
     )
 
 
@@ -1599,7 +1597,7 @@ def test_normalized_binding_blocker_selects_review_binding() -> None:
         work_authority_ref="w",
         current_sealability="DOMAIN_BLOCKED",
         observed_at="t",
-        normalized_blockers_or_policy=("NEEDS_FIELD_BINDING_APPLICATION_REVIEW",),
+        normalized_blockers_or_policy=("ACTIVE_FIELD_UNBOUND",),
     )
     result = WorkbenchObservationProduct().compose(
         data_mounted=True,
@@ -1928,7 +1926,6 @@ def test_binding_commit_reuses_auto_check_and_reaches_current(tmp_path: Path) ->
     ctrl = _controller(tmp_path, with_binding=False)
     job = ctrl.registry.load(WORK_REF)
     job.mapping = _saved_active_mapping()
-    job.binding_authority = JOB_MAPPING_AUTHORITY
     ctrl.registry.save(job, allow_overwrite=True)
 
     result = ctrl.on_editor_mapping_saved(WORK_REF)
@@ -1945,7 +1942,6 @@ def test_binding_commit_for_other_work_does_not_absorb_observation(
     ctrl = _controller(tmp_path, with_binding=False)
     job = ctrl.registry.load(WORK_REF)
     job.mapping = _saved_active_mapping()
-    job.binding_authority = JOB_MAPPING_AUTHORITY
     ctrl.registry.save(job, allow_overwrite=True)
     ctrl.work.name = "\ub2e4\ub978\uc791\uc5c5"
 

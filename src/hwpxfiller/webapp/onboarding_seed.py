@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..domain.dataset_reference import DatasetReference
-from ..domain.job import JOB_MAPPING_AUTHORITY, Job
+from ..domain.job import Job
 from ..domain.mapping import FieldMapping, MappingProfile
 from ..domain.schema import infer_type
 from ..external.dataset_store import DatasetPoolRegistry
@@ -130,7 +130,7 @@ def _save_job(tutorial: Any, home: Path, name: str, template: str, data: str, sh
     job = Job(name=name, template_path=template_path,
               mapping=_mapping(_template_fields(template_path, is_txt), blank_unit=data == "derived"),
               filename_pattern="" if is_txt else "구매입찰공고-{{입찰공고번호}}",
-              data_path=data_path, data_sheet=sheet, binding_authority=JOB_MAPPING_AUTHORITY)
+              data_path=data_path, data_sheet=sheet)
     JobRegistry(home / "jobs", template_root=lambda: home / "templates").save(job)
     ctx["job_name"] = name
     ctx["seeded"] = True

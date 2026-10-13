@@ -176,28 +176,7 @@ class SelectionSemanticContractRegistry:
         return manifest
 
 
-_V1_BINDING_KEY = SelectionSemanticBindingKey(
-    qualification_profile_id="hwpx-template-qualification-v1",
-    structure_projection_schema_version="hwpx-structure-projection-v1",
-)
-
-# S5-03(#699) additive: composition-ready profile + projection-v2 는 selection 의미를
-# 그대로 재사용한다 — 같은 slot-selection/v1 manifest 에 결속한다(v1 binding 불변). 리터럴은
-# ring 경계 때문에 여기 산다(Domain 은 application 을 import 하지 않는다) — 새 profile id 를
-# 바꾸면 application.execution_structure 의 상수와 함께 올린다.
-_V2_BINDING_KEY = SelectionSemanticBindingKey(
-    qualification_profile_id="hwpx-template-qualification-v2",
-    structure_projection_schema_version="hwpx-structure-projection-v2",
-)
-
-_V3_BINDING_KEY = SelectionSemanticBindingKey(
-    qualification_profile_id="hwpx-template-qualification-v3",
-    structure_projection_schema_version="hwpx-structure-projection-v3",
-)
-
-# S5F #773: shipping label-bearing composition-ready pair. selection 의미는 v1~v3 와 같다 —
-# label 과 composition fact 는 Slot 선택 규칙(EXACTLY_ONE)을 바꾸지 않으므로 같은 manifest 에
-# 결속한다(v1/v2/v3 binding 불변).
+# Shipping HWPX/TXT pair 는 같은 Slot 선택 규칙(EXACTLY_ONE)을 사용한다.
 _V4_BINDING_KEY = SelectionSemanticBindingKey(
     qualification_profile_id="hwpx-template-qualification-v4",
     structure_projection_schema_version="hwpx-structure-projection-v4",
@@ -206,7 +185,7 @@ _V4_BINDING_KEY = SelectionSemanticBindingKey(
 # S10-03(#860): TXT 매체의 shipping pair. **선택 규칙은 매체로 갈리지 않는다** — 같은 구간
 # 표기가 두 매체에서 같은 Slot 으로 복원되는 것(S10-01 #858)이 전제이므로, 그 Slot 을 고르는
 # 규칙까지 매체마다 다르면 형식만 바꾼 같은 템플릿이 다른 선택 언어를 쓰게 된다. 그래서 새
-# manifest 를 세우지 않고 같은 slot-selection/v1 에 결속한다(hwpx v1~v4 binding 불변).
+# manifest 를 세우지 않고 같은 slot-selection/v1 에 결속한다.
 # binding **key** 는 따로 서는데, 그것이 fail-closed 의 얼굴이다: 미등록 (profile, projection)
 # 조합은 latest 로 풀리지 않고 거절된다.
 _TXT_V1_BINDING_KEY = SelectionSemanticBindingKey(
@@ -216,9 +195,6 @@ _TXT_V1_BINDING_KEY = SelectionSemanticBindingKey(
 
 DEFAULT_SELECTION_SEMANTIC_REGISTRY = SelectionSemanticContractRegistry(
     [
-        (_V1_BINDING_KEY, _SLOT_SELECTION_V1),
-        (_V2_BINDING_KEY, _SLOT_SELECTION_V1),
-        (_V3_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V4_BINDING_KEY, _SLOT_SELECTION_V1),
         (_TXT_V1_BINDING_KEY, _SLOT_SELECTION_V1),
     ]
@@ -231,7 +207,6 @@ def resolve_selection_policy(
 ) -> str:
     """Slot 의 정책을 contract 로 복원한다.
 
-    현재 `hwpx-structure-projection-v1` 에는 cardinality 필드가 없다 —
     `declared_cardinality` 가 None 이면 contract default(v1 = EXACTLY_ONE)다.
     선언된 정책이 contract 미지원이면 EXACTLY_ONE 으로 대체하지 않고 거절한다.
     """

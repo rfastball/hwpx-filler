@@ -29,7 +29,6 @@ from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
     PREPARED_CHANGE,
     SCHEMA_VERSION,
-    ApplyProvenance,
     DocumentWork,
     TemplateChangePreparation,
     WorkTemplateApplication,
@@ -201,8 +200,6 @@ def _aggregate(apps, *, work_over=None, version=1):
         applications=tuple(apps),
         preparations=(),
         prepared_changes=(),
-        apply_provenance=(),
-        outbox_events=(),
     )
 
 
@@ -474,8 +471,6 @@ def test_unknown_schema_version_rejected():
             applications=(_app(),),
             preparations=(),
             prepared_changes=(),
-            apply_provenance=(),
-            outbox_events=(),
         )
 
 
@@ -489,30 +484,6 @@ def test_unknown_prepared_change_status_rejected():
 
     with pytest.raises(WorkTemplateStateError, match="prepared change status"):
         PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", "WAT", "t3")
-
-
-def test_duplicate_provenance_id_rejected():
-    p = ApplyProvenance("PR1", "W1", "A1", "A1", "EV", "EV", "C1", 1, 1, "a", "t")
-    with pytest.raises(WorkTemplateStateError, match="provenance_id 중복"):
-        WorkTemplateStateAggregate(
-            schema_version=SCHEMA_VERSION, aggregate_version=1,
-            work=DocumentWork("W1", "L", "A1", None, 0), applications=(_app(),),
-            preparations=(), prepared_changes=(),
-            apply_provenance=(p, p), outbox_events=(),
-        )
-
-
-def test_duplicate_outbox_event_id_rejected():
-    from hwpxfiller.application.work_template_state import OutboxEvent
-
-    e = OutboxEvent("OB1", "template.change_applied", {})
-    with pytest.raises(WorkTemplateStateError, match="outbox event_id 중복"):
-        WorkTemplateStateAggregate(
-            schema_version=SCHEMA_VERSION, aggregate_version=1,
-            work=DocumentWork("W1", "L", "A1", None, 0), applications=(_app(),),
-            preparations=(), prepared_changes=(), apply_provenance=(),
-            outbox_events=(e, e),
-        )
 
 
 def test_duplicate_prepared_change_id_rejected():
@@ -531,8 +502,6 @@ def test_duplicate_prepared_change_id_rejected():
             applications=(_app(),),
             preparations=(),
             prepared_changes=(c1, c2),
-            apply_provenance=(),
-            outbox_events=(),
         )
 
 
@@ -548,8 +517,6 @@ def test_duplicate_preparation_id_rejected():
                 _prep(preparation_id="P1", prepare_request_id="R2"),  # 같은 id 재사용
             ),
             prepared_changes=(),
-            apply_provenance=(),
-            outbox_events=(),
         )
 
 
@@ -587,22 +554,6 @@ def test_dangling_current_preparation_pointer_rejected():
         )
 
 
-def test_dangling_provenance_reference_rejected():
-    with pytest.raises(WorkTemplateStateError, match="provenance"):
-        WorkTemplateStateAggregate(
-            schema_version=SCHEMA_VERSION,
-            aggregate_version=1,
-            work=DocumentWork("W1", "L", "A1", None, 0),
-            applications=(_app(),),
-            preparations=(),
-            prepared_changes=(),
-            apply_provenance=(
-                ApplyProvenance("PR1", "W1", "GONE", "GONE", "EV", "EV", "C1", 1, 2, "a", "t"),
-            ),
-            outbox_events=(),
-        )
-
-
 def test_lineage_mismatch_reference_rejected(tmp_path):
     store = AtomicWorkTemplateStateStore(tmp_path / "works")
     qstore, cstore = _seed_reference(tmp_path / "q", tmp_path / "c")  # revision lineage = LIN1
@@ -624,8 +575,6 @@ def test_in_place_payload_mutation_is_not_silently_discarded(tmp_path):
             applications=(_app(),),
             preparations=(_prep(diagnostics=({"k": "v"},)),),
             prepared_changes=(),
-            apply_provenance=(),
-            outbox_events=(),
         )
     )
     # nested diagnostics dict 를 in-place 로 고치고 version 을 안 올리면 조용히 유실되지 않고 거절된다.
@@ -644,8 +593,6 @@ def test_preparation_of_other_work_rejected():
             applications=(_app(),),
             preparations=(_prep(work_id="OTHER"),),
             prepared_changes=(),
-            apply_provenance=(),
-            outbox_events=(),
         )
 
 

@@ -117,7 +117,7 @@ def _txt_materialization_port(
 
 def build_graph(
     home: "Path | None", push, token: object, *, template_root: TemplateRoot,
-    migration_notice: str, tutorial_ctrl: OnboardingController,
+    tutorial_ctrl: OnboardingController,
     generation_lock: threading.Lock, hwpx_engine,
     discover_registered_data: bool = True,
 ) -> WorkspaceGraph:
@@ -202,7 +202,6 @@ def build_graph(
         TemplateController(
             registry, push, file_store=template_files, txt_groups=txt_groups,
             template_root=template_root,
-            migration_notice=migration_notice,
             # 예제 세트 설치(#891)의 데이터 고정 대상 — 풀 화면과 **같은 인스턴스**다.
             pool_registry=pool_registry,
         tutorial=tutorial_ctrl.notify,
@@ -272,7 +271,6 @@ def build_graph(
             #  그 채널을 직접 구독한다. 중계가 있으면 같은 값이 두 스냅샷에 실린다.)
             after_mapping_saved=job_ctrl.on_editor_mapping_saved,
             save_guard=job_ctrl.editor_save_guard,
-            unrepresented_legacy_rules=job_ctrl.unrepresented_legacy_rules,
             # 그 확정의 **읽기 짝**(#911) — 편집기 footer 가 확정 동사를 세울지 말지는
             # 같은 컨트롤러가 관리 검토에 쓰는 사실 하나로 정해진다(두 표면 한 판정).
             binding_confirm_pending=job_ctrl.editor_binding_confirm_pending,
