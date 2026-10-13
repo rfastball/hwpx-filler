@@ -40,15 +40,10 @@ from hwpxfiller.application.execution_capture import (
 )
 from hwpxfiller.application.execution_compilation import (
     COMPOSITION_POLICY_IDENTITY_MISMATCH,
-    COMPOSITION_PREMISES_NOT_PASSED,
 )
 from hwpxfiller.application.execution_composition import (
-    DEFAULT_THEOREM_EVIDENCE_REGISTRY,
     CompositionAdmissionError,
-    TheoremEvidenceRegistry,
-    resolve_native_primitive_contract,
-    theorem_evidence_digest,
-    verify_theorem_evidence_integrity,
+    composition_fingerprint,
 )
 from hwpxfiller.application.execution_semantic_kernel import (
     SealedExecutionPlanBlocked,
@@ -311,36 +306,24 @@ def complete_capture_evidence(captured: CapturedExecutionInput) -> CompleteSealC
 
 def compile_candidate(
     captured: CapturedExecutionInput,
-    *,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> CandidateCompilation:
-    """complete capture → theorem 확인 + 공통 kernel compile + Plan candidate 구성.
+    """complete capture → supported pair 확인 + 공통 kernel compile + Plan candidate 구성.
 
     context/composition/integrity 실패는 user-fixable blocker 로 낮추지 않고 attempt 로 raise 한다.
     """
     policy = captured.resolved_seal_policy
     require_exact_selector_consistency_for_compile(policy)
-    # command 경계의 등록 theorem 만 확인한다. C1~C10·capture 결속·실행 의미는 kernel 이
-    # 한 번 판정한다. kernel 자체는 registry 에 의존하지 않는다.
     try:
-        theorem = theorem_registry.resolve(
+        fingerprint = composition_fingerprint(
             policy.composition_contract_id, policy.native_primitive_contract_id
         )
-        resolve_native_primitive_contract(policy.native_primitive_contract_id)
-    except Exception as exc:  # UnsupportedCompositionContract 등
+    except CompositionAdmissionError as exc:
         raise UnsupportedLocalImplementation(
             f"미지원 composition/native primitive contract: {exc}"
         ) from exc
-    try:
-        verify_theorem_evidence_integrity(theorem, registry=theorem_registry)
-    except CompositionAdmissionError as exc:
+    if fingerprint != policy.composition_theorem_evidence_manifest_digest:
         raise ExecutionQualificationContextError(
-            f"theorem evidence 미증명: {exc}",
-            cause_code=COMPOSITION_PREMISES_NOT_PASSED,
-        ) from exc
-    if theorem_evidence_digest(theorem) != policy.composition_theorem_evidence_manifest_digest:
-        raise ExecutionQualificationContextError(
-            "theorem evidence 가 resolved policy 와 불일치",
+            "composition fingerprint 가 resolved policy 와 불일치",
             cause_code=COMPOSITION_POLICY_IDENTITY_MISMATCH,
         )
     try:
@@ -361,7 +344,7 @@ def compile_candidate(
             captured_execution_input_digest=evidence.captured_execution_input_digest,
         )
     assert isinstance(value, SealedExecutionPlanValue)
-    return _build_plan_candidate(captured, value, evidence, theorem_registry)
+    return _build_plan_candidate(captured, value, evidence)
 
 
 def require_exact_selector_consistency_for_compile(policy: ResolvedSealPolicy) -> None:
@@ -380,7 +363,6 @@ def _build_plan_candidate(
     captured: CapturedExecutionInput,
     value: SealedExecutionPlanValue,
     evidence: CompleteSealCaptureEvidence,
-    theorem_registry: TheoremEvidenceRegistry,
 ) -> PlanCandidate:
     policy = captured.resolved_seal_policy
     qual = captured.template.qualification
@@ -406,9 +388,6 @@ def _build_plan_candidate(
         composition_theorem_evidence_manifest_digest=(
             policy.composition_theorem_evidence_manifest_digest
         ),
-        # composition verification 이 쓴 registry 를 그대로 — DEFAULT 로 조용히 되돌아가면 injected
-        # registry 가 admit 한 manifest 가 여기서 ExecutionContractSetIntegrityError 로 늦게 터진다.
-        theorem_registry=theorem_registry,
     )
     basis = ExecutionBasis(
         workspace_instance_id=captured.workspace_instance_id,

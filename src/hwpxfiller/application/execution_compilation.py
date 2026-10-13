@@ -623,9 +623,8 @@ def qualify_and_compile_execution(
             COMPOSITION_STRUCTURE_MISMATCH,
             "composition premise 가 이 template structure 와 다른 digest 에 결속됨",
         )
-    # proof 가 capture 가 admit 한 exact policy 에 결속됨을 확인한다 — 다른 composition/native
-    # primitive contract·theorem evidence 로 증명된 PASS 가 operation 을 authorize 하지 못하게
-    # 세 identity 를 전부 대조한다(fail-closed).
+    # composition 결과가 capture 의 exact policy 에 결속됨을 확인한다. 기존 직렬화
+    # fingerprint 필드도 대조해 다른 계약의 PASS 가 operation 을 승인하지 못하게 한다.
     policy = captured.resolved_seal_policy
     proof_identity = (
         composition_result.composition_contract_id,
@@ -640,7 +639,7 @@ def qualify_and_compile_execution(
     if proof_identity != admitted_identity:
         return ExecutionCompilationContextError(
             COMPOSITION_POLICY_IDENTITY_MISMATCH,
-            "composition proof 의 contract/native-primitive/theorem-evidence identity 가 "
+            "composition proof 의 contract/native-primitive/fingerprint identity 가 "
             "admitted resolved_seal_policy 와 불일치",
         )
 

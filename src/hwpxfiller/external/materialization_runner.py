@@ -1,7 +1,7 @@
-"""Production materialization runner (S6-01 · #809) — Plan ref → HWPX document bytes.
+"""Production materialization runner — 검증된 Plan·VDR → HWPX document bytes.
 
 SG-02(#734)가 증명해 둔 in-memory executor/verifier(:mod:`materialization_conformance`)를
-production ref+store 조달로 감싸는 **유일한 production 소유자**다. 새 의미를 파생하지 않는다 —
+검증된 Plan·VDR 입력으로 감싸는 **유일한 production 소유자**다. 새 의미를 파생하지 않는다 —
 무엇을 제거할지는 Plan 의 ``REMOVE_OPTION``, 무엇을 쓸지는 VDR 의 logical document value 가
 이미 정했다(S6-1·S6-2).
 
@@ -9,8 +9,8 @@ production ref+store 조달로 감싸는 **유일한 production 소유자**다. 
 - **bytes 에서 멈춘다.** filesystem write·delivery disposition·Artifact identity 는 S6-04 의
   delivery coordinator 몫이고(S6-7), start gate/fence ordering 은 S6-02 몫이다 — 이 러너는
   그 둘이 감쌀 안쪽 함수 형태만 세운다.
-- **조달은 전부 digest fail-closed.** Plan·VDR 는 :class:`MaterializationInputPort` 가 재검증
-  하고, candidate bytes 는 반환값을 Plan 의 ``exact_content_digest`` 로 재해시 대조하며,
+- **조달은 digest fail-closed.** candidate bytes 는 반환값을 Plan 의 ``exact_content_digest`` 로
+  재해시 대조하며,
   structure 는 Plan 의 ``template_structure_digest`` 와 대조한다. resolver 가 무엇을 주든
   대조 없이는 쓰지 않는다.
 - **postcondition 이 자격이다.** remove/write 호출 성공만으로 bytes 를 내지 않는다 — mutation
@@ -36,11 +36,7 @@ from hwpxfiller.application.execution_structure import (
     decode_execution_structure,
     template_structure_digest,
 )
-from hwpxfiller.application.generation_delivery import (
-    MaterializationInput,
-    MaterializationInputPort,
-)
-from hwpxfiller.application.record_validation import ImmutableVdrStore
+from hwpxfiller.application.generation_delivery import MaterializationInput
 from hwpxfiller.domain.field_binding import (
     ESCAPING_NATIVE_MATERIALIZER,
     resolve_document_value_policy,
@@ -109,22 +105,20 @@ def require_native_materializer_escaping(
 
 
 class ProductionMaterializationRunner:
-    """Plan ref+VDR ref 에서 검증된 HWPX document bytes 까지 — executor/verifier 의 production 봉합.
+    """검증된 Plan·VDR 에서 HWPX bytes 까지 — executor/verifier 의 production 봉합.
 
-    조달 seam 셋(input port·candidate blob resolver·structure resolver)은 생성자 주입이다 —
+    candidate blob·structure resolver 는 생성자 주입이다 —
     S6-02 start gate 가 fence 아래에서 이 러너를 LongMaterialization 으로 호출한다.
     """
 
     def __init__(
         self,
         *,
-        input_port: MaterializationInputPort,
         candidate_blob_resolver: Callable[[str], bytes],
         structure_resolver: Callable[
             [SealedExecutionPlanSemanticPayload], ExecutionTemplateStructure
         ],
     ) -> None:
-        self._input_port = input_port
         self._candidate_blob_resolver = candidate_blob_resolver
         self._structure_resolver = structure_resolver
 
@@ -132,9 +126,7 @@ class ProductionMaterializationRunner:
         self, materialization_input: MaterializationInput
     ) -> MaterializationOutcome:
         """Plan 이 정한 native operation 만 수행해 bytes 를 만들고 후행조건으로 재검사한다."""
-        # 1. Plan·VDR 복원 — digest 재검증·cross-bind·completeness 는 port 가 이미 진다
-        #    (두 벌 판정 금지: 여기서 requirement/count 를 재조립하지 않는다).
-        plan, vdr = self._input_port.resolve(materialization_input)
+        plan, vdr = materialization_input.plan, materialization_input.record
 
         # 1b. escaping 책임 확인(S6-06) — 실행 전 gate. 값 정책이 다른 책임 주체를 선언한
         #     Plan 을 이 materializer 가 조용히 이중/무 escape 로 진행하지 않는다.
@@ -201,7 +193,7 @@ def materialize_authoring_trial(
     """저작 작업대의 결과 시험 — Plan 봉인 없이 **같은** executor/verifier 를 지난다.
 
     시험은 출하가 아니라 현재 문서 스냅샷과 시험 입력으로 「지금 만들어질 결과」를 보는 것이라
-    Plan ref·VDR ref·candidate store 조달이 없다. 그래도 물질화 경로는 하나여야 한다(S6-10):
+    봉인된 Plan·VDR·candidate store 조달이 없다. 그래도 물질화 경로는 하나여야 한다(S6-10):
     P7 precheck → in-memory 실행 → postcondition 재검사의 순서와 실패 코드를 출하 경로와
     똑같이 밟고, FAIL 이면 bytes 를 내지 않는다. 호출자(``hwpx_authoring``)는 operation 과
     값을 넘길 뿐 executor/verifier 를 직접 만지지 않는다.
@@ -284,21 +276,10 @@ def store_backed_structure_resolver(
 
 def production_materialization_runner(
     root: Path,
-    *,
-    plan_resolver: Callable[[str], SealedExecutionPlanSemanticPayload],
-    vdr_store: ImmutableVdrStore,
 ) -> ProductionMaterializationRunner:
-    """template authority root 아래 실 store 로 러너를 결선한다(조립 편의).
-
-    ``works``/``qualification``/``candidates`` subdir 는 :class:`SealExecutionPlanService`
-    와 같은 공유 authority root 규약이다. plan_resolver·vdr_store 는 process-local 이라
-    (R2 #740: durable Plan store 제거) caller 가 주입한다.
-    """
+    """템플릿 권위 root 아래 candidate·structure 저장소를 결선한다."""
     candidate_store = CandidateObjectStore(root / "candidates")
     return ProductionMaterializationRunner(
-        input_port=MaterializationInputPort(
-            plan_resolver=plan_resolver, vdr_store=vdr_store
-        ),
         candidate_blob_resolver=lambda digest: candidate_store.get_blob(
             digest
         ).exact_bytes,

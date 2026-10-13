@@ -13,18 +13,15 @@ from dataclasses import replace
 import pytest
 
 from hwpxfiller.application.candidate_revision import ContentBlob, blob_digest
-from hwpxfiller.application.execution_contract_set import plan_semantic_digest
 from hwpxfiller.application.execution_structure import execution_pass_projection
 from hwpxfiller.application.generation_delivery import (
     MaterializationInput,
-    MaterializationInputPort,
-    MaterializationInputResolutionError,
 )
 from hwpxfiller.application.qualification_evidence import (
     QualificationAttempt,
     QualificationEvidence,
 )
-from hwpxfiller.application.record_validation import ImmutableVdrStore
+from hwpxfiller.application.record_validation import ValidatedRecordIntegrityError
 from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
     SCHEMA_VERSION as WORK_SCHEMA,
@@ -74,19 +71,11 @@ def _memory_runner(
     structure_resolver=None,
 ) -> tuple[ProductionMaterializationRunner, MaterializationInput]:
     """in-memory resolver 로 러너를 세운다 — 기본 resolver 는 case 의 정합 입력을 준다."""
-    vdr_store = ImmutableVdrStore()
-    vdr_ref = vdr_store.put(case.vdr)
-    plan_ref = plan_semantic_digest(case.plan)
     runner = ProductionMaterializationRunner(
-        input_port=MaterializationInputPort(
-            plan_resolver={plan_ref: case.plan}.__getitem__, vdr_store=vdr_store
-        ),
         candidate_blob_resolver=candidate_blob_resolver or (lambda digest: case.bytes),
         structure_resolver=structure_resolver or (lambda plan: case.structure),
     )
-    return runner, MaterializationInput(
-        sealed_execution_plan_ref=plan_ref, validated_record_ref=vdr_ref
-    )
+    return runner, MaterializationInput(case.plan, case.vdr)
 
 
 def _seed_authority(root, case: Case, *, application_id: str = APP) -> None:
@@ -210,46 +199,12 @@ def test_structure_resolver_mismatch_fails_closed() -> None:
         runner.materialize(mi)
 
 
-def test_plan_ref_mismatch_propagates_from_input_port() -> None:
-    # Plan resolve 재검증은 기존 MaterializationInputPort 가 진다 — 러너는 재판정하지 않는다.
-    case = _build_case(_one_of_two())
-    vdr_store = ImmutableVdrStore()
-    vdr_ref = vdr_store.put(case.vdr)
-    runner = ProductionMaterializationRunner(
-        input_port=MaterializationInputPort(
-            plan_resolver=lambda ref: case.plan, vdr_store=vdr_store
-        ),
-        candidate_blob_resolver=lambda digest: case.bytes,
-        structure_resolver=lambda plan: case.structure,
-    )
-    with pytest.raises(MaterializationInputResolutionError):
-        runner.materialize(
-            MaterializationInput(
-                sealed_execution_plan_ref="sha256:wrong", validated_record_ref=vdr_ref
-            )
-        )
-
-
-def test_vdr_cross_bind_failure_propagates_from_input_port() -> None:
-    # 다른 Plan 에 결속된 VDR 는 port 의 cross-bind 가 닫는다.
+def test_direct_input_rejects_foreign_record() -> None:
+    # 다른 Plan 에 결속된 VDR 는 러너 진입 전에 닫는다.
     case = _build_case(_one_of_two())
     other = _build_case(_synth_case())
-    vdr_store = ImmutableVdrStore()
-    other_vdr_ref = vdr_store.put(other.vdr)
-    plan_ref = plan_semantic_digest(case.plan)
-    runner = ProductionMaterializationRunner(
-        input_port=MaterializationInputPort(
-            plan_resolver={plan_ref: case.plan}.__getitem__, vdr_store=vdr_store
-        ),
-        candidate_blob_resolver=lambda digest: case.bytes,
-        structure_resolver=lambda plan: case.structure,
-    )
-    with pytest.raises(MaterializationInputResolutionError):
-        runner.materialize(
-            MaterializationInput(
-                sealed_execution_plan_ref=plan_ref, validated_record_ref=other_vdr_ref
-            )
-        )
+    with pytest.raises(ValidatedRecordIntegrityError):
+        MaterializationInput(case.plan, other.vdr)
 
 
 # ═══ S6-06 escaping gate — 정책 선언을 실제로 읽고 fail-closed 한다 ═══════════════════
@@ -323,17 +278,8 @@ def test_escaping_gate_skips_intentional_blank() -> None:
 def test_store_backed_wiring_materializes_roundtrip(tmp_path) -> None:
     case = _build_case(_one_of_two())
     _seed_authority(tmp_path, case)
-    vdr_store = ImmutableVdrStore()
-    vdr_ref = vdr_store.put(case.vdr)
-    plan_ref = plan_semantic_digest(case.plan)
-    runner = production_materialization_runner(
-        tmp_path, plan_resolver={plan_ref: case.plan}.__getitem__, vdr_store=vdr_store
-    )
-    outcome = runner.materialize(
-        MaterializationInput(
-            sealed_execution_plan_ref=plan_ref, validated_record_ref=vdr_ref
-        )
-    )
+    runner = production_materialization_runner(tmp_path)
+    outcome = runner.materialize(MaterializationInput(case.plan, case.vdr))
     assert isinstance(outcome, MaterializedDocumentBytes), outcome
     assert outcome.output_digest == blob_digest(outcome.output_bytes)
 

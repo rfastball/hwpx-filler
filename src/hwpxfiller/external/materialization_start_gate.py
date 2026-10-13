@@ -11,7 +11,7 @@ PerWorkMutationFence
 
 긴 materialization 을 fence 밖에서 돌리는 이유가 이 모듈의 존재 이유다 — fence 는 pin(짧은
 관찰·대조)만 지키고, bytes 작업이 다른 Work 명령을 막지 않는다. pin 의 재료는 전부 기존
-기계다(새 판정 0): Plan·VDR·dependency 는 :class:`MaterializationInputPort`, current basis 는
+기계다(새 판정 0): Plan·VDR 는 :class:`MaterializationInput` 으로 묶고, current basis 는
 `execution_basis_digest` 동등성, runtime admission 은 :func:`evaluate_managed_run_admission`.
 
 거절 어휘도 기존 것을 재진술한다(D3 결): stale 은 `stored_execution_plan` 의 두 사유
@@ -28,12 +28,15 @@ from typing import Callable, ContextManager, Protocol
 from hwpxfiller.application.execution_composition import (
     RuntimeMaterializerConformanceRegistry,
 )
-from hwpxfiller.application.execution_contract_set import execution_basis_digest
+from hwpxfiller.application.execution_contract_set import (
+    SealedExecutionPlanSemanticPayload,
+    execution_basis_digest,
+)
 from hwpxfiller.application.generation_delivery import (
     MaterializationInput,
-    MaterializationInputPort,
     evaluate_managed_run_admission,
 )
+from hwpxfiller.application.record_validation import ValidatedDataRecord
 from hwpxfiller.application.stored_execution_plan import (
     CURRENT_BASIS_NOT_SEALABLE,
     DIGEST_MISMATCH,
@@ -81,8 +84,8 @@ def start_materialization(
     *,
     workspace_instance_id: str,
     work_authority_id: str,
-    materialization_input: MaterializationInput,
-    input_port: MaterializationInputPort,
+    plan: SealedExecutionPlanSemanticPayload,
+    record: ValidatedDataRecord,
     runner: MaterializationRunnerPort,
     runtime_registry: RuntimeMaterializerConformanceRegistry,
     runtime_capability_manifest_digest: str,
@@ -95,8 +98,8 @@ def start_materialization(
     조달 불능은 loud 예외로 닫힌다 — 둘 다 fence 해제 후 filesystem 불변이다.
     """
     with work_fence(workspace_instance_id, work_authority_id):
-        # pin 1 — Plan·VDR·dependency: digest 재검증·cross-bind·완결성은 기존 port 가 진다.
-        plan, _vdr = input_port.resolve(materialization_input)
+        # pin 1 — Plan·VDR 를 직접 결속하고 무결성을 한 번 확인한다.
+        materialization_input = MaterializationInput(plan, record)
 
         # pin 1b — 이 Work 의 Plan 인가(다른 Work 의 Plan 으로 이 fence 아래 실행 금지).
         basis = plan.execution_basis

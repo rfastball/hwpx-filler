@@ -33,10 +33,6 @@ from hwpxfiller.application.execution_capture import (
     CaptureExecutionQualificationInputUnderFence,
     CapturedExecutionInput,
 )
-from hwpxfiller.application.execution_composition import (
-    DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-    TheoremEvidenceRegistry,
-)
 from hwpxfiller.application.seal_execution_plan import (
     CandidateCompilation,
     CaptureTerminal,
@@ -86,7 +82,6 @@ def seal_execution_plan(
     capture_under_fence: CaptureExecutionQualificationInputUnderFence,
     resolve_shipping_policy: ShippingSealPolicyResolver,
     work_fence: _WorkFence = per_work_mutation_fence,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> SealExecutionPlanResult:
     """route → auth → capture gate → pure compile → final gate → 현재-state terminal.
 
@@ -121,7 +116,7 @@ def seal_execution_plan(
         captured = classification.captured
 
     # ── pure qualification + compile(어떤 fence 도 보유하지 않는다) ──────────────────
-    candidate = compile_candidate(captured, theorem_registry=theorem_registry)
+    candidate = compile_candidate(captured)
 
     # ── final gate(PerWorkFence 재진입, current Work basis recheck) ──────────────────
     with work_fence(ws, work_authority_id):
@@ -137,7 +132,7 @@ def seal_execution_plan(
             candidate.resolved_seal_policy,
         )
         current_compiled: "CandidateCompilation | None" = (
-            compile_candidate(current, theorem_registry=theorem_registry)
+            compile_candidate(current)
             if isinstance(current, CapturedExecutionInput)
             else None
         )
@@ -152,7 +147,6 @@ def observe_current_basis_digest(
     read_summary: FreshWorkObservationPort,
     capture_under_fence: CaptureExecutionQualificationInputUnderFence,
     resolve_shipping_policy: ShippingSealPolicyResolver,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> "str | None":
     """fence 를 잡지 않고 current Work 의 execution basis digest 만 관찰한다(S6-05 · #812).
 
@@ -180,9 +174,7 @@ def observe_current_basis_digest(
         classification = classify_capture_result(cap, policy)
         if isinstance(classification, CaptureTerminal):
             return None
-        candidate = compile_candidate(
-            classification.captured, theorem_registry=theorem_registry
-        )
+        candidate = compile_candidate(classification.captured)
         if not isinstance(candidate, PlanCandidate):
             return None
         return candidate.execution_basis_digest

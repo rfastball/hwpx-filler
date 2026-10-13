@@ -359,7 +359,7 @@ class DeliveryPreviewBlocker:
 
 @dataclass(frozen=True)
 class DeliveryPreviewSummary:
-    """delivery 미리보기 요약 — ResolvedGenerationDeliveryPlan 의 사용자 투영(생성 예정 문서).
+    """delivery 미리보기 요약 — current delivery 결과의 사용자 투영(생성 예정 문서).
 
     ``label`` 과 ``is_artifact`` 는 ClassVar 로 **못박혀** 있다(#724 §7 · #719 D6): 이 요약은
     "생성 예정 문서"(Resolved Delivery)이지 "실제 생성된 결과"(Artifact)가 아니다 — 라벨을

@@ -37,10 +37,8 @@ from ..application.execution_capture import (
     ResolvedSealPolicy,
 )
 from ..application.execution_composition import (
-    DEFAULT_THEOREM_EVIDENCE_REGISTRY,
     RuntimeMaterializerConformanceManifest,
     RuntimeMaterializerConformanceRegistry,
-    TheoremEvidenceRegistry,
 )
 from ..application.execution_semantic_kernel import (
     SealedExecutionPlanBlocked,
@@ -271,7 +269,6 @@ class SealExecutionPlanProduct:
             s6_absent_runtime_conformance
         ),
         runtime_conformance_binding: "RuntimeConformanceBinding | None" = None,
-        theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
         work_fence: _WorkFence = per_work_mutation_fence,
     ) -> None:
         self._resolve_route = resolve_route
@@ -284,7 +281,6 @@ class SealExecutionPlanProduct:
         # 정식 주입 경로(S6-03): binding 이 있으면 판정은 Plan value 파생 registry query 가 지고,
         # 4-인자 port 는 binding 부재 시의 fail-closed 기본(s6_absent)으로 남는다.
         self._runtime_binding = runtime_conformance_binding
-        self._theorem_registry = theorem_registry
         self._work_fence = work_fence
 
     # ── public Product API ────────────────────────────────────────────────────────
@@ -312,7 +308,6 @@ class SealExecutionPlanProduct:
             capture_under_fence=self._capture,
             resolve_shipping_policy=self._resolve_policy,
             work_fence=self._work_fence,
-            theorem_registry=self._theorem_registry,
         )
         outcome = result.terminal_outcome
         # #742: seal 러너가 이미 결속한 exact Work id 를 그대로 재사용한다. work_ref 를 다시

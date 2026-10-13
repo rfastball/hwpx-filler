@@ -343,7 +343,6 @@ def test_shipping_structure_is_admissible_by_composition_premises(applied) -> No
     result = admit_composition_premises(
         structure=structure,
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence_manifest_digest="d",
     )
     assert not isinstance(result, CompositionPremiseContextError), result
 

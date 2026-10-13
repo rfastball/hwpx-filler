@@ -1,4 +1,4 @@
-"""composition theorem evidence + pure runtime premise verifier (S5-04 · #700).
+"""Composition contract pairs and structural premise admission.
 
 S5-03(:mod:`hwpxfiller.application.execution_structure`)은 exact structural fact 를 낸다 —
 occurrence·option region·target-target/target-owner/target-retained relation·envelope·
@@ -12,9 +12,8 @@ exact projection fact 만으로 증명한다.
   절대 호출하지 않는다(그래서 이 모듈은 hwpxcore/native 를 import 하지 않는다).
 - **fail-closed**. 증명 안 된 composition 은 PASS 하지 않는다. fact 누락/모순은 latest 로
   fallback 하지 않고 issue 가 열거한 error code 로 시끄럽게 닫힌다.
-- **semantic vs current 분리**. theorem evidence(반영구 semantic)와 runtime materializer
-  conformance(current admission)는 서로 다른 identity 다 — premise digest 에 runtime 을 섞지
-  않는다.
+- **semantic vs current 분리**. Static composition admission 과 runtime materializer
+  conformance 는 별도 판정이다 — premise digest 에 runtime 을 섞지 않는다.
 
 digest seam: byte framing·SHA-256 은 S5-06 소유. 여기서는 semantic payload + stable ordering
 만 고정하고 :func:`content_digest`(canonical JSON sha256)로 주소화한다
@@ -46,7 +45,6 @@ from hwpxfiller.application.execution_structure import (
     POSITION_BEFORE,
     POSITION_INSIDE,
     ExecutionTemplateStructure,
-    classify_span_relation,
     is_supported_execution_projection,
     template_structure_digest,
 )
@@ -56,8 +54,6 @@ _VALID_RETAINED_POSITIONS = frozenset({POSITION_BEFORE, POSITION_INSIDE, POSITIO
 
 # ─── contract identity(의미가 바뀌면 새 ID — 같은 ID 의미 수정 금지) ───────────────────
 COMPOSITION_CONTRACT_ID = "hwpx-composition/v1"
-COMPOSITION_PREMISE_SCHEMA = "hwpx-composition-premises/v1"
-COMPOSITION_PREMISE_VERIFIER_VERSION = "hwpx-composition-verifier/v1"
 NATIVE_PRIMITIVE_CONTRACT_ID = "hwpx-native-primitive/v1"
 PRIMITIVE_SEMANTICS_VERSION = "1"
 
@@ -65,9 +61,12 @@ PRIMITIVE_SEMANTICS_VERSION = "1"
 # primitive 로 갖는가**뿐이다: HWPX 는 bookmark region 제거·field marker write 이고 TXT 는
 # 줄 제거·평문 삽입이다. 같은 ID 로 두 의미를 싣지 않으므로 ID 를 따로 세운다.
 TXT_COMPOSITION_CONTRACT_ID = "txt-composition/v1"
-TXT_COMPOSITION_PREMISE_SCHEMA = "txt-composition-premises/v1"
-TXT_COMPOSITION_PREMISE_VERIFIER_VERSION = "txt-composition-verifier/v1"
 TXT_NATIVE_PRIMITIVE_CONTRACT_ID = "txt-line-primitive/v1"
+
+# Existing serialized policy/plan fingerprints. These values preserve canonical digests of
+# already stored capture evidence and plans; they do not certify runtime theorem fixtures.
+COMPOSITION_FINGERPRINT_HWPX = "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd"
+COMPOSITION_FINGERPRINT_TXT = "sha256:1b8cb932f7f03cba1ed1082e7c86c1e1a1d324e74b031e3df9e9e595beb8cf04"
 
 # 결과 status.
 PASS = "PASS"
@@ -98,40 +97,26 @@ class UnsupportedNativePrimitiveContract(CompositionAdmissionError):
     code = "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT"
 
 
-class CompositionTheoremEvidenceIntegrityError(CompositionAdmissionError):
-    code = "COMPOSITION_THEOREM_EVIDENCE_INTEGRITY_ERROR"
-
-
-class CompositionTheoremEvidenceUnproven(CompositionAdmissionError):
-    code = "EXECUTION_COMPOSITION_CONTRACT_UNPROVEN"
-
-
 class RuntimeMaterializerConformanceNotAdmitted(CompositionAdmissionError):
     code = "RUNTIME_MATERIALIZER_CONFORMANCE_NOT_ADMITTED"
 
 
 # ─── target-target admission policy(S5-04 가 소유하는 의미) ─────────────────────────
-# v1 admission tier. DISJOINT 는 무조건, TOUCHING 은 exact theorem 이 있을 때만, 나머지는 항상 거절.
-_UNCONDITIONAL_TARGET_TARGET = frozenset({DISJOINT})
-_THEOREM_GATED_TARGET_TARGET = frozenset({TOUCHING})
+# v1 admission tier. Supported pair admits DISJOINT and TOUCHING; other overlap is rejected.
+_UNCONDITIONAL_TARGET_TARGET = frozenset({DISJOINT, TOUCHING})
 _REJECTED_TARGET_TARGET = frozenset({CONTAINS, CONTAINED, SAME_SPAN, CROSSING})
-_KNOWN_TARGET_TARGET = (
-    _UNCONDITIONAL_TARGET_TARGET | _THEOREM_GATED_TARGET_TARGET | _REJECTED_TARGET_TARGET
-)
 
 
-def classify_target_target_admission(relation: str, *, touching_theorem_available: bool) -> str:
+def classify_target_target_admission(relation: str) -> str:
     """distinct RemoveOption target pair 하나의 admission 판정(pure policy).
 
     반환: ``OK``(admitted) · ``FAILED``(거절/미증명) · ``INCOMPLETE``(미지 relation 어휘).
-    DISJOINT 는 항상 admitted, TOUCHING 은 exact primitive theorem 이 있을 때만, CONTAINS/
+    DISJOINT/TOUCHING 은 admitted, CONTAINS/
     CONTAINED/SAME_SPAN/CROSSING 은 항상 거절이다. 두 distinct Option 이 같은 region 을
     가리키면(SAME_SPAN) compiler 가 축약하지 않고 seal 을 차단한다.
     """
     if relation in _UNCONDITIONAL_TARGET_TARGET:
         return OK
-    if relation in _THEOREM_GATED_TARGET_TARGET:
-        return OK if touching_theorem_available else FAILED
     if relation in _REJECTED_TARGET_TARGET:
         return FAILED
     return INCOMPLETE
@@ -148,13 +133,12 @@ def is_owner_coincidence_admitted(
     *,
     preserves_owner_marker: bool,
     coincident_boundary_admissible: bool,
-    coincidence_theorem_available: bool,
 ) -> str:
     """owning Slot/content-entry envelope 와 target 의 boundary 일치 admission.
 
     INTERIOR(owner 가 target 을 strictly 포함)는 무조건 OK. same-start/end/span 은 current
     remover 가 owner marker·content-entry envelope 를 보존한다는 exact capability fact 와
-    theorem evidence 가 **모두** 있을 때만 admitted 다.
+    support contract 와 capability fact 가 있을 때 admitted 다.
     """
     if coincidence == COINCIDE_INTERIOR:
         return OK
@@ -162,7 +146,7 @@ def is_owner_coincidence_admitted(
         return INCOMPLETE
     if not preserves_owner_marker or not coincident_boundary_admissible:
         return FAILED
-    return OK if coincidence_theorem_available else FAILED
+    return OK
 
 
 # ─── native-primitive-contract/v1 semantic manifest ─────────────────────────────────
@@ -253,242 +237,29 @@ def encode_native_primitive_contract(m: NativePrimitiveContractManifest) -> dict
     }
 
 
-# ─── theorem/counterexample fixture corpus(admitted ↔ counterexample 분리) ──────────
-# 각 case 는 self-declared label 이 아니라 EXECUTABLE geometric 관찰값이다 — 실 classifier 로
-# 재실행해 admit/reject 결과를 확인하고(prove_theorem_corpus), digest 를 그 case 내용(입력+
-# 기대)에 결속한다. label 만 든 "admitted:true" manifest 는 실 corpus 와 digest 가 안 맞아
-# fail-closed 다("declaration lives, result dies" 회피). structural/geometric theorem 층이고
-# native_primitive_contract_id 에 결속된다 — shipping runtime conformance 는 별 seam.
-
-# target-target: closed 정수 span 두 개 + touching theorem 유무 → 기대 admission.
-_TARGET_TARGET_CASES: tuple[Mapping[str, Any], ...] = (
-    {"case": "tt-disjoint", "family": "target_target", "a": [10, 20], "b": [30, 40],
-     "touching_theorem": False, "expected": OK},
-    {"case": "tt-touching-gated", "family": "target_target", "a": [10, 20], "b": [20, 40],
-     "touching_theorem": True, "expected": OK},
-    {"case": "tt-touching-ungated", "family": "target_target", "a": [10, 20], "b": [20, 40],
-     "touching_theorem": False, "expected": FAILED},
-    {"case": "tt-contains", "family": "target_target", "a": [10, 40], "b": [15, 30],
-     "touching_theorem": True, "expected": FAILED},
-    {"case": "tt-contained", "family": "target_target", "a": [15, 30], "b": [10, 40],
-     "touching_theorem": True, "expected": FAILED},
-    {"case": "tt-same-span", "family": "target_target", "a": [10, 40], "b": [10, 40],
-     "touching_theorem": True, "expected": FAILED},
-    {"case": "tt-crossing", "family": "target_target", "a": [10, 30], "b": [20, 40],
-     "touching_theorem": True, "expected": FAILED},
-)
-
-# target-owner: owner/target coincidence + envelope capability + theorem → 기대 admission.
-_OWNER_CASES: tuple[Mapping[str, Any], ...] = (
-    {"case": "ow-interior", "family": "owner", "coincidence": COINCIDE_INTERIOR,
-     "marker": True, "boundary": True, "theorem": False, "expected": OK},
-    {"case": "ow-same-start-gated", "family": "owner", "coincidence": COINCIDE_SAME_START,
-     "marker": True, "boundary": True, "theorem": True, "expected": OK},
-    {"case": "ow-same-end-gated", "family": "owner", "coincidence": COINCIDE_SAME_END,
-     "marker": True, "boundary": True, "theorem": True, "expected": OK},
-    {"case": "ow-same-span-gated", "family": "owner", "coincidence": COINCIDE_SAME_SPAN,
-     "marker": True, "boundary": True, "theorem": True, "expected": OK},
-    {"case": "ow-same-start-ungated", "family": "owner", "coincidence": COINCIDE_SAME_START,
-     "marker": True, "boundary": True, "theorem": False, "expected": FAILED},
-    {"case": "ow-same-span-no-capability", "family": "owner", "coincidence": COINCIDE_SAME_SPAN,
-     "marker": False, "boundary": True, "theorem": True, "expected": FAILED},
-)
-
-_THEOREM_CORPUS: tuple[Mapping[str, Any], ...] = _TARGET_TARGET_CASES + _OWNER_CASES
+# The pair table is the only static composition authority. Fingerprints preserve old
+# serialized identities; geometric admission is checked directly below.
+_COMPOSITION_FINGERPRINTS = {
+    COMPOSITION_CONTRACT_ID: COMPOSITION_FINGERPRINT_HWPX,
+    TXT_COMPOSITION_CONTRACT_ID: COMPOSITION_FINGERPRINT_TXT,
+}
 
 
-def _run_theorem_case(case: Mapping[str, Any]) -> str:
-    """corpus case 를 실 classifier 로 재실행해 admission verdict 를 낸다(geometry → verdict)."""
-    if case["family"] == "target_target":
-        relation = classify_span_relation(tuple(case["a"]), tuple(case["b"]))
-        return classify_target_target_admission(
-            relation, touching_theorem_available=case["touching_theorem"]
-        )
-    return is_owner_coincidence_admitted(
-        case["coincidence"],
-        preserves_owner_marker=case["marker"],
-        coincident_boundary_admissible=case["boundary"],
-        coincidence_theorem_available=case["theorem"],
-    )
-
-
-def prove_theorem_corpus(corpus: tuple[Mapping[str, Any], ...] = _THEOREM_CORPUS) -> None:
-    """corpus 전 case 를 재실행해 기대 admission 과 일치함을 강제한다(result-lives guard).
-
-    theorem PASS 는 label 이 아니라 이 재증명에 결속된다 — 어긋나면 시끄럽게 닫힌다.
-    """
-    for case in corpus:
-        verdict = _run_theorem_case(case)
-        if verdict != case["expected"]:
-            raise CompositionTheoremEvidenceIntegrityError(
-                f"theorem corpus case {case['case']!r} 결과 {verdict} != 기대 {case['expected']}"
-            )
-
-
-# positive(admitted) / counterexample(rejected) 분리 — 실 case 내용에 digest 결속.
-POSITIVE_THEOREM_FIXTURES: tuple[Mapping[str, Any], ...] = tuple(
-    c for c in _THEOREM_CORPUS if c["expected"] == OK
-)
-COUNTEREXAMPLE_THEOREM_FIXTURES: tuple[Mapping[str, Any], ...] = tuple(
-    c for c in _THEOREM_CORPUS if c["expected"] == FAILED
-)
-
-# import 시 corpus 가 실제로 성립함을 증명한다 — 통과 못 하면 모듈이 로드되지 않는다.
-prove_theorem_corpus()
-
-# theorem 이 attest 하는 target-target relation(admitted case 의 실 geometry 에서 유도).
-_ATTESTED_TARGET_TARGET_RELATIONS = frozenset(
-    classify_span_relation(tuple(c["a"]), tuple(c["b"]))
-    for c in POSITIVE_THEOREM_FIXTURES
-    if c["family"] == "target_target"
-)
-
-
-def fixture_manifest_digest(fixtures: tuple[Mapping[str, Any], ...]) -> str:
-    """fixture corpus 의 content-address(case 정렬로 저장 순서 ≠ identity)."""
-    return content_digest(sorted((dict(f) for f in fixtures), key=lambda f: f["case"]))
-
-
-# ─── CompositionTheoremEvidenceManifest ─────────────────────────────────────────────
-@dataclass(frozen=True)
-class CompositionTheoremEvidenceManifest:
-    """exact composition/native primitive contract 에 결속된 immutable theorem evidence.
-
-    theorem evidence 는 S6 runtime implementation conformance 와 다르다 — 이 manifest 는
-    semantic 증명이고 runtime PASS 가 아니다.
-    """
-
-    composition_contract_id: str
-    premise_schema_version: str
-    native_primitive_contract_id: str
-    premise_verifier_version: str
-    theorem_test_suite_digest: str
-    counterexample_fixture_manifest_digest: str
-    evidence_status: str
-
-
-def theorem_evidence_digest(m: CompositionTheoremEvidenceManifest) -> str:
-    return content_digest(
-        {
-            "composition_contract_id": m.composition_contract_id,
-            "premise_schema_version": m.premise_schema_version,
-            "native_primitive_contract_id": m.native_primitive_contract_id,
-            "premise_verifier_version": m.premise_verifier_version,
-            "theorem_test_suite_digest": m.theorem_test_suite_digest,
-            "counterexample_fixture_manifest_digest": m.counterexample_fixture_manifest_digest,
-            "evidence_status": m.evidence_status,
-        }
-    )
-
-
-THEOREM_EVIDENCE_V1 = CompositionTheoremEvidenceManifest(
-    composition_contract_id=COMPOSITION_CONTRACT_ID,
-    premise_schema_version=COMPOSITION_PREMISE_SCHEMA,
-    native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
-    premise_verifier_version=COMPOSITION_PREMISE_VERIFIER_VERSION,
-    theorem_test_suite_digest=fixture_manifest_digest(POSITIVE_THEOREM_FIXTURES),
-    counterexample_fixture_manifest_digest=fixture_manifest_digest(
-        COUNTEREXAMPLE_THEOREM_FIXTURES
-    ),
-    evidence_status=PASS,
-)
-
-
-class TheoremEvidenceRegistry:
-    """(composition, native primitive) → canonical theorem evidence. append-only·no fallback."""
-
-    def __init__(self) -> None:
-        self._by_key: dict[tuple[str, str], CompositionTheoremEvidenceManifest] = {}
-
-    def register(self, manifest: CompositionTheoremEvidenceManifest) -> None:
-        key = (manifest.composition_contract_id, manifest.native_primitive_contract_id)
-        existing = self._by_key.get(key)
-        if existing is not None and existing != manifest:
-            # historical manifest 를 latest 로 덮지 않는다.
-            raise CompositionTheoremEvidenceIntegrityError(
-                f"theorem evidence {key} 는 이미 등록됨 — historical 대체 금지"
-            )
-        self._by_key[key] = manifest
-
-    def resolve(
-        self, composition_contract_id: str, native_primitive_contract_id: str
-    ) -> CompositionTheoremEvidenceManifest:
-        key = (composition_contract_id, native_primitive_contract_id)
-        manifest = self._by_key.get(key)
-        if manifest is None:
-            raise UnsupportedCompositionContract(
-                f"등록되지 않은 theorem evidence(latest fallback 없음): {key}"
-            )
-        return manifest
-
-
-# TXT 축(S10-04 · #861) — corpus 는 **순수 기하**(closed 정수 span 관계·owner coincidence)라
-# 매체를 모른다. 그래서 test suite/counterexample digest 는 같은 corpus 에서 나오고, 갈리는 것은
-# 이 evidence 가 어느 (composition, primitive) 쌍을 attest 하는지뿐이다.
-THEOREM_EVIDENCE_TXT_V1 = CompositionTheoremEvidenceManifest(
-    composition_contract_id=TXT_COMPOSITION_CONTRACT_ID,
-    premise_schema_version=TXT_COMPOSITION_PREMISE_SCHEMA,
-    native_primitive_contract_id=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
-    premise_verifier_version=TXT_COMPOSITION_PREMISE_VERIFIER_VERSION,
-    theorem_test_suite_digest=fixture_manifest_digest(POSITIVE_THEOREM_FIXTURES),
-    counterexample_fixture_manifest_digest=fixture_manifest_digest(
-        COUNTEREXAMPLE_THEOREM_FIXTURES
-    ),
-    evidence_status=PASS,
-)
-
-DEFAULT_THEOREM_EVIDENCE_REGISTRY = TheoremEvidenceRegistry()
-DEFAULT_THEOREM_EVIDENCE_REGISTRY.register(THEOREM_EVIDENCE_V1)
-DEFAULT_THEOREM_EVIDENCE_REGISTRY.register(THEOREM_EVIDENCE_TXT_V1)
-
-
-def verify_theorem_evidence_integrity(
-    manifest: CompositionTheoremEvidenceManifest,
-    *,
-    registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-) -> None:
-    """theorem evidence 가 등록된 canonical 과 정합하고 PASS 임을 강제(fail-closed).
-
-    status != PASS → unproven, fixture/test digest tamper 나 registered 와 불일치 → integrity
-    error. unknown contract 는 resolve 에서 latest fallback 없이 닫힌다.
-    """
-    paired = _COMPOSITION_PRIMITIVE_PAIRS.get(manifest.composition_contract_id)
+def composition_fingerprint(composition_contract_id: str, native_primitive_contract_id: str) -> str:
+    paired = _COMPOSITION_PRIMITIVE_PAIRS.get(composition_contract_id)
     if paired is None:
-        raise UnsupportedCompositionContract(
-            f"미지원 composition contract: {manifest.composition_contract_id!r}"
-        )
-    if manifest.native_primitive_contract_id != paired.native_primitive_contract_id:
+        raise UnsupportedCompositionContract(f"미지원 composition contract: {composition_contract_id!r}")
+    if paired.native_primitive_contract_id != native_primitive_contract_id:
         raise UnsupportedNativePrimitiveContract(
-            f"미지원 native primitive contract: {manifest.native_primitive_contract_id!r}"
+            f"미지원 native primitive contract: {native_primitive_contract_id!r}"
         )
-    registered = registry.resolve(
-        manifest.composition_contract_id, manifest.native_primitive_contract_id
-    )
-    if manifest.evidence_status != PASS:
-        raise CompositionTheoremEvidenceUnproven(
-            f"theorem evidence status 가 PASS 가 아니다: {manifest.evidence_status!r}"
-        )
-    # digest tamper: 저장 digest 를 fixture corpus 에서 재계산해 대조.
-    if manifest.theorem_test_suite_digest != fixture_manifest_digest(POSITIVE_THEOREM_FIXTURES):
-        raise CompositionTheoremEvidenceIntegrityError("theorem test suite digest 불일치")
-    if manifest.counterexample_fixture_manifest_digest != fixture_manifest_digest(
-        COUNTEREXAMPLE_THEOREM_FIXTURES
-    ):
-        raise CompositionTheoremEvidenceIntegrityError("counterexample fixture digest 불일치")
-    # registered canonical 과 전 필드 정합(위조된 verifier_version 등 차단).
-    if manifest != registered:
-        raise CompositionTheoremEvidenceIntegrityError(
-            "theorem evidence 가 등록된 canonical 과 불일치"
-        )
-
-
+    return _COMPOSITION_FINGERPRINTS[composition_contract_id]
 # ─── RuntimeMaterializerConformance seam(current admission — semantic 아님) ──────────
 @dataclass(frozen=True)
 class RuntimeMaterializerConformanceManifest:
     """shipping runtime 의 current capability/conformance. S5 는 schema·registry·query 만 둔다.
 
-    실제 PASS manifest 발행은 S6 소유. theorem evidence 와 **다른 identity** 다 — semantic
-    digest 에 섞이지 않는다.
+    실제 PASS manifest 발행은 S6 소유. static composition fingerprint 와 별도다.
     """
 
     runtime_capability_manifest_digest: str
@@ -642,9 +413,7 @@ def _premise_c1(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
     return _PremiseOutcome(OK)
 
 
-def _premise_c2(
-    structure: ExecutionTemplateStructure, *, touching_theorem_available: bool
-) -> _PremiseOutcome:
+def _premise_c2(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
     # canonical UNORDERED pair set 를 option_regions 에서 유도한다 — count·ordered-dup 검사만으로는
     # (a,b),(b,a),(a,c) 처럼 실제 pair (b,c) 가 빠진 위조 DTO 가 통과한다.
     refs = sorted((r.slot_id, r.option_id) for r in structure.option_regions)
@@ -666,9 +435,7 @@ def _premise_c2(
         if pair in seen:
             return _PremiseOutcome(INCOMPLETE, f"중복 relation fact: {tuple(sorted(pair))}")
         seen.add(pair)
-        verdict = classify_target_target_admission(
-            rel.relation, touching_theorem_available=touching_theorem_available
-        )
+        verdict = classify_target_target_admission(rel.relation)
         if verdict == INCOMPLETE:
             return _PremiseOutcome(INCOMPLETE, f"미지 relation 어휘: {rel.relation!r}")
         if verdict == FAILED:
@@ -687,9 +454,7 @@ def _premise_c3(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
     )
 
 
-def _premise_c4(
-    structure: ExecutionTemplateStructure, *, coincidence_theorem_available: bool
-) -> _PremiseOutcome:
+def _premise_c4(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
     entry_envelope = {
         e.content_entry_id: e.envelope_capability_facts for e in structure.content_entries
     }
@@ -711,7 +476,6 @@ def _premise_c4(
             slot_fact["coincidence"],
             preserves_owner_marker=marker,
             coincident_boundary_admissible=boundary,
-            coincidence_theorem_available=coincidence_theorem_available,
         )
         if verdict == INCOMPLETE:
             return _PremiseOutcome(INCOMPLETE, f"미지 coincidence 어휘 @ {region.option_id}")
@@ -833,19 +597,13 @@ def _premise_c10(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
 
 def evaluate_composition_premises(
     structure: ExecutionTemplateStructure,
-    *,
-    theorem_evidence_valid: bool,
 ) -> dict[str, _PremiseOutcome]:
-    """C1~C10 을 exact projection fact 만으로 평가한다(pure·deterministic).
-
-    ``theorem_evidence_valid`` 는 target-target TOUCHING gate 와 owner coincidence gate 를 연다 —
-    exact primitive theorem 이 있을 때만.
-    """
+    """C1~C10 을 exact projection fact 만으로 평가한다(pure·deterministic)."""
     return {
         "C1": _premise_c1(structure),
-        "C2": _premise_c2(structure, touching_theorem_available=theorem_evidence_valid),
+        "C2": _premise_c2(structure),
         "C3": _premise_c3(structure),
-        "C4": _premise_c4(structure, coincidence_theorem_available=theorem_evidence_valid),
+        "C4": _premise_c4(structure),
         "C5": _premise_c5(structure),
         "C6": _premise_c6(structure),
         "C7": _premise_c7(structure),
@@ -863,7 +621,7 @@ def _composition_identity_context_error(
 ) -> "CompositionPremiseContextError | None":
     """(0) projection schema + (1) composition/native primitive contract identity(순수 fail-closed).
 
-    theorem registry 를 consult 하지 않는다 — 미지원 contract/schema 는 latest fallback 없이 닫는다.
+    미지원 contract/schema 는 latest fallback 없이 닫는다.
     """
     # (0) projection schema — 등록된 composition-ready schema 밖 structure 를 그 의미로 해석하지
     # 않는다(fail-closed). 판정은 execution_structure 의 pair 표 하나가 진다 — 여기서 상수를 따로
@@ -904,22 +662,9 @@ def admit_composition_premises(
     *,
     structure: ExecutionTemplateStructure,
     native_primitive_contract: NativePrimitiveContractManifest,
-    theorem_evidence_manifest_digest: str,
     composition_contract_id: str = COMPOSITION_CONTRACT_ID,
-    theorem_capability_available: bool = True,
 ) -> CompositionPremiseVerificationResult:
-    """C1~C10 structural admission 을 theorem runtime registry **없이** 판정한다(순수·deterministic).
-
-    S5F R2-01(#740) 첫 절개 — theorem runtime bureaucracy 와 semantic kernel 의 결합을 끊는다.
-    :func:`verify_execution_composition_premises` 의 (2) theorem evidence integrity(유일한 registry
-    consult)를 제외한 전부 — (0) projection schema, (1) contract identity, (3) native binding,
-    (4) C1~C10, PASS 조립 — 를 여기 순수하게 둔다. theorem evidence 의 manifest digest 는 caller 가
-    신뢰하는 값(``theorem_evidence_manifest_digest``)으로 그대로 싣고, target-target TOUCHING·owner
-    coincidence gate 는 caller 가 선언한 proven capability(``theorem_capability_available``)로 연다.
-    그 capability correctness 는 theorem corpus 가 **test 로** 증명한다(runtime authority 아님).
-
-    반환 의미는 verify 와 동일하다: PASS / INCOMPLETE(ContextError) / FAILED(Blocked).
-    """
+    """Supported pair and C1~C10 structural facts determine static admission."""
     identity_error = _composition_identity_context_error(
         structure, native_primitive_contract, composition_contract_id
     )
@@ -931,10 +676,7 @@ def admit_composition_premises(
     if binding is not None:
         return binding
 
-    # (4) C1~C10 — theorem capability 는 caller 선언(registry 아님).
-    outcomes = evaluate_composition_premises(
-        structure, theorem_evidence_valid=theorem_capability_available
-    )
+    outcomes = evaluate_composition_premises(structure)
     # 부재/모순(INCOMPLETE) 을 provable-false(FAILED) 보다 먼저 — 평가 불가가 우선.
     for premise_id in PREMISE_IDS:
         outcome = outcomes[premise_id]
@@ -951,6 +693,9 @@ def admit_composition_premises(
 
     verified_premise_facts = _verified_premise_facts(structure, outcomes)
     structure_digest = template_structure_digest(structure)
+    fingerprint = composition_fingerprint(
+        composition_contract_id, native_primitive_contract.native_primitive_contract_id
+    )
     premise_verification_digest = content_digest(
         {
             "composition_contract_id": composition_contract_id,
@@ -958,7 +703,7 @@ def admit_composition_premises(
                 native_primitive_contract.native_primitive_contract_id
             ),
             "template_structure_digest": structure_digest,
-            "theorem_evidence_manifest_digest": theorem_evidence_manifest_digest,
+            "theorem_evidence_manifest_digest": fingerprint,
             "verified_premise_facts": verified_premise_facts,
         }
     )
@@ -966,57 +711,9 @@ def admit_composition_premises(
         composition_contract_id=composition_contract_id,
         native_primitive_contract_id=native_primitive_contract.native_primitive_contract_id,
         template_structure_digest=structure_digest,
-        theorem_evidence_manifest_digest=theorem_evidence_manifest_digest,
+        theorem_evidence_manifest_digest=fingerprint,
         verified_premise_facts=_deep_freeze(verified_premise_facts),
         premise_verification_digest=premise_verification_digest,
-    )
-
-
-def verify_execution_composition_premises(
-    *,
-    structure: ExecutionTemplateStructure,
-    native_primitive_contract: NativePrimitiveContractManifest,
-    theorem_evidence: CompositionTheoremEvidenceManifest,
-    composition_contract_id: str = COMPOSITION_CONTRACT_ID,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-) -> CompositionPremiseVerificationResult:
-    """exact projection fact + theorem evidence 로 ordered composition premise 를 판정한다.
-
-    PASS 는 (1) composition/native primitive contract 가 등록됨, (2) theorem evidence 가
-    integrity·PASS, (3) projection resolver/removal contract 가 native primitive contract 와
-    결속, (4) C1~C10 이 전부 증명될 때만. 증명 안 되면 latest fallback 없이 Blocked/ContextError.
-
-    이 PASS 는 **static admission** 만을 뜻한다 — ordered ops 가 지원되는 static composition
-    contract 에 속함. serialize/reparse/postcondition/한글 layout/delivery 성공에 대해서는 아무것도
-    단언하지 않으며, runtime materializer conformance 를 **대체하지 않는다**(그 seam 은
-    :class:`RuntimeMaterializerConformanceRegistry`·SG-02 harness·S6 소유). seal/compile 경로는
-    admission 판정에 그 registry 를 절대 consult 하지 않는다.
-
-    R2-01(#740): (2) theorem evidence integrity 만 이 wrapper 의 registry consult 로 남기고, 나머지
-    순수 판정((0)(1)(3)(4)·PASS 조립)은 :func:`admit_composition_premises` 가 공유한다 — semantic
-    kernel 은 그 순수 함수만 부른다(registry 미consult). 두 경로의 판정·byte 는 동일하다.
-    """
-    # (0),(1) identity — precedence 를 위해 (2) registry consult 앞에 둔다.
-    identity_error = _composition_identity_context_error(
-        structure, native_primitive_contract, composition_contract_id
-    )
-    if identity_error is not None:
-        return identity_error
-    # (2) theorem evidence integrity·PASS — 이 함수의 **유일한** registry consult.
-    try:
-        verify_theorem_evidence_integrity(theorem_evidence, registry=theorem_registry)
-    except CompositionTheoremEvidenceUnproven as exc:
-        return CompositionPremiseContextError(exc.code, None, str(exc))
-    except CompositionAdmissionError as exc:
-        return CompositionPremiseContextError(exc.code, None, str(exc))
-    # integrity 가 evidence == 등록 canonical 임을 이미 강제하므로 evidence↔contract 재대조는 dead.
-    # (3),(4),PASS 조립 — registry 없는 순수 판정에 위임(theorem digest 는 등록 canonical 값).
-    return admit_composition_premises(
-        structure=structure,
-        native_primitive_contract=native_primitive_contract,
-        theorem_evidence_manifest_digest=theorem_evidence_digest(theorem_evidence),
-        composition_contract_id=composition_contract_id,
-        theorem_capability_available=True,
     )
 
 
@@ -1063,7 +760,7 @@ def _verified_premise_facts(
         "premises_proven": {pid: outcomes[pid].status for pid in PREMISE_IDS},
         "crossing_free": structure.global_composition_facts.crossing_free,
         "target_target_relation_counts": relation_counts,
-        "attested_target_target_relations": sorted(_ATTESTED_TARGET_TARGET_RELATIONS),
+        "attested_target_target_relations": sorted((DISJOINT, TOUCHING)),
         "occurrence_owner_kind_counts": owner_kinds,
         "removal_target_count": len(structure.option_regions),
     }

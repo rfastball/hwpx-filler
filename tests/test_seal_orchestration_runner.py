@@ -27,10 +27,8 @@ from hwpxfiller.application.execution_capture import (
 from hwpxfiller.application.execution_compilation import SLOT_CONFIGURATION_INCOMPLETE
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
+    COMPOSITION_FINGERPRINT_HWPX,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    THEOREM_EVIDENCE_V1,
-    TheoremEvidenceRegistry,
-    theorem_evidence_digest,
 )
 from hwpxfiller.application.execution_capture import (
     APPLIED_TEMPLATE_CANDIDATE,
@@ -102,9 +100,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         composition_contract_id=COMPOSITION_CONTRACT_ID,
         native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest=theorem_evidence_digest(
-            THEOREM_EVIDENCE_V1
-        ),
+        composition_theorem_evidence_manifest_digest=COMPOSITION_FINGERPRINT_HWPX,
         materialization_contract_id="materialization/v1",
         plan_schema_version="hwpx-execution-plan/v2",
         canonical_encoding_version=CANONICAL_ENCODING_VERSION,
@@ -630,27 +626,12 @@ def test_domain_block_missing_attempt_digest_raises() -> None:
 
 
 # ══ Codex #722 finding fixes (store 무관 판정만 잔존) ══════════════════════════════════
-def test_finding1_injected_theorem_registry_threaded_into_contract_set(monkeypatch) -> None:
-    # build_execution_contract_set 가 injected registry 를 받아야 한다 — DEFAULT 로 조용히 fallback 하면
-    # injected registry 가 admit 한 manifest 가 여기서 늦게 IntegrityError 로 터진다.
-    injected = TheoremEvidenceRegistry()
-    injected.register(THEOREM_EVIDENCE_V1)
-    seen: list[object] = []
-    real = sep.build_execution_contract_set
-
-    def spy(*a, theorem_registry, **kw):
-        seen.append(theorem_registry)
-        return real(*a, theorem_registry=theorem_registry, **kw)
-
-    monkeypatch.setattr(sep, "build_execution_contract_set", spy)
-    candidate = compile_candidate(_captured(), theorem_registry=injected)
-    assert isinstance(candidate, PlanCandidate)
-    assert seen == [injected]  # DEFAULT 가 아니라 injected 를 그대로 받았다
+def test_mismatched_composition_fingerprint_rejected() -> None:
     mismatched = _captured(policy=_policy(
         composition_theorem_evidence_manifest_digest="sha256:wrong"
     ))
     with pytest.raises(ExecutionQualificationContextError):
-        compile_candidate(mismatched, theorem_registry=injected)
+        compile_candidate(mismatched)
 
 
 def test_finding3_capture_policy_mismatch_rejected_fail_closed() -> None:

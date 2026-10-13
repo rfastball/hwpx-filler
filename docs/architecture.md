@@ -61,15 +61,17 @@ Studio·WASM·폰트는 같은 고정 원천과 보존 패치로 빌드해 웹 �
 <a id="architecture-authority"></a>
 ## 의미 권위와 제어면
 
-제품은 문서 생성에 필요한 동사만 노출한다. backend 개체마다 관리 화면·선택기·등록·승인
-수명주기를 만들지 않는다. 지원 매체별 하나의 불변 출하 Profile(HWPX·TXT)을 사용한다.
-제품 전체에 Profile이 하나라는 뜻은 아니다. 사용자 선택·생성·게시·admission·history·fence
-관리는 없다. Profile은 형식 처리의 qualification identity이지 범용 운영 제어면이 아니다.
+제품은 문서 생성에 필요한 동사만 노출하며 backend 개체마다 관리·선택·등록·승인 수명주기를 만들지 않는다.
+매체별 불변 출하 Profile(HWPX·TXT)은 형식 처리의 qualification identity다.
+사용자가 Profile을 선택·생성·게시하거나 admission·history·fence를 관리하는 기능은 없다.
 
 선택 해석·digest·적용 판본·최신성·준비·실행 가능 여부·blocker·복구 동사는 application이
 판정한다. 웹은 불투명 token과 projection을 전달·표시하며 token을 파싱해 별도 권위를 만들지
 않는다. 구성·프리셋 mutation은 새 token과 view를 반환하며 실패를 성공 변경처럼 표시하지 않는다.
 엔진 내부 능력을 UI 제공 기능으로 간주하지 않는다. [지원 경계](product.md#product-scope)를 따른다.
+
+HWPX·TXT 구성은 고정된 형식 쌍과 실제 문서 구조로 판정하고, 규칙의 예제·반례는 테스트에서 검증한다.
+제품 실행 중 증거 등록·재증명은 없다. 저장된 계획의 구성 지문은 직렬화 식별값을 유지하며 승인·런타임 검증을 대신하지 않는다.
 
 HMAC은 발급 컨텍스트의 무결성과 용도·작업 결속을 확인한다. 사용자 권한 체계나 현재 revision·
 Work·실행 가능성의 증명이 아니다. 서명과 현재 상태 대조, 잠금, 재전송·소비 검사는 각각 필요하다.
@@ -80,7 +82,4 @@ Work·실행 가능성의 증명이 아니다. 서명과 현재 상태 대조, �
 풀리는 문제에 durable 원장을 중복 도입하지 않는다. 미지원·손상·최신성 불명을 성공 fallback으로
 낮추지 않는다. 보수적인 선택 자동 유지 조건은 [작업 흐름](workflow.md#workflow-template)이 소유한다.
 
-[아키텍처](../tests/repo_contract/test_architecture.py), [금지 경계](../tests/repo_contract/test_p3_forbidden_edges.py),
-[브리지](../tests/repo_contract/test_bridge_contract.py), [제어면 축소](../tests/repo_contract/test_control_surface_reduction.py),
-[구성 제품](../tests/test_slot_configuration_product.py), [제어면 증거](../tests/test_control_plane_evidence.py)가
-형상과 의미 경계를 검사한다. 실제 DOM·WebView2의 결과를 정적 검사만으로 보증하지 않는다.
+검증 근거는 [manifest](manifest.toml)의 소유 절별 코드·테스트를 따른다. 정적 검사는 실제 DOM·WebView2 검증을 대체하지 않는다.

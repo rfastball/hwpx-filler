@@ -3,7 +3,7 @@
 이 모듈이 소유하는 것: :func:`validate_data_record_against_plan` 서비스, ``validated-record/v1``
 :class:`ValidatedDataRecord` payload/record/codec/digest, record validation blocker 어휘, logical
 document value resolution, requirement-value completeness/integrity 검증, 최소 immutable VDR
-ref/retention port(:class:`ImmutableVdrStore`).
+현재 값과 봉인 Plan 에 대한 레코드 검증.
 
 서비스는 Plan 의 **모든** Active Field requirement 에 대해 exact logical Unicode document text 를
 완성한다:
@@ -147,13 +147,6 @@ class ValidatedRecordIntegrityError(Exception):
     code = VALIDATED_RECORD_INTEGRITY_ERROR
 
 
-class VdrRetentionError(Exception):
-    """immutable VDR ref 가 비어 있거나 복원 불가·content 대체 시도 — 조용히 넘기지 않는다."""
-
-    code = "VDR_RETENTION_ERROR"
-
-
-# ─── 내부 context 신호(서비스 top 이 RecordValidationContextError 로 변환) ──────────────────
 class _ContextSignal(Exception):
     def __init__(self, code: str, detail: str) -> None:
         super().__init__(detail)
@@ -984,42 +977,6 @@ def verify_current_validated_record_completeness(
         raise ValidatedRecordIntegrityError("current VDR field sequence mismatch")
     if any(not isinstance(value, str) for _, value in record.resolved_requirement_values):
         raise ValidatedRecordIntegrityError("current VDR value is not logical text")
-
-
-class ImmutableVdrStore:
-    """content-addressed(``validated_record_digest``) create-once VDR store — GenerationPlan 수명까지 보존.
-
-    ref 는 곧 content-address 라 같은 ref 는 항상 같은 bytes 로만 resolve 된다. tampered digest·다른
-    bytes 로의 대체는 fail-closed. mutable raw row 를 붙들지 않고 봉인된 VDR bytes 만 보존한다.
-    """
-
-    # ponytail: process-local dict, no fsync/durability — v1 desktop 은 workspace 당 writer 1 (#620).
-    #           durable/run-owned package·GC 는 S5-12 비범위(후속 slice 가 진다).
-    def __init__(self) -> None:
-        self._by_digest: dict[str, ValidatedDataRecord] = {}
-
-    def put(self, record: ValidatedDataRecord) -> str:
-        ref = record.validated_record_digest
-        if not isinstance(ref, str) or ref == "":
-            raise VdrRetentionError("VDR ref(validated_record_digest)가 비어 있다")
-        # digest 를 bytes 에서 재계산해 대조 — claim 만 믿고 저장하지 않는다.
-        if canonical_execution_digest(record.semantic_payload_encoded) != ref:
-            raise VdrRetentionError("VDR digest 가 canonical bytes 재계산과 불일치")
-        existing = self._by_digest.get(ref)
-        if existing is not None:
-            if existing.canonical_payload_bytes != record.canonical_payload_bytes:
-                raise VdrRetentionError("같은 VDR ref 에 다른 canonical bytes(content 대체 금지)")
-            return ref  # create-once idempotent
-        self._by_digest[ref] = record
-        return ref
-
-    def resolve(self, ref: str) -> ValidatedDataRecord:
-        record = self._by_digest.get(ref)
-        if record is None:
-            raise VdrRetentionError(f"VDR ref 복원 불가: {ref!r}")
-        if canonical_execution_digest(record.semantic_payload_encoded) != ref:
-            raise VdrRetentionError("resolve 한 VDR 의 digest 가 ref 와 불일치")
-        return record
 
 
 def _freeze(value: Any) -> Any:

@@ -15,31 +15,24 @@ import pytest
 
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
-    COUNTEREXAMPLE_THEOREM_FIXTURES,
+    COMPOSITION_FINGERPRINT_HWPX,
+    COMPOSITION_FINGERPRINT_TXT,
     DEFAULT_RUNTIME_CONFORMANCE_REGISTRY,
     NATIVE_PRIMITIVE_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_V1,
-    POSITIVE_THEOREM_FIXTURES,
     PREMISE_IDS,
-    THEOREM_EVIDENCE_V1,
     CompositionPremiseContextError,
     CompositionPremisesBlocked,
     CompositionPremisesPassed,
-    CompositionTheoremEvidenceIntegrityError,
     RuntimeMaterializerConformanceManifest,
     RuntimeMaterializerConformanceNotAdmitted,
     RuntimeMaterializerConformanceRegistry,
-    TheoremEvidenceRegistry,
-    UnsupportedCompositionContract,
     classify_target_target_admission,
     evaluate_composition_premises,
-    fixture_manifest_digest,
+    admit_composition_premises,
+    composition_fingerprint,
     is_owner_coincidence_admitted,
-    prove_theorem_corpus,
     runtime_conformance_digest,
-    theorem_evidence_digest,
-    verify_execution_composition_premises,
-    verify_theorem_evidence_integrity,
 )
 from hwpxfiller.application.execution_structure import (
     CONTAINED,
@@ -163,10 +156,9 @@ def _slotless():
 
 
 def _verify(structure):
-    return verify_execution_composition_premises(
+    return admit_composition_premises(
         structure=structure,
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
 
 
@@ -185,21 +177,18 @@ def test_every_distinct_pair_exactly_one_classification() -> None:
 
 
 def test_disjoint_admitted() -> None:
-    assert classify_target_target_admission(DISJOINT, touching_theorem_available=False) == "OK"
+    assert classify_target_target_admission(DISJOINT) == "OK"
     assert isinstance(_verify(_two_option((10, 20), (30, 40))), CompositionPremisesPassed)
 
 
-def test_touching_exact_theorem_gate() -> None:
-    # gate: theorem 이 없으면 TOUCHING 은 admit 안 되고, 있으면 admit.
-    assert classify_target_target_admission(TOUCHING, touching_theorem_available=False) == "FAILED"
-    assert classify_target_target_admission(TOUCHING, touching_theorem_available=True) == "OK"
-    # verifier 는 valid theorem evidence 를 가지므로 TOUCHING 구조가 통과한다.
+def test_touching_admitted() -> None:
+    assert classify_target_target_admission(TOUCHING) == "OK"
     assert isinstance(_verify(_two_option((10, 20), (20, 40))), CompositionPremisesPassed)
 
 
 @pytest.mark.parametrize("relation", [CONTAINS, CONTAINED, SAME_SPAN, CROSSING])
 def test_nesting_and_crossing_rejected(relation) -> None:
-    assert classify_target_target_admission(relation, touching_theorem_available=True) == "FAILED"
+    assert classify_target_target_admission(relation) == "FAILED"
 
 
 def test_contains_structure_blocked() -> None:
@@ -221,39 +210,31 @@ def test_same_span_distinct_target_blocked() -> None:
 
 
 def test_unknown_relation_vocab_is_context_error() -> None:
-    assert classify_target_target_admission("WOBBLE", touching_theorem_available=True) == "INCOMPLETE"
+    assert classify_target_target_admission("WOBBLE") == "INCOMPLETE"
 
 
 def test_target_owner_not_confused_with_target_target() -> None:
     # target-owner admission 은 coincidence 기반, target-target 과 다른 policy 함수.
     assert is_owner_coincidence_admitted(
         "INTERIOR", preserves_owner_marker=True, coincident_boundary_admissible=True,
-        coincidence_theorem_available=False,
-    ) == "OK"  # INTERIOR 는 theorem 없이도 OK — target-target 과 판정 축이 다르다
-    # 같은 이름 SAME_SPAN 이라도 owner 축에서는 capability+theorem gate 를 탄다.
+    ) == "OK"
+    # 같은 이름 SAME_SPAN 이라도 owner 축에서는 envelope capability 를 확인한다.
     assert is_owner_coincidence_admitted(
         "SAME_SPAN", preserves_owner_marker=True, coincident_boundary_admissible=True,
-        coincidence_theorem_available=False,
-    ) == "FAILED"
-    assert is_owner_coincidence_admitted(
-        "SAME_SPAN", preserves_owner_marker=True, coincident_boundary_admissible=True,
-        coincidence_theorem_available=True,
     ) == "OK"
 
 
 def test_owner_coincidence_requires_capability_facts() -> None:
     assert is_owner_coincidence_admitted(
         "SAME_START", preserves_owner_marker=False, coincident_boundary_admissible=True,
-        coincidence_theorem_available=True,
     ) == "FAILED"
     assert is_owner_coincidence_admitted(
         "SAME_END", preserves_owner_marker=True, coincident_boundary_admissible=False,
-        coincidence_theorem_available=True,
     ) == "FAILED"
 
 
-def test_owner_same_span_target_passes_with_capability_and_theorem() -> None:
-    # o1 이 slot span 전체를 덮는다(owner SAME_SPAN) — envelope capability + theorem 으로 admit.
+def test_owner_same_span_target_passes_with_capability() -> None:
+    # o1 이 slot span 전체를 덮는다(owner SAME_SPAN) — envelope capability 로 admit.
     struct = _two_option((0, 100), (0, 100), slot_span=(0, 100))
     # 두 Option 이 같은 span → target-target SAME_SPAN 이라 C2 에서 막힌다.
     result = _verify(struct)
@@ -283,14 +264,14 @@ def test_target_retained_containment_rejected() -> None:
 
 # ══ premises C1~C10 ══════════════════════════════════════════════════════════════════
 def test_all_premises_pass_positive_fixture() -> None:
-    outcomes = evaluate_composition_premises(_base_structure(), theorem_evidence_valid=True)
+    outcomes = evaluate_composition_premises(_base_structure())
     assert {pid: o.status for pid, o in outcomes.items()} == {pid: "OK" for pid in PREMISE_IDS}
     assert isinstance(_verify(_base_structure()), CompositionPremisesPassed)
 
 
 def test_c2_relation_admission_failure() -> None:
     outcomes = evaluate_composition_premises(
-        _two_option((10, 30), (20, 40)), theorem_evidence_valid=True  # CROSSING
+        _two_option((10, 30), (20, 40))  # CROSSING
     )
     assert outcomes["C2"].status == "FAILED"
 
@@ -298,7 +279,7 @@ def test_c2_relation_admission_failure() -> None:
 def test_c3_remaining_resolver_false_fails() -> None:
     facts = {**RESOLVER_FACTS, "remaining_target_resolvable_after_removal": False}
     struct = _two_option_facts(facts)
-    assert evaluate_composition_premises(struct, theorem_evidence_valid=True)["C3"].status == "FAILED"
+    assert evaluate_composition_premises(struct)["C3"].status == "FAILED"
 
 
 def test_c5_slot_without_option_fails() -> None:
@@ -313,7 +294,7 @@ def test_c5_slot_without_option_fails() -> None:
         resolver_stability_facts=RESOLVER_FACTS,
         admitted_relation_profile="unadmitted",
     )
-    outcomes = evaluate_composition_premises(struct, theorem_evidence_valid=True)
+    outcomes = evaluate_composition_premises(struct)
     assert outcomes["C5"].status == "FAILED"
     result = _verify(struct)
     assert isinstance(result, CompositionPremisesBlocked)
@@ -334,26 +315,26 @@ def test_c6_retained_inside_fails() -> None:
         resolver_stability_facts=RESOLVER_FACTS,
         admitted_relation_profile="unadmitted",
     )
-    assert evaluate_composition_premises(struct, theorem_evidence_valid=True)["C6"].status == "FAILED"
+    assert evaluate_composition_premises(struct)["C6"].status == "FAILED"
 
 
 def test_c7_active_field_resolver_false_fails() -> None:
     facts = {**RESOLVER_FACTS, "active_field_resolvable_after_removal": False}
     assert evaluate_composition_premises(
-        _two_option_facts(facts), theorem_evidence_valid=True
+        _two_option_facts(facts)
     )["C7"].status == "FAILED"
 
 
 def test_c8_field_write_identity_false_fails() -> None:
     facts = {**RESOLVER_FACTS, "field_write_preserves_identity": False}
     assert evaluate_composition_premises(
-        _two_option_facts(facts), theorem_evidence_valid=True
+        _two_option_facts(facts)
     )["C8"].status == "FAILED"
 
 
 def test_c10_envelope_not_retained_fails() -> None:
     struct = _two_option((10, 20), (30, 40), entry=_entry(retains_admissible_envelope=False))
-    assert evaluate_composition_premises(struct, theorem_evidence_valid=True)["C10"].status == "FAILED"
+    assert evaluate_composition_premises(struct)["C10"].status == "FAILED"
 
 
 def _two_option_facts(facts):
@@ -396,12 +377,11 @@ def test_missing_relation_fact_is_context_error() -> None:
     # target-target relation 을 하나 지운 위조 structure → C2 INCOMPLETE(context error).
     struct = _two_option((10, 20), (30, 40))
     forged = dataclasses.replace(struct, removal_target_relations=())
-    outcomes = evaluate_composition_premises(forged, theorem_evidence_valid=True)
+    outcomes = evaluate_composition_premises(forged)
     assert outcomes["C2"].status == "INCOMPLETE"
-    result = verify_execution_composition_premises(
+    result = admit_composition_premises(
         structure=forged,
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(result, CompositionPremiseContextError)
     assert result.code == "EXECUTION_COMPOSITION_PREMISE_INCOMPLETE"
@@ -435,87 +415,6 @@ def test_wrong_removal_contract_mismatch_context_error() -> None:
     result = _verify(forged)
     assert isinstance(result, CompositionPremiseContextError)
     assert result.code == "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT"
-
-
-# ══ theorem evidence integrity ═══════════════════════════════════════════════════════
-def test_pass_manifest_exact_contract_binding() -> None:
-    verify_theorem_evidence_integrity(THEOREM_EVIDENCE_V1)  # 정상 통과
-    assert THEOREM_EVIDENCE_V1.composition_contract_id == COMPOSITION_CONTRACT_ID
-    assert THEOREM_EVIDENCE_V1.native_primitive_contract_id == NATIVE_PRIMITIVE_CONTRACT_ID
-    assert THEOREM_EVIDENCE_V1.evidence_status == "PASS"
-
-
-def test_theorem_suite_digest_tamper_fail_closed() -> None:
-    forged = dataclasses.replace(THEOREM_EVIDENCE_V1, theorem_test_suite_digest="sha256:" + "0" * 64)
-    with pytest.raises(Exception) as exc:  # noqa: PT011 - code 검사로 좁힌다
-        verify_theorem_evidence_integrity(forged)
-    assert exc.value.code == "COMPOSITION_THEOREM_EVIDENCE_INTEGRITY_ERROR"
-
-
-def test_counterexample_digest_tamper_fail_closed() -> None:
-    forged = dataclasses.replace(
-        THEOREM_EVIDENCE_V1, counterexample_fixture_manifest_digest="sha256:" + "0" * 64
-    )
-    with pytest.raises(Exception) as exc:  # noqa: PT011
-        verify_theorem_evidence_integrity(forged)
-    assert exc.value.code == "COMPOSITION_THEOREM_EVIDENCE_INTEGRITY_ERROR"
-
-
-def test_non_pass_status_is_unproven() -> None:
-    forged = dataclasses.replace(THEOREM_EVIDENCE_V1, evidence_status="BLOCKED")
-    with pytest.raises(Exception) as exc:  # noqa: PT011
-        verify_theorem_evidence_integrity(forged)
-    assert exc.value.code == "EXECUTION_COMPOSITION_CONTRACT_UNPROVEN"
-
-
-def test_unproven_theorem_evidence_blocks_verifier() -> None:
-    forged = dataclasses.replace(THEOREM_EVIDENCE_V1, evidence_status="BLOCKED")
-    result = verify_execution_composition_premises(
-        structure=_base_structure(),
-        native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=forged,
-    )
-    assert isinstance(result, CompositionPremiseContextError)
-    assert result.code == "EXECUTION_COMPOSITION_CONTRACT_UNPROVEN"
-
-
-def test_unknown_theorem_manifest_no_fallback() -> None:
-    forged = dataclasses.replace(
-        THEOREM_EVIDENCE_V1, composition_contract_id="hwpx-composition/v99"
-    )
-    with pytest.raises(UnsupportedCompositionContract):
-        verify_theorem_evidence_integrity(forged)
-
-
-def test_registry_resolve_unknown_no_fallback() -> None:
-    empty = TheoremEvidenceRegistry()
-    with pytest.raises(UnsupportedCompositionContract):
-        empty.resolve(COMPOSITION_CONTRACT_ID, NATIVE_PRIMITIVE_CONTRACT_ID)
-
-
-def test_historical_evidence_preserved_not_overwritten() -> None:
-    reg = TheoremEvidenceRegistry()
-    reg.register(THEOREM_EVIDENCE_V1)
-    reg.register(THEOREM_EVIDENCE_V1)  # 동일 manifest 재등록은 무해
-    newer = dataclasses.replace(
-        THEOREM_EVIDENCE_V1, premise_verifier_version="hwpx-composition-verifier/v2"
-    )
-    # 같은 (contract, primitive) key 로 다른 manifest 를 latest 로 덮으려 하면 거절.
-    with pytest.raises(Exception) as exc:  # noqa: PT011
-        reg.register(newer)
-    assert exc.value.code == "COMPOSITION_THEOREM_EVIDENCE_INTEGRITY_ERROR"
-    # 원본은 그대로 보존된다.
-    assert reg.resolve(COMPOSITION_CONTRACT_ID, NATIVE_PRIMITIVE_CONTRACT_ID) == THEOREM_EVIDENCE_V1
-
-
-def test_forged_verifier_version_rejected_against_registered() -> None:
-    # digest 는 재계산과 맞지만 registered canonical 과 다른 필드(위조) → integrity error.
-    forged = dataclasses.replace(
-        THEOREM_EVIDENCE_V1, premise_verifier_version="hwpx-composition-verifier/vX"
-    )
-    with pytest.raises(Exception) as exc:  # noqa: PT011
-        verify_theorem_evidence_integrity(forged)
-    assert exc.value.code == "COMPOSITION_THEOREM_EVIDENCE_INTEGRITY_ERROR"
 
 
 # ══ runtime conformance seam(identity 분리) ══════════════════════════════════════════
@@ -602,11 +501,22 @@ def test_runtime_conformance_stale_capability_or_base_not_admitted() -> None:
 
 
 # ══ unsupported contract fail-closed ═════════════════════════════════════════════════
+def test_serialized_composition_fingerprints_remain_compatible() -> None:
+    assert COMPOSITION_FINGERPRINT_HWPX == (
+        "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd"
+    )
+    assert COMPOSITION_FINGERPRINT_TXT == (
+        "sha256:1b8cb932f7f03cba1ed1082e7c86c1e1a1d324e74b031e3df9e9e595beb8cf04"
+    )
+    assert composition_fingerprint(COMPOSITION_CONTRACT_ID, NATIVE_PRIMITIVE_CONTRACT_ID) == (
+        COMPOSITION_FINGERPRINT_HWPX
+    )
+
+
 def test_unsupported_composition_contract_no_fallback() -> None:
-    result = verify_execution_composition_premises(
+    result = admit_composition_premises(
         structure=_base_structure(),
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
         composition_contract_id="hwpx-composition/v99",
     )
     assert isinstance(result, CompositionPremiseContextError)
@@ -617,10 +527,9 @@ def test_unsupported_native_primitive_contract_no_fallback() -> None:
     forged = dataclasses.replace(
         NATIVE_PRIMITIVE_CONTRACT_V1, native_primitive_contract_id="hwpx-native-primitive/v99"
     )
-    result = verify_execution_composition_premises(
+    result = admit_composition_premises(
         structure=_base_structure(),
         native_primitive_contract=forged,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(result, CompositionPremiseContextError)
     assert result.code == "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT"
@@ -631,10 +540,9 @@ def test_forged_native_primitive_semantics_rejected() -> None:
     forged = dataclasses.replace(
         NATIVE_PRIMITIVE_CONTRACT_V1, field_write_contract_id="hwpx-field-write/vX"
     )
-    result = verify_execution_composition_premises(
+    result = admit_composition_premises(
         structure=_base_structure(),
         native_primitive_contract=forged,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(result, CompositionPremiseContextError)
     assert result.code == "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT"
@@ -671,22 +579,6 @@ def test_module_imports_no_native_or_package_reader() -> None:
         assert token not in src, f"금지 호출 토큰 {token!r}"
 
 
-def test_fixture_corpus_separated_positive_and_counterexample() -> None:
-    pos_ids = {f["case"] for f in POSITIVE_THEOREM_FIXTURES}
-    neg_ids = {f["case"] for f in COUNTEREXAMPLE_THEOREM_FIXTURES}
-    assert pos_ids.isdisjoint(neg_ids)
-    assert all(f["expected"] == "OK" for f in POSITIVE_THEOREM_FIXTURES)
-    assert all(f["expected"] == "FAILED" for f in COUNTEREXAMPLE_THEOREM_FIXTURES)
-    # digest 는 저장 순서가 아니라 내용에 결속(정렬).
-    shuffled = tuple(reversed(POSITIVE_THEOREM_FIXTURES))
-    assert fixture_manifest_digest(shuffled) == fixture_manifest_digest(POSITIVE_THEOREM_FIXTURES)
-
-
-def test_theorem_evidence_digest_stable() -> None:
-    assert theorem_evidence_digest(THEOREM_EVIDENCE_V1) == theorem_evidence_digest(THEOREM_EVIDENCE_V1)
-    assert theorem_evidence_digest(THEOREM_EVIDENCE_V1).startswith("sha256:")
-
-
 def test_encode_native_primitive_contract_roundtrips_ids() -> None:
     from hwpxfiller.application.execution_composition import encode_native_primitive_contract
 
@@ -706,7 +598,7 @@ def test_c2_duplicate_relation_fact_incomplete() -> None:
     struct = _two_option((10, 20), (30, 40))
     only = struct.removal_target_relations[0]
     forged = dataclasses.replace(struct, removal_target_relations=(only, only))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C2"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C2"].status == "INCOMPLETE"
 
 
 def test_c4_missing_owner_slot_fact_incomplete() -> None:
@@ -721,14 +613,14 @@ def test_c4_missing_owner_slot_fact_incomplete() -> None:
     forged = dataclasses.replace(
         struct, option_regions=(stripped, *struct.option_regions[1:])
     )
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C4"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C4"].status == "INCOMPLETE"
 
 
 def test_c4_missing_envelope_fact_incomplete() -> None:
     # region content entry 를 envelope 없는 것으로 갈아끼우면 C4 는 fact 부재로 닫힌다.
     struct = _base_structure()
     forged = dataclasses.replace(struct, content_entries=())
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C4"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C4"].status == "INCOMPLETE"
 
 
 def test_c6_missing_position_fact_incomplete() -> None:
@@ -742,34 +634,34 @@ def test_c6_missing_position_fact_incomplete() -> None:
     regions = list(struct.option_regions)
     regions[idx] = stripped
     forged = dataclasses.replace(struct, option_regions=tuple(regions))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C6"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C6"].status == "INCOMPLETE"
 
 
 def test_c10_affected_entry_missing_envelope_incomplete() -> None:
     struct = _slotless()
     forged = dataclasses.replace(struct, content_entries=())
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C10"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C10"].status == "INCOMPLETE"
 
 
 def test_c9_noncanonical_ordinal_incomplete() -> None:
     struct = _slotless()
     bad = dataclasses.replace(struct.field_occurrences[0], occurrence_ordinal=5)
     forged = dataclasses.replace(struct, field_occurrences=(bad,))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C9"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C9"].status == "INCOMPLETE"
 
 
 def test_c7_empty_value_target_incomplete() -> None:
     struct = _slotless()
     bad = dataclasses.replace(struct.field_occurrences[0], native_value_target_class="")
     forged = dataclasses.replace(struct, field_occurrences=(bad,))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C7"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C7"].status == "INCOMPLETE"
 
 
 def test_c1_duplicate_target_ref_fails() -> None:
     struct = _two_option((10, 20), (30, 40))
     dup = struct.option_regions[0]
     forged = dataclasses.replace(struct, option_regions=(dup, dup))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C1"].status == "FAILED"
+    assert evaluate_composition_premises(forged)["C1"].status == "FAILED"
 
 
 def test_passed_result_carries_premise_facts() -> None:
@@ -806,36 +698,6 @@ def _three_option():
 
 
 # ══ Codex round #714 — 7 findings ════════════════════════════════════════════════════
-# finding 1: theorem digest 는 label 이 아니라 실 corpus 재증명에 결속된다.
-def test_theorem_corpus_is_executable_and_proven() -> None:
-    prove_theorem_corpus()  # 실 classifier 로 재실행 — 어긋나면 raise.
-
-
-def test_broken_theorem_corpus_fails_closed() -> None:
-    # DISJOINT case 의 기대를 FAILED 로 위조하면 재증명이 시끄럽게 닫힌다.
-    broken = ({"case": "x", "family": "target_target", "a": [10, 20], "b": [30, 40],
-               "touching_theorem": False, "expected": "FAILED"},)
-    with pytest.raises(CompositionTheoremEvidenceIntegrityError):
-        prove_theorem_corpus(broken)
-
-
-def test_label_only_manifest_not_bound_to_real_corpus() -> None:
-    # 순수 label corpus 로 만든 digest 를 든 manifest 는 실 corpus digest 와 안 맞아 fail-closed.
-    fake_corpus = ({"case": "fake-admitted", "family": "target_target", "a": [0, 0], "b": [0, 0],
-                    "touching_theorem": True, "expected": "OK"},)
-    forged = dataclasses.replace(
-        THEOREM_EVIDENCE_V1, theorem_test_suite_digest=fixture_manifest_digest(fake_corpus)
-    )
-    with pytest.raises(CompositionTheoremEvidenceIntegrityError):
-        verify_theorem_evidence_integrity(forged)
-
-
-def test_attested_relations_derive_from_real_geometry() -> None:
-    from hwpxfiller.application.execution_composition import _ATTESTED_TARGET_TARGET_RELATIONS
-
-    assert _ATTESTED_TARGET_TARGET_RELATIONS == frozenset({DISJOINT, TOUCHING})
-
-
 # finding 2: verifier 는 non-v2 projection schema 를 v2 의미로 해석하지 않는다.
 def test_verifier_rejects_non_v2_projection_schema() -> None:
     forged = dataclasses.replace(
@@ -887,7 +749,7 @@ def test_c6_unknown_position_vocab_incomplete() -> None:
     regions = list(struct.option_regions)
     regions[idx] = bad
     forged = dataclasses.replace(struct, option_regions=tuple(regions))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C6"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C6"].status == "INCOMPLETE"
 
 
 # finding 6: C2 는 canonical unordered pair 집합을 요구한다.
@@ -901,7 +763,7 @@ def test_c2_incomplete_pair_set_rejected() -> None:
     r21 = dataclasses.replace(r12, left_option_ref=r12.right_option_ref,
                               right_option_ref=r12.left_option_ref)
     forged = dataclasses.replace(struct, removal_target_relations=(r12, r21, r13))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C2"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C2"].status == "INCOMPLETE"
 
 
 def test_c2_nonexistent_option_ref_rejected() -> None:
@@ -911,7 +773,7 @@ def test_c2_nonexistent_option_ref_rejected() -> None:
         rel, right_option_ref=dataclasses.replace(rel.right_option_ref, option_id="ghost")
     )
     forged = dataclasses.replace(struct, removal_target_relations=(ghost,))
-    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C2"].status == "INCOMPLETE"
+    assert evaluate_composition_premises(forged)["C2"].status == "INCOMPLETE"
 
 
 # finding 7: premise_verification_digest 가 입력 structure identity 에 결속된다.

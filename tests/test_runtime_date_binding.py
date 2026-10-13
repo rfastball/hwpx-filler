@@ -386,41 +386,6 @@ def test_inactive_runtime_token_is_sealed_as_a_rule_and_rendered_from_the_delive
     assert result.ordered_items[0].resolved_output_relative_path == "홍길동-2026.06.16.hwpx"
 
 
-def test_sealed_resolver_names_runtime_tokens_from_the_captured_clock() -> None:
-    plan = _plan()
-    snapshot = _snapshot()
-    vdr = validate_data_record_against_plan(
-        plan=plan, snapshot=snapshot, validated_at=_CLOCK, runtime_clock=_CLOCK
-    )
-    assert isinstance(vdr, ValidatedDataRecord), vdr
-    pattern = "{{f_today}}-{{date:%Y%m%d}}"
-    basis = gd.build_delivery_binding_basis(
-        base_template_application_id="app-1",
-        field_binding_authority_revision="rev-7",
-        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        exact_pattern=pattern,
-        active_field_ids=[r["field_id"] for r in plan.active_field_requirements],
-        binding_rules=(),
-    )
-    assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
-    result = gd.resolve_generation_delivery_plan(
-        sealed_execution_plan=plan,
-        exact_pattern=pattern,
-        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=basis,
-        ordered_raw_snapshots=(snapshot,),
-        ordered_validated_records=(vdr,),
-        captured_delivery_clock=_CLOCK,
-        output_directory_basis="C:/out",
-        overwrite_policy=gd.OVERWRITE_EXISTING,
-    )
-    assert isinstance(result, gd.ResolvedGenerationDeliveryPlan), result
-    (item,) = result.ordered_items
-    assert item.resolved_output_relative_path == "2026-03-04-20260304.hwpx"
-    # 이름의 「오늘 날짜」 = 같은 시각으로 만든 VDR 의 본문 값.
-    assert dict(vdr.document_values_in_order())["f_today"] == "2026-03-04"
-
-
 def test_runtime_token_without_a_clock_is_closed() -> None:
     with pytest.raises(gd._DeliveryContextSignal):
         gd.resolve_delivery_field_value(

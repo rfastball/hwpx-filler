@@ -598,9 +598,6 @@ function_complexity = 11
 function_complexity = 24
 function_statements = 67
 
-[budget."src/hwpxfiller/application/execution_composition.py"]
-module_statements = 356
-
 [budget."src/hwpxfiller/application/execution_composition.py::_premise_c2"]
 function_complexity = 12
 
@@ -626,11 +623,7 @@ function_complexity = 18
 function_complexity = 20
 
 [budget."src/hwpxfiller/application/generation_delivery.py"]
-module_statements = 530
-
-[budget."src/hwpxfiller/application/generation_delivery.py::_resolve"]
-function_complexity = 27
-function_statements = 78
+module_statements = 343
 
 [budget."src/hwpxfiller/application/generation_delivery.py::_resolve_current"]
 function_complexity = 46
@@ -640,7 +633,7 @@ function_statements = 89
 function_complexity = 12
 
 [budget."src/hwpxfiller/application/record_validation.py"]
-module_statements = 386
+module_statements = 361
 
 [budget."src/hwpxfiller/application/record_validation.py::_evaluate_review"]
 function_complexity = 11

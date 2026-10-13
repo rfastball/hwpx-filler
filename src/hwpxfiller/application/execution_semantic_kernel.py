@@ -1,50 +1,9 @@
-"""S5F-01(#740) execution semantic kernel — control-plane 없이 실행 의미를 계산한다.
+"""Compute a sealed execution plan value from exact captured Work authority.
 
-두 차례 Architecture Falsification Audit 는 S5 의 semantic compiler/validator 는 유지하되
-`SealedExecutionPlan` 을 둘러싼 durable proof/control plane(store·ledger·first-seen·profile
-admission·ProfileFence·theorem registry authority·13-role manifest digest lattice)이 현재 v1
-topology 에 과대하다고 판정했다. 이 모듈은 그 판정의 실물 조치다: 기존에 검증된 순수 계산만
-조립해 다음 경로를 control plane 밖으로 독립시킨다.
-
-    exact durable Work authority
-            │  (judge_captured_execution — 순수, store·fence·token 모름)
-            ▼
-    exact execution snapshot(CapturedExecutionInput)
-            │  direct C1~C10 structural admission (fail-closed, theorem registry 미consult)
-            │  effective content · Active Fields · deterministic operations
-            │  (admit_composition_premises + qualify_and_compile_execution — 순수)
-            ▼
-    immutable SealedExecutionPlan **value**(closed contract manifest 없음)
-
-**R2-01(#740) — theorem runtime bureaucracy 결합 제거:** C1~C10 admission 은 registry 를 consult
-하지 않는 :func:`admit_composition_premises` 로 한다. theorem corpus 는 classifier correctness 를
-증명하는 **test evidence** 로만 남는다(runtime authority 아님).
-
-**R2-02(#740) — closed contract manifest 결합 제거:** kernel 은 13-role :class:`ExecutionContractSet`
-(closed manifest + manifest digest + schema)을 **전혀 만들지도 싣지도 않는다**. 실제 저장소에서
-contract id 를 deref 하는 compilation/validation/delivery 소비자가 읽는 semantics 만
-:class:`ExecutionContractSemantics` 작은 값으로 담는다. 기존 ExecutionContractSet 은 legacy caller
-용 **compatibility shell** 로 그대로 둔다(이 절개는 삭제하지 않는다).
-
-**R2-03(#740) — semantic identity digest 비의존:** kernel 의 correctness·identity 는 explicit
-semantic value(qualification_profile_id·contract semantics·exact bases·Active Field 요구·ordered
-operations)로 정의되고, ``qualification_profile_semantic_digest``·``execution_basis_digest``·
-``plan_semantic_digest`` 를 correctness dependency 로 **쓰지도 싣지도 않는다**(R2-02 에서
-ExecutionBasis·plan_payload 를 걷어내며 이미 제거됨 — R2-03 이 명시·검증·고정). 두 값 비교(같음/다름)는
-그 셋 digest 가 아니라 explicit value 로 갈린다. 그 digest 함수와 legacy identity 경로는 **삭제하지
-않는다** — store/seal/reference consumer 가 compatibility layer 에서 계속 쓴다. 새 fingerprint·
-counter·identity 를 만들지 않는다.
-
-**이 모듈이 하지 않는 것:** store·ledger·registry·Profile abstraction·HMAC token·digest
-hierarchy·contract manifest·global execution_generation·history/replay·MaterializationRun·
-PreparedBatch persistence 를 **새로 만들지 않는다**. ProfileFence·theorem registry·Plan store·
-semantic digest 전면 제거는 이 절개에서 건드리지 않는다. SealedExecutionPlan 의 제품 의미는
-유지하되 durable aggregate 가 아니라 exact durable authority 에서 재계산 가능한
-**record-independent immutable value** 로 취급한다.
-
-**PerWorkFence 는 여전히 capture 단계(store 에서 exact authority 를 읽는 runner)의 계약**이다 —
-이 kernel 은 그 fence 아래에서 이미 확정된 exact authority 를 소비하는 순수 재계산이라 fence 를
-쥐지도, 우회하지도 않는다(#740 방향 3 보존).
+The kernel checks the supported composition/native primitive pair and C1~C10
+structural facts, then compiles effective content and deterministic operations.
+It has no store, registry, or native mutation dependency. The legacy serialized
+composition fingerprint remains part of captured policy and plan payload identity.
 """
 
 from __future__ import annotations
@@ -64,6 +23,7 @@ from hwpxfiller.application.execution_capture import (
     judge_captured_execution,
 )
 from hwpxfiller.application.execution_compilation import (
+    COMPOSITION_POLICY_IDENTITY_MISMATCH,
     EffectiveFieldBindingBasis,
     ExecutionCompilationContextError,
     ExecutionQualificationBlocked,
@@ -74,6 +34,7 @@ from hwpxfiller.application.execution_composition import (
     CompositionAdmissionError,
     CompositionPremisesPassed,
     admit_composition_premises,
+    composition_fingerprint,
     resolve_native_primitive_contract,
 )
 from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
@@ -82,9 +43,7 @@ from hwpxfiller.application.field_binding_input import FieldBindingInput
 from hwpxfiller.application.slot_selection_input import SlotSelectionInput
 from hwpxfiller.domain.canonical_execution_encoding import CANONICAL_ENCODING_VERSION
 
-# plan schema identity — kernel 이 fail-closed 로 아는 supported 값(단일 shipping v2). 미지원은 latest
-# 로 풀지 않는다. seal_execution_plan.SUPPORTED_PLAN_SCHEMAS 와 같은 값이되, 그 모듈을 import 하면
-# theorem/store 결합이 되살아나므로 kernel 은 이 identity 만 지역 상수로 둔다(R2-01 결합 제거).
+# plan schema identity — kernel 이 fail-closed 로 아는 supported 값(단일 shipping v2).
 _SUPPORTED_PLAN_SCHEMAS = ("hwpx-execution-plan/v2",)
 
 
@@ -223,10 +182,10 @@ def _build_contract_semantics(captured: CapturedExecutionInput) -> ExecutionCont
 
 
 def compile_sealed_plan_from_snapshot(captured: CapturedExecutionInput) -> KernelResult:
-    """exact snapshot → Sealed Plan value(순수, theorem registry·closed manifest 미사용).
+    """exact snapshot → Sealed Plan value(순수, registry·closed manifest 미사용).
 
-    :func:`compile_candidate` 와 같은 실행 의미를 내되 (R2-01) theorem runtime bureaucracy 와
-    (R2-02) closed contract manifest 를 kernel 경로에서 제거한다: C1~C10 admission 은
+    :func:`compile_candidate` 와 같은 실행 의미를 내되 closed contract manifest 를
+    kernel 경로에서 만들지 않는다: C1~C10 admission 은
     :func:`admit_composition_premises`(registry 없음), contract semantics 는
     :class:`ExecutionContractSemantics` 작은 값, operation 정본화는 legacy plan payload 와 공유하는
     :func:`canonicalize_execution_operations` 단일 출처로 한다.
@@ -244,21 +203,27 @@ def compile_sealed_plan_from_snapshot(captured: CapturedExecutionInput) -> Kerne
             f"미지원 canonical encoding: {policy.canonical_encoding_version!r}"
         )
 
-    # (1) direct C1~C10 structural admission — theorem registry 미consult. native primitive 는
+    # (1) direct C1~C10 structural admission. native primitive 는
     # policy 가 선언한 것을 **표에서 푼다**(S10-04 #861): 상수를 박으면 TXT Plan 이 HWPX
     # primitive 로 증명돼 조용히 틀린다. 미등록 id 는 latest 로 풀지 않고 fail-closed.
     try:
         native_primitive = resolve_native_primitive_contract(
             policy.native_primitive_contract_id
         )
+        fingerprint = composition_fingerprint(
+            policy.composition_contract_id, policy.native_primitive_contract_id
+        )
     except CompositionAdmissionError as exc:
         raise SemanticKernelContextError(str(exc), cause_code=exc.code) from exc
+    if policy.composition_theorem_evidence_manifest_digest != fingerprint:
+        raise SemanticKernelContextError(
+            "composition fingerprint 가 resolved policy 와 불일치",
+            cause_code=COMPOSITION_POLICY_IDENTITY_MISMATCH,
+        )
     admitted = admit_composition_premises(
         structure=structure,
         native_primitive_contract=native_primitive,
-        theorem_evidence_manifest_digest=policy.composition_theorem_evidence_manifest_digest,
         composition_contract_id=policy.composition_contract_id,
-        theorem_capability_available=True,
     )
     if not isinstance(admitted, CompositionPremisesPassed):
         # C1~C10 INCOMPLETE(ContextError) / FAILED(Blocked) — 둘 다 fail-closed(Plan 없음).
@@ -310,7 +275,7 @@ def compute_sealed_execution_plan(authority: DurableExecutionAuthority) -> Kerne
 
     경로: capture snapshot → :func:`compile_sealed_plan_from_snapshot`(C1~C10 direct admission +
     effective content/Active Field/deterministic operation compile + Sealed Plan value 조립). store·ledger·
-    fingerprint·profile admission·fence·theorem registry·closed contract manifest 를 **쥐지 않는다**.
+    profile admission·fence·registry·closed contract manifest 를 **쥐지 않는다**.
 
     반환:
       - :class:`SealedExecutionPlanValue` — sealable Plan value.
