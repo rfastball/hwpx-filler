@@ -14,6 +14,7 @@ from ..domain.template_authoring import (
     COMMAND_TYPES,
     REASON_FIELD_OVERLAP,
     REASON_INVALID_SELECTION,
+    REASON_NEED_RANGE,
     REASON_MULTI_REGION,
     REASON_OPTION_OUTSIDE_SLOT,
     REASON_REGION_IN_CELL,
@@ -140,6 +141,8 @@ def _create_field_reason(first: int, last: int, start: int, end: int,
     if first != last:
         return _MULTI_PARAGRAPH_FIELD
     sites, hazards, text = _paragraph_sites(first_paragraph)
+    if sites and start == end and 0 <= start <= len(text):
+        return REASON_NEED_RANGE
     return _field_range_refusal(sites, hazards, text, start, end) or (
         REASON_FIELD_OVERLAP if field_hits and start != end else None)
 

@@ -421,7 +421,7 @@ def test_range_does_not_pair_across_content_xml_boundary():
 
     assert pkg.entries == snapshot  # 무변형
     assert _kinds(scan) == [Kind.UNBALANCED_MARKER, Kind.UNBALANCED_MARKER]
-    assert "content XML 이 끝났습니다" in scan.diagnostics[0].message  # 열린 begin
+    assert "문서가 끝났습니다" in scan.diagnostics[0].message  # 열린 begin
     assert "여는 「항목」 마커 없이" in scan.diagnostics[1].message  # 고아 end
     assert scan.slots == ()  # 파일을 넘어 짝지어진 항목은 복원되지 않는다
     # 선언은 0 이어도 마커는 문서에 그대로 남아 있다 — 「표기 잔존」은 선언 수가 아니라

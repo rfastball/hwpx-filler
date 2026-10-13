@@ -36,6 +36,8 @@ USER_VOCABULARY: dict[str, str] = {
     "Artifact": "실제 생성된 결과",
 }
 
+REPAIR_TEMPLATE_PHRASE = "템플릿에 선택할 내용이 없습니다. 템플릿을 확인하세요."
+
 #: 기본 사용자 표면에 **문안 자체를 두지 않는** 내부 개념(#724 §1: ``Sealed Plan → 기본 비노출``).
 #: 진단/개발자 표면에서만 이름으로 등장하고, 사용자 작업대에는 대응 문안이 없다.
 NOT_EXPOSED_BY_DEFAULT: tuple[str, ...] = ("Sealed Plan",)
@@ -60,6 +62,7 @@ BLOCKER_CODES: tuple[str, ...] = (
     # 그것이 완결됐는지가 다음 질문이다. 생산자는 구판 파일·앱 밖 편집분 둘뿐이다.
     "CONNECT_DATA",
     "REVIEW_TEMPLATE_CHANGE",
+    "REPAIR_TEMPLATE",
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
     "REVIEW_RECORD_DATA",
@@ -88,6 +91,7 @@ PRIMARY_ACTION_CODES: tuple[str, ...] = (
     "SELECT_WORK",             # Work
     "CONNECT_DATA",           # 열린 Work 의 데이터 결속
     "REVIEW_TEMPLATE_CHANGE",  # Template change
+    "REPAIR_TEMPLATE",         # 선택 불가능한 Template 구성
     "CHOOSE_CONTENT",          # content
     "REVIEW_BINDING",          # Binding
     "RESOLVE_EXECUTION",       # execution no-evidence/checking/stale

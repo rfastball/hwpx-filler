@@ -1441,11 +1441,16 @@ test("IDE-02 (P-04, reverses UX-10 R5): the context menu shows only runnable com
     ...["rename_slot", "rename_option", "adjust_range", "unwrap", "delete", "duplicate", "move"].map((type) => ({ type, enabled: false, reason: region, alternative: null })),
   ];
   const shape = (lines) => lines.map((line) => [line.label, line.groupStart, line.disabled]);
-  assert.deepEqual(shape(menuLines(commandEntries(verdicts, false), false)), [["필드로 만들기", false, false], ["항목으로 만들기", false, false], ["먼저 항목 만들기", false, false]],
-    "13 판정 가운데 되는 2 + 대안 1 — 같은 무리라 구분선이 없다");
+  assert.deepEqual([
+    shape(menuLines(commandEntries(verdicts, false), false)),
+    shape(menuLines(commandEntries(verdicts.map((entry) => entry.type === "create_slot" ? { ...entry, enabled: false, reason: region } : entry), false), false)),
+  ], [
+    [["필드로 만들기", false, false], ["항목으로 만들기", false, false]],
+    [["필드로 만들기", false, false], ["먼저 항목 만들기", false, false]],
+  ], "되는 명령의 대안은 중복하지 않고, 명령이 불가하면 대안을 남긴다");
   // 무리가 바뀌는 보이는 항목에만 선다: 무리의 첫 명령(rename_field)이 숨어도 그 무리의 다음 보이는 항목이 선을 받는다.
   const enable = (types) => verdicts.map((entry) => types.includes(entry.type) ? { ...entry, enabled: true, reason: null, alternative: null } : entry);
-  assert.deepEqual(shape(menuLines(commandEntries(enable(["unset_field", "delete", "move"]), false), false)).slice(3),
+  assert.deepEqual(shape(menuLines(commandEntries(enable(["unset_field", "delete", "move"]), false), false)).slice(2),
     [["필드 의미 해제", true, false], ["내용까지 삭제", true, false], ["이동", true, false]]);
   assert.deepEqual(shape(menuLines(commandEntries(enable(["relink_field", "unset_field"]).map((entry) => entry.type.startsWith("create") ? { ...entry, enabled: false, alternative: null } : entry), false), false)),
     [["필드 연결 변경", false, false], ["필드 의미 해제", false, false]], "첫 보이는 항목은 선을 받지 않는다");
@@ -1459,7 +1464,7 @@ test("IDE-02 (P-04, reverses UX-10 R5): the context menu shows only runnable com
   openContextMenu(controller, { clientX: 1, clientY: 1, target: { focus() {} }, preventDefault() {} }, null);
   let markup = render(controller);
   let menu = markup.slice(markup.indexOf('role="menu"'), markup.indexOf("</div>", markup.indexOf('role="menu"')));
-  assert.equal(count(menu, 'role="menuitem"'), 3);
+  assert.equal(count(menu, 'role="menuitem"'), 2);
   assert.ok(!menu.includes(outside) && !menu.includes(region) && !menu.includes("aria-disabled") && !menu.includes("aria-describedby"), "사유 줄·불가 항목이 없다");
   assert.ok(!menu.includes("<p") && !menu.includes("<span"), "메뉴의 자식은 menuitem 뿐이다");
   controller.update({ commands: verdicts.map((entry) => ({ ...entry, enabled: false, alternative: null })) });
@@ -1482,7 +1487,7 @@ test("IDE-02 (P-04, reverses UX-10 R5): the context menu shows only runnable com
   assert.equal(menuLines(commandEntries(same, false), false, false), null);
   assert.equal(menuLines(commandEntries(same, true), true, true), null, "읽기 전용은 그대로 「명령」 한 줄");
   assert.equal(menuLines(commandEntries([], false), false, true).length, 13, "판정 전은 그대로");
-  assert.deepEqual(menuLines(commandEntries(verdicts, false), false, true).map((line) => line.label), ["필드로 만들기", "항목으로 만들기", "먼저 항목 만들기"], "되는 「필드로 만들기」는 그대로 첫 항목");
+  assert.deepEqual(menuLines(commandEntries(verdicts, false), false, true).map((line) => line.label), ["필드로 만들기", "항목으로 만들기"], "되는 「필드로 만들기」는 그대로 첫 항목");
   const pinned = verdicts.map((entry) => entry.type === "create_field" ? { ...entry, enabled: false, reason: "고른 범위에 기존 필드가 포함되어 있습니다." } : entry);
   controller.update({ commands: pinned, contextMenu: null });
   openContextMenu(controller, { clientX: 1, clientY: 1, target: inside([".authoring-canvas"]) }, null);
@@ -1656,7 +1661,7 @@ test("IDE-01 P-03: the 결과 시험 tab badge counts Python's trial_missing, th
   assert.ok(markup.includes('공고명<input class="field" aria-invalid="true" value=""/>'), "손대지 않은 필드 입력칸");
   assert.ok(markup.includes('기관<input class="field" value="조달청"/>'), "값이 있는 입력칸은 표지가 없다");
   assert.match(markup, /<select class="field" data-guide="trial-slot" data-slot="[^"]+" aria-invalid="true">/, "시험 선택이 없는 항목");
-  assert.ok(!markup.includes("미입력"), "폐기 어휘를 넓히지 않는다");
+  assert.ok(markup.includes(">고르세요</option>") && !markup.includes("미입력"), "미지정 상태가 분명하고 폐기 어휘를 넓히지 않는다");
   assert.ok(markup.includes('<div class="authoring-actions start"><button type="button" class="btn" data-guide="trial-fill-names">필드 이름 사용</button></div>'));
   Object.assign(snapshot.tabs[0], { trial_missing: { fields: [], slots: [] } });
   assert.ok(render(controller).includes('<button type="button" class="btn" disabled="" data-guide="trial-fill-names">필드 이름 사용</button>'), "채울 필드가 없으면 비활성");

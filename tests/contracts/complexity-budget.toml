@@ -263,7 +263,7 @@ function_complexity = 16
 function_complexity = 36
 
 [budget."frontend/src/screens/job_run.ts"]
-module_statements = 422
+module_statements = 419
 
 [budget."frontend/src/screens/job_run.ts::JobActionBar"]
 function_complexity = 23
@@ -374,7 +374,7 @@ function_statements = 230
 
 [budget."frontend/src/selftest/probes/job.js::runJobResult"]
 function_complexity = 38
-function_statements = 197
+function_statements = 196
 
 [budget."frontend/src/selftest/probes/react_runtime.js::measureTutorialSurface"]
 function_complexity = 28
@@ -577,13 +577,13 @@ class_methods = 30
 function_complexity = 14
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py"]
-module_statements = 320
+module_statements = 319
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py::RecordValidationSummary.__post_init__"]
 function_complexity = 13
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py::compose_blockers"]
-function_complexity = 21
+function_complexity = 20
 
 [budget."src/hwpxfiller/application/execution_capture.py::_cross_reference_error"]
 function_complexity = 15
@@ -1366,7 +1366,7 @@ function_complexity = 23
 module_statements = 2123
 
 [budget."tests/test_webapp_job.py"]
-module_statements = 3865
+module_statements = 3792
 
 [budget."tests/test_webapp_job_binding_review.py"]
-module_statements = 990
+module_statements = 983

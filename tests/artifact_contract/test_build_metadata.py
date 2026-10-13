@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +52,7 @@ def _generate(out: Path, *extra: str) -> dict:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         cwd=ROOT,
     )
     assert result.returncode == 0, result.stderr
@@ -139,6 +141,7 @@ def test_the_build_plan_must_be_stated_not_guessed() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         cwd=ROOT,
     )
     assert result.returncode != 0
@@ -149,6 +152,7 @@ def test_the_build_plan_must_be_stated_not_guessed() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         cwd=ROOT,
     )
     assert both.returncode != 0, "서로 배타적인 두 계획을 동시에 받았습니다"
@@ -161,6 +165,7 @@ def test_absence_without_a_reason_is_refused() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         cwd=ROOT,
     )
     assert result.returncode != 0

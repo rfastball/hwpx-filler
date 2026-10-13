@@ -22,13 +22,18 @@ export function externalDocumentSpec(item: Obj, content: string, sectionEntries?
   return { content, fileName: String(item.name || ""), readOnly: true as const, sectionEntries, zoom: 100 as const };
 }
 
-export function ExternalDocument({ controller, item, content, sectionEntries, title }: Props & { item: Obj; content: string; sectionEntries?: string[]; title?: string }) {
+export function ExternalDocument({ controller, item, content, sectionEntries, title, shell }: Props & { item: Obj; content: string; sectionEntries?: string[]; title?: string; shell: ShellInput }) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let disposed = false;
     let release: (() => void) | undefined;
     void controller.guarded(async () => {
       const handle = await rhwpMount.mount({ host: host.current!, ...externalDocumentSpec(item, content, sectionEntries), trackSelection: "never", title: title || String(item.name || ""),
+        onShortcut: (shortcut) => {
+          if (shortcut !== "F6" && shortcut !== "ShiftF6") return;
+          const forwarded = forwardedShellKey(shortcut, host.current?.querySelector("iframe") || host.current);
+          if (forwarded) shell.current.key?.(forwarded);
+        },
         onChanged: () => {}, onSelectionChanged: () => {}, onError: (error) => controller.fail(error, "compare-view") });
       if (disposed) handle.dispose(); else release = () => handle.dispose();
     }, "compare-view");

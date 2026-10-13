@@ -1015,7 +1015,7 @@ def test_native_available_commands_share_txt_vocabulary() -> None:
     inside = decide({"entry": entry, "paragraph": 1, "start": 0, "end": 0})
     assert inside["create_option"]["enabled"] and inside["unwrap"]["enabled"] and inside["create_slot"]["enabled"] is False
     # A region boundary paragraph starts with the bookmark control, so no field fits there yet.
-    assert inside["create_field"]["reason"] == "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다."
+    assert inside["create_field"]["reason"] == "문서에서 범위를 고르세요."
     assert inside["rename_field"]["reason"] == "필드를 고르세요."
     assert inside["rename_option"]["reason"] == "선택 영역을 고르세요."
     plain = decide({"entry": entry, "paragraph": 0, "start": 0, "end": 1})

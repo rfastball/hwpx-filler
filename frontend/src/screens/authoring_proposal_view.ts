@@ -245,12 +245,21 @@ function popoverName(controller: Props["controller"], model: PopoverModel): Reac
 
 /** 제안 팝오버(비모달 대화상자 「이름 제안」) — 문서 자리를 누르거나 구조 패널 줄을 고르면 선다. Escape·닫기·행동이 걷고,
  *  닫으면 초점은 연 자리(패널 줄 또는 편집면의 지금 선택)로 돌아간다. 패널 줄에서 열면 첫 행동이 초점을 받는다. */
+function useSpotPopoverAnnouncement(controller: Props["controller"], model: PopoverModel | null, open: ProposalOpen | null): void {
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (model && open?.origin === "spot" && !wasOpen.current) controller.announce(model.dialogLabel);
+    wasOpen.current = !!model;
+  }, [!!model, open?.origin, open?.spot]);
+}
+
 export function ProposalPopover({ controller, item, view }: Surface): ReactNode {
   const box = useRef<HTMLDivElement>(null);
   const open: ProposalOpen | null = view.proposalOpen || null;
   const model = popoverView(proposalOf(item), open);
   usePlacement(controller, open, box, model ? `${model.group}:${model.spot}:${open?.origin}` : "");
   useEffect(() => { if (open?.focus && model) box.current?.querySelector<HTMLElement>(".authoring-proposal-actions button")?.focus(); }, [open?.focus, !!model]);
+  useSpotPopoverAnnouncement(controller, model, open);
   if (!model) return null;
   const inside = () => !!box.current?.contains(box.current.ownerDocument.activeElement);
   const close = () => controller.proposal.close(inside());

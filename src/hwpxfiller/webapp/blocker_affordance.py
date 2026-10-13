@@ -124,13 +124,18 @@ _TABLE: dict[str, BlockerAffordance] = {
         dispatch_action="job.template_check",
         rationale="「변경사항 확인」이 이 요구를 지운다(적용은 그 다음 동사라 여기 아니다).",
     ),
+    "REPAIR_TEMPLATE": BlockerAffordance(
+        kind=ACTIVE_VERB,
+        selector="#jobRepairTemplate",
+        bridge_method="open_job_in_editor",
+        rationale="선택지가 없거나 선택 방식을 지원하지 않으면 라디오로 복구할 수 없다. "
+        "템플릿 편집기로 들어가 구조를 고친 뒤 다시 확인한다.",
+    ),
     "CHOOSE_CONTENT": BlockerAffordance(
         kind=ACTIVE_VERB,
         selector=".cs-option-input",
         dispatch_action="job.select_slot_option",
-        rationale="구간 갈래 라디오(EXACTLY_ONE). "
-        "선택 불가 상태만 남은 갈래는 라디오가 비활성이라 이 선언이 거짓이 된다 — "
-        "그 자리는 별도 blocker 로 분기해야 하고 #921(D3) 이 그 수리를 진다.",
+        rationale="고를 수 있는 구간 갈래 라디오(EXACTLY_ONE).",
     ),
     "REVIEW_BINDING": BlockerAffordance(
         kind=ACTIVE_VERB,

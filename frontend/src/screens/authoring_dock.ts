@@ -7,10 +7,12 @@ import { KIND_LABEL, SEVERITY_LABEL, CATEGORY_LABEL, IDENTIFIER_IMPACT, kindTag,
 import { joined } from "./authoring_outline.ts";
 import { Trial } from "./authoring_trial.ts";
 import { ExternalDocument } from "./authoring_editor.ts";
+import type { ShellInput } from "./authoring_editor.ts";
 import { button, quiet, primary, rowButton, rowList } from "./authoring_primitives.ts";
 import type { Obj } from "./authoring_primitives.ts";
 
 export type DockContext = { controller: AuthoringController; item: Obj | undefined; view: Obj;
+  shell: ShellInput;
   act: (work: () => unknown, kind?: string) => () => void;
   selectInDock: (entry: Obj) => () => void;
   externalVerbs: (saveFailed: boolean) => ReactNode[];
@@ -37,8 +39,8 @@ export function dockControls({ controller, view, dock, act, openPanel, returnFoc
   return { openDock, closeDock, closePanel };
 }
 
-export function renderDockContent(key: string, { controller, item, view, act, selectInDock, externalVerbs, closePanel }: DockContext): ReactNode {
-    if (key === "trial" && item) return h(Trial, { controller, item, view });
+export function renderDockContent(key: string, { controller, item, view, shell, act, selectInDock, externalVerbs, closePanel }: DockContext): ReactNode {
+    if (key === "trial" && item) return h(Trial, { controller, item, view, shell });
     if (!item) return null;
     if (key === "paste") return h("section", { className: "authoring-bottom", "aria-label": "의미 붙여넣기" }, h("h2", null, "의미 붙여넣기"),
       h("p", null, "문서에서 붙여넣을 위치를 고르세요. 같은 이름의 필드 연결과 새 식별자를 확인한 뒤 적용합니다."),
@@ -116,7 +118,7 @@ export function renderDockContent(key: string, { controller, item, view, act, se
     // 비교 안에서 결정한다(IDE-01): 경보 구획과 같은 동사·같은 실행 경로가 비교 아래에도 선다. 「비교 닫기」는 물러선 행동이다.
     if (key === "comparison" && view.comparison) return h("section", { className: "authoring-bottom", "aria-label": "외부 파일 내용" }, h("h2", null, "외부 파일 내용"),
       h("div", { className: "authoring-compare" }, ...[["현재 작업", view.comparison.current_content, view.comparison.current_section_entries], ["외부 파일 내용", view.comparison.content, view.comparison.section_entries]].map(([label, content, sectionEntries]) =>
-        h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries, title: label })))),
+        h("div", { key: label }, h("h3", null, label), item.media === "txt" ? h("pre", null, content) : h(ExternalDocument, { controller, item, content, sectionEntries, title: label, shell })))),
       h("div", { className: "authoring-actions" }, quiet("비교 닫기", () => closePanel({ panel: "" })),
         ...(view.saveFailed ? externalVerbs(true) : item.external_changed ? externalVerbs(false) : [])));
     return null;

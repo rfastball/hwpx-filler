@@ -116,6 +116,17 @@ def test_h1_choose_required_content() -> None:
     assert verdict == PASS
 
 
+def test_unselectable_content_points_to_template_repair() -> None:
+    blocked = _obs(content_selection=ContentSelectionSummary(requires_template_repair=True))
+    assert "REPAIR_TEMPLATE" in blocked.blockers
+    assert "CHOOSE_CONTENT" not in blocked.blockers
+    assert blocked.primary_action == "REPAIR_TEMPLATE"
+    assert blocked.create_documents_enabled is False
+    assert blocked.create_documents_disabled_reason == (
+        "템플릿에 선택할 내용이 없습니다. 템플릿을 확인하세요."
+    )
+
+
 # ══════════════════════════════════════ H2 / T2 ════════════════════════════════════════════════
 def test_h2_selection_introduces_new_input_requirement() -> None:
     """T2: 내용 선택이 새로 필요해진 입력 항목(Active Field)으로 반영되고 그 원인이 표현된다."""

@@ -918,8 +918,7 @@ class _StructureReader(StructureReader):
 
     def __init__(self) -> None:
         # scope 는 조사까지 실은 주어구다 — 코어가 「{scope} 끝났습니다」로 잇는다.
-        # ("content XML 이"의 띄어 붙는 조사는 외래어 뒤 하우스 표기, "파일이"는 붙여 쓴다.)
-        super().__init__(scope="content XML 이", placement=_hwpx_placement)
+        super().__init__(scope="문서가", placement=_hwpx_placement)
 
     def read_paragraph(
         self,

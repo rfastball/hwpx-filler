@@ -231,6 +231,7 @@ class AuthoringController:
             "session_id": session.id,
             "revision": session.revision,
             "media": session.media,
+            "source_stem": Path(session.source_path).stem if session.source_path else "",
             "content": self._wire(session.media, session.content),
             "analysis": session.analysis,
         }

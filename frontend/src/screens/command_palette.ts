@@ -25,6 +25,8 @@ export type MenuLine = { key: string; label: string; command: string; disabled: 
 /** 편집면(글 자리)에서 연 문맥 메뉴에 판정과 무관하게 늘 서는 명령 — 자동 표면 규칙(불가 숨김)의 유일한 예외다(결정 C).
  *  문서에서 가장 먼저 찾는 명령이 사라졌다 나타나지 않게, 불가이면 흐리게 두고 Python 사유를 설명 줄로 싣는다. */
 export const EDITOR_PINNED = "create_field";
+const availableAlternative = (entry: CommandEntry, enabled: Set<string>): CommandEntry["alternative"] =>
+  entry.alternative && !enabled.has(entry.alternative.command_type) ? entry.alternative : null;
 /** 문맥 메뉴에 실을 것(P-04). 판정 전(pending)이면 지금처럼 모든 명령을 사유 없이 흐리게 싣는다(workflow: 판정 전 명령은
  *  사유 없이 비활성). 판정이 서면 되는 명령과 불가 명령의 대안만 싣는다. 읽기 전용이거나 실을 것이 없으면 null —
  *  화면은 팔레트를 여는 「명령」 한 줄을 세운다. 구분선은 보이는 항목 사이에서 무리가 바뀔 때만 선다. */
@@ -33,11 +35,13 @@ export function menuLines(entries: CommandEntry[], readOnly: boolean, editor = f
   let group = 0;
   const groupOf = entries.map((entry) => (COMMAND_GROUP_START.has(entry.type) ? ++group : group));
   const pending = entries.every((entry) => entry.pending);
+  const enabled = new Set(entries.filter((entry) => entry.enabled).map((entry) => entry.type));
   const lines: (MenuLine & { group: number })[] = entries.flatMap((entry, index) => {
     const base = { groupStart: false, danger: DESTRUCTIVE.has(entry.type), alternative: false, group: groupOf[index] };
     if (pending || entry.enabled) return [{ ...base, key: entry.type, label: entry.label, command: entry.type, disabled: !entry.enabled }];
     if (editor && entry.type === EDITOR_PINNED) return [{ ...base, key: entry.type, label: entry.label, command: entry.type, disabled: true, reason: entry.reason }];
-    if (entry.alternative) return [{ ...base, danger: false, alternative: true, key: `${entry.type}-alternative`, label: entry.alternative.label, command: entry.alternative.command_type, disabled: false }];
+    const alternative = availableAlternative(entry, enabled);
+    if (alternative) return [{ ...base, danger: false, alternative: true, key: `${entry.type}-alternative`, label: alternative.label, command: alternative.command_type, disabled: false }];
     return [];
   });
   if (!lines.length) return null;

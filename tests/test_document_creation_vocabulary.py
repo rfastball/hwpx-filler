@@ -11,7 +11,7 @@ import re
 
 from hwpxfiller.application import document_creation_vocabulary as vocab
 
-# ─── #724 §3 blocker 계열 — 정의 순서가 곧 우선순위 기반, 정확히 14개 ────────────────────
+# ─── #724 §3 blocker 계열 — 정의 순서가 곧 우선순위 기반, 정확히 16개 ────────────────────
 
 EXPECTED_BLOCKERS = (
     "SELECT_DATA",
@@ -19,6 +19,7 @@ EXPECTED_BLOCKERS = (
     "SELECT_WORK",
     "CONNECT_DATA",
     "REVIEW_TEMPLATE_CHANGE",
+    "REPAIR_TEMPLATE",
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
     "REVIEW_RECORD_DATA",
@@ -41,6 +42,7 @@ EXPECTED_PRIMARY_ACTIONS = (
     "SELECT_WORK",
     "CONNECT_DATA",
     "REVIEW_TEMPLATE_CHANGE",
+    "REPAIR_TEMPLATE",
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
     "RESOLVE_EXECUTION",
@@ -54,8 +56,8 @@ EXPECTED_PRIMARY_ACTIONS = (
 
 def test_blocker_codes_exact_order_and_count() -> None:
     assert vocab.BLOCKER_CODES == EXPECTED_BLOCKERS
-    assert len(vocab.BLOCKER_CODES) == 15   # -REVIEW_PREVIEW(#957 슬라이스 ③)
-    assert len(set(vocab.BLOCKER_CODES)) == 15  # 중복 없음
+    assert len(vocab.BLOCKER_CODES) == 16   # -REVIEW_PREVIEW(#957 슬라이스 ③), +REPAIR_TEMPLATE(#921)
+    assert len(set(vocab.BLOCKER_CODES)) == 16  # 중복 없음
     # 미리보기 승인 축은 어휘에서도 흔적이 없다 — 되살리려면 계약 변경으로 다시 등록해야 한다.
     assert "REVIEW_PREVIEW" not in vocab.BLOCKER_CODES
     # 확인 축 셋은 나란히 선다(#912 D1) — 「아직 확인 안 함」이 runtime 거절로 접히면
@@ -70,8 +72,8 @@ def test_blocker_codes_exact_order_and_count() -> None:
 
 def test_primary_action_codes_exact_order_and_count() -> None:
     assert vocab.PRIMARY_ACTION_CODES == EXPECTED_PRIMARY_ACTIONS
-    assert len(vocab.PRIMARY_ACTION_CODES) == 13   # -REVIEW_PREVIEW(#957 슬라이스 ③)
-    assert len(set(vocab.PRIMARY_ACTION_CODES)) == 13
+    assert len(vocab.PRIMARY_ACTION_CODES) == 14   # -REVIEW_PREVIEW(#957 슬라이스 ③), +REPAIR_TEMPLATE(#921)
+    assert len(set(vocab.PRIMARY_ACTION_CODES)) == 14
     # 우선순위 계약: 첫째는 context 복원, 마지막은 최종 실행(이슈가 리터럴로 고정).
     assert vocab.PRIMARY_ACTION_CODES[0] == "RECOVER_CONTEXT"
     assert vocab.PRIMARY_ACTION_CODES[-1] == "CREATE_DOCUMENTS"

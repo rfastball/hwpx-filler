@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import threading
+from types import SimpleNamespace
 from datetime import datetime
 from pathlib import Path
 
@@ -75,13 +76,10 @@ from hwpxfiller.domain.field_binding import (
 from hwpxfiller.domain.raw_data_record import SourceText
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.application.slot_configuration_projection import (
-    HAS_BROKEN_SELECTIONS,
-    NEEDS_SELECTION,
     SLOT_SELECTIONS_COMPLETE,
 )
 from hwpxfiller.webapp.workbench_observation_product import (
     WorkbenchObservationProduct,
-    content_selection_from_view,
     execution_verdicts_from_fresh,
 )
 from hwpxfiller.external.managed_generation import ManagedRunCancelled, ManagedRunRefused
@@ -1595,31 +1593,12 @@ def test_normalized_binding_blocker_selects_review_binding() -> None:
         selected_record_count=1,
         total_record_count=1,
         active_work_ref="w",
-        slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
+        slot_view=SimpleNamespace(configuration_status=SLOT_SELECTIONS_COMPLETE, slots=()),
         orchestration="NO_EVIDENCE",
         fresh_observation=fresh,
     )
     assert result.primary_action == "REVIEW_BINDING"
 
-
-
-# ── 깨진 슬롯 선택도 content blocker(사용자를 고쳐야 할 구성 너머로 지나치게 하지 않는다) ─────────
-class _FakeView:
-    def __init__(self, status: str) -> None:
-        self.configuration_status = status
-        self.slots = ()
-
-
-def test_broken_selections_count_as_unselected_required_content() -> None:
-    assert content_selection_from_view(
-        _FakeView(HAS_BROKEN_SELECTIONS)
-    ).has_unselected_required_content is True
-    assert content_selection_from_view(
-        _FakeView(NEEDS_SELECTION)
-    ).has_unselected_required_content is True
-    assert content_selection_from_view(
-        _FakeView(SLOT_SELECTIONS_COMPLETE)
-    ).has_unselected_required_content is False
 
 
 # ── automatic checking 트리거(durable slot mutation CHANGED → 자동 확인) ─────────────────────────

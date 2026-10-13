@@ -266,6 +266,14 @@ def test_save_keeps_declared_selection_as_is() -> None:
     assert preset.provenance_map == {"template_application_id": "A1"}
 
 
+def test_save_name_is_trimmed_and_control_characters_are_refused() -> None:
+    config = _config(("s1", ("o1",)))
+    assert plan_preset_save(config, "  표준  ", {}, NOW).name == "표준"
+    for name in ("   ", "표\n준", "표\x00준"):
+        with pytest.raises(PresetSaveRejected):
+            plan_preset_save(config, name, {}, NOW)
+
+
 # ── runner: 저장 ──────────────────────────────────────────────────────────────
 def _save(store, ports, reg, ctx, *, name="표준", confirmed=None):
     return save_selection_preset(

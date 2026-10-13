@@ -41,6 +41,7 @@ import {
   createTokenFactory, disposeBySession, endRun, initialRunState, sessionKeyOf,
 } from "./job_run_state.ts";
 import type { JobRunState } from "./job_run_state.ts";
+import { openJobInEditor, openTemplateRepairInEditor, TemplateRepairButton } from "./job_template_repair.ts";
 
 type Obj = Record<string, any>;
 type Listener = () => void;
@@ -362,21 +363,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     });
   }
 
-  function openEditForRepair(context: Obj): Promise<boolean> {
-    const s = snapshot();
-    if (!s || !s.job_name) return Promise.resolve(false);
-    return Promise.resolve(
-      deps.ports.editorEntry.current().openGuarded(s.job_name, context) as boolean,
-    );
-  }
-
   /** exact target 을 지목한 진입은 그 문맥을 editor 에 넘긴다 — **조준은 editor 가** 한다(#789).
    *
    *  종전에는 여기서 port 너머로 `aimAt` 을 부르려 했는데 그 메서드는 `EditorEntryPort` 표면에
    *  없었고, `typeof` 로 물어보고 없으면 조용히 지나가는 형상이라 초점이 한 번도 선 적이 없었다.
    *  진입 문맥은 이미 목표를 담아 editor 에 도착하므로 물어볼 곳은 바깥이 아니라 그쪽이다. */
   function openBindingRequirement(exactTarget: string, displayLabel: string): Promise<boolean> {
-    return openEditForRepair({
+    return openJobInEditor(deps.ports.editorEntry.current(), snapshot()?.job_name, {
       entry_reason: "document_browser_repair",
       target: exactTarget,
       evidence: { "입력이 필요한 항목": displayLabel },
@@ -467,6 +460,9 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     },
     startGenerate,
     openBindingRequirement,
+    openTemplateRepair: () => openTemplateRepairInEditor(
+      deps.ports.editorEntry.current(), snapshot()?.job_name,
+    ),
     async cancelGeneration(): Promise<void> {
       /* 중단 요청의 착지는 결과 구획이다 — 진행 중인 문서를 마친 뒤 Python 이 「생성을
          중단했습니다 · N개 완료」와 미착수 건수를 그 자리에 낸다. 접수 시점에 따로 알리지
@@ -903,6 +899,8 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
       disabled: busy || createAction.enabled !== true,
       onClick: () => { void props.controller.startGenerate(); },
     }, String(createAction.label || "")) : null,
+    h(TemplateRepairButton as any, { blockers: workbench.blockers, busy,
+      onOpen: () => { void props.controller.openTemplateRepair(); } }),
     h("button", {
       className: "btn", id: "jobGenCancel", style: { display: busy ? "" : "none" },
       onClick: () => { void props.controller.cancelGeneration(); },

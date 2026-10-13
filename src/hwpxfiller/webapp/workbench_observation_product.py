@@ -67,6 +67,13 @@ from ..application.slot_configuration_projection import (
     NEEDS_SELECTION,
     CurrentSlotConfigurationView,
 )
+from ..application.slot_reconciliation import (
+    CARDINALITY_VIOLATION,
+    MISSING_REQUIRED_SELECTION,
+    NO_AVAILABLE_OPTIONS,
+    SELECTED_OPTION_REMOVED,
+    UNSUPPORTED_SELECTION_POLICY,
+)
 from ..application.workbench_execution_status import (
     WORKBENCH_EXECUTION_STATUS_PHRASE,
     derive_workbench_execution_status,
@@ -103,10 +110,15 @@ def content_selection_from_view(
     selected: list[str] = []
     for slot in view.slots:
         selected.extend(slot.effective_option_ids)
+    selectable = {MISSING_REQUIRED_SELECTION, SELECTED_OPTION_REMOVED, CARDINALITY_VIOLATION}
+    unselectable = {NO_AVAILABLE_OPTIONS, UNSUPPORTED_SELECTION_POLICY}
     return ContentSelectionSummary(
         selected_option_ids=tuple(selected),
-        has_unselected_required_content=view.configuration_status
-        in (NEEDS_SELECTION, HAS_BROKEN_SELECTIONS),
+        has_unselected_required_content=(
+            view.configuration_status in (NEEDS_SELECTION, HAS_BROKEN_SELECTIONS)
+            and any(slot.status in selectable for slot in view.slots)
+        ),
+        requires_template_repair=any(slot.status in unselectable for slot in view.slots),
     )
 
 

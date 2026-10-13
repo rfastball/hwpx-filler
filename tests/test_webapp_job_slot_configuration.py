@@ -11,6 +11,7 @@ import dataclasses
 import threading
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,7 @@ from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchObservation,
 )
 from hwpxfiller.application.document_creation_vocabulary import BLOCKER_CODES
+from hwpxfiller.application.slot_configuration_projection import HAS_BROKEN_SELECTIONS, NEEDS_SELECTION
 from hwpxfiller.application.work_template_state import PREP_INTERRUPTED
 from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
@@ -34,11 +36,25 @@ from hwpxfiller.webapp.slot_configuration_product import (
     SlotConfigurationProductError,
 )
 from hwpxfiller.external.template_change import TemplateChangeCoordinator
-from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
+from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct, content_selection_from_view
 
 from tests.test_slot_configuration_product import _two_slot_template
 
 NOW = datetime(2026, 8, 18, 9, 0, 0)
+
+
+def test_unselectable_slot_requires_template_repair_instead_of_choosing() -> None:
+    def observed(configuration_status: str, slot_status: str):
+        slot = SimpleNamespace(status=slot_status, effective_option_ids=())
+        return content_selection_from_view(SimpleNamespace(configuration_status=configuration_status, slots=(slot,)))
+
+    assert observed(NEEDS_SELECTION, "MISSING_REQUIRED_SELECTION").has_unselected_required_content
+    assert observed(HAS_BROKEN_SELECTIONS, "SELECTED_OPTION_REMOVED").has_unselected_required_content
+    unavailable = observed(HAS_BROKEN_SELECTIONS, "NO_AVAILABLE_OPTIONS")
+    assert not unavailable.has_unselected_required_content
+    assert unavailable.requires_template_repair
+    unsupported = observed(HAS_BROKEN_SELECTIONS, "UNSUPPORTED_SELECTION_POLICY")
+    assert unsupported.requires_template_repair
 
 
 def _clock():

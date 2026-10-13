@@ -127,7 +127,7 @@ async function measureTutorialSurface(ctx) {
     // #1127: a dialog hosts the guide exactly when the beat's boxed control is inside it.
     pending = ctx.services.Modal.confirm({ title: "대상 확인", body: "대화상자 안의 대상", confirmLabel: "확인", cancelLabel: "취소" });
     ctx.push("tutorial", { ...synthetic, beat: { ...synthetic.beat, id: "selftest-dialog", target: "dialog-confirm" } });
-    await ctx.waitFor(() => !!doc.querySelector("#confirmModal #tutorialCoach"),
+    await ctx.waitFor(() => !!doc.querySelector("#confirmModal #tutorialCoach[data-shown='true'][data-target='dialog-confirm']"),
       { what: "확인 대화상자 안의 연습 안내", timeoutMs: 2000 });
     const modal = doc.getElementById("confirmModal");
     const inline = modal.querySelector("#tutorialCoach");

@@ -107,6 +107,7 @@ export type PresetCorruptEntry = { file_name: string; error: string };
  *  `actionable` 은 구획 노출 술어(U4 13번)이고 Python `preset_zone_actionable` 이 낸 값이다. */
 export type PresetZone = {
   supported: boolean;
+  error: SlotZoneError | null;
   /** 목록(적용) 구획 — 슬롯 **위**에 선다. Python `preset_list_actionable`. */
   listActionable: boolean;
   /** 저장 구획 — 슬롯 **아래**에 선다. 저장 게이트(`has_declared_selection`) 그 자체다. */
@@ -120,7 +121,7 @@ export type PresetZone = {
 
 export const emptyPresetZone: PresetZone = {
   supported: false, listActionable: false, saveActionable: false, items: [], corrupt: [],
-  appliedKey: null,
+  appliedKey: null, error: null,
 };
 
 /** backend `PresetSaveResult` asdict — 문안 0(status·code·충돌 항목 사실만). */

@@ -71,7 +71,7 @@
 .tutorial-coach{position:fixed;right:var(--sp-16);bottom:var(--sp-16);width:min(320px,calc(100vw - 24px));max-height:calc(100vh - 24px);display:flex;flex-direction:column;pointer-events:auto;background:var(--a-card);color:var(--a-ink);border:1px solid var(--n-border-strong);border-radius:var(--rad-overlay);padding:var(--sp-12) var(--sp-16);box-shadow:0 14px 34px -14px var(--a-shadow),0 2px 6px -3px var(--a-shadow)}
 .tutorial-coach-scroll{min-height:0;overflow:auto}
 /* Between beats the card fades out in place and fades in with the new words at the new place; it rises in on first sight. */
-.tutorial-coach{transition:opacity var(--dur-pop) var(--ease-out),translate var(--dur-pop) var(--ease-out)}.tutorial-coach[data-shown="false"]{opacity:0}
+.tutorial-coach{transition:opacity var(--dur-pop) var(--ease-out),translate var(--dur-pop) var(--ease-out)}.tutorial-coach[data-shown="false"]{opacity:0;pointer-events:none}
 @starting-style{.tutorial-coach{opacity:0;translate:0 4px}}
 .tutorial-coach[data-nudge="a"]{animation:tutorialShakeA 300ms var(--ease-out)}.tutorial-coach[data-nudge="b"]{animation:tutorialShakeB 300ms var(--ease-out)}
 .tutorial-coach-arrow{position:absolute;width:12px;height:12px;background:var(--a-card);border:1px solid var(--n-border-strong);transform:rotate(45deg)}
@@ -110,3 +110,4 @@
 }
 /* The template row's ⋮ appears on hover only; while a beat boxes it (#1146) it stands so the ring is not empty. */
 body:has(#tutorialCoach[data-target="template-more"]) #editorTplList .job-more{visibility:visible}
+@media(forced-colors:active){.tutorial-spot,.tutorial-spot[data-dim="ring"]{box-shadow:none;outline:3px solid Highlight}}
