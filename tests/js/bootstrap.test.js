@@ -42,7 +42,7 @@ const FACTORY_SERVICES = {
     "startGenerate", "cancelGeneration", "closeResult", "selectFailed",
     // 저장 폴더 전역화: 고르는 왕복은 그대로 이 컨트롤러가 지고(`pickOutputFolder`),
     // 배달 blocker 의 착지가 여는 설정 모달 문이 하나 늘었다.
-    "openRenameRules", "pickOutputFolder", "openOutputFolderSettings", "relinkActive",
+    "openRenameRules", "pickOutputFolder", "openOutputFolderSettings", "relinkActive", "openTemplateRepair",
     "templateCheck", "templateApply",
     // 산출물 관찰(S7-03 · #825) — 결과 존 행이 여는 별도 표면과 그 직접 브리지 저장.
     "openArtifactFrom", "closeArtifact", "saveArtifactAs",
