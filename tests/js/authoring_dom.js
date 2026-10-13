@@ -3,6 +3,15 @@
 
 export const ELEMENT = 1, TEXT = 3, DOCUMENT = 9;
 
+export function escapesViewerFrame(document, record, shortcut, precedingRecord) {
+  if (precedingRecord) precedingRecord.spec.host.appendChild(document.createElement("iframe"));
+  const frame = document.createElement("iframe");
+  record.spec.host.appendChild(frame);
+  frame.focus();
+  record.spec.onShortcut(shortcut);
+  return document.activeElement !== frame;
+}
+
 export class FakeNode {
   constructor(nodeType, nodeName, ownerDocument) {
     this.nodeType = nodeType; this.nodeName = nodeName; this.ownerDocument = ownerDocument;
@@ -135,6 +144,7 @@ export function installDom() {
   document.baseURI = "http://127.0.0.1/index.html";
   document.hidden = false;
   const window = { document, HTMLIFrameElement, navigator: { userAgent: "node" },
+    getComputedStyle: () => ({ visibility: "visible", fontSize: "16px" }),
     addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval };
   document.defaultView = window;
   Object.assign(globalThis, { window, document, HTMLIFrameElement, IS_REACT_ACT_ENVIRONMENT: false });

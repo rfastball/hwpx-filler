@@ -85,6 +85,7 @@
  */
 
 import { ERROR_CODES } from "../runner.js";
+import { jobArtifactSnapshot } from "./job_artifact_snapshot.js";
 
 export const C_CLUSTER = "C";
 
@@ -1616,6 +1617,8 @@ async function runJobResult(ctx) {
      결함 클래스와 「눌렸지만 안 보인다」 결함 클래스가 각각 다른 계기에 걸린다). */
   artifact.sheet_shown = !!sheetCard && isShown(ctx, sheetCard) && sheetCard.offsetParent !== null;
   /* ④ 백엔드에 그 문서가 없는 상태 — 조용한 빈 화면이 아니라 **구분된 거절 문안**이다. */
+  await pushAndSettle(ctx, "job", jobArtifactSnapshot(
+    baseSnap, "ARTIFACT_NOT_IN_SESSION", "이 세션에 없는 문서입니다"));
   Object.assign(artifact, {
     absent_status: String((doc.getElementById("artifactRefused") || {}).dataset?.status ?? "(자리 없음)"),
     absent_title: String((doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)"),
@@ -1623,20 +1626,14 @@ async function runJobResult(ctx) {
   });
 
   /* 관찰이 선 상태 — 면은 원료를 받아 보기 전용 렌더러를 띄운다. 스냅샷에는 내용이 없다(#1138). */
-  const observedSnap = deepCopy(baseSnap);
-  observedSnap.artifact_view = {
-    open: true, ordinal: 0, filename: "공고서-001.hwpx", status: "observed", detail: "",
-  };
+  const observedSnap = jobArtifactSnapshot(baseSnap, "observed");
   await pushAndSettle(ctx, "job", observedSnap);
   Object.assign(artifact, await readArtifactRender(ctx, doc, artifactDispatches));
   artifact.observed_save_enabled = !(doc.getElementById("artifactSaveAs") || {}).disabled;
 
   /* 무결성 실패는 「준비 안 됨」과 다른 문장을 받는다(#820 §3, fallback 0). */
-  const mismatchSnap = deepCopy(observedSnap);
-  mismatchSnap.artifact_view = {
-    open: true, ordinal: 0, filename: "공고서-001.hwpx",
-    status: "ARTIFACT_DIGEST_MISMATCH", detail: "내용이 안착 기록과 다르다",
-  };
+  const mismatchSnap = jobArtifactSnapshot(
+    observedSnap, "ARTIFACT_DIGEST_MISMATCH", "내용이 안착 기록과 다르다");
   await pushAndSettle(ctx, "job", mismatchSnap);
   Object.assign(artifact, {
     mismatch_title: String((doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)"),

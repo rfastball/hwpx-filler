@@ -88,9 +88,11 @@ def test_authoring_native_file_handoffs_accept_only_selected_or_live_paths(tmp_p
     assert opened["content"] == "원문"
     assert frontend.controllers["authoring"]._template_change is frontend.controllers["job"]._template_change
     target = tmp_path / "new-template.txt"
-    monkeypatch.setattr(app_mod, "_save_dialog", lambda *_args: str(target))
+    save_names = []
+    monkeypatch.setattr(app_mod, "_save_dialog", lambda name, *_args: (save_names.append(name), str(target))[1])
     saved = frontend.save_authoring_document(opened["session_id"], opened["revision"])
     assert saved["ok"] is True and target.read_text(encoding="utf-8") == "원문"
+    assert save_names == ["ordinary_템플릿.txt"]
     with pytest.raises(ValueError, match="변경"):
         frontend.save_authoring_document(opened["session_id"], -1)
     with pytest.raises(ValueError, match="변경"):

@@ -629,7 +629,7 @@ test("정상 view 부재는 비우고 init 실패는 backend 문안/action으로
  *  둘(보관·손상)을 흉내내고, 「지금 저장할 선택」 갈래는 호출자가 명시로 세운다. */
 /** 두 구획의 술어는 Python 이 낸다(U4 14~17): 목록은 `preset_list_actionable`, 저장은 저장
  *  게이트 그 자체다. 대역은 목록 축만 흉내내고 저장 축은 호출자가 세운다. */
-function presetZone(items = [], corrupt = [], { listActionable, saveActionable, appliedKey } = {}) {
+function presetZone(items = [], corrupt = [], { listActionable, saveActionable, appliedKey, error } = {}) {
   return {
     supported: true,
     listActionable: listActionable ?? (items.length > 0 || corrupt.length > 0),
@@ -638,6 +638,7 @@ function presetZone(items = [], corrupt = [], { listActionable, saveActionable, 
     corrupt,
     // 「지금 서 있는 프리셋」도 Python 값이다(#945 F3) — 대역은 그 값을 실어 보낼 뿐이다.
     appliedKey: appliedKey ?? null,
+    error: error ?? null,
   };
 }
 function presetItem(key, name, createdAt = "2026-08-24T09:00:00") {
@@ -991,6 +992,20 @@ test("13번: 손상 항목만 있어도 「보관된 선택」 구획은 선다(
   }));
   assert.match(html, /cs-preset-corrupt/);
   assert.match(html, /파일이 손상돼 적용할 수 없습니다/);
+});
+
+test("프리셋 목록 읽기 실패는 빈 목록 성공 대신 오류와 재시도를 보인다", () => {
+  const html = render(stateOf(NEEDS, "idle", null, null, {
+    presets: presetZone([], [], {
+      listActionable: true,
+      error: { code: "PRESET_LIST_UNAVAILABLE", message: "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
+        action: { key: "refresh", label: "다시 불러오기" } },
+    }),
+  }));
+  assert.match(html, /role="alert"/);
+  assert.match(html, /포함할 내용을 불러오지 못했습니다/);
+  assert.match(html, /다시 불러오기/);
+  assert.ok(!html.includes("보관된 선택이 아직 없습니다."));
 });
 
 test("존 렌더: 손상 항목은 숨기지 않고 비활성 + 사유 병기", () => {

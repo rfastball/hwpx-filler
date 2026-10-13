@@ -31,6 +31,7 @@ from ..naming import pattern_field_tokens, plan_output_names
 
 _EXECUTION_RESOLVABLE_STATUS_CODES = frozenset((NO_EVIDENCE, CHECKING, STALE))
 _CONN_MISSING_LABEL = "템플릿 없음"
+REGISTRY_READ_WARNING = "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
 _TXT_ONBOARDING_NOTE = (
     "저장된 TXT 작업이 없습니다. ‘문서 작업’의 [＋ 새 작업] → 템플릿 탭에서 "
     "TXT 템플릿을 선택하고 저장하세요."

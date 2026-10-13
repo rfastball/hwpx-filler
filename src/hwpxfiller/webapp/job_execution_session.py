@@ -48,6 +48,8 @@ from ..external.template_change import SUPPORTED_MEDIA
 from ..application.preset_command import preset_list_actionable
 from ..domain.job import Job
 
+_CONTENT_LOAD_ERROR = "포함할 내용을 불러오지 못했습니다. 다시 불러오세요."
+
 
 @dataclass(frozen=True)
 class WorkbenchConfiguration:
@@ -133,7 +135,7 @@ class JobExecutionSession:
                 "supported": True,
                 "error": {
                     "code": exc.code,
-                    "message": "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
+                    "message": _CONTENT_LOAD_ERROR,
                     "action": {"key": "refresh", "label": "다시 불러오기"},
                 },
             }
@@ -183,11 +185,25 @@ class JobExecutionSession:
             or job.media not in SUPPORTED_MEDIA
         ):
             return blank
-        listing = self.slot_configuration.list_selection_presets(
-            work_ref if job.authority_id else None
-        )
+        try:
+            listing = self.slot_configuration.list_selection_presets(
+                work_ref if job.authority_id else None
+            )
+        except OSError:
+            return {
+                **blank,
+                "supported": True,
+                "list_actionable": True,
+                "save_actionable": savable_selection,
+                "error": {
+                    "code": "PRESET_LIST_UNAVAILABLE",
+                    "message": _CONTENT_LOAD_ERROR,
+                    "action": {"key": "refresh", "label": "다시 불러오기"},
+                },
+            }
         return {
             "supported": True,
+            "error": None,
             "items": [
                 {"key": item.key, "name": item.name, "created_at": item.created_at}
                 for item in listing.items

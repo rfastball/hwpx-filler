@@ -122,7 +122,7 @@ class JobStorePort(Protocol):
 # 제품의 동사인가」를 한 곳에 열거한다(#569 완료 조건 2).
 #
 # 아래 query 군(P2-24)은 같은 규율의 읽기판이다: Presentation 이 concrete 레지스트리를
-# 직접 부르지 않고 지나는 자리이며, 얇음이 곧 계약이다(판정을 여기 들이지 않는다).
+# 직접 부르지 않고 지난다. 조회 사실의 조합은 이 경계가, 문안·세션 전이는 소비자가 소유한다.
 
 
 def list_jobs(store: JobStorePort) -> "list[Job]":
@@ -131,7 +131,7 @@ def list_jobs(store: JobStorePort) -> "list[Job]":
 
 
 def job_names(store: JobStorePort) -> "list[str]":
-    """저장된 작업 이름 목록 — 존재 대조(stale 세션 무효화)용 가벼운 조회."""
+    """읽을 수 있는 작업 이름 목록 — 누락만으로 파일 부재를 확정하지 않는다."""
     return list(store.names())
 
 
@@ -143,6 +143,21 @@ def load_job(store: JobStorePort, name: str) -> Job:
 def job_exists(store: JobStorePort, name: str) -> bool:
     """작업 존재 여부 — 유령 지목 방지용 선판정(잠금 없는 스냅샷)."""
     return store.exists(name)
+
+
+def job_refresh_presence(store: JobStorePort, name: str) -> str:
+    """활성 작업의 목록 누락을 실제 삭제와 읽기 실패로 구별한다.
+
+    목록은 손상·순간 읽기 실패를 격리하므로 이름 부재만으로 삭제를 확정할 수 없다.
+    """
+    if not name:
+        return "unselected"
+    try:
+        if name in job_names(store):
+            return "present"
+        return "unreadable" if job_exists(store, name) else "missing"
+    except Exception:  # noqa: BLE001 — 읽기 실패는 삭제 판정으로 내리지 않는다.
+        return "unreadable"
 
 
 def job_content_fingerprint(store: JobStorePort, job: Job) -> str:

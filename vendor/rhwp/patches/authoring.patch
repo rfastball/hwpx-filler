@@ -2503,8 +2503,8 @@ index 1b1ecf8d5..3d7678202 100644
 +  border-bottom: 2px dotted var(--rhwp-semantic-problem-warning);
 +}
 +
-+/* Data-induction spots read like links: a dotted underline under the glyphs (proposal green, held
-+   grey), never a fill. The spot under the pointer (data-hover) and the opened one (strong) get a
++/* Data-induction spots read like links: proposal has a dotted underline, held a dashed one,
++   never a fill. The spot under the pointer (data-hover) and the opened one (strong) get a
 +   face as one piece; the opened one also a ring. The document shows a pointer cursor over a spot. */
 +.rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"]) {
 +  --rhwp-link-ink: var(--rhwp-semantic-proposal);
@@ -2512,7 +2512,7 @@ index 1b1ecf8d5..3d7678202 100644
 +  border-radius: 2px 2px 0 0;
 +  mix-blend-mode: multiply;
 +}
-+.rhwp-semantic-mark[data-kind="held"] { --rhwp-link-ink: var(--rhwp-semantic-held); }
++.rhwp-semantic-mark[data-kind="held"] { --rhwp-link-ink: var(--rhwp-semantic-held); border-bottom-style: dashed; }
 +.rhwp-semantic-mark:is([data-kind="proposal"], [data-kind="held"]):is([data-hover], [data-emphasis="strong"]) {
 +  background: color-mix(in srgb, var(--rhwp-link-ink) 8%, transparent);
 +}
@@ -2730,7 +2730,7 @@ diff --git a/rhwp-studio/tests/embed-protocol.test.ts b/rhwp-studio/tests/embed-
 index a87452c42..fde01d215 100644
 --- a/rhwp-studio/tests/embed-protocol.test.ts
 +++ b/rhwp-studio/tests/embed-protocol.test.ts
-@@ -1151,3 +1151,90 @@ test('embed router는 notifySaved fileName을 정규화해 핸들러로 전달
+@@ -1151,3 +1151,91 @@ test('embed router는 notifySaved fileName을 정규화해 핸들러로 전달
  
    assert.deepEqual(received, [undefined, 'a.hwp', undefined, undefined]);
  });
@@ -2820,6 +2820,7 @@ index a87452c42..fde01d215 100644
 +  const css = readFileSync(new URL('../src/styles/editor.css', import.meta.url), 'utf8');
 +  assert.match(css, /#scroll-container\[data-semantic-link\] \{ cursor: pointer; \}/);
 +  assert.match(css, /border-bottom: 2px dotted var\(--rhwp-link-ink\);/);
++  assert.match(css, /\.rhwp-semantic-mark\[data-kind="held"\] \{ --rhwp-link-ink: var\(--rhwp-semantic-held\); border-bottom-style: dashed; \}/);
 +});
 diff --git a/rhwp-studio/tests/field-marker-ink.test.ts b/rhwp-studio/tests/field-marker-ink.test.ts
 new file mode 100644

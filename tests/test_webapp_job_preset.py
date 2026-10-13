@@ -236,6 +236,26 @@ def test_corrupt_entry_is_listed_beside_healthy_items_and_rejects_on_apply(
     assert res["rejection_code"] == "PRESET_ENTRY_CORRUPT" and res["rejection_detail"]
 
 
+def test_preset_listing_read_failure_keeps_job_snapshot_and_reports_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctrl, _token, _tpl = _seated(tmp_path)
+    product = ctrl.execution.slot_configuration
+    assert product is not None
+    with monkeypatch.context() as patch:
+        patch.setattr(product, "list_selection_presets", lambda *_: (_ for _ in ()).throw(OSError("denied")))
+        ctrl.refresh_panel()
+        snap = ctrl.snapshot()
+    assert snap["job_name"] == "공고서"
+    assert snap["slot_configuration"]["current_view"] is not None
+    zone = snap["content_presets"]
+    assert zone["supported"] is True and zone["list_actionable"] is True
+    assert zone["items"] == [] and zone["error"]["action"]["key"] == "refresh"
+    assert "불러오지 못했습니다" in zone["error"]["message"]
+    ctrl.refresh_panel()
+    assert _presets_zone(ctrl)["error"] is None
+
+
 # ── 생성 상호배제 · 미지원 조건 · 미주입 ────────────────────────────────────────────────
 def test_apply_rejected_while_generating(tmp_path: Path) -> None:
     ctrl, token, _tpl = _seated(tmp_path)
@@ -427,6 +447,7 @@ def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id
     assert _presets_zone(ctrl) == {
         "supported": True, "items": [], "corrupt": [], "corrupt_code": "PRESET_ENTRY_CORRUPT",
         "list_actionable": False, "save_actionable": False, "applied_key": None,
+        "error": None,
     }
     assert ctrl.registry.load(clone).authority_id == ""  # 렌더가 발급하지 않았다
 

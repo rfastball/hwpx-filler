@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Protocol
+from unicodedata import category
 
 from hwpxfiller.application.slot_command import CHANGED, NO_CHANGE
 from hwpxfiller.application.slot_configuration_context import SlotConfigurationContext
@@ -42,6 +43,7 @@ PRESET_NAME_CONFLICT = "PRESET_NAME_CONFLICT"
 PRESET_EMPTY_SELECTION = "PRESET_EMPTY_SELECTION"
 PRESET_ENTRY_CORRUPT = "PRESET_ENTRY_CORRUPT"
 PRESET_NOT_FOUND = "PRESET_NOT_FOUND"
+PRESET_INVALID_NAME = "PRESET_INVALID_NAME"
 
 # ─── 결과 status 어휘 ────────────────────────────────────────────────────────
 SAVED = "SAVED"
@@ -96,6 +98,14 @@ def plan_preset_save(
         raise PresetSaveRejected(
             PRESET_EMPTY_SELECTION, "저장할 선택이 없습니다(선택 0건)."
         )
+    if isinstance(name, str):
+        if any(category(char) == "Cc" for char in name):
+            raise PresetSaveRejected(
+                PRESET_INVALID_NAME, "프리셋 이름에는 제어 문자를 사용할 수 없습니다."
+            )
+        name = name.strip()
+        if not name:
+            raise PresetSaveRejected(PRESET_INVALID_NAME, "이름을 입력하세요.")
     return SelectionPreset(
         name=name,
         selection_set=config.selections,

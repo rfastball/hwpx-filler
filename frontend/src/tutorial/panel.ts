@@ -177,9 +177,11 @@ function CoachFoot(props: CoachProps): ReactNode {
 export function TutorialCoach(props: CoachProps): ReactNode {
   const { beat, placement, inline } = props;
   const style = !inline && placement ? { left: placement.x, top: placement.y, width: placement.width } : undefined;
+  const hidden = coachHiddenProps(props.hidden);
   return h("section", { id: "tutorialCoach", className: inline ? "tutorial-coach tutorial-coach-inline" : "tutorial-coach", style,
     role: "region", "aria-labelledby": "tutorialBeatTitle", "aria-describedby": "tutorialBeatBody",
     "data-side": inline ? "inline" : placement?.side ?? "center", "data-shown": String(!props.hidden),
+    ...hidden,
     // The boxed control's key: a control the product shows only on hover is revealed while it is the one boxed (CSS).
     "data-target": beat.target ?? undefined,
     "data-nudge": props.missed ? parity(props.missed) : undefined },
@@ -191,8 +193,12 @@ export function TutorialCoach(props: CoachProps): ReactNode {
     h(CoachFoot, props)));
 }
 
+function coachHiddenProps(hidden: boolean | undefined): { inert?: boolean; "aria-hidden"?: boolean } {
+  return { inert: hidden || undefined, "aria-hidden": hidden || undefined };
+}
+
 type GuideProps = Omit<CoachProps, keyof CoachView | "inline" | "hidden" | "stale"> & {
-  beat: TutorialBeat; step: string; found: Target | null; dialogHost: Element | null; doc: Document;
+  beat: TutorialBeat; identity: string; step: string; found: Target | null; dialogHost: Element | null; doc: Document;
   portal: (children: ReactNode, container: Element) => ReactNode;
 };
 
@@ -207,8 +213,7 @@ function useHeldSpot(doc: Document, found: Target | null, key: string, zone: Ele
 
 /** The coach for the live beat, paced by createCoachSwap: the old beat's card stays as it was while it fades out,
  *  the new card shows once its anchor is found; a re-measure within one beat applies at once. */
-function useCoachSwap(doc: Document, view: CoachView, found: Target | null): { view: CoachView; hidden: boolean; stale: boolean } {
-  const key = view.beat.id;
+function useCoachSwap(doc: Document, view: CoachView, found: Target | null, key: string): { view: CoachView; hidden: boolean; stale: boolean } {
   const anchored = !view.beat.target || !!found;
   const [swap] = useState(() => createCoachSwap(clockOf(doc), key, anchored));
   const state = useSyncExternalStore(swap.subscribe, swap.get, swap.get);
@@ -224,12 +229,12 @@ function useCoachSwap(doc: Document, view: CoachView, found: Target | null): { v
  *  keeps no scrim (the dialog already dims the page); elsewhere the scrim dims everything but the anchor. */
 function TutorialGuide(props: GuideProps): ReactNode {
   const { beat, found, dialogHost, doc } = props;
-  const coachHeight = useElementHeight(doc, "tutorialCoach", 162, [beat.id, found]);
+  const coachHeight = useElementHeight(doc, "tutorialCoach", 162, [props.identity, found]);
   const frame = found ? spotFrame(found) : null;
-  const missed = useMissedPresses(doc, beat.mode === "action" ? frame : null, beat.id);
+  const missed = useMissedPresses(doc, beat.mode === "action" ? frame : null, props.identity);
   const placement = found && !dialogHost ? placeCoach(found.rect, viewportOf(doc), beat.placement, coachHeight) : null;
-  const swap = useCoachSwap(doc, { beat, step: props.step, placement, lost: !found && !!beat.target, missed }, found);
-  const held = useHeldSpot(doc, found, `${beat.id}|${beat.target}|${beat.arg ?? ""}`, dialogHost);
+  const swap = useCoachSwap(doc, { beat, step: props.step, placement, lost: !found && !!beat.target, missed }, found, props.identity);
+  const held = useHeldSpot(doc, found, `${props.identity}|${beat.target}|${beat.arg ?? ""}`, dialogHost);
   const coach = h(TutorialCoach, { ...props, ...swap.view, inline: !!dialogHost, hidden: swap.hidden, stale: swap.stale });
   const spot = held.target ? h(TutorialSpot, { target: held.target, motionKey: `${held.key}#${held.epoch}`, faded: held.faded, missed, ring: !!dialogHost }) : null;
   if (dialogHost) return props.portal(h(Fragment, null, coach, spot), dialogHost);
@@ -453,6 +458,10 @@ function lessonsPanelOpen(hudVisible: boolean, open: boolean, snapshot: Tutorial
   return hudVisible && open && !!snapshot && !snapshot.invitation.visible && !overlayBusy;
 }
 
+function guideIdentity(snapshot: TutorialSnapshot | null, beat: TutorialBeat | null): string {
+  return beat && snapshot ? `${snapshot.scenario_id}:${snapshot.checkpoint}:${beat.id}` : "";
+}
+
 export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const raw = useSyncExternalStore(ports.model.subscribe, ports.model.getSnapshot, ports.model.getSnapshot);
   const snapshot = readSnapshot(raw);
@@ -480,6 +489,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const hudShown = useHudVisible(snapshot, initialFailed, () => setOpen(false));
 
   const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  const identity = guideIdentity(snapshot, beat);
   const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
   const practice = snapshot?.practice?.active === true;
   // Put help in the existing focus boundary when the boxed control is inside it; never create a second modal
@@ -492,7 +502,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beatSelector
     : result && result.screen === screen ? anchorSelector(result.target) : null;
   usePressReport(ports, snapshot, screen, beatSelector);
-  const found = useAnchorBox(ports.doc, dialogHost, target, `${beat?.id}|${target}`, spansLines(beat, target, beatSelector), [screen, open]);
+  const found = useAnchorBox(ports.doc, dialogHost, target, `${identity}|${target}`, spansLines(beat, target, beatSelector), [screen, open]);
   const resultHeight = useElementHeight(ports.doc, "tutorialFinale", 330, [result?.title, found]);
 
   const selected = snapshot?.scenarios.find((item) => item.id === snapshot.scenario_id);
@@ -563,7 +573,8 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     resultShown && result ? h(TutorialFinale, { result, copy: snapshot!.copy, pending, doc: ports.doc, position: resultPosition,
       next: nextLesson ? () => void chooseLesson(nextLesson) : null, exit: exitButton(undefined, !nextLesson),
       close: () => setResultDismissed(true) }) : null,
-    shown && beat ? h(TutorialGuide, { beat, copy: snapshot!.copy, found, dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
+    shown && beat ? h(TutorialGuide, { beat, identity,
+      copy: snapshot!.copy, found, dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
       step: selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "",
       overlayBusy, pending, exit: exitButton("tutorialDialogExit"),
       act: (action, payload) => void act(action, payload), recover: () => void recover() }) : null);

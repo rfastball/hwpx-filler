@@ -344,6 +344,8 @@ test("coach takes the preferred side when it fits and its arrow points at the ta
   assert.doesNotMatch(html, /data-nudge/);
   const inline = coachHtml({ inline: true, overlayBusy: true, hidden: true });
   assert.match(inline, /class="tutorial-coach tutorial-coach-inline"[^>]*data-side="inline" data-shown="false"/);
+  assert.match(inline, /\sinert=""/);
+  assert.match(inline, /aria-hidden="true"/);
   assert.doesNotMatch(inline, /tutorial-coach-arrow|style=/);
 });
 
@@ -507,7 +509,8 @@ test("reduced motion keeps the guide opacity-only: no glide, rise, pop, flight, 
   assert.match(css, /\.tutorial-panel,\.tutorial-invite,\.tutorial-paused-card\{animation:tutorialPanelIn var\(--dur-pop\) var\(--ease-out\);transform-origin:100% 0\}/);
   assert.match(css, /@keyframes tutorialPanelIn\{from\{opacity:0;transform:translateY\(-6px\) scale\(\.98\)\}/);
   assert.match(css, /\.tutorial-finale\{[^}]*animation:tutorialPopIn 200ms var\(--ease-out\)\}/);
-  assert.match(css, /\.tutorial-coach\[data-shown="false"\]\{opacity:0\}/);
+  assert.match(css, /\.tutorial-coach\[data-shown="false"\]\{opacity:0;pointer-events:none\}/);
+  assert.match(css, /@media\(forced-colors:active\)\{\.tutorial-spot,\.tutorial-spot\[data-dim="ring"\]\{box-shadow:none;outline:3px solid Highlight\}\}/);
   assert.match(css, /\.tutorial-spot\[data-glide\]\{transition:[^}]*opacity 180ms/, "a ring coming back fades in while it glides");
   const spot = css.match(/\.tutorial-spot\{[^}]*\}/)[0];
   assert.match(spot, /pointer-events:none/, "the scrim never takes the click");
@@ -552,6 +555,11 @@ test("a target inside a scroll container is measured as its visible part, and as
   assert.deepEqual(measureTarget(popover.root, "#pop", screenSize).rect, box(300, 470, 40, 22), "a fixed popover escapes the scroller");
   const absolute = anchorIn(box(300, 470, 40, 22), [table, { rect: box(0, 60, 1200, 740), style: { position: "relative", overflowY: "hidden" } }], { position: "absolute" });
   assert.deepEqual(measureTarget(absolute.root, "#abs", screenSize).rect, box(300, 470, 40, 22), "a static scroller is not an absolute box's container");
+  const collapsed = anchorIn(box(300, 470, 40, 22), [{ rect: box(0, 0, 1200, 0), style: { overflowY: "hidden" } }]);
+  assert.equal(measureTarget(collapsed.root, "#collapsed", screenSize), null, "a zero-height dock body clips every target inside it");
+  const invisible = anchorIn(box(300, 470, 40, 22), []);
+  invisible.element.style.visibility = "hidden";
+  assert.equal(measureTarget(invisible.root, "#invisible", screenSize), null, "a hidden dock body has no visible target");
 });
 
 test("a painted text range is boxed as the union of its lines, clipped like any anchor (#1136)", () => {

@@ -25,6 +25,7 @@ from hwpxfiller.application.jobs import (
     clone_job,
     delete_job,
     disband_group,
+    job_refresh_presence,
     relink_template,
     remove_corrupt_entry,
     rename_group,
@@ -36,6 +37,17 @@ from hwpxfiller.application.jobs import (
     update_tags,
 )
 from hwpxfiller.domain.job import Job, template_media
+
+
+def test_refresh_presence_keeps_failed_existence_check_uncertain():
+    class UnreadableStore:
+        def names(self):
+            return []
+
+        def exists(self, _name):
+            raise PermissionError("temporary stat failure")
+
+    assert job_refresh_presence(UnreadableStore(), "공고서") == "unreadable"
 
 
 class InMemoryJobStore:

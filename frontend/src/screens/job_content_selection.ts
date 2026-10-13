@@ -40,6 +40,10 @@ const h = (
 
 type SlotZoneSnapshot = { view: SlotCurrentView | null; error: SlotZoneError | null };
 
+function readZoneError(value: unknown): SlotZoneError | null {
+  return value !== null && typeof value === "object" ? value as SlotZoneError : null;
+}
+
 /* ── snapshot 의 slot_configuration zone → read-only current 사실 ─────────────────────────── */
 function readSlotZone(full: unknown): SlotZoneSnapshot {
   const empty = { view: null, error: null };
@@ -47,9 +51,7 @@ function readSlotZone(full: unknown): SlotZoneSnapshot {
   const zone = (full as Obj).slot_configuration;
   if (zone === null || typeof zone !== "object") return empty;
   const z = zone as Obj;
-  const error = z.error !== null && typeof z.error === "object"
-    ? z.error as SlotZoneError
-    : null;
+  const error = readZoneError(z.error);
   // 미초기화·미지원에는 view가 없지만, 실패 projection은 정상 빈 상태와 구분해 함께 운반한다.
   if (z.initialized !== true) return { view: null, error };
   const view = z.current_view;
@@ -66,6 +68,7 @@ function readPresetZone(full: unknown): PresetZone {
   if (z.supported !== true) return emptyPresetZone;
   return {
     supported: true,
+    error: readZoneError(z.error),
     // 노출 술어는 Python 이 낸다(U4 13번·14~17) — 목록 길이를 여기서 다시 세지 않는다.
     // 두 구획이 자리도 성격도 다르므로 술어도 둘이다(목록은 슬롯 위, 저장은 슬롯 아래).
     listActionable: z.list_actionable === true,
@@ -445,6 +448,7 @@ function PresetListSection(props: {
   notice: PresetNotice | null;
   pending: boolean;
   onApply: (presetKey: string) => void;
+  onRefresh: () => void;
 }): ReactNode {
   const { presets, notice, pending } = props;
   const noticeLine = notice === null ? null : presetNoticeText(notice);
@@ -452,6 +456,14 @@ function PresetListSection(props: {
     "section",
     { className: "cs-presets", "aria-label": "보관된 선택" },
     h("h3", { className: "cs-presets-title" }, "보관된 선택"),
+    presets.error === null
+      ? null
+      : h("p", { className: "cs-status cs-status-error", role: "alert" },
+          presets.error.message,
+          presets.error.action?.key === "refresh"
+            ? h("button", { type: "button", className: "btn", disabled: pending,
+                onClick: props.onRefresh }, presets.error.action.label)
+            : null),
     // 결과 재진술 — 깨짐이 있는 적용도 성공 UI 뒤에 숨지 않는다(같은 자리에서 시끄럽게).
     noticeLine === null
       ? null
@@ -464,7 +476,7 @@ function PresetListSection(props: {
           },
           noticeLine.text,
         ),
-    presets.items.length === 0 && presets.corrupt.length === 0
+    presets.error === null && presets.items.length === 0 && presets.corrupt.length === 0
       ? h("p", { className: "cs-presets-empty" }, "보관된 선택이 아직 없습니다.")
       : h(
           "ul",
@@ -658,6 +670,7 @@ export function JobContentSelection(props: {
         notice: state.presetNotice,
         pending,
         onApply: (presetKey: string) => { void controller.applyPreset(presetKey); },
+        onRefresh: () => { void controller.refresh(); },
       })
       : null,
     projection.slots.length === 0

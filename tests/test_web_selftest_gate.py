@@ -974,7 +974,7 @@ class TestWebSelftestGate:
         assert "job/artifact_open" in a["open_dispatches"], a
         assert a["sheet_shown"], "산출물 관찰 시트가 DOM 에만 있고 그려지지 않았습니다."
         # ③ 관찰이 서지 않은 상태 = 조용한 빈 화면이 아니라 사유를 말하는 면이다.
-        assert a["absent_title"] not in ("", "(자리 없음)"), a
+        assert a["absent_status"] == "ARTIFACT_NOT_IN_SESSION" and a["absent_title"] not in ("", "(자리 없음)"), a
         assert a["absent_save_disabled"], (
             "관찰이 서지 않았는데 저장 버튼이 살아 있습니다 — 원료 없는 저장의 미끼입니다."
         )

@@ -23,7 +23,8 @@ export function visibleElement(root: ParentNode, selector: string | null): HTMLE
   for (const preferred of selector.split(",")) {
     for (const candidate of root.querySelectorAll<HTMLElement>(preferred.trim())) {
       const rect = candidate.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0 && !candidate.closest("[hidden], [inert], .hidden")) return candidate;
+      if (rect.width > 0 && rect.height > 0 && !candidate.closest("[hidden], [inert], .hidden")
+        && candidate.ownerDocument?.defaultView?.getComputedStyle(candidate).visibility !== "hidden") return candidate;
     }
   }
   return null;
@@ -68,7 +69,7 @@ export function clipBoxes(element: Element): Box[] {
   for (let node = element.parentElement; node && node !== stop && scheme !== "fixed"; node = node.parentElement) {
     const style = view.getComputedStyle(node);
     if (scheme === "absolute" && style.position === "static") continue;
-    if (clipsOverflow(style) && node.clientWidth > 0 && node.clientHeight > 0) boxes.push(clientBox(node));
+    if (clipsOverflow(style)) boxes.push(clientBox(node));
     scheme = style.position;
   }
   return boxes;

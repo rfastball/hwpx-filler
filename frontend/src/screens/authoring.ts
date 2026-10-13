@@ -291,7 +291,7 @@ export function AuthoringScreen({ controller, layout }: Props & { layout?: Autho
     button("현재 작업을 다른 이름으로 저장", act(() => controller.save(item.id, true), "save"), { key: "save-as" }),
     button("외부 파일 다시 열기", act(controller.reload), { key: "reload" }),
     ...(saveFailed ? [primary("다시 저장", act(() => controller.save(item.id), "save"), { key: "save" })] : [])];
-  const dockContent = (key: string): ReactNode => renderDockContent(key, { controller, item, view, act, selectInDock, externalVerbs, closePanel });
+  const dockContent = (key: string): ReactNode => renderDockContent(key, { controller, item, view, shell: shellInput, act, selectInDock, externalVerbs, closePanel });
   // 도구 막대(§3.1·APG toolbar): 한 번의 Tab 으로 들어오고 ←→·Home·End 로 옮긴다(roving tabindex). 비활성(disabled) 단추는 건너뛰고
   // 흐린(aria-disabled) 만들기 단추는 초점을 받는다 — 눌러서 사유를 듣는 길이다(APG: 초점 가능한 비활성 허용).
   const undoDisabled = editorState ? !editorState.canUndo : false;

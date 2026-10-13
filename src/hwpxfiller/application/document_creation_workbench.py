@@ -44,7 +44,12 @@ from hwpxfiller.application.workbench_execution_status import (
 from hwpxfiller.application.document_creation_vocabulary import (
     BLOCKER_CODES,
     PRIMARY_ACTION_CODES,
+    REPAIR_TEMPLATE_PHRASE,
     USER_VOCABULARY,
+)
+from hwpxfiller.application.document_creation_content import (
+    ContentSelectionSummary,
+    content_selection_blockers,
 )
 from hwpxfiller.application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
@@ -73,6 +78,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     SELECT_WORK,
     CONNECT_DATA,
     REVIEW_TEMPLATE_CHANGE,
+    REPAIR_TEMPLATE,
     CHOOSE_CONTENT,
     REVIEW_BINDING,
     REVIEW_RECORD_DATA,
@@ -92,6 +98,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     PA_SELECT_WORK,
     PA_CONNECT_DATA,
     PA_REVIEW_TEMPLATE_CHANGE,
+    PA_REPAIR_TEMPLATE,
     PA_CHOOSE_CONTENT,
     PA_REVIEW_BINDING,
     RESOLVE_EXECUTION,
@@ -116,6 +123,7 @@ _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
     (SELECT_WORK, PA_SELECT_WORK),
     (CONNECT_DATA, PA_CONNECT_DATA),
     (REVIEW_TEMPLATE_CHANGE, PA_REVIEW_TEMPLATE_CHANGE),
+    (REPAIR_TEMPLATE, PA_REPAIR_TEMPLATE),
     (CHOOSE_CONTENT, PA_CHOOSE_CONTENT),
     (REVIEW_BINDING, PA_REVIEW_BINDING),
     (EXECUTION_NO_EVIDENCE, RESOLVE_EXECUTION),
@@ -151,6 +159,7 @@ _DEEP_LINK_ROUTES: dict[str, str] = {
     SELECT_WORK: "library.work",
     CONNECT_DATA: "editor.data",
     REVIEW_TEMPLATE_CHANGE: "workbench.template_change",
+    REPAIR_TEMPLATE: "editor.template",
     CHOOSE_CONTENT: "workbench.content",
     REVIEW_BINDING: "workbench.binding",
     REVIEW_RECORD_DATA: "workbench.record_data",
@@ -187,18 +196,6 @@ class DataScopeSummary:
     def __post_init__(self) -> None:
         if self.selected_record_count < 0 or self.total_record_count < 0:
             raise ValueError("record count 는 음수가 될 수 없다")
-
-
-@dataclass(frozen=True)
-class ContentSelectionSummary:
-    """OrderedSelection 요약 — 선택된 content 식별 + 미선택 필수 여부.
-
-    **backend/controller(SX-02)가 채우는 사실**이다. ``has_unselected_required_content`` 는 필수
-    Slot 의 내용이 아직 안 골라졌는지의 **이미 판정된** 사실이지 여기서 재판정하지 않는다.
-    """
-
-    selected_option_ids: tuple[str, ...] = ()
-    has_unselected_required_content: bool = False
 
 
 @dataclass(frozen=True)
@@ -550,6 +547,8 @@ class DocumentCreationWorkbenchObservation:
         """
         if self.create_documents_enabled:
             return None
+        if self.primary_action == REPAIR_TEMPLATE:
+            return REPAIR_TEMPLATE_PHRASE
         if self.admission.state == NOT_ADMITTED and not _has_unobserved_reason(self.admission):
             if _has_runtime_reason(self.admission):
                 return _RUNTIME_DISABLED_PHRASE
@@ -685,8 +684,7 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
         present.add(CONNECT_DATA)
     if inp.template_change_verdict in (REVIEW_REQUIRED, DETACHED):
         present.add(REVIEW_TEMPLATE_CHANGE)
-    if inp.content_selection.has_unselected_required_content:
-        present.add(CHOOSE_CONTENT)
+    present.update(content_selection_blockers(inp.content_selection))
     if binding_review_needed(
         blocker_signal=inp.binding_review_needed,
         input_requirements=inp.input_requirements,

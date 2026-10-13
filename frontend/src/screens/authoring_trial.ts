@@ -1,6 +1,7 @@
 import { createElement as h, useEffect, useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { rhwpMount, trialViewerKey } from "./authoring_editor.ts";
+import { forwardedShellKey, rhwpMount, trialViewerKey } from "./authoring_editor.ts";
+import type { ShellInput } from "./authoring_editor.ts";
 import { button, quiet, primary, iconButton, rowButton, rowList } from "./authoring_primitives.ts";
 import type { Obj, Props } from "./authoring_primitives.ts";
 import { focusable } from "./authoring_a11y.ts";
@@ -38,7 +39,7 @@ export function keepFocusOutside(host: { contains(node: unknown): boolean } | nu
   else active?.blur?.();
 }
 
-export function Trial({ controller, item, view }: Props & { item: Obj; view: Obj }) {
+export function Trial({ controller, item, view, shell }: Props & { item: Obj; view: Obj; shell: ShellInput }) {
   const result = item.trial_result;
   const output = useRef<HTMLDivElement>(null);
   // 시험 입력칸의 한글 조합 중(IDE-08) — 조합 중에는 결과 닻을 옮기지 않는다.
@@ -55,6 +56,11 @@ export function Trial({ controller, item, view }: Props & { item: Obj; view: Obj
       // 다음 마운트로 새므로 쓰지 않는다.
       const editor = await rhwpMount.mount({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", title: "시험 결과", readOnly: true, zoom: TRIAL_VIEW_ZOOM,
         sectionEntries: result.section_entries, trackSelection: "visible",
+        onShortcut: (shortcut) => {
+          if (shortcut !== "F6" && shortcut !== "ShiftF6") return;
+          const forwarded = forwardedShellKey(shortcut, output.current?.querySelector("iframe") || output.current);
+          if (forwarded) shell.current.key?.(forwarded);
+        },
         onChanged: () => {}, onSelectionChanged: (target) => controller.update({ resultSelection: target }),
         onError: (error) => controller.fail(error, "trial-view") });
       if (disposed) { editor.dispose(); return; }
@@ -100,7 +106,7 @@ export function Trial({ controller, item, view }: Props & { item: Obj; view: Obj
       !!item.analysis?.slots?.length && h("div", { className: "authoring-trial-group" },
         ...(item.analysis?.slots || []).map((slot: Obj) => h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
           h("select", { className: "field", "data-guide": "trial-slot", "data-slot": slot.id, "aria-invalid": missingSlots.includes(slot.id) || undefined, value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
-            h("option", { value: "" }, "선택"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id)))))),
+            h("option", { value: "" }, "고르세요"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id)))))),
       h("label", { className: "authoring-check" }, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
       h("div", { className: "authoring-actions start" },
         primary("시험 시작", () => { void controller.guarded(() => controller.runTrial(), "trial"); }, { disabled: view.trialBusy })),

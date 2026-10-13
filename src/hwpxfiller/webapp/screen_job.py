@@ -22,7 +22,7 @@ from ..application.generation import (
 )
 from ..application.jobs import (
     JobStorePort,
-    job_names,
+    job_refresh_presence,
     list_jobs,
     load_job,
     rename_job,
@@ -118,6 +118,7 @@ from ..external.current_execution_preparation import (
 from .job_execution_session import JobExecutionSession, prepare_for_generate
 from .managed_run_result import TEMPLATE_INITIALIZATION_REFUSAL
 from .job_presentation import (
+    REGISTRY_READ_WARNING,
     base_panel_snapshot,
     browse_payload,
     candidate_payload,
@@ -421,9 +422,7 @@ class JobController:
             jobs = list_jobs(self.registry)
         except Exception:  # noqa: BLE001 — 조회 장애는 빈 후보 + loud 안내로 표면화한다.
             jobs = []
-            registry_notice_text = (
-                "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
-            )
+            registry_notice_text = REGISTRY_READ_WARNING
         # 활성 작업은 **여기서 한 번** 포획해 끝까지 그 값만 쓴다(세션 잠금과 이중 방어).
         seat = self.work.view()
         base = self._prepare_base_panel(seat, jobs, registry_notice_text)
@@ -1136,24 +1135,20 @@ class JobController:
         작업 화면은 REFRESH_ON_NAV 에 있어 이 액션이 레일 복귀마다 발화하므로, 타 화면에서의
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
         """
-        names = job_names(self.registry)
-        if self.work.name and self.work.name in names:
-            # **열린 작업의 규칙이 밖에서 바뀌었으면 다시 읽는다**(4R P1). 편집기가 자기
-            # 화면으로 나간 뒤(F7) 저장은 이 화면 밖에서 일어나고, `self.work.vm` 은 선택 시점의
-            # 인메모리 사본이라 그대로 두면 **저장한 사람이 옛 규칙으로 미리보고 옛 규칙으로
-            # 생성한다** — 영속·실행 경로가 화면 사이에서 갈리는 자리다. 세션(데이터·선택·
-            # 필터·저장 폴더)은 그대로 두고 규칙만 갈아 끼운다.
+        presence = job_refresh_presence(self.registry, self.work.name)
+        if presence in ("present", "unselected"):
+            # 편집기에서 바뀐 규칙만 재적재하고 데이터·선택·폴더는 보존한다.
             self._reload_active_job()
             return None
-        if self.work.name and self.work.name not in names:
-            lost = self.work.name
-            # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
-            # 레지스트리에서 사라져 가드로 잡아둘 대상이 없다(잡으면 유령 세션 좌초).
-            self._do_select_job({"name": "", "confirm": True})
-            return {
-                "notice": f"'{lost}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
-            }
-        return None
+        if presence == "unreadable":
+            return {"notice": REGISTRY_READ_WARNING}
+        lost = self.work.name
+        # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
+        # 레지스트리에서 사라져 가드로 잡아둘 대상이 없다(잡으면 유령 세션 좌초).
+        self._do_select_job({"name": "", "confirm": True})
+        return {
+            "notice": f"'{lost}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
+        }
 
     def _reload_active_job(self) -> bool:
         """durable Work 변경을 실제 seat 소유자에게 반영한다."""

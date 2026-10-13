@@ -729,7 +729,10 @@ class WebFrontend:
         if type(revision) is not int or content["revision"] != revision:
             raise ValueError("문서가 변경되었습니다. 다시 저장하세요.")
         media = content["media"]
-        path = _save_dialog(f"새 템플릿.{media}", [(media.upper(), f"*.{media}")], media)
+        path = _save_dialog(
+            f"{content['source_stem']}_템플릿.{media}" if content["source_stem"] else f"새 템플릿.{media}",
+            [(media.upper(), f"*.{media}")], media,
+        )
         result = controller.save_to_path(session_id, revision, path) if path else None
         if result is not None:
             self._observe_tutorial("authoring", "save_authoring_document", {"path": path}, result, token=tutorial_token)

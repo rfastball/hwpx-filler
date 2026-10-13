@@ -475,7 +475,7 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
 .authoring-proposal-link:hover{color:var(--a-primary-h)}
 /* TXT 편집면 표식(본문 표식 층) — 원문을 밀지 않는 점선 밑줄, 연 자리는 면과 흐린 이름표. */
 .authoring-document .cm-authoring-proposal{border-bottom:2px dotted var(--proposal-ink);cursor:pointer}
-.authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:var(--proposal-held)}
+.authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:var(--proposal-held);border-bottom-style:dashed}
 .authoring-document .cm-authoring-proposal-open{background:var(--proposal-face);box-shadow:0 0 0 2px color-mix(in srgb,var(--proposal-ink) 45%,transparent);border-radius:2px 2px 0 0}
 .authoring-document .cm-authoring-proposal-held.cm-authoring-proposal-open{background:color-mix(in srgb,var(--proposal-held) 14%,var(--a-card));box-shadow:0 0 0 2px color-mix(in srgb,var(--proposal-held) 45%,transparent)}
 .authoring-document .cm-authoring-proposal-tag{display:inline-block;margin-right:3px;padding:0 4px;border:1px dashed color-mix(in srgb,var(--proposal-ink) 55%,transparent);border-radius:3px;background:var(--proposal-face);color:var(--a-ink);font-family:var(--font-ui);font-size:.6875rem;font-weight:600;line-height:1.35;vertical-align:1px}
@@ -510,7 +510,7 @@ pre.authoring-trial-result{overflow:auto;padding:var(--sp-8);border:1px solid va
   .authoring-proposal-row[aria-expanded=true]{outline:2px solid Highlight;outline-offset:-2px}
   .authoring-proposal-link{color:LinkText}
   .authoring-document .cm-authoring-proposal{border-bottom-color:Highlight}
-  .authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:GrayText}
+  .authoring-document .cm-authoring-proposal.cm-authoring-proposal-held{border-bottom-color:GrayText;border-bottom-style:dashed}
   .authoring-document .cm-authoring-proposal-open{outline:2px solid Highlight;outline-offset:1px;box-shadow:none}
   .authoring-document .cm-authoring-proposal-tag{forced-color-adjust:none;border-color:CanvasText;background:Canvas;color:CanvasText}
   .authoring-proposal-fmt{border-color:CanvasText}

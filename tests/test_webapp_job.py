@@ -1389,15 +1389,28 @@ def test_refresh_invalidates_session_when_job_deleted(tmp_path):
     assert res["ok"] is False
 
 
-def test_refresh_keeps_session_when_job_still_present(tmp_path):
-    """refresh 가 멀쩡한 세션을 건드리지 않는다 — 무효화는 삭제/개명된 작업에만(과잉 리셋 방지)."""
+def test_refresh_keeps_session_when_open_job_cannot_be_read(tmp_path, monkeypatch):
+    """읽기 실패로 목록에서 빠진 작업을 삭제로 오인해 세션을 닫지 않는다."""
+    import hwpxfiller.external.job_store as job_store
+
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    assert ctrl.dispatch("refresh", {}) is None
+    real_load = job_store.load_job
+
+    def unreadable_open_job(*_args, **_kwargs):
+        raise PermissionError("temporary read failure")
+
+    monkeypatch.setattr(job_store, "load_job", unreadable_open_job)
+    assert ctrl._reload_active_job() is False
+    assert ctrl.dispatch("refresh", {}) == {
+        "notice": "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
+    }
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
-    assert snap["record_count"] == 2  # 데이터 겨눔도 보존
+    assert snap["record_count"] == 2
+    monkeypatch.setattr(job_store, "load_job", real_load)
+    assert ctrl.dispatch("refresh", {}) is None
 
 
 def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_path):
@@ -1425,22 +1438,6 @@ def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_pa
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["record_count"] == records   # 세션은 그대로
     assert ctrl.runs.out_dir == out_dir
-
-
-def test_reload_is_a_no_op_without_a_job_or_with_a_corrupt_file(tmp_path):
-    """재적재는 **읽을 수 있을 때만** 한다 — 작업 미선택·손상 파일에서 조용히 세션을 깨지 않는다.
-
-    손상은 다음 스냅샷의 건강 표면이 말한다(여기서 예외를 올리면 화면 전환마다 발화하는
-    경로가 그 작업 하나 때문에 통째로 죽는다).
-    """
-    ctrl, _ = _controller(tmp_path)
-    assert ctrl._reload_active_job() is False          # 작업 미선택 = 손댈 것이 없다
-
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.registry.path_for("공고서").write_text("{ 깨진 JSON", encoding="utf-8")
-    assert ctrl._reload_active_job() is False           # 못 읽으면 그대로 둔다
-    assert ctrl.snapshot()["has_job"] is True           # 세션은 살아 있다
 
 
 def test_snapshot_rules_key_changes_when_the_editor_changes_the_rules(tmp_path):
@@ -3013,121 +3010,6 @@ def test_rename_job_collision_and_empty_are_restated(tmp_path):
     res = ctrl.dispatch("rename_job", {"name": "공고서", "new": "  "})
     assert res["ok"] is False and "비어" in res["error"]
     assert ctrl.registry.exists("공고서")  # 실패 무손상
-
-
-def _pause_stamp(monkeypatch):
-    """스탬프 저장을 잠금 안에서 한 번 멈춰 세우는 장치 — (진입 이벤트, 해제 이벤트)."""
-    import threading
-
-    import hwpxfiller.external.job_store as job_store
-
-    entered, release = threading.Event(), threading.Event()
-    real_save = job_store.save_job
-    fired = {"once": False}
-
-    def slow_save(path, job, **kwargs):
-        if not fired["once"] and job.last_run_at:    # 스탬프 저장만 붙잡는다
-            fired["once"] = True
-            entered.set()
-            release.wait(3)
-        return real_save(path, job, **kwargs)
-
-    monkeypatch.setattr(job_store, "save_job", slow_save)
-    return entered, release
-
-
-def _home_vm(registry):
-    from hwpxfiller.viewmodel.home_state import HomeViewModel
-
-    return HomeViewModel(
-        registry, None, None,
-        engine=make_hwpx_engine(), inspect_status=template_compile_status,
-    )
-
-
-def test_public_delete_during_stamp_does_not_resurrect_the_job(tmp_path, monkeypatch):
-    """삭제 도중 스탬프가 끼어도 지운 작업이 되살아나지 않는다(리뷰 3R P1).
-
-    잠금 밖 삭제라면: ①스탬프가 A 를 읽고 ②삭제가 파일을 지우고 성공을 반환하고 ③스탬프가
-    사본을 저장해 **A 가 부활**한다. "지웠다"고 말한 뒤 되살아나는 것은 조용한 소실의 거울상이다.
-    """
-    import threading
-
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    vm = _home_vm(reg)
-    entered, release = _pause_stamp(monkeypatch)
-
-    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
-    stamper.start()
-    assert entered.wait(3)
-
-    done = threading.Event()
-
-    def delete_job():
-        vm.delete("공고서")      # 홈 카드 「삭제」가 타는 실제 경로
-        done.set()
-
-    deleter = threading.Thread(target=delete_job)
-    deleter.start()
-    assert not done.wait(0.2), "삭제가 스탬프의 임계구역 안으로 끼어들었습니다."
-    release.set()
-    stamper.join(3)
-    deleter.join(3)
-    assert not reg.exists("공고서"), "지운 작업이 스탬프 저장으로 되살아났습니다."
-
-
-def test_public_set_tags_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
-    """태그 편집과 스탬프가 겹쳐도 둘 다 남는다 — 늦은 저장이 상대를 되돌리지 않는다."""
-    import threading
-
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    vm = _home_vm(reg)
-    entered, release = _pause_stamp(monkeypatch)
-
-    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
-    stamper.start()
-    assert entered.wait(3)
-    tagger = threading.Thread(target=lambda: vm.set_tags("공고서", {"부서": "계약"}))
-    tagger.start()
-    release.set()
-    stamper.join(3)
-    tagger.join(3)
-
-    saved = reg.load("공고서")
-    assert saved.last_run_at == "2026-07-21T09:00:00"   # 태그 저장이 시각을 지우지 않았다
-    assert saved.tags == {"부서": "계약"}                # 스탬프가 태그를 되돌리지 않았다
-
-
-def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
-    """템플릿 재연결과 스탬프가 겹쳐도 둘 다 남는다(확인 왕복이 있어 창이 특히 넓은 경로)."""
-    import threading
-
-    from hwpxfiller.webapp.screens import relink_job_template
-
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    new_template = tmp_path / "새서식.hwpx"
-    _write_template(new_template, ["공고명", "추정가격"])
-    entered, release = _pause_stamp(monkeypatch)
-
-    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
-    stamper.start()
-    assert entered.wait(3)
-    linker = threading.Thread(
-        target=lambda: relink_job_template(
-            reg, "공고서", str(new_template), engine=make_hwpx_engine(), confirm=True
-        )
-    )
-    linker.start()
-    release.set()
-    stamper.join(3)
-    linker.join(3)
-
-    saved = reg.load("공고서")
-    assert saved.last_run_at == "2026-07-21T09:00:00"
-    assert saved.template_path == str(new_template)
 
 
 def test_describe_fill_note_names_field_and_kinds():

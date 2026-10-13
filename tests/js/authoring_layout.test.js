@@ -132,6 +132,9 @@ test("강제 색상: 린트 강조 두 종은 그림자 대신 실보더로 모�
   const forced = css("forced-colors.css");
   assert.match(forced, /\.cm-txtField\{border-bottom:2px solid Highlight\}/);
   assert.match(forced, /\.cm-txtMarker\{border:1px dashed CanvasText\}/);
+  const proposal = css("authoring.css");
+  assert.match(proposal, /\.cm-authoring-proposal\{border-bottom:2px dotted/);
+  assert.match(proposal, /\.cm-authoring-proposal\.cm-authoring-proposal-held\{[^}]*border-bottom-style:dashed\}/);
 });
 
 test("입력 테두리는 대비 검사를 받는 조작 경계 토큰을 쓴다", () => {
@@ -193,11 +196,14 @@ test("좁은 폭 규칙은 창이 아니라 작업대 폭의 rem 컨테이너 �
 
 test("F6 순환: 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 대신 서서 키보드로 닿는다", () => {
   assert.ok(PANEL_CYCLE.split(",").includes(".authoring-rail-toggle"));
+  assert.ok(PANEL_CYCLE.split(",").includes(".authoring-proposal-band"));
+  assert.ok(PANEL_CYCLE.split(",").includes(".authoring-proposal-popover"));
   const focused = [];
   const panel = (name, { shown = true, control = false } = {}) => ({
     name,
     contains: (node) => node === name,
-    matches: () => control,
+    matches: (selector) => selector === ".authoring-proposal-popover" ? name === "popover"
+      : selector === ".authoring-canvas" ? name === "canvas" : control,
     getClientRects: () => ({ length: shown ? 1 : 0 }),
     querySelector: () => ({ focus: () => focused.push(`${name}:first`) }),
     focus: () => focused.push(name),
@@ -213,5 +219,11 @@ test("F6 순환: 그려진 패널만 돌고, 접힌 구조는 레일 버튼이 �
   const wide = [panel("toolbar"), panel("rail", { shown: false, control: true }), panel("outline"), panel("canvas")];
   assert.equal(cyclePanels(wide, "toolbar", false).name, "outline");
   assert.deepEqual(focused, ["outline:first"]);
+  focused.length = 0;
+  const proposed = [panel("toolbar"), panel("band"), panel("canvas"), panel("dock"), panel("popover")];
+  assert.equal(cyclePanels(proposed, "toolbar", false).name, "band");
+  assert.equal(cyclePanels(proposed, "canvas", false).name, "popover");
+  assert.equal(cyclePanels(proposed, "popover", false).name, "dock");
+  assert.deepEqual(focused, ["band:first", "popover:first", "dock:first"]);
   assert.equal(cyclePanels([], null, false), null);
 });

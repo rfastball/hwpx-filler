@@ -5,7 +5,7 @@
    시험 결과 뷰어 마운트·문서 장식 재전송 횟수를 센다. WASM iframe 은 Node 에서 띄울 수 없다. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { settle, boot, hwpxTab, propsOf, fire, press, nodes, byRole, named, focusOn, showFields, inPanel, fieldRow } from "./authoring_dom.js";
+import { settle, boot, hwpxTab, propsOf, fire, press, nodes, byRole, named, focusOn, showFields, inPanel, fieldRow, escapesViewerFrame } from "./authoring_dom.js";
 
 test("UX-05: a push that repeats the same trial revision keeps the trial viewer mounted; a new revision remounts once", async () => {
   const { mounts, push, snapshot, root } = await boot(hwpxTab());
@@ -80,11 +80,12 @@ test("UX-04/UX-05: the field outline is an APG tree — occurrence rows are buil
 });
 
 test("UX-07: keys and right-clicks forwarded from the editor iframe take the shell's own Escape and menu paths; iframes are named", async () => {
-  const { controller, mounts, root } = await boot(hwpxTab());
+  const { controller, mounts, root, document } = await boot(hwpxTab());
   const editor = mounts.find((record) => record.spec.fileName === "a.hwpx");
   const trial = mounts.find((record) => record.spec.fileName === "시험 결과.hwpx");
   assert.equal(editor.spec.title, "a.hwpx", "편집면 iframe 은 문서 이름으로 읽힌다");
-  assert.equal(trial.spec.title, "시험 결과");
+  assert.deepEqual([trial.spec.title, escapesViewerFrame(document, trial, "F6"), escapesViewerFrame(document, trial, "ShiftF6", editor)],
+    ["시험 결과", true, true], "읽기 전용 시험 결과에서 F6 계열로 iframe을 벗어난다");
   const view = () => controller.viewModel.getSnapshot();
   controller.update({ panel: "properties" });
   await settle();
@@ -881,7 +882,9 @@ test("IDE-01 P-21: after a failed save the comparison's own 다시 저장 runs t
   await settle();
   const section = env.container.querySelector('#authoring-dock-panel [aria-label="외부 파일 내용"]');
   const labels = section.querySelectorAll(".authoring-actions button").map((node) => node.textContent);
-  assert.deepEqual(labels, ["비교 닫기", "현재 작업을 다른 이름으로 저장", "외부 파일 다시 열기", "다시 저장"]);
+  assert.deepEqual([labels, env.mounts.filter((record) => record.spec.readOnly).map((record) => escapesViewerFrame(env.document, record, "F6"))],
+    [["비교 닫기", "현재 작업을 다른 이름으로 저장", "외부 파일 다시 열기", "다시 저장"], [true, true]],
+    "비교 패널 동작과 두 읽기 전용 문서의 F6 탈출");
   const again = section.querySelectorAll(".authoring-actions button").find((node) => node.textContent === "다시 저장");
   assert.ok(String(again.getAttribute("class")).includes("primary"), "구획의 주 행동");
   fire(env, again, "click");

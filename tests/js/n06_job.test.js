@@ -26,7 +26,7 @@ const SURFACE = [
   "overwriteBody", "guardBody", "selectionLine",
   "confirmDestructiveIfArmed",
   "renderResult", "markResultStale",
-  "openBindingRequirement", "resolveExecution",
+  "openBindingRequirement", "openTemplateRepair", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
   // 저장 폴더 전역화: 고르는 왕복(설정 모달이 부른다) + 그 모달을 여는 문(작업 화면의
   // 배달 blocker 착지)이 한 쌍이다.
@@ -186,6 +186,23 @@ test("#789 exact Binding 수정도 같은 문맥을 넘긴다", async () => {
   const [, context] = h.editorCalls.at(-1);
   assert.equal(context.target, "binding/추가확인");
   assert.equal(context.entry_reason, "document_browser_repair");
+});
+
+test("선택 불가 blocker는 템플릿 수정 문을 열고 편집기 고르기에 착지한다", async () => {
+  const snap = { ...SNAP, managed_hwpx: true,
+    workbench_observation: { blockers: ["REPAIR_TEMPLATE"],
+      create_action: { label: "문서 만들기", enabled: false,
+        disabled_reason: "템플릿에 선택할 내용이 없습니다. 템플릿을 확인하세요." } } };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+  const html = renderToStaticMarkup(createElement(JobActionBar, { controller: h.controller }));
+  assert.match(html, /id="jobManagedCreate"[^>]*disabled=""/);
+  assert.match(html, /id="jobRepairTemplate"/);
+  await h.controller.openTemplateRepair();
+  assert.deepEqual(h.editorCalls, [["A", {
+    entry_reason: "document_browser_repair", section: "template", return_context: { surface: "job" },
+  }]]);
 });
 
 /* ================= ⑥ 포트는 객체째 ================= */
