@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-SCHEMA_VERSION = "work-template-state-v1"
+SCHEMA_VERSION = "work-template-state-v2"
 
 INITIALIZATION = "INITIALIZATION"
 PREPARED_CHANGE = "PREPARED_CHANGE"

@@ -114,12 +114,20 @@ def test_save_load_roundtrip_preserves_mapping_behavior(tmp_path):
     }
 
 
-def test_last_run_at_roundtrip():
-    """마지막 실행 시각을 현행 저장본에서 보존한다."""
+@pytest.mark.parametrize("field, value", [
+    ("last_run_at", "2026-07-10T12:34:56"),
+    ("group", "2026 상반기"),
+    ("favorited_at", "2026-07-26T09:00:00"),
+    ("template_revision", 3),
+    ("binding_revision", 7),
+])
+def test_metadata_roundtrip(field, value):
     job = _job()
-    job.last_run_at = "2026-07-10T12:34:56"
-    loaded = decode_job(encode_job(job))
-    assert loaded.last_run_at == "2026-07-10T12:34:56"
+    setattr(job, field, value)
+    d = encode_job(job)
+    assert d[field] == value
+    loaded = decode_job(d)
+    assert getattr(loaded, field) == value
     assert loaded.version == 2
 
 
@@ -286,7 +294,7 @@ def test_from_dict_rejects_type_corrupt_durable_values():
 
 
 @pytest.mark.parametrize("version", [None, 1, 3, True, "2", 2.0])
-def test_decode_job_rejects_unsupported_version(version):
+def test_job_rejects_unsupported_version_without_writing(tmp_path, version):
     d = encode_job(_job())
     if version is None:
         del d["version"]
@@ -294,6 +302,23 @@ def test_decode_job_rejects_unsupported_version(version):
         d["version"] = version
     with pytest.raises(ValueError, match="지원하지 않는 작업 버전"):
         decode_job(d)
+
+    registry = JobRegistry(tmp_path)
+    job = _job()
+    job.version = version
+    path = registry.path_for(job.name)
+    with pytest.raises(ValueError, match="지원하지 않는 작업 버전"):
+        registry.save(job)
+    assert not path.exists()
+
+    job.version = 2
+    registry.save(job)
+    before = path.read_bytes()
+    job.version = version
+    with pytest.raises(ValueError, match="지원하지 않는 작업 버전"):
+        registry.save(job)
+    assert path.read_bytes() == before
+    assert registry.load(job.name).version == 2
 
 
 def test_decode_job_requires_mapping():
@@ -622,26 +647,6 @@ def test_clone_concurrent_calls_get_unique_names(tmp_path):
         assert reg.exists(n) and reg.load(n).name == n  # 이름만큼 실파일 실재
 
 
-# ------------------------------------------------------------------ 그룹·이름 변경(결정 43)
-def test_group_roundtrip():
-    job = _job()
-    job.group = "2026 상반기"
-    d = encode_job(job)
-    assert d["group"] == "2026 상반기"
-    assert decode_job(d).group == "2026 상반기"
-
-
-# ---------------------------------------------- 즐겨찾기(v6 §18.5, data-first 슬라이스 2)
-def test_favorited_at_roundtrip():
-    """즐겨찾기 시각을 현행 저장본에서 보존한다."""
-    job = _job()
-    job.favorited_at = "2026-07-26T09:00:00"
-    d = encode_job(job)
-    assert d["favorited_at"] == "2026-07-26T09:00:00"
-    assert decode_job(d).favorited_at == "2026-07-26T09:00:00"
-    assert decode_job(d).version == 2
-
-
 def test_favorited_at_type_corruption_is_loud():
     d = encode_job(_job())
     d["favorited_at"] = True
@@ -664,17 +669,6 @@ def test_preserved_metadata_is_outside_the_content_fingerprint():
     assert content_fingerprint(job) == before
     job.filename_pattern = "다른패턴"          # 편집 대상 필드는 여전히 지문에 든다
     assert content_fingerprint(job) != before
-
-
-# ------------------------------- Template·Binding 판본(v6 §13-6·7, 재작성 F7 §10.13)
-def test_revisions_roundtrip():
-    """템플릿·바인딩 판본을 현행 저장본에서 보존한다."""
-    job = _job()
-    job.template_revision, job.binding_revision = 3, 7
-    d = encode_job(job)
-    assert (d["template_revision"], d["binding_revision"]) == (3, 7)
-    assert decode_job(d).binding_revision == 7
-    assert decode_job(d).version == 2
 
 
 @pytest.mark.parametrize("bad", [0, -1, "2", 1.0, True, None])

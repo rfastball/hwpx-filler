@@ -7,6 +7,7 @@ epoch/prepared_change 중복·dangling·atomic 실패 무손상·손상 무승�
 
 from __future__ import annotations
 
+import json
 import threading
 
 import pytest
@@ -462,16 +463,23 @@ def test_aggregate_version_below_one_rejected():
         _aggregate([_app()], version=0)
 
 
-def test_unknown_schema_version_rejected():
+@pytest.mark.parametrize("schema_version", ["bogus", "work-template-state-v1"])
+def test_unsupported_schema_update_preserves_file(tmp_path, schema_version):
+    data = encode_aggregate(_aggregate([_app()]))
+    data.update(
+        schema_version=schema_version,
+        apply_provenance=[{"provenance_id": "history"}],
+        outbox_events=[{"event_id": "pending", "payload": {"value": 1}}],
+        migration_provenance={"bootstrap_request_id": "migration"},
+    )
+    path = tmp_path / "W1.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    before = path.read_bytes()
+    store = AtomicWorkTemplateStateStore(tmp_path)
     with pytest.raises(WorkTemplateStateError, match="schema_version"):
-        WorkTemplateStateAggregate(
-            schema_version="bogus",
-            aggregate_version=1,
-            work=DocumentWork("W1", "L", "A1", None, 0),
-            applications=(_app(),),
-            preparations=(),
-            prepared_changes=(),
-        )
+        with store.update("W1") as txn:
+            txn.aggregate = _aggregate([_app()], version=2)
+    assert path.read_bytes() == before
 
 
 def test_unknown_preparation_status_rejected():

@@ -43,6 +43,12 @@ MISSING_MARKER = "〘미입력·{field}〙"
 DEFAULT_FILENAME_PATTERN = "공고서-{{date}}-{{seq:001}}"
 
 
+def job_version_or_raise(version: object) -> int:
+    if type(version) is not int or version != 2:
+        raise ValueError(f"지원하지 않는 작업 버전: {version!r}")
+    return version
+
+
 def mark_missing_values(
     records: "list[dict]", marker: str, *, fields: "list[str] | None" = None
 ) -> "list[dict]":

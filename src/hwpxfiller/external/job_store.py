@@ -33,6 +33,7 @@ from hwpxfiller.domain.job import (
     RULE_AXES,
     Job,
     advance_revisions,
+    job_version_or_raise,
     copy_rules_values,
     load_isolated,
     template_media,
@@ -234,7 +235,7 @@ def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
     프로세스의 루트 권위(:func:`_resolved_root`)를 쓴다.
     """
     return {
-        "version": job.version,
+        "version": job_version_or_raise(job.version),
         "name": job.name,
         "template_path": job.template_path,
         # 라이브러리 루트 상대키(#348) — **가산** 필드다: 절대경로도 그대로 함께 쓴다.
@@ -301,9 +302,7 @@ def _string_dict_or_raise(raw: object, key: str, values: str) -> dict[str, str]:
 
 def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
     """현행 durable 작업만 읽고 잘못된 형식은 로드 경계에서 드러낸다."""
-    version = d.get("version")
-    if type(version) is not int or version != 2:
-        raise ValueError(f"지원하지 않는 작업 버전: {version!r}")
+    version = job_version_or_raise(d.get("version"))
 
     def _str(key: str, default: str = "") -> str:
         v = d.get(key, default)

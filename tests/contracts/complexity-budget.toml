@@ -915,7 +915,7 @@ function_complexity = 18
 function_complexity = 11
 
 [budget."src/hwpxfiller/external/job_store.py"]
-module_statements = 343
+module_statements = 341
 
 [budget."src/hwpxfiller/external/job_store.py::JobRegistry"]
 class_methods = 32
@@ -1345,7 +1345,7 @@ module_statements = 1589
 function_complexity = 43
 
 [budget."tests/test_job.py"]
-module_statements = 1060
+module_statements = 1057
 
 [budget."tests/test_web_authoring_layout.py::test_authoring_columns_scale_and_narrow_sheet"]
 function_complexity = 22
