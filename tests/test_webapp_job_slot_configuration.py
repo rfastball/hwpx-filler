@@ -340,7 +340,7 @@ def test_workbench_observation_fills_sx02_axes(tmp_path: Path) -> None:
     assert obs.active_work.active is True and obs.active_work.work_ref == "공고서"
     assert obs.data_scope.mounted is False and obs.data_scope.selected_record_count == 0
     # orchestration 축은 IDLE 로 선다(SX-02 R1: 자동 확인 진입 미트리거).
-    assert obs.orchestration.state == "IDLE"
+    assert obs.orchestration == "NO_EVIDENCE"
 
 
 def test_workbench_observation_delivery_seam_keeps_primary_action_off_create(tmp_path: Path) -> None:

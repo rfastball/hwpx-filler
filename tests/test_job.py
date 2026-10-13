@@ -18,7 +18,6 @@ from hwpxfiller.domain.job import (
     Job,
     RunRequest,
     data_binding_matches,
-    data_binding_of,
     has_data_binding,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -90,7 +89,7 @@ def test_default_filename_pattern_is_single_source():
     assert DEFAULT_FILENAME_PATTERN == "공고서-{{date}}-{{seq:001}}"
     assert pattern_field_tokens(DEFAULT_FILENAME_PATTERN) == []  # 데이터 토큰 0 = 항상 해소
     assert Job().filename_pattern == DEFAULT_FILENAME_PATTERN
-    assert decode_job({}).filename_pattern == DEFAULT_FILENAME_PATTERN
+    assert decode_job(encode_job(Job())).filename_pattern == DEFAULT_FILENAME_PATTERN
 
 
 def test_to_dict_from_dict_roundtrip_preserves_embedded_mapping():
@@ -115,59 +114,38 @@ def test_save_load_roundtrip_preserves_mapping_behavior(tmp_path):
     }
 
 
-def test_last_run_at_roundtrip_and_backward_compat():
-    """가산 필드 last_run_at — 왕복 보존 + 구 JSON(키 부재)은 기본값 ""(version 1 유지)."""
+@pytest.mark.parametrize("field, value", [
+    ("last_run_at", "2026-07-10T12:34:56"),
+    ("group", "2026 상반기"),
+    ("favorited_at", "2026-07-26T09:00:00"),
+    ("template_revision", 3),
+    ("binding_revision", 7),
+])
+def test_metadata_roundtrip(field, value):
     job = _job()
-    job.last_run_at = "2026-07-10T12:34:56"
-    loaded = decode_job(encode_job(job))
-    assert loaded.last_run_at == "2026-07-10T12:34:56"
-    assert loaded.version == 1
-
-    old_dict = encode_job(_job())
-    del old_dict["last_run_at"]  # 구 버전이 저장한 JSON
-    assert decode_job(old_dict).last_run_at == ""
+    setattr(job, field, value)
+    d = encode_job(job)
+    assert d[field] == value
+    loaded = decode_job(d)
+    assert getattr(loaded, field) == value
+    assert loaded.version == 2
 
 
-def test_tags_roundtrip_and_backward_compat():
-    """가산 필드 tags(브라우징 분류, JOB_BROWSER_DESIGN D13) — 왕복 보존 +
-    구 JSON(키 부재)은 기본값 {}(version 1 유지). 축·값은 이름 문자열 그대로."""
+def test_tags_roundtrip():
+    """브라우징 태그의 축과 값을 현행 저장본에서 보존한다."""
     job = _job()
     job.tags = {"금액구간": "1억미만", "목적물": "물품"}
     loaded = decode_job(encode_job(job))
     assert loaded.tags == {"금액구간": "1억미만", "목적물": "물품"}
-    assert loaded.version == 1
-
-    old_dict = encode_job(_job())
-    del old_dict["tags"]  # tags 필드 도입 전 저장된 JSON
-    from_old = decode_job(old_dict)
-    assert from_old.tags == {}
-    assert from_old.version == 1
+    assert loaded.version == 2
 
     # 미태깅이 기본(선택적 — D12): 빈 작업도 빈 dict.
     assert Job().tags == {}
     # from_dict 는 방어적 복사 — 원 dict 변형이 로드된 작업에 새지 않는다(opts 선례).
-    src = {"tags": {"목적물": "용역"}}
+    src = {**encode_job(_job()), "tags": {"목적물": "용역"}}
     loaded2 = decode_job(src)
     src["tags"]["목적물"] = "공사"
     assert loaded2.tags == {"목적물": "용역"}
-
-
-def test_legacy_name_axis_dataset_ref_stays_dead():
-    """구 ``default_dataset_ref``(#53-A)의 **이름 축**은 U4-C 뒤에도 폐기된 채다.
-
-    U4 §2.4 가 되들인 것은 결속이지 그 키가 아니다 — U2 §5.3 판정 C 가 데이터 정체성을
-    경로+시트로 옮겼고(풀 항목 이름은 중복 허용·개명 자유라 정체가 못 된다), 결속이
-    무너졌던 실제 지점이 거기다. 구 JSON 의 그 키는 계속 미지 키로 무시된다.
-    """
-    assert not hasattr(Job(), "default_dataset_ref")
-    assert "default_dataset_ref" not in encode_job(_job())
-
-    old_dict = {**encode_job(_job()), "default_dataset_ref": "월별_낙찰현황"}
-    from_old = decode_job(old_dict)          # 구버전이 남긴 이름 축 — 조용히 무시
-    assert from_old.version == 1
-    assert "default_dataset_ref" not in encode_job(from_old)
-    # 읽지 않는 키는 타입이 깨져 있어도 검증 대상이 아니다.
-    assert decode_job({**encode_job(_job()), "default_dataset_ref": 7}).name == _job().name
 
 
 def test_data_binding_round_trips_as_three_components():
@@ -208,20 +186,8 @@ def test_data_kind_round_trips_and_old_json_lands_on_excel():
     assert d["data_kind"] == "pclm"
     assert decode_job(d).data_kind == "pclm"
 
-    legacy = encode_job(_job())
-    legacy.pop("data_kind")
-    assert decode_job(legacy).data_kind == ""
-
     with pytest.raises(ValueError):
         decode_job({**encode_job(_job()), "data_kind": 7})
-
-
-def test_data_binding_of_carries_the_kind_in_the_tail():
-    """결속 한 벌은 ``(path, sheet, header_row, kind)`` 네 값이다 — 종류가 꼬리에 선다."""
-    assert data_binding_of(Job(name="빈")) == ("", "", 0, "")
-    bound = Job(name="a", data_path="/db/pclm.sqlite", data_sheet="계약",
-                data_kind="pclm")
-    assert data_binding_of(bound) == ("/db/pclm.sqlite", "계약", 0, "pclm")
 
 
 def test_data_binding_matches_splits_on_kind_before_identity():
@@ -327,18 +293,39 @@ def test_from_dict_rejects_type_corrupt_durable_values():
             decode_job(d)
 
 
-def test_from_dict_backward_compat_survives_boundary():
-    """경계 강화가 가산 하위호환을 깨지 않는다 — 신 필드 없는 구 JSON 은 여전히 기본값 로드.
+@pytest.mark.parametrize("version", [None, 1, 3, True, "2", 2.0])
+def test_job_rejects_unsupported_version_without_writing(tmp_path, version):
+    d = encode_job(_job())
+    if version is None:
+        del d["version"]
+    else:
+        d["version"] = version
+    with pytest.raises(ValueError, match="지원하지 않는 작업 버전"):
+        decode_job(d)
 
-    역방향도 대칭: 제거된 필드(base_mapping_name, F22)가 남은 구 JSON 은 미지 키로
-    무시된다(타입이 깨져 있어도 — 읽지 않는 키는 검증 대상이 아니다).
-    """
-    old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·last_run·version 전무
-    job = decode_job(old)
-    assert job.name == "구작업" and job.tags == {} and job.last_run_at == ""
-    assert job.version == 1
-    assert decode_job({"name": "잔재", "base_mapping_name": "베이스"}).name == "잔재"
-    assert decode_job({}).name == ""  # 완전 빈 dict 도 기본값 작업
+    registry = JobRegistry(tmp_path)
+    job = _job()
+    job.version = version
+    path = registry.path_for(job.name)
+    with pytest.raises(ValueError, match="지원하지 않는 작업 버전"):
+        registry.save(job)
+    assert not path.exists()
+
+    job.version = 2
+    registry.save(job)
+    before = path.read_bytes()
+    job.version = version
+    with pytest.raises(ValueError, match="지원하지 않는 작업 버전"):
+        registry.save(job)
+    assert path.read_bytes() == before
+    assert registry.load(job.name).version == 2
+
+
+def test_decode_job_requires_mapping():
+    d = encode_job(_job())
+    del d["mapping"]
+    with pytest.raises(KeyError, match="mapping"):
+        decode_job(d)
 
 
 def test_default_mapping_is_empty_profile():
@@ -385,6 +372,9 @@ def test_registry_save_load_names_delete(tmp_path):
     """작업당 JSON 1개 — 저장·존재·목록·로드·삭제 왕복."""
     reg = JobRegistry(tmp_path)
     assert reg.list_jobs() == []  # 빈 디렉터리
+    assert not reg.exists("입찰공고서")
+    with pytest.raises(FileNotFoundError):
+        reg.load("입찰공고서")
     reg.save(_job())
     assert reg.exists("입찰공고서")
     assert reg.names() == ["입찰공고서"]
@@ -392,19 +382,6 @@ def test_registry_save_load_names_delete(tmp_path):
     reg.delete("입찰공고서")
     assert not reg.exists("입찰공고서")
     assert reg.list_jobs() == []
-
-
-def test_registry_exists_guards_missing_and_deleted_name(tmp_path):
-    """UD-03 실행 진입 가드의 링0 술어 — 미저장·삭제 후 이름은 exists()=False,
-    load 는 예외. app._open_run 이 load 직행 전 이 술어로 '사라진 작업'을 걸러낸다."""
-    reg = JobRegistry(tmp_path)
-    assert not reg.exists("사라진작업")            # 미저장 → False
-    with pytest.raises(FileNotFoundError):
-        reg.load("사라진작업")                     # 가드 없이 load 직행하면 예외
-    reg.save(Job(name="사라진작업", template_path="/t.hwpx"))
-    assert reg.exists("사라진작업")
-    reg.delete("사라진작업")
-    assert not reg.exists("사라진작업")            # 삭제 후 → False(가드가 잡는 상태)
 
 
 def test_registry_missing_directory_lists_empty(tmp_path):
@@ -441,12 +418,7 @@ def test_registry_save_rejects_slug_collision_different_name(tmp_path):
     # 첫 작업이 온전 보존된다(덮이지 않음).
     assert reg.load("예산/2026").template_path == "/a.hwpx"
     assert [j.template_path for j in reg.list_jobs()] == ["/a.hwpx"]
-
-
-def test_registry_save_allow_overwrite_bypasses_guard(tmp_path):
-    """명시적 opt-in(allow_overwrite) 은 slug 충돌을 통과 — 확정된 덮어쓰기."""
-    reg = JobRegistry(tmp_path)
-    reg.save(Job(name="예산/2026", template_path="/a.hwpx"))
+    # 같은 충돌을 명시 승인하면 새 작업으로 교체된다.
     reg.save(Job(name="예산_2026", template_path="/b.hwpx"), allow_overwrite=True)
     assert len(reg.list_jobs()) == 1
     assert reg.load("예산_2026").template_path == "/b.hwpx"
@@ -509,10 +481,10 @@ def test_registry_isolates_type_corrupt_files(tmp_path):
     reg = JobRegistry(tmp_path)
     reg.save(_job())  # 정상
     (tmp_path / "정수태그.job.json").write_text(
-        _json.dumps({"name": "정수태그", "tags": {"금액구간": 123}}), encoding="utf-8"
+        _json.dumps({**encode_job(Job(name="정수태그")), "tags": {"금액구간": 123}}), encoding="utf-8"
     )
     (tmp_path / "정수시각.job.json").write_text(
-        _json.dumps({"name": "정수시각", "last_run_at": 1720000000}), encoding="utf-8"
+        _json.dumps({**encode_job(Job(name="정수시각")), "last_run_at": 1720000000}), encoding="utf-8"
     )
     corrupted: "list[tuple]" = []
     jobs = reg.list_jobs(corrupted=corrupted)
@@ -640,8 +612,7 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
     import pytest
 
     job = Job(name="계약", template_path="/t.hwpx",
-              mapping=MappingProfile(mappings=[FieldMapping("공고명", "name")]),
-              binding_authority="job-mapping/v1")
+              mapping=MappingProfile(mappings=[FieldMapping("공고명", "name")]))
     path = tmp_path / "j.job.json"
     save_job(path, job)
     existing = path.read_text(encoding="utf-8")
@@ -656,20 +627,6 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
     assert path.read_text(encoding="utf-8") == existing  # 무손상
     assert load_job(path).name == "계약"                  # 여전히 로드 가능
     assert load_job(path).mapping.mappings[0].source == "name"
-
-
-def test_binding_authority_marker_rejects_unknown_or_malformed_values():
-    import pytest
-
-    legacy = encode_job(_job())
-    assert decode_job({key: value for key, value in legacy.items() if key != "binding_authority"}).binding_authority == ""
-    for marker in (None, 3, "job-mapping/v2"):
-        with pytest.raises(ValueError, match="binding_authority"):
-            decode_job({**legacy, "binding_authority": marker})
-    unsupported = _job()
-    unsupported.binding_authority = "job-mapping/v2"
-    with pytest.raises(ValueError, match="binding_authority"):
-        encode_job(unsupported)
 
 
 def test_clone_concurrent_calls_get_unique_names(tmp_path):
@@ -688,30 +645,6 @@ def test_clone_concurrent_calls_get_unique_names(tmp_path):
     assert len(set(names)) == 4                       # 중복 이름 없음
     for n in names:
         assert reg.exists(n) and reg.load(n).name == n  # 이름만큼 실파일 실재
-
-
-# ------------------------------------------------------------------ 그룹·이름 변경(결정 43)
-def test_group_roundtrip_and_backward_compat():
-    job = _job()
-    job.group = "2026 상반기"
-    d = encode_job(job)
-    assert d["group"] == "2026 상반기"
-    assert decode_job(d).group == "2026 상반기"
-    d.pop("group")  # 구 JSON(가산 스키마) — migrate-on-read 관용으로 기본값
-    assert decode_job(d).group == ""
-
-
-# ---------------------------------------------- 즐겨찾기(v6 §18.5, data-first 슬라이스 2)
-def test_favorited_at_roundtrip_and_backward_compat():
-    """즐겨찾기는 가산 필드 — 구 JSON 은 기본값 ""(미즐겨찾기)로 관용 로드된다."""
-    job = _job()
-    job.favorited_at = "2026-07-26T09:00:00"
-    d = encode_job(job)
-    assert d["favorited_at"] == "2026-07-26T09:00:00"
-    assert decode_job(d).favorited_at == "2026-07-26T09:00:00"
-    assert decode_job(d).version == 1  # 가산 필드는 version 을 올리지 않는다
-    d.pop("favorited_at")
-    assert decode_job(d).favorited_at == ""
 
 
 def test_favorited_at_type_corruption_is_loud():
@@ -736,21 +669,6 @@ def test_preserved_metadata_is_outside_the_content_fingerprint():
     assert content_fingerprint(job) == before
     job.filename_pattern = "다른패턴"          # 편집 대상 필드는 여전히 지문에 든다
     assert content_fingerprint(job) != before
-
-
-# ------------------------------- Template·Binding 판본(v6 §13-6·7, 재작성 F7 §10.13)
-def test_revisions_roundtrip_and_backward_compat():
-    """판본도 가산 필드 — 구 JSON 은 r1·직전 판본 없음으로 관용 로드된다."""
-    job = _job()
-    job.template_revision, job.binding_revision = 3, 7
-    d = encode_job(job)
-    assert (d["template_revision"], d["binding_revision"]) == (3, 7)
-    assert decode_job(d).binding_revision == 7
-    assert decode_job(d).version == 1  # 가산 필드는 version 을 올리지 않는다
-    d.pop("template_revision"), d.pop("binding_revision"), d.pop("previous_rules")
-    restored = decode_job(d)
-    assert (restored.template_revision, restored.binding_revision) == (1, 1)
-    assert restored.previous_rules == {}
 
 
 @pytest.mark.parametrize("bad", [0, -1, "2", 1.0, True, None])
@@ -1117,7 +1035,12 @@ def test_unknown_media_template_key_falls_back_to_the_stored_path():
     루트를 확장자로 고르므로 미상 매체 키는 해석할 루트가 없다. 추측 해석 대신 저장된
     절대경로를 그대로 쓴다(모르는 것을 추측하지 않는다 — fail-closed).
     """
-    d = {"name": "a", "template_path": "/legacy/절대경로.docx", "template_key": "조달/공고서.docx"}
+    d = {
+        **encode_job(_job()),
+        "name": "a",
+        "template_path": "/legacy/절대경로.docx",
+        "template_key": "조달/공고서.docx",
+    }
     assert decode_job(d).template_path == "/legacy/절대경로.docx"
 
 
@@ -1618,26 +1541,19 @@ def test_template_outside_the_root_fails_promotion_without_a_filename_fallback(
     assert reloaded.template_path != str(moved / "templates" / "공고서.hwpx")
 
 
-def test_reading_a_job_does_not_migrate_the_file(library_home):
-    """마이그레이션 없음 — 읽기는 옛 경로로 폴백만 하고 디스크를 고치지 않는다(조용한 변이 금지).
-
-    승격은 **저장이 지나갈 때만** 일어난다. 읽는 김에 durable 을 고치면 목록 렌더 한 번이
-    사용자가 요청한 적 없는 쓰기가 되고, 그 쓰기가 실패하는 환경에서 목록이 통째로 죽는다.
-    """
+def test_reading_a_job_does_not_rewrite_the_file(library_home):
+    """현행 저장본을 읽거나 목록에 표시해도 디스크를 고치지 않는다."""
     hwpx = library_home / "templates" / "조달" / "공고서.hwpx"
-    legacy = {"name": "a", "template_path": str(hwpx)}     # 구 JSON = 키 없음
+    stored = encode_job(Job(name="a", template_path=str(hwpx)), root=library_home / "templates")
     path = library_home / "jobs" / "a.job.json"
     path.parent.mkdir(parents=True)
-    path.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    path.write_text(json.dumps(stored, ensure_ascii=False), encoding="utf-8")
     before = path.read_bytes()
 
     reg = JobRegistry(library_home / "jobs")
-    assert reg.load("a").template_path == str(hwpx)        # 옛 경로 폴백으로 그대로 열린다
+    assert reg.load("a").template_path == str(hwpx)
     reg.list_jobs()
-    assert path.read_bytes() == before                     # 바이트 한 톨 안 바뀐다
-
-    reg.save(reg.load("a"), allow_overwrite=True)          # 저장이 지날 때 **비로소** 승격
-    assert json.loads(path.read_text(encoding="utf-8"))["template_key"] == "조달/공고서.hwpx"
+    assert path.read_bytes() == before
 
 
 def test_corrupt_template_key_is_loud(library_home):
@@ -1646,7 +1562,7 @@ def test_corrupt_template_key_is_loud(library_home):
     다른 durable 필드와 같은 규율으로 경계에서 loud raise —
     :meth:`JobRegistry.list_jobs` 의 파일 단위 격리가 '손상됨' 행으로 표면화한다.
     """
-    base = {"name": "a", "template_path": "/t.hwpx"}
+    base = encode_job(Job(name="a", template_path="/t.hwpx"))
     escapes = ["C:/훔친/x.hwpx", "/x.hwpx", "../../x.hwpx", "조달/../../x.hwpx", r"\\srv\x.hwpx"]
     for bad in escapes:
         with pytest.raises(ValueError):
@@ -1721,7 +1637,7 @@ def test_promotion_is_abandoned_when_normalization_would_name_another_file(
 def test_template_key_wins_over_a_stale_absolute_path(library_home):
     """키와 경로가 어긋나면 **키가 이긴다** — 경로는 기계 고유 잔재이고 키가 정체성이다."""
     stale = {
-        "name": "a",
+        **encode_job(Job(name="a")),
         "template_path": r"D:\옛PC\templates\조달\공고서.hwpx",
         "template_key": "조달/공고서.hwpx",
     }
@@ -1956,18 +1872,11 @@ def test_previous_rules_field_entry_shape_is_loud():
         decode_job(d)
 
 
-def test_previous_rules_written_before_the_slice_axis_read_as_no_slice():
-    """가공 축(field-binding/v4) 이전에 적힌 직전 판본은 5 축이다 — 「가공 없음」으로 읽는다.
-
-    그 모양을 거절하면 업그레이드한 사용자의 작업이 전부 열리지 않고, 조용히 통과시키면 축이
-    빠진 사전이 판본 비교에서 「바뀐 필드」로 오판된다. 다른 모양(축 하나 빠짐)은 여전히 거절한다.
-    """
+def test_previous_rules_missing_axis_is_loud():
+    """현재 기준선에서 빠진 축은 손상으로 드러낸다."""
     d = encode_job(_job())
-    legacy_axes = {"source": "a", "type": "text", "const": "", "blank": "", "fmt": ""}
-    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": legacy_axes}}
-    assert decode_job(d).previous_rules["fields"]["공고명"] == {**legacy_axes, "slice": ""}
-    broken = {k: v for k, v in legacy_axes.items() if k != "fmt"}
-    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": broken}}
+    axes = {"source": "a", "type": "text", "const": "", "blank": "", "fmt": ""}
+    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": axes}}
     with pytest.raises(ValueError, match="축은"):
         decode_job(d)
 
@@ -2000,56 +1909,6 @@ def test_assign_authority_id_is_idempotent_and_keeps_the_first_binding(tmp_path)
     second = registry.assign_authority_id("입찰공고서", "auth-2")
     assert second.authority_id == "auth-1", "이미 결속된 권위를 덮었습니다"
     assert registry.load("입찰공고서").authority_id == "auth-1"
-
-
-def test_a_directory_named_like_a_template_is_not_migrated(tmp_path, monkeypatch):
-    """이관은 **파일만** 옮긴다 — ``.txt`` 로 끝나는 폴더는 건드리지 않는다(U6-A §4).
-
-    ``rglob`` 은 이름만 보므로 폴더도 걸린다. 그것을 ``shutil.move`` 로 넘기면 폴더째
-    옮겨져 새 루트에 목록이 읽지 못하는 하위트리가 생긴다 — 걸러 내되 사유를 지어내지도
-    않는다(안 옮긴 것이 아니라 애초에 옮길 대상이 아니다).
-    """
-    from hwpxfiller.external.template_root import (
-        TemplateRoot,
-        migrate_legacy_text_templates,
-    )
-
-    home = tmp_path / "home"
-    legacy = home / "text_templates"
-    (legacy / "폴더인데.txt").mkdir(parents=True)         # 이름만 템플릿인 **폴더**
-    (legacy / "진짜.txt").write_text("{{건명}}", encoding="utf-8")
-    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
-
-    result = migrate_legacy_text_templates(home=home, root=TemplateRoot())
-
-    assert result.moved == ["진짜.txt"], f"파일 하나만 옮겨야 합니다: {result!r}"
-    assert result.skipped == [], "옮길 대상이 아닌 것을 건너뛴 것으로 세지 않는다"
-    assert (legacy / "폴더인데.txt").is_dir(), "폴더가 옮겨졌습니다"
-
-
-def test_excluded_subtrees_are_skipped_with_a_reason(tmp_path, monkeypatch):
-    """나열이 거르는 하위트리(``Results``)는 옮기지 않고 **사유와 함께** 남긴다.
-
-    옮겨 봐야 새 루트에서도 걸러져 목록에서 사라진다 — 사라지는 것이 아니라 「안 옮겼다」는
-    사실이 남아야 조용한 증발이 아니다.
-    """
-    from hwpxfiller.external.template_root import (
-        TemplateRoot,
-        migrate_legacy_text_templates,
-    )
-
-    home = tmp_path / "home"
-    legacy = home / "text_templates"
-    (legacy / "Results").mkdir(parents=True)
-    (legacy / "Results" / "산출.txt").write_text("{{건명}}", encoding="utf-8")
-    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
-
-    result = migrate_legacy_text_templates(home=home, root=TemplateRoot())
-
-    assert result.moved == []
-    assert [name for name, _ in result.skipped] == ["Results/산출.txt"]
-    assert "읽지 않는 하위 폴더" in result.skipped[0][1]
-    assert (legacy / "Results" / "산출.txt").is_file(), "제외 대상이 옮겨졌습니다"
 
 
 def test_source_file_exists_answers_for_files_only(tmp_path):

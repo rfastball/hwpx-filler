@@ -1,10 +1,10 @@
-"""표시형 전 프리셋 × 진입 경로 매트릭스 — 사람이 고른 표시형이 산출물 글자까지 간다.
+"""표시형 진입 경로 표본 — 사람이 고른 표시형이 산출물 글자까지 간다.
 
 「금액 · 원」·「날짜 · 표준」·「텍스트 · 원문」은 표시형 코드가 **빈 문자열**이다. 빈 코드는
 「표시형 없음」이 아니라 「그 유형의 기본 표시」라는 결정이다(``24750000`` → ``24,750,000원``).
 field-binding/v2 판본은 유형을 버리고 ``fmt or None`` 만 적어서 managed 산출이 ``24750000`` 이
 됐다(편집기 미리보기는 ``24,750,000원``) — v3(#1081 PR0b)가 유형을 판본에 싣고, PR2·PR3 에서
-GUI·CLI 생성이 모두 managed 로 모였다. 이 파일은 그 결손류가 되돌아오지 못하게 **모든 프리셋**을
+GUI·CLI 생성이 모두 managed 로 모였다. 이 파일은 기본 코드와 대표 사용자 코드를
 사람이 실제로 지나는 입구마다 산출물까지 따라간다:
 
 - 편집기 표시형 select(``set_display``) → 데이터 교체 이월 → 저장 → 다시 열기 → HWPX 생성
@@ -35,7 +35,7 @@ from _output_folder_pick import pick_output_folder
 from hwpxfiller.cli import main as cli_main
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.domain import format_engine
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
@@ -56,7 +56,14 @@ PRESETS = [
     for kind in ("text", "date", "amount")
     for _label, code in format_engine.presets(kind)
 ]
-_PRESET_IDS = [f"{kind}:{code or '(기본)'}" for kind, code in PRESETS]
+# 각 진입 경로는 유형별 기본 코드와 대표 사용자 코드만 통과시킨다. 개별 글자
+# 규칙은 format_engine/format_contract 테스트가, 전 프리셋 비공허성은 아래 검사가 소유한다.
+PATH_SAMPLES = [
+    ("text", ""), ("text", "phone"),
+    ("date", ""), ("date", "datetime"),
+    ("amount", ""), ("amount", "{:,.2f}"),
+]
+_PATH_SAMPLE_IDS = [f"{kind}:{code or '(기본)'}" for kind, code in PATH_SAMPLES]
 
 #: 빈 코드 프리셋의 글자 — 해석기에 기대지 않고 못박는다(이 결손류의 표본).
 EMPTY_CODE_GOLDEN = {
@@ -94,6 +101,8 @@ def test_the_matrix_is_exactly_what_the_display_select_offers():
     ]
     assert offered == PRESETS
     assert set(EMPTY_CODE_GOLDEN) <= set(PRESETS)
+    for kind, code in PRESETS:
+        _expected(kind, code)
 
 
 # ─── HWPX: 편집기 → 이월 → 저장 → 다시 열기 → managed 생성 ─────────────────────────
@@ -144,7 +153,7 @@ def _texts(docs: "list[Path]") -> "list[str]":
     return texts
 
 
-@pytest.mark.parametrize(("kind", "code"), PRESETS, ids=_PRESET_IDS)
+@pytest.mark.parametrize(("kind", "code"), PATH_SAMPLES, ids=_PATH_SAMPLE_IDS)
 def test_editor_display_choice_reaches_the_generated_hwpx(app, tmp_path, kind, code):
     raw, expected = _raw(kind, code), _expected(kind, code)
     editor = app.controllers["editor"]
@@ -170,7 +179,8 @@ def test_editor_display_choice_reaches_the_generated_hwpx(app, tmp_path, kind, c
     app.dispatch("editor", "confirm_suggested", {})
     app.dispatch("editor", "set_confirmed", {"index": index, "confirmed": True})
     app.dispatch("editor", "set_name", {"name": WORK})
-    app.dispatch("editor", "set_pattern", {"pattern": "문서-{{공고번호}}"})
+    name_field = TARGET if kind == "amount" else "공고번호"
+    app.dispatch("editor", "set_pattern", {"pattern": "문서-{{" + name_field + "}}"})
     assert app.dispatch("editor", "save", {}) == {"ok": True, "saved_name": WORK}
 
     # 다시 열면 select 가 같은 항목에 선다.
@@ -185,41 +195,12 @@ def test_editor_display_choice_reaches_the_generated_hwpx(app, tmp_path, kind, c
     result = app.generate("job")
     assert result["ok"] is True and result["status"] == "completed", result
     docs = sorted(Path(out).glob("*.hwpx"))
-    assert [doc.name for doc in docs] == ["문서-B-2.hwpx"]
+    expected_name = expected if kind == "amount" else "B-2"
+    assert [doc.name for doc in docs] == [f"문서-{expected_name}.hwpx"]
     assert expected in _texts(docs), f"{kind}:{code!r} → {expected!r} 가 문서 본문에 없다"
 
 
-@pytest.mark.parametrize(
-    ("kind", "code"),
-    [(kind, code) for kind, code in PRESETS if kind == "amount"],
-    ids=[i for i in _PRESET_IDS if i.startswith("amount")],
-)
-def test_amount_display_reaches_the_filename_token(app, tmp_path, kind, code):
-    """파일 이름 토큰도 같은 해석기로 푼다 — 본문과 파일 이름이 다른 글자를 쓰지 않는다."""
-    raw, expected = _raw(kind, code), _expected(kind, code)
-    editor = app.controllers["editor"]
-    app.dispatch("editor", "new_session", {})
-    template = next(home_dir().rglob("계약체결안내.hwpx"))
-    app.dispatch("editor", "use_library_template", {"path": str(template)})
-    editor.load_data_path(str(_csv(tmp_path / "첫.csv", raw, "A-1")))
-    app.dispatch("editor", "goto_section", {"section": "binding"})
-    index = _row(editor, TARGET)["index"]
-    app.dispatch("editor", "set_display", {"index": index, "type": kind, "fmt": code})
-    app.dispatch("editor", "confirm_suggested", {})
-    app.dispatch("editor", "set_confirmed", {"index": index, "confirmed": True})
-    app.dispatch("editor", "set_name", {"name": WORK})
-    app.dispatch("editor", "set_pattern", {"pattern": "문서-{{" + TARGET + "}}"})
-    assert app.dispatch("editor", "save", {})["ok"] is True
-    job = app.controllers["job"]
-    app.dispatch("job", "select_job", {"name": WORK})
-    app.dispatch("job", "set_all", {})
-    out = pick_output_folder(job, tmp_path / "out")
-    result = app.generate("job")
-    assert result["ok"] is True and result["status"] == "completed", result
-    assert [doc.name for doc in Path(out).glob("*.hwpx")] == [f"문서-{expected}.hwpx"]
-
-
-@pytest.mark.parametrize("code", [code for _label, code in format_engine.presets("today")])
+@pytest.mark.parametrize("code", ["", "datetime"])
 def test_today_display_choice_round_trips_through_save(app, tmp_path, code):
     """「오늘 날짜」의 표시형도 select 가 고른 그 항목으로 저장·복원된다(판본 대응은 #950)."""
     editor = app.controllers["editor"]
@@ -274,7 +255,7 @@ def _txt_work(tmp_path: Path, *, kind: str, code: str) -> "tuple[JobRegistry, Sl
     registry.save(Job(name="안내문", template_path=str(template), mapping=MappingProfile(mappings=[
         FieldMapping(template_field="수신", source="수신처"),
         FieldMapping(template_field="건명", source="값", type=kind, fmt=code),
-    ]), binding_authority=JOB_MAPPING_AUTHORITY))
+    ])))
     slots = SlotConfigurationProduct(registry, root=root, clock=lambda: NOW)
     job = JobController(
         registry, lambda s, snap: None,
@@ -296,7 +277,7 @@ def _txt_work(tmp_path: Path, *, kind: str, code: str) -> "tuple[JobRegistry, Sl
     return registry, slots, seal
 
 
-@pytest.mark.parametrize(("kind", "code"), PRESETS, ids=_PRESET_IDS)
+@pytest.mark.parametrize(("kind", "code"), PATH_SAMPLES, ids=_PATH_SAMPLE_IDS)
 def test_workbench_display_verbs_reach_the_copied_text(tmp_path, kind, code):
     """저장된 유형·표시형이 작업대 카드와 복사본까지 같은 글자로 간다(#1148 재표현).
 
@@ -330,7 +311,7 @@ CLI_TEMPLATE = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_u
 CLI_CELL_FIELD = "담당자"
 
 
-@pytest.mark.parametrize(("kind", "code"), PRESETS, ids=_PRESET_IDS)
+@pytest.mark.parametrize(("kind", "code"), PATH_SAMPLES, ids=_PATH_SAMPLE_IDS)
 def test_cli_profile_display_reaches_the_generated_hwpx(tmp_path, kind, code):
     raw, expected = _raw(kind, code), _expected(kind, code)
     data = tmp_path / "data.csv"

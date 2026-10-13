@@ -104,19 +104,20 @@ def _runner(plan=None, *, candidate: bytes = CANDIDATE, structure=None):
     plan = plan or _plan()
     structure = structure if structure is not None else _structure()
     return TxtMaterializationRunner(
-        input_port=SimpleNamespace(resolve=lambda _input: (plan, _vdr())),  # type: ignore[arg-type]
         candidate_blob_resolver=lambda _digest: candidate,
         structure_resolver=lambda _plan: structure,
     )
 
 
-_INPUT = SimpleNamespace(
-    sealed_execution_plan_ref="plan-ref", validated_record_ref="vdr-ref"
-)
+def _input(plan=None):
+    return SimpleNamespace(
+        plan=plan or _plan(), record=_vdr(),
+        sealed_execution_plan_ref="plan-ref", validated_record_ref="vdr-ref",
+    )
 
 
 def test_pass_yields_document_bytes_with_its_evidence() -> None:
-    outcome = _runner().materialize(_INPUT)  # type: ignore[arg-type]
+    outcome = _runner().materialize(_input())  # type: ignore[arg-type]
     assert isinstance(outcome, MaterializedDocumentBytes)
     assert outcome.output_bytes.decode("utf-8") == "수신: 회계과\n가 본문\n"
     assert outcome.plan_semantic_digest == "plan-ref"
@@ -129,15 +130,15 @@ def test_pass_yields_document_bytes_with_its_evidence() -> None:
 def test_other_media_plan_is_refused_before_any_procurement() -> None:
     """HWPX Plan 을 평문 치환으로 실행하면 zip 도 문서도 아닌 무엇이 나온다 — 먼저 닫는다."""
     with pytest.raises(UnsupportedNativePrimitiveContract):
-        _runner(_plan(native="hwpx-native-primitive/v1")).materialize(_INPUT)  # type: ignore[arg-type]
+        plan = _plan(native="hwpx-native-primitive/v1")
+        _runner(plan).materialize(_input(plan))  # type: ignore[arg-type]
 
 
 def test_escaping_responsibility_of_another_materializer_is_refused() -> None:
     """XML escaping 책임을 선언한 값이 평문에 literal 로 꽂히면 escape 가 0번 또는 2번 된다."""
     with pytest.raises(EscapingResponsibilityError):
-        _runner(_plan(policy_id=DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id)).materialize(
-            _INPUT  # type: ignore[arg-type]
-        )
+        plan = _plan(policy_id=DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id)
+        _runner(plan).materialize(_input(plan))  # type: ignore[arg-type]
 
 
 def test_intentional_blank_skips_the_escaping_gate() -> None:
@@ -150,7 +151,7 @@ def test_intentional_blank_skips_the_escaping_gate() -> None:
             "value_expression": {"kind": "INTENTIONAL_BLANK"},
         },
     )
-    outcome = _runner(plan).materialize(_INPUT)  # type: ignore[arg-type]
+    outcome = _runner(plan).materialize(_input(plan))  # type: ignore[arg-type]
     assert isinstance(outcome, MaterializedDocumentBytes)
 
 
@@ -158,28 +159,28 @@ def test_missing_value_expression_is_loud() -> None:
     plan = _plan()
     plan.active_field_requirements = ({"field_id": "수신"},)
     with pytest.raises(EscapingResponsibilityError):
-        _runner(plan).materialize(_INPUT)  # type: ignore[arg-type]
+        _runner(plan).materialize(_input(plan))  # type: ignore[arg-type]
 
 
 def test_candidate_digest_mismatch_is_a_procurement_error() -> None:
     """resolver 가 무엇을 주든 Plan 의 digest 와 대조 없이는 쓰지 않는다."""
     with pytest.raises(MaterializationProcurementError):
-        _runner(_plan(blob="sha256:다른것")).materialize(_INPUT)  # type: ignore[arg-type]
+        plan = _plan(blob="sha256:다른것")
+        _runner(plan).materialize(_input(plan))  # type: ignore[arg-type]
 
 
 def test_structure_digest_mismatch_is_a_procurement_error() -> None:
     with pytest.raises(MaterializationProcurementError):
-        _runner(_plan(structure_digest="sha256:다른것")).materialize(_INPUT)  # type: ignore[arg-type]
+        plan = _plan(structure_digest="sha256:다른것")
+        _runner(plan).materialize(_input(plan))  # type: ignore[arg-type]
 
 
 def test_structure_that_lies_about_the_bytes_is_caught_by_the_precheck() -> None:
     """digest 는 각자 자신만 증명한다 — structure↔bytes 대응을 잇는 것은 precheck 뿐이다."""
     other = _structure("수신: {{수신}}\n")
-    runner = _runner(
-        _plan(structure=other, structure_digest=template_structure_digest(other)),
-        structure=other,
-    )
-    outcome = runner.materialize(_INPUT)  # type: ignore[arg-type]
+    plan = _plan(structure=other, structure_digest=template_structure_digest(other))
+    runner = _runner(plan, structure=other)
+    outcome = runner.materialize(_input(plan))  # type: ignore[arg-type]
     assert isinstance(outcome, ConformanceFailure)
     assert outcome.code == "STRUCTURE_BYTES_INCONSISTENT"
 
@@ -189,7 +190,7 @@ def test_execution_failure_is_returned_as_a_conformance_failure(monkeypatch) -> 
     from hwpxfiller.external import text_materialization_conformance as tmc
 
     monkeypatch.setattr(tmc, "marker_lines", lambda scan: frozenset())
-    outcome = _runner().materialize(_INPUT)  # type: ignore[arg-type]
+    outcome = _runner().materialize(_input())  # type: ignore[arg-type]
     assert isinstance(outcome, ConformanceFailure)
     assert outcome.code == "MARKER_CLEANUP_VIOLATION"
 
@@ -203,17 +204,14 @@ def test_final_verifier_failure_is_returned_as_a_conformance_failure(monkeypatch
         "verify_txt_materialization_postconditions",
         lambda **_kw: ConformanceFailure("REPARSE_FAILED", "주입"),
     )
-    outcome = _runner().materialize(_INPUT)  # type: ignore[arg-type]
+    outcome = _runner().materialize(_input())  # type: ignore[arg-type]
     assert isinstance(outcome, ConformanceFailure)
     assert outcome.code == "REPARSE_FAILED"
 
 
 def test_store_backed_assembly_wires_the_shared_authority_root(tmp_path) -> None:
     """조립 편의 함수는 HWPX 와 같은 subdir 규약을 쓴다(별도 스토어 조립 없음)."""
-    from hwpxfiller.application.record_validation import ImmutableVdrStore
     from hwpxfiller.external.text_materialization_runner import txt_materialization_runner
 
-    runner = txt_materialization_runner(
-        tmp_path, plan_resolver=lambda _ref: _plan(), vdr_store=ImmutableVdrStore()
-    )
+    runner = txt_materialization_runner(tmp_path)
     assert isinstance(runner, TxtMaterializationRunner)

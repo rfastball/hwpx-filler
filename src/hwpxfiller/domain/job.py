@@ -43,6 +43,12 @@ MISSING_MARKER = "〘미입력·{field}〙"
 DEFAULT_FILENAME_PATTERN = "공고서-{{date}}-{{seq:001}}"
 
 
+def job_version_or_raise(version: object) -> int:
+    if type(version) is not int or version != 2:
+        raise ValueError(f"지원하지 않는 작업 버전: {version!r}")
+    return version
+
+
 def mark_missing_values(
     records: "list[dict]", marker: str, *, fields: "list[str] | None" = None
 ) -> "list[dict]":
@@ -216,23 +222,18 @@ def require_hwpx(job: "Job") -> "Job":
 
 
 # ------------------------------------------------------------------ 모델
-JOB_MAPPING_AUTHORITY = "job-mapping/v1"
-
-
 @dataclass
 class Job:
     """저장되는 생성 작업 — durable 바인딩 {템플릿·매핑·파일명}. 데이터·행은 제외.
 
-    스키마 진화 규율: **가산적(additive) 필드는 version 을 올리지 않는다** —
-    ``from_dict`` 의 ``.get(기본값)`` 관례가 하위호환(구 JSON→기본값, 구 코드는 신 키 무시)을
-    보장한다. version 증가는 기존 키의 의미·형태가 깨지는 변경에 예약.
+    현재 저장본은 version 2이며 매핑은 이 작업의 유일한 필드 결속이다.
     """
 
     name: str = ""
     template_path: str = ""
     mapping: MappingProfile = field(default_factory=MappingProfile)
     filename_pattern: str = DEFAULT_FILENAME_PATTERN
-    version: int = 1  # 전방호환 — 스키마 진화 시 마이그레이션 훅.
+    version: int = 2
     # 마지막 성공 실행 시각(ISO-8601, ""=미실행). 작업 자체의 사용 메타 — 실행의
     # 데이터·행을 저장하는 게 아니므로 "Job 에 데이터 미포함" 불변식과 무관.
     last_run_at: str = ""
@@ -312,8 +313,6 @@ class Job:
     # 날 증거가 조용히 거짓말한다. 1세대만 두는 이유: 계약에 판본 이력 표면이 없다 —
     # 요구 없는 무한 누적을 durable 파일에 지불하지 않는다. 형상은 :func:`rules_values`.
     previous_rules: "dict" = field(default_factory=dict)
-    # 새 저장본은 Mapping 자체가 실행 연결의 권위다. 빈 값은 구 S5 판본을 읽는 저장본.
-    binding_authority: str = ""
 
     @property
     def media(self) -> str:
@@ -399,14 +398,9 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
     return out
 
 
-#: 필드별 규칙 축 — :func:`rules_values` 가 내는 사전의 키(표면·테스트가 문자열을 재조립하지
-#: 않게). ``blank`` 축은 「비워 둠」 유형 퇴역 후 **언제나 ``""``** 이지만 자리는 남긴다 —
-#: 축을 빼면 디스크의 기존 검토 기준선이 전부 어긋나 한 번씩 헛 검토를 부른다(옛 blank
-#: 선언을 든 작업은 값이 바뀌므로 어차피 한 번 재검토 대상이 된다).
-#: ``slice`` 축(가공, field-binding/v4)은 가공이 없으면 ``""`` 이다. 이 축이 없던 때 디스크에
-#: 적힌 기준선은 :data:`LEGACY_RULE_AXES` 모양이고, 읽는 쪽이 ``slice=""`` 로 채운다(같은 뜻).
+#: 필드별 규칙 축 — :func:`rules_values` 가 내는 사전의 키.
+#: ``blank`` 축은 현재 항상 빈 문자열이며, ``slice`` 축도 가공이 없으면 빈 문자열이다.
 RULE_AXES = ("source", "type", "const", "blank", "fmt", "slice")
-LEGACY_RULE_AXES = ("source", "type", "const", "blank", "fmt")
 
 
 def slice_axis_value(mapping: "FieldMapping") -> str:
@@ -526,8 +520,7 @@ def rules_values(job: "Job") -> "dict":
                 "source": m.source,
                 "type": m.type,
                 "const": m.const,
-                # 「비워 둠」 유형 퇴역 후 이 축은 **언제나 빈 문자열**이다 — 디스크의
-                # 기존 검토 기준선과 표기를 맞추려고 자리만 남긴다(RULE_AXES 주석).
+                # 현재 사용하지 않는 축이며, 검토 기준선 형식을 위해 빈 문자열로 둔다.
                 "blank": "",
                 "fmt": m.fmt,
                 "slice": slice_axis_value(m),

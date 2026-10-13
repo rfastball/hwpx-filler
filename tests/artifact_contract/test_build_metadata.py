@@ -57,8 +57,12 @@ def _generate(out: Path, *extra: str) -> dict:
     return json.loads((out / "build-metadata.json").read_text(encoding="utf-8"))
 
 
-def test_metadata_reports_the_sealed_frontend_it_shipped(tmp_path: Path) -> None:
-    metadata = _generate(tmp_path / "version", "--require-web")
+def test_metadata_reports_shipped_inputs_and_runtime(tmp_path: Path) -> None:
+    """한 번 생성한 출하 메타데이터를 seal·lock·version·runtime 정본과 대조한다."""
+    import hashlib
+
+    out = tmp_path / "version"
+    metadata = _generate(out, "--require-web")
     seal = _sealed_web_document()
 
     assert metadata["web"]["present"] is True
@@ -67,26 +71,32 @@ def test_metadata_reports_the_sealed_frontend_it_shipped(tmp_path: Path) -> None
     assert metadata["web"]["source_commit"] == seal["source"]["commit"]
     assert metadata["web"]["package_lock_sha256"] == seal["package_lock"]["sha256"]
     assert metadata["web"]["toolchain"] == seal["toolchain"]
-
-
-def test_metadata_pins_the_python_lock_it_was_built_from(tmp_path: Path) -> None:
-    """잠금 digest 는 실제 ``uv.lock`` 에서 온다 — 상수로 굳지 않는다."""
-    import hashlib
-
-    metadata = _generate(tmp_path / "version", "--require-web")
     expected = hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
-
     assert metadata["uv_lock_sha256"] == expected
-
-
-def test_version_resources_still_come_from_the_single_version(tmp_path: Path) -> None:
-    """버전 단일 출처(pyproject) 계약은 그대로다 — 확장이 그것을 흔들지 않았다."""
-    out = tmp_path / "version"
-    metadata = _generate(out, "--require-web")
-
     assert (out / "hwpx_filler_version.txt").is_file()
     issue = (out / "version.iss").read_text(encoding="utf-8")
     assert f'#define AppVersion "{metadata["version"]}"' in issue
+
+    shipped = metadata["web"]["runtime_packages"]
+    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    contract = json.loads(
+        (ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+    )
+    generator = _generator()
+    expected_names = sorted(
+        {
+            generator._vendor_package_name(region.split("node_modules/", 1)[1])
+            for region in contract["module_closure"]["vendor_bundle_regions"]
+        }
+    )
+
+    assert sorted(shipped) == expected_names, (
+        "메타데이터가 보고한 출하 런타임과 정적 폐포 계약이 다릅니다 — 둘 다 산출물에서 "
+        "유도되므로 어긋났다면 한쪽이 실물을 앞질렀습니다."
+    )
+    assert "react" in shipped, "React 가 제품 UI 런타임이라는 사실이 서술 자산에 없습니다."
+    for name, version in shipped.items():
+        assert lock["packages"][f"node_modules/{name}"]["version"] == version
 
 
 def test_missing_sealed_artifact_fails_loudly_when_required(tmp_path: Path) -> None:
@@ -167,39 +177,6 @@ def test_cli_build_path_states_absence_with_a_reason() -> None:
     assert "'--no-web', 'cli-only build" in build
     assert "'--require-web'" in build
     assert build.index("if ($Target -eq 'cli')") < build.index("'--no-web'")
-
-
-def test_metadata_names_the_runtime_it_shipped_not_only_the_tools(tmp_path: Path) -> None:
-    """빌드 도구가 아니라 **출하 런타임**을 이름으로 말하는가(R5-03).
-
-    ``toolchain`` 은 node·npm·vite — 만든 도구다. R5 이후 제품 UI 런타임은 React 이고,
-    그것을 이름으로 말하지 않으면 "무엇을 실었는지 말할 수 있어야 한다"가 반만 참이다
-    (해시 ``package_lock_sha256`` 는 결속하지만 이름을 말하지 않는다).
-
-    이름은 계약 파일이 아니라 **산출물에서 유도**돼야 한다 — 그래서 여기서도 lock 과 정적
-    폐포 계약 양쪽에 대조해, 셋이 어긋나면 어느 쪽이 낡았든 빨강이 되게 한다.
-    """
-    metadata = _generate(tmp_path / "version", "--require-web")
-    shipped = metadata["web"]["runtime_packages"]
-    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
-    contract = json.loads(
-        (ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
-    )
-    generator = _generator()
-    expected_names = sorted(
-        {
-            generator._vendor_package_name(region.split("node_modules/", 1)[1])
-            for region in contract["module_closure"]["vendor_bundle_regions"]
-        }
-    )
-
-    assert sorted(shipped) == expected_names, (
-        "메타데이터가 보고한 출하 런타임과 정적 폐포 계약이 다릅니다 — 둘 다 산출물에서 "
-        "유도되므로 어긋났다면 한쪽이 실물을 앞질렀습니다."
-    )
-    assert "react" in shipped, "React 가 제품 UI 런타임이라는 사실이 서술 자산에 없습니다."
-    for name, version in shipped.items():
-        assert lock["packages"][f"node_modules/{name}"]["version"] == version
 
 
 def test_a_shipped_runtime_package_missing_from_the_lock_is_loud(tmp_path: Path) -> None:

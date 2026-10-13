@@ -10,6 +10,8 @@ import pytest
 
 from hwpxfiller.application.candidate_revision import TemplateRevision
 from hwpxfiller.application.execution_structure import (
+    LABELED_EXECUTION_QUALIFICATION_PROFILE_ID,
+    LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     ContentEntry,
     OptionRegionObservation,
     SlotRegionObservation,
@@ -19,7 +21,9 @@ from hwpxfiller.application.execution_structure import (
 )
 from hwpxfiller.application.qualification_evidence import (
     QualificationEvidence,
+    StructureProjection,
     build_manifest,
+    content_digest,
     project_structure,
 )
 from hwpxfiller.application.slot_command import (
@@ -63,8 +67,8 @@ from hwpxfiller.external.slot_command_runner import (
 from hwpxfiller.external.work_configuration_store import WorkSlotConfigurationStore
 
 NOW = "2026-08-16T00:00:00Z"
-SCHEMA = "hwpx-structure-projection-v1"
-PROFILE = "hwpx-template-qualification-v1"
+SCHEMA = LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA
+PROFILE = LABELED_EXECUTION_QUALIFICATION_PROFILE_ID
 WS = "ws-1"
 CONTRACT = "slot-selection/v1"
 
@@ -89,10 +93,12 @@ def _app(app_id: str = "A1", prev: str | None = None, epoch: int = 1) -> WorkTem
 
 
 def _evidence(structure: TemplateStructure = _STRUCTURE) -> QualificationEvidence:
+    product = project_structure(structure, "hwpx-structure-projection-v3").payload
+    payload = {"product_structure": product}
     return QualificationEvidence(
         evidence_id="E1", attempt_id="AT1", revision_id="R1",
         qualification_profile_id=PROFILE, result="PASS",
-        structure_projection=project_structure(structure, SCHEMA),
+        structure_projection=StructureProjection(SCHEMA, payload, content_digest(payload)),
         diagnostics=(), engine_metadata={}, qualified_at=NOW,
     )
 
@@ -454,7 +460,6 @@ def test_select_slotless_is_unknown_slot(tmp_path: Path) -> None:
 
 # ── pure decision branches ──────────────────────────────────────────────────────
 # ── SG-01(#733) compatibility-gated 승계 (command flow) ─────────────────────────
-V2_PROFILE = "hwpx-template-qualification-v2"
 _RF = {
     "remaining_target_resolvable_after_removal": True,
     "active_field_resolvable_after_removal": True,
@@ -472,7 +477,7 @@ _V2_ENTRY = ContentEntry(
 )
 
 
-def _v2_exec():
+def _current_exec():
     product = TemplateStructure(
         root_fields=(),
         slots=(
@@ -490,56 +495,43 @@ def _v2_exec():
         content_entries=(_V2_ENTRY,),
         resolver_stability_facts=_RF,
         admitted_relation_profile="unadmitted",
+        projection_schema_version=SCHEMA,
     )
 
 
-class _V2Qual:
+class _CurrentQual:
     def get_evidence(self, evidence_id: str) -> QualificationEvidence:
         return QualificationEvidence(
             evidence_id="E1", attempt_id="AT1", revision_id="R1",
-            qualification_profile_id=V2_PROFILE, result="PASS",
-            structure_projection=execution_pass_projection(_v2_exec()),
+            qualification_profile_id=PROFILE, result="PASS",
+            structure_projection=execution_pass_projection(_current_exec()),
             diagnostics=(), engine_metadata={}, qualified_at=NOW,
         )
 
     def get_manifest(self, qualification_profile_id: str) -> object:
         return build_execution_manifest(
+            qualification_profile_id=PROFILE,
             media="hwpx", adapter_contract_version="a", product_rule_version="p",
             operation_alphabet_version="op", created_at=NOW,
         )
 
 
-def _v2_ports(current: str = "A1", apps: tuple | None = None):
-    return _WorkState(current, apps), _V2Qual(), _Candidate()
+def _current_ports(current: str = "A1", apps: tuple | None = None):
+    return _WorkState(current, apps), _CurrentQual(), _Candidate()
 
 
 def test_auto_keep_carries_compatible_selection_across_applications(tmp_path: Path) -> None:
-    # v2 evidence·같은 의미 → predecessor 선택이 AUTO_KEEP 으로 successor 에 실린다.
+    # Current evidence·같은 의미 → predecessor 선택이 AUTO_KEEP 으로 successor 에 실린다.
     store = _store(tmp_path)
-    _select(store, _v2_ports(current="A1"), _ctx(app="A1"))  # A1 s1=o1
+    _select(store, _current_ports(current="A1"), _ctx(app="A1"))  # A1 s1=o1
     apps = (_app("A1"), _app("A2", prev="A1", epoch=2))
-    ports2 = _v2_ports(current="A2", apps=apps)
+    ports2 = _current_ports(current="A2", apps=apps)
     ensure = ensure_current_slot_configuration(store, *ports2, context=_ctx(app="A2"), now=NOW)
     assert ensure.outcome.outcome_code == CHANGED
     view = get_current_slot_configuration(
         store, *ports2, context=_ctx(app="A2", presence=True, version=ensure.outcome.resulting_configuration_version)
     )
     assert view.configuration_status == SLOT_SELECTIONS_COMPLETE  # 승계된 s1=o1 이 effective
-
-
-def test_a9_user_reselect_after_dropped_selection_is_fresh_effective(tmp_path: Path) -> None:
-    # v1 evidence → predecessor 선택은 fail-closed 로 REVIEW(승계 0). 사용자가 다시 고르면
-    # 기존 SelectSlotOption 이 fresh effective 를 만든다(A9).
-    store = _store(tmp_path)
-    _select(store, _ports(current="A1"), _ctx(app="A1"))  # A1 s1=o1
-    apps = (_app("A1"), _app("A2", prev="A1", epoch=2))
-    ports2 = _ports(current="A2", apps=apps)
-    out = _select(store, ports2, _ctx(app="A2"), req="r2")  # 재선택
-    assert out.outcome_code == CHANGED and out.changed
-    view = get_current_slot_configuration(
-        store, *ports2, context=_ctx(app="A2", presence=True, version=out.resulting_configuration_version)
-    )
-    assert view.configuration_status == SLOT_SELECTIONS_COMPLETE
 
 
 def test_decide_select_unsupported_policy_and_no_options() -> None:

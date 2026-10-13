@@ -9,7 +9,7 @@ TXT 의 착지점은 filesystem 이 아니라 클립보드이고, 새 배달 표
 (#861 제외 항목). 그래서 여기서 멈추는 것은 **bytes** 다.
 
 **seal 트리거는 복사 시점의 내부 pin 이다.** 사용자에게 「봉인」 동사를 노출하지 않는다
-(:mod:`hwpxfiller.application.automatic_seal_orchestration` 의 규율) — 복사 직전에 현재 basis 로
+(세션 실행 상태와 같은 규율) — 복사 직전에 현재 basis 로
 봉인을 확보하고, 확보하지 못하면 그 사유가 그대로 **복사 차단 사유**로 재진술된다. 조용히
 투영을 대신 내보내는 경로는 만들지 않는다.
 """
@@ -22,14 +22,8 @@ from datetime import datetime
 
 from ..application.execution_contract_set import (
     SealedExecutionPlanSemanticPayload,
-    plan_semantic_digest,
-)
-from ..application.generation_delivery import (
-    MaterializationInput,
-    MaterializationInputPort,
 )
 from ..application.record_validation import (
-    ImmutableVdrStore,
     RecordValidationBlocked,
     ValidatedDataRecord,
     validate_data_record_against_plan,
@@ -174,29 +168,13 @@ class TxtMaterializationService:
         if not isinstance(validated, ValidatedDataRecord):
             return TxtMaterializationRefused(validated.code, validated.detail)
 
-        # 4. start gate → LongMaterialization. process-local Plan resolver 라 위조 ref 는 거절.
-        vdr_store = ImmutableVdrStore()
-        vdr_ref = vdr_store.put(validated)
-        plan_digest = plan_semantic_digest(plan)
-
-        def resolve_plan(ref: str) -> SealedExecutionPlanSemanticPayload:
-            if ref != plan_digest:
-                raise KeyError(f"미지의 Plan ref: {ref!r}")
-            return plan
-
-        input_port = MaterializationInputPort(
-            plan_resolver=resolve_plan, vdr_store=vdr_store
-        )
-        runner = txt_materialization_runner(
-            context.root, plan_resolver=resolve_plan, vdr_store=vdr_store
-        )
+        # 4. start gate → LongMaterialization. Plan/VDR 값은 gate 에서 검증한다.
+        runner = txt_materialization_runner(context.root)
         result = start_materialization(
             workspace_instance_id=context.workspace_instance_id,
             work_authority_id=context.work_authority_id,
-            materialization_input=MaterializationInput(
-                sealed_execution_plan_ref=plan_digest, validated_record_ref=vdr_ref
-            ),
-            input_port=input_port,
+            plan=plan,
+            record=validated,
             runner=runner,
             runtime_registry=context.runtime_registry,
             runtime_capability_manifest_digest=(

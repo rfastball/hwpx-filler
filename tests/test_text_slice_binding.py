@@ -1,22 +1,8 @@
-"""가공이 연결 판본(field-binding/v4)을 지나는 길 — 규칙·저장 codec·migration·지문 (가산 계약).
-
-가공은 **있을 때만** 새 키·새 바이트를 만든다: 가공 없는 Mapping·규칙·계획의 지문은 v4 이전과
-같아야 한다(진행 중인 migration draft·검토 기준선·봉인된 계획이 판 올림만으로 stale 이 되지 않게).
-"""
+"""가공이 현재 Job Mapping, 규칙, 실행 지문을 지나는 길."""
 from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.application.field_binding_input import (
-    LegacyFieldBindingEntry,
-    legacy_field_binding_basis_fingerprint,
-    prepare_legacy_field_binding_migration,
-)
-from hwpxfiller.application.stored_field_binding import (
-    StoredFieldBindingError,
-    _decode_rule,
-    _encode_rule,
-)
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
@@ -34,6 +20,7 @@ from hwpxfiller.domain.field_binding import (
 from hwpxfiller.domain.job import Job, rules_fingerprints, rules_values
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.domain.text_slice import TextSlice
+from hwpxfiller.external.job_binding_projection import mapping_rules
 
 POLICY = DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP
 SPLIT = TextSlice("split", delimiter="-", index=1)
@@ -95,81 +82,11 @@ def test_render_source_value_is_slice_then_format() -> None:
         require_text_slice({"mode": "regex"})
 
 
-# ─── 저장 codec ───────────────────────────────────────────────────────────────────
-def test_codec_round_trips_the_slice_and_omits_it_when_absent() -> None:
-    plain = _rule()
-    assert "text_slice" not in _encode_rule(plain)  # v2·v3 판본의 저장 표현은 byte 그대로
-    assert _decode_rule(_encode_rule(plain)) == plain
-    sliced = _rule(text_slice=TextSlice("chars", start=1, length=3))
-    encoded = _encode_rule(sliced)
-    assert encoded["text_slice"] == {"mode": "chars", "start": 1, "length": 3}
-    assert _decode_rule(encoded) == sliced
-
-
-def test_codec_round_trips_new_modes_and_distinguishes_empty_from_keep() -> None:
-    before = _rule(text_slice=TextSlice("before", delimiter="-"))
-    encoded = _encode_rule(before)
-    assert encoded["text_slice"] == {"mode": "before", "delimiter": "-"}
-    assert _decode_rule(encoded) == before
-    kept = _rule(text_slice=TextSlice("before", delimiter="-", on_missing="keep"))
-    kept_encoded = _encode_rule(kept)
-    assert kept_encoded["text_slice"] == {"mode": "before", "delimiter": "-", "on_missing": "keep"}
-    assert _decode_rule(kept_encoded) == kept
-    assert kept_encoded != encoded
-    replace = _rule(text_slice=TextSlice("replace", find="(주)", replace="주식회사"))
-    replace_encoded = _encode_rule(replace)
-    assert replace_encoded["text_slice"] == {
-        "mode": "replace", "find": "(주)", "replace": "주식회사",
-    }
-    assert _decode_rule(replace_encoded) == replace
-
-
-def test_codec_keeps_v4_shaped_stored_bytes() -> None:
-    """v4 가 적던 두 방식(글자 범위·구분자 나누기, 빠짐은 빈 값)의 저장 사전 모양은 v5 에서 그대로다."""
-    v4_shaped = _rule(text_slice=TextSlice("split", delimiter="-", index=1))
-    encoded = _encode_rule(v4_shaped)
-    assert encoded["text_slice"] == {"mode": "split", "delimiter": "-", "index": 1}
-    assert "on_missing" not in encoded["text_slice"]
-
-
-def test_codec_rejects_a_malformed_stored_slice() -> None:
-    encoded = {**_encode_rule(_rule()), "text_slice": {"mode": "split", "delimiter": "", "index": 1}}
-    with pytest.raises(StoredFieldBindingError, match="text_slice"):
-        _decode_rule(encoded)
-
-
-# ─── legacy Mapping → 판본 migration ─────────────────────────────────────────────
-def _entry(slice_=None) -> LegacyFieldBindingEntry:
-    return LegacyFieldBindingEntry("공고번호", "text", "입찰공고번호", "", "", slice_)
-
-
-def test_migration_carries_the_slice_into_the_candidate() -> None:
-    draft = prepare_legacy_field_binding_migration(
-        work_authority_id="w", base_template_application_id="a",
-        legacy_entries=[_entry(SPLIT)], captured_at="2026-09-30T00:00:00",
-    )
-    (candidate,) = draft.candidate_rules
-    assert candidate.text_slice == SPLIT
-    assert (candidate.format_kind, candidate.format_code) == (None, None)
-
-
-def test_legacy_fingerprint_is_unchanged_without_a_slice_and_moves_with_one() -> None:
-    import hashlib
-
-    # v4 이전 산식(가공 칸 없음)을 그대로 다시 계산해 대조한다 — 지문이 판 올림으로 움직이면
-    # 진행 중인 migration draft 가 전부 stale 로 읽힌다.
-    hasher = hashlib.sha256()
-    hasher.update(b"legacy-field-binding/v0\0")
-    for part in ("공고번호", "text", "입찰공고번호", "", ""):
-        raw = part.encode("utf-8")
-        hasher.update(len(raw).to_bytes(4, "big"))
-        hasher.update(raw)
-    assert legacy_field_binding_basis_fingerprint([_entry()]) == "sha256:" + hasher.hexdigest()
-    with_slice = legacy_field_binding_basis_fingerprint([_entry(SPLIT)])
-    assert with_slice != legacy_field_binding_basis_fingerprint([_entry()])
-    assert with_slice != legacy_field_binding_basis_fingerprint(
-        [_entry(TextSlice("split", delimiter="-", index=2))]
-    )
+# ─── current Job Mapping projection ─────────────────────────────────────────
+def test_mapping_projects_the_slice() -> None:
+    (rule,) = mapping_rules(_job(SPLIT))
+    assert rule.text_slice == SPLIT
+    assert (rule.format_kind, rule.format_code) == (None, None)
 
 
 # ─── 작업 규칙 축(검토·판본) ─────────────────────────────────────────────────────────

@@ -29,11 +29,7 @@ from hwpxfiller.application.execution_structure import (
     ExecutionTemplateStructure,
     template_structure_digest,
 )
-from hwpxfiller.application.field_binding_input import (
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-    FieldBindingInput,
-)
+from hwpxfiller.application.field_binding_input import FieldBindingInput
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
 from hwpxfiller.application.slot_configuration_context import ExactAppliedTemplateInput
 from hwpxfiller.application.slot_selection_input import (
@@ -58,7 +54,7 @@ SLOTTED = "SLOTTED"
 
 # ─── domain blocker 어휘(예 — 사용자가 구성/Binding 을 고쳐야 exact input 이 완성된다) ────
 SLOT_CONFIGURATION_INCOMPLETE = "SLOT_CONFIGURATION_INCOMPLETE"
-# NEEDS_CONFIGURATION / NEEDS_CONFIGURATION_REVIEW 는 work_bootstrap, binding 계열은 field_binding_input 재사용.
+# NEEDS_CONFIGURATION / NEEDS_CONFIGURATION_REVIEW 는 work_bootstrap 에서 재사용한다.
 
 # ─── policy block 어휘 ────────────────────────────────────────────────────────────
 QUALIFICATION_PROFILE_REVOKED = "QUALIFICATION_PROFILE_REVOKED"
@@ -909,8 +905,6 @@ __all__ = [
     "NEEDS_CONFIGURATION",
     "NEEDS_CONFIGURATION_REVIEW",
     "SLOT_CONFIGURATION_INCOMPLETE",
-    "NEEDS_BINDING_SEMANTIC_MIGRATION",
-    "NEEDS_FIELD_BINDING_APPLICATION_REVIEW",
     "QUALIFICATION_PROFILE_REVOKED",
     "EXECUTION_PROFILE_NOT_SEALABLE",
     "EXECUTION_POLICY_NOT_ADMITTED",

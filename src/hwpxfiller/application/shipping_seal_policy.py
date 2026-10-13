@@ -14,7 +14,7 @@ default contract 집합을 이 한 곳에서 소유하고(shipping-default 단�
 - **fail-closed** — unknown/latest fallback 이 없다. 여기서 정하는 것은 오직 (a) 요청이 준 EXACT
   값, (b) 이 모듈이 소유한 shipping default(매체별 composition 축 포함) 뿐이다. store 를 읽지
   않는다 — ``observed`` 에서 읽는 것은 **Qualification Profile identity 하나**이고, 그것이
-  composition/native-primitive/theorem 축을 가른다(S10-04 · #861, 아래 표). 같은 매체 안에서는
+  composition/native-primitive/fingerprint 축을 가른다(S10-04 · #861, 아래 표). 같은 매체 안에서는
   여전히 Work-불변이다.
 
 ``execution_base_kind`` 은 요청에서 그대로 echo 한다 — S5 v1 admitted base 검증은 capture/compile
@@ -31,12 +31,11 @@ from hwpxfiller.application.execution_capture import (
 from hwpxfiller.application.execution_compilation import EXECUTION_SEMANTICS_CONTRACT
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
+    COMPOSITION_FINGERPRINT_HWPX,
+    COMPOSITION_FINGERPRINT_TXT,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    THEOREM_EVIDENCE_TXT_V1,
-    THEOREM_EVIDENCE_V1,
     TXT_COMPOSITION_CONTRACT_ID,
     TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
-    theorem_evidence_digest,
 )
 from hwpxfiller.application.execution_structure import (
     TXT_EXECUTION_QUALIFICATION_PROFILE_ID,
@@ -84,14 +83,14 @@ _MEDIA_COMPOSITION_AXIS: "dict[str, tuple[str, str, str]]" = {
     TXT_EXECUTION_QUALIFICATION_PROFILE_ID: (
         TXT_COMPOSITION_CONTRACT_ID,
         TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
-        theorem_evidence_digest(THEOREM_EVIDENCE_TXT_V1),
+        COMPOSITION_FINGERPRINT_TXT,
     ),
 }
 
 _DEFAULT_COMPOSITION_AXIS = (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    theorem_evidence_digest(THEOREM_EVIDENCE_V1),
+    COMPOSITION_FINGERPRINT_HWPX,
 )
 
 
@@ -111,7 +110,7 @@ def resolve_shipping_policy(
     나머지 contract 집합은 이 build 의 shipping default 로 확정한다. ``execution_base_kind`` 은
     요청에서 echo 한다(요청/policy 모순 금지). unknown 을 latest 로 풀지 않는다.
     """
-    composition_id, native_primitive_id, theorem_digest = _MEDIA_COMPOSITION_AXIS.get(
+    composition_id, native_primitive_id, fingerprint = _MEDIA_COMPOSITION_AXIS.get(
         observed.qualification_profile_id, _DEFAULT_COMPOSITION_AXIS
     )
     return ResolvedSealPolicy(
@@ -128,7 +127,7 @@ def resolve_shipping_policy(
         composition_contract_id=composition_id,
         native_primitive_contract_id=native_primitive_id,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest=theorem_digest,
+        composition_theorem_evidence_manifest_digest=fingerprint,
         materialization_contract_id=SHIPPING_MATERIALIZATION_CONTRACT_ID,
         plan_schema_version=_selected(
             command.requested_plan_schema, SHIPPING_PLAN_SCHEMA_VERSION

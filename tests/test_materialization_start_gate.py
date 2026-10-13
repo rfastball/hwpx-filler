@@ -10,20 +10,18 @@ from __future__ import annotations
 
 
 import pytest
+from dataclasses import replace
 
 from hwpxfiller.application.execution_contract_set import (
     execution_basis_digest,
-    plan_semantic_digest,
 )
 from hwpxfiller.application.generation_delivery import (
     MANAGED_RUN_CONSTRUCTION_ONLY,
-    MaterializationInput,
-    MaterializationInputPort,
 )
 from hwpxfiller.application.execution_composition import (
     RuntimeMaterializerConformanceRegistry,
 )
-from hwpxfiller.application.record_validation import ImmutableVdrStore
+from hwpxfiller.application.record_validation import ValidatedRecordIntegrityError
 from hwpxfiller.application.stored_execution_plan import (
     CURRENT_BASIS_NOT_SEALABLE,
     DIGEST_MISMATCH,
@@ -50,14 +48,7 @@ class _Kit:
 
     def __init__(self, case: Case):
         self.case = case
-        vdr_store = ImmutableVdrStore()
-        self.vdr_ref = vdr_store.put(case.vdr)
-        self.plan_ref = plan_semantic_digest(case.plan)
-        self.input_port = MaterializationInputPort(
-            plan_resolver={self.plan_ref: case.plan}.__getitem__, vdr_store=vdr_store
-        )
         self.runner = ProductionMaterializationRunner(
-            input_port=self.input_port,
             candidate_blob_resolver=lambda digest: case.bytes,
             structure_resolver=lambda plan: case.structure,
         )
@@ -85,11 +76,8 @@ class _Kit:
         kw = dict(
             workspace_instance_id=WS,
             work_authority_id=WORK,
-            materialization_input=MaterializationInput(
-                sealed_execution_plan_ref=self.plan_ref,
-                validated_record_ref=self.vdr_ref,
-            ),
-            input_port=self.input_port,
+            plan=self.case.plan,
+            record=self.case.vdr,
             runner=self.observing_runner(),
             runtime_registry=self.registry,
             runtime_capability_manifest_digest=(
@@ -151,16 +139,11 @@ def test_foreign_work_identity_fails_closed() -> None:
     assert kit.runner_ranks is None
 
 
-def test_resolve_failure_under_fence_releases_the_fence() -> None:
+def test_invalid_record_under_fence_releases_the_fence() -> None:
     # pin 중 예외가 나도 fence 는 풀린다 — 같은 키를 즉시 다시 잡을 수 있다(데드락 0).
     kit = _Kit(_build_case(_one_of_two()))
-    with pytest.raises(KeyError):
-        kit.start(
-            materialization_input=MaterializationInput(
-                sealed_execution_plan_ref="sha256:" + "0" * 64,
-                validated_record_ref=kit.vdr_ref,
-            )
-        )
+    with pytest.raises(ValidatedRecordIntegrityError):
+        kit.start(record=replace(kit.case.vdr, validated_record_digest="sha256:wrong"))
     with per_work_mutation_fence(WS, WORK):
         pass  # 재획득 성공 = 원장이 되감겼다
 

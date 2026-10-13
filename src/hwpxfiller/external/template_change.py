@@ -9,9 +9,7 @@ base·generation 비노출). 판정·상태 전이는 전부 S3-04~08 의 runner
   이름이 남의 권위 이력·token 을 물려받는다 — 리뷰 P1). 첫 확인이 불투명 id 를 발급해
   작업 실체에 결속하므로 개명·보존 삭제 복원에 생존하고 재활용 이름은 새 Work 다.
   발급이 bootstrap 보다 **먼저** durable 하다(id-first — 중간 crash 시 같은 id 로 재개).
-- **lazy bootstrap**: 첫 확인 시 현재 bytes 를 epoch 1 INITIALIZATION 으로 세운다. legacy 실행은
-  source 파일을 직접 읽으므로 「지금 파일」이 곧 현재 권위라는 기재는 정직하다(실행 배선은
-  S4 — 이 슬라이스는 기존 실행·편집 권위를 바꾸지 않는다).
+- **lazy bootstrap**: 첫 확인 시 현재 bytes 를 epoch 1 INITIALIZATION 으로 세운다.
 - **동기 실행**: capture·qualification 은 로컬 zip 읽기+검사라 dispatch 스레드에서 끝까지 돌고
   종결 상태 하나를 돌려준다(중단 crash 는 다음 접근의 :func:`recover_session` 이 INTERRUPTED 로
   닫는다).
@@ -69,9 +67,6 @@ from ..application.work_template_state import (
 )
 from .candidate_store import CandidateObjectStore
 from .applied_template_asset import AppliedTemplateAsset
-from .field_binding_store import (
-    WorkFieldBindingStore,
-)
 from .work_configuration_store import (
     WorkspaceMetadataStore,
 )
@@ -98,7 +93,7 @@ from .work_template_store import (
     start_prepare,
 )
 
-#: 단일 사용자 데스크톱 앱의 로컬 세션 actor. 권위 기록(Application·Provenance)에 남는다.
+#: 단일 사용자 데스크톱 앱의 로컬 세션 actor. Application 이력에 남는다.
 LOCAL_ACTOR = "local-user"
 
 #: 요청 키(사용자 prepare intent 재전송 단위) 서식 — store id 파생에 쓰이므로 fail-closed 검증.
@@ -189,7 +184,6 @@ class TemplateChangeCoordinator:
         self._registry = registry
         self._root = Path(root)
         self._works = AtomicWorkTemplateStateStore(self._root / "works")
-        self._field_bindings = WorkFieldBindingStore(self._root / "field_bindings")
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._quals = QualificationObjectStore(self._root / "qualification")
         self._workspace = WorkspaceMetadataStore(self._root)
@@ -693,9 +687,6 @@ class TemplateChangeCoordinator:
             work_id=work_id, bootstrap_request_id=boot_id,
             lineage=self._lineage(work_id, binding), binding=binding,
             reader=self._reader(job_name), profile=profile,
-            legacy_template_revision=job.template_revision,
-            legacy_binding_revision=job.binding_revision,
-            legacy_source_reference=job.template_path,
             engine_metadata=dict(_ENGINE_METADATA), actor=LOCAL_ACTOR,
             captured_at=self._now(), created_at=self._now(), started_at=self._now(),
             completed_at=self._now(), qualified_at=self._now(),
@@ -767,8 +758,7 @@ class TemplateChangeCoordinator:
             self._works, self._candidates, self._quals,
             workspace_instance_id=workspace_instance_id,
             work_id=work_id, change_id=change_id, actor=actor, authorize=_authorize,
-            new_application_id=f"{change_id}-app", provenance_id=f"{change_id}-prov",
-            outbox_event_id=f"{change_id}-evt", applied_at=now,
+            new_application_id=f"{change_id}-app", applied_at=now,
         )
         if outcome.result == APPLY_INTEGRITY_ERROR:
             raise TemplateChangeError(

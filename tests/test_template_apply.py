@@ -2,7 +2,7 @@
 
 apply는 준비된 exact target을 fixed base에서 소비하는 얇고 강한 경계다 — source 재읽기·qualification
 재실행·latest 검색·silent rebase 없음. 성공·재전송·전진·conflict·revocation·integrity failure를
-서로 다른 결과로 닫고, 성공은 새 Application·current pointer·Change APPLIED·provenance·outbox를
+서로 다른 결과로 닫고, 성공은 새 Application·current pointer·Change APPLIED를
 하나의 aggregate commit으로 관찰한다.
 """
 
@@ -135,7 +135,7 @@ def _apply(wstore, cstore, qstore, change_id="C1", app_id="A2", authorize=_grant
         wstore, cstore, qstore,
         workspace_instance_id="ws-test",
         work_id="W1", change_id=change_id, actor="t", authorize=authorize,
-        new_application_id=app_id, provenance_id="PR1", outbox_event_id="OB1", applied_at="t8",
+        new_application_id=app_id, applied_at="t8",
     )
     return outcome
 
@@ -161,10 +161,7 @@ def test_apply_success_appends_application_and_bumps_epoch(tmp_path):
     assert a2.pass_evidence_id == _change(wstore).target_pass_evidence_id
     assert _change(wstore).status == CHANGE_APPLIED
     assert _change(wstore).resulting_application_id == "A2"
-    assert len(agg.apply_provenance) == 1 and len(agg.outbox_events) == 2  # capture 요청 + applied
-    prov = agg.apply_provenance[0]
-    assert (prov.from_application_id, prov.to_application_id) == ("A1", "A2")
-    assert (prov.epoch_before, prov.epoch_after) == (1, 2)
+    assert a2.actor == "t" and a2.applied_at == "t8"
 
 
 # ─── idempotency ──────────────────────────────────────────────────────────────
@@ -176,7 +173,6 @@ def test_reapply_same_change_is_already_applied(tmp_path):
     assert again.result == APPLY_ALREADY_APPLIED and again.resulting_application_id == "A2"
     agg = wstore.load("W1")
     assert sum(1 for a in agg.applications if a.application_id == "A2") == 1  # 중복 0
-    assert len(agg.apply_provenance) == 1 and len(agg.outbox_events) == 2
 
 
 def test_reapply_after_work_advanced_is_applied_then_advanced(tmp_path):
@@ -341,5 +337,3 @@ def test_other_work_untouched_by_apply(tmp_path):
     before = wstore.load("W2")
     _apply(wstore, cstore, qstore)
     assert wstore.load("W2") == before
-
-

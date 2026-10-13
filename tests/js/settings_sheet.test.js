@@ -94,6 +94,28 @@ function pressedPairs(html, axis) {
     .map((m) => [m[1], m[2]]);
 }
 
+// Hook-bearing leaves need a renderer; these assertions inspect only the actions this sheet attaches.
+function sheetProps(props) {
+  const found = [];
+  const walk = (node) => {
+    if (node === null || node === undefined || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node.type === "function") {
+      found.push(node.props);
+      let rendered;
+      try { rendered = node.type(node.props); } catch { return; }
+      walk(rendered);
+      return;
+    }
+    if (node.props) {
+      found.push(node.props);
+      walk(node.props.children);
+    }
+  };
+  walk(SettingsSheetView(props));
+  return found;
+}
+
 test("설정 모달은 테마·글자 크기·저장 폴더·서식 폴더·튜토리얼 버튼 표시 다섯 행을 편다", () => {
   const html = markup();
   assert.match(html, /<h3 id="settingsTitle">설정<\/h3>/);
@@ -148,73 +170,48 @@ test("저장 폴더 행은 backend 도출을 그대로 그린다 — 경로·출
   assert.ok(html.includes('data-track-act="copy"'));
 });
 
-test("생성 중에는 찾아보기가 비활성이고 **사유를 병기한다** — 조용히 막지 않는다", () => {
-  const open = markup(undefined, undefined, { ...FOLDER, busy: false });
-  assert.equal(open.includes(OUTPUT_FOLDER_BUSY_REASON), false, "쉬는 중에 잠금 사유가 섰습니다.");
+test("생성 중에는 각 폴더 찾아보기만 비활성이고 자기 사유를 병기한다", () => {
+  const open = markup();
+  assert.equal(open.includes(OUTPUT_FOLDER_BUSY_REASON), false, "쉬는 중에 저장 폴더 잠금 사유가 섰습니다.");
+  assert.equal(open.includes(TEMPLATES_ROOT_BUSY_REASON), false, "쉬는 중에 서식 폴더 잠금 사유가 섰습니다.");
+  const button = (html, id) => html.split(`id="${id}"`)[1].split("</button>")[0];
 
-  const busy = markup(undefined, undefined, { ...FOLDER, busy: true });
-  const button = busy.split('id="settingsPickFolder"')[1].split("</button>")[0];
-  assert.ok(button.includes("disabled"), "생성 중인데 찾아보기가 열려 있습니다.");
-  assert.ok(busy.includes(OUTPUT_FOLDER_BUSY_REASON), "비활성 사유가 병기되지 않았습니다.");
-  assert.ok(busy.includes('id="settingsPickFolderReason"'));
+  const folderBusy = markup(undefined, undefined, { ...FOLDER, busy: true });
+  assert.ok(button(folderBusy, "settingsPickFolder").includes("disabled"), "생성 중인데 저장 폴더 찾아보기가 열려 있습니다.");
+  assert.ok(folderBusy.includes(OUTPUT_FOLDER_BUSY_REASON) && folderBusy.includes('id="settingsPickFolderReason"'),
+    "저장 폴더 비활성 사유가 없습니다.");
+  assert.ok(!button(folderBusy, "settingsPickTplFolder").includes("disabled"), "서식 폴더까지 잠겼습니다.");
+
+  const rootBusy = markup(undefined, undefined, undefined, { ...ROOT, busy: true });
+  assert.ok(button(rootBusy, "settingsPickTplFolder").includes("disabled"), "생성 중인데 서식 폴더 찾아보기가 열려 있습니다.");
+  assert.ok(rootBusy.includes(TEMPLATES_ROOT_BUSY_REASON) && rootBusy.includes('id="settingsPickTplFolderReason"'),
+    "서식 폴더 비활성 사유가 없습니다.");
+  assert.ok(!button(rootBusy, "settingsPickFolder").includes("disabled"), "저장 폴더까지 잠겼습니다.");
 });
 
-test("찾아보기는 job 컨트롤러의 동사를 그대로 부른다 — 이 면이 왕복을 재조립하지 않는다", () => {
-  const { calls, props } = ports();
-  const tree = SettingsSheetView(props);
-  const buttons = [];
-  /* 훅을 쓰는 잎(PathActions 의 `useState`)은 렌더러 없이 부를 수 없다 — 이 걷기가 재는 것은
-     **이 면이 붙인** onClick 의 목적지라 그런 잎은 건너뛴다(삼키는 것이 아니라 범위 밖이다). */
-  const walk = (node) => {
-    if (node === null || node === undefined || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (typeof node.type === "function") {
-      let rendered;
-      try { rendered = node.type(node.props); } catch { return; }
-      walk(rendered);
-      return;
-    }
-    if (node.props) {
-      if (node.props.onClick) buttons.push(node.props);
-      walk(node.props.children);
-    }
-  };
-  walk(tree);
-  const pick = buttons.find((p) => p.id === "settingsPickFolder");
-  assert.ok(pick, "찾아보기 버튼이 없습니다.");
-  pick.onClick();
-  assert.equal(calls.picked, 1);
-});
-
-test("클릭은 셸 서비스로 그대로 나간다 — 이 면은 판정을 소유하지 않는다", () => {
+test("설정 클릭은 각 서비스로 나가고 서식 폴더 선택 뒤 화면을 갱신한다", async () => {
   const { calls, props } = ports("system", "normal");
-  const tree = SettingsSheetView(props);
-  const buttons = [];
-  /* 훅을 쓰는 잎(PathActions 의 `useState`)은 렌더러 없이 부를 수 없다 — 이 걷기가 재는 것은
-     **이 면이 붙인** onClick 의 목적지라 그런 잎은 건너뛴다(삼키는 것이 아니라 범위 밖이다). */
-  const walk = (node) => {
-    if (node === null || node === undefined || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (typeof node.type === "function") {
-      let rendered;
-      try { rendered = node.type(node.props); } catch { return; }
-      walk(rendered);
-      return;
-    }
-    if (node.props) {
-      if (node.props.onClick) buttons.push(node.props);
-      walk(node.props.children);
-    }
-  };
-  walk(tree);
-
+  const buttons = sheetProps(props).filter((p) => p.onClick);
   const themeOpts = buttons.filter((p) => p["data-value"] && p.className.includes("settings-seg"));
   assert.equal(themeOpts.length, 6, "세그먼트 버튼이 여섯(3+3)이 아닙니다.");
   themeOpts.forEach((p) => p.onClick());
   assert.deepEqual(calls.theme, ["system", "light", "dark"]);
   assert.deepEqual(calls.scale, ["normal", "large", "larger"]);
 
+  const pick = buttons.find((p) => p.id === "settingsPickFolder");
+  assert.ok(pick, "저장 폴더 찾아보기 버튼이 없습니다.");
+  pick.onClick();
+  assert.equal(calls.picked, 1, "저장 폴더 동사가 나가지 않았습니다.");
+
+  const pickRoot = buttons.find((p) => p.id === "settingsPickTplFolder");
+  assert.ok(pickRoot, "서식 폴더 찾아보기 버튼이 없습니다.");
+  pickRoot.onClick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls.pickedRoot, 1, "서식 폴더 동사가 나가지 않았습니다.");
+  assert.equal(calls.refreshed, 1, "서식 폴더 재지정 뒤 화면 재당김이 없습니다.");
+
   const close = buttons.find((p) => p.id === "settingsClose");
+  assert.ok(close, "닫기 버튼이 없습니다.");
   close.onClick();
   assert.deepEqual(calls.closed, [SETTINGS_MODAL_ID]);
 });
@@ -236,78 +233,10 @@ test("서식 폴더 행은 backend 도출을 그대로 그린다 — 경로·출
   assert.ok(html.includes("설정한 서식 폴더를 찾을 수 없습니다"));
 });
 
-test("생성 중에는 서식 폴더 찾아보기도 비활성 + 사유 병기 — 저장 폴더와 같은 술어", () => {
-  const open = markup(undefined, undefined, undefined, { ...ROOT, busy: false });
-  assert.equal(open.includes(TEMPLATES_ROOT_BUSY_REASON), false);
-
-  const busy = markup(undefined, undefined, undefined, { ...ROOT, busy: true });
-  const button = busy.split('id="settingsPickTplFolder"')[1].split("</button>")[0];
-  assert.ok(button.includes("disabled"), "생성 중인데 서식 폴더 찾아보기가 열려 있습니다.");
-  assert.ok(busy.includes(TEMPLATES_ROOT_BUSY_REASON));
-  assert.ok(busy.includes('id="settingsPickTplFolderReason"'));
-});
-
-test("서식 폴더 찾아보기는 브리지 왕복 뒤 지금 화면을 다시 당긴다", async () => {
-  const { calls, props } = ports();
-  const tree = SettingsSheetView(props);
-  const buttons = [];
-  const walk = (node) => {
-    if (node === null || node === undefined || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (typeof node.type === "function") {
-      let rendered;
-      try { rendered = node.type(node.props); } catch { return; }
-      walk(rendered);
-      return;
-    }
-    if (node.props) {
-      if (node.props.onClick) buttons.push(node.props);
-      walk(node.props.children);
-    }
-  };
-  walk(tree);
-  const pick = buttons.find((p) => p.id === "settingsPickTplFolder");
-  assert.ok(pick, "서식 폴더 찾아보기 버튼이 없습니다.");
-  pick.onClick();
-  await new Promise((resolve) => { setTimeout(resolve, 0); });
-  assert.equal(calls.pickedRoot, 1);
-  assert.equal(calls.refreshed, 1, "재지정 성사 뒤 화면 재당김이 없습니다.");
-});
-
-test("두 폴더 행은 **같은 팩토리**가 그린다 — 좌표만 다르고 형상은 같다", () => {
-  const html = markup();
-  /* 사본이면 한쪽에만 붙는 어포던스·잠금 사유가 생긴다. 형상 동형을 구조로 잰다:
-     같은 클래스·같은 자식 구성이 두 번 나오고 id 만 갈린다. */
-  assert.equal(html.split('class="settings-row settings-row-folder"').length - 1, 2);
-  assert.equal(html.split('class="settings-folder-row"').length - 1, 2);
-  for (const id of ["settingsOutDir", "settingsTplDir",
-    "settingsPickFolder", "settingsPickTplFolder",
-    "settingsOutDirSource", "settingsTplDirSource"]) {
-    assert.ok(html.includes(`id="${id}"`), `좌표 소실: ${id}`);
-  }
-  // 경로 어포던스도 두 행 모두에 선다(빌려 쓰지 않고 각자 포트의 client 를 쓴다).
-  assert.equal(html.split('data-track-act="reveal"').length - 1, 2);
-});
-
 test("서식 폴더 행의 경로 어포던스는 **자기 포트**의 client·notify 를 쓴다", () => {
   const { props } = ports();
-  const seen = [];
-  props.templates.client = { invoke: (...args) => { seen.push(args); return null; } };
-  const tree = SettingsSheetView(props);
-  const rows = [];
-  const walk = (node) => {
-    if (node === null || node === undefined || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (typeof node.type === "function") {
-      if (node.props && node.props.pathId === "settingsTplDir") rows.push(node.props);
-      let rendered;
-      try { rendered = node.type(node.props); } catch { return; }
-      walk(rendered);
-      return;
-    }
-    if (node.props) walk(node.props.children);
-  };
-  walk(tree);
+  props.templates.client = { invoke: () => null };
+  const rows = sheetProps(props).filter((p) => p.pathId === "settingsTplDir");
   assert.equal(rows.length, 1, "서식 폴더 행이 팩토리로 서지 않았습니다.");
   assert.equal(rows[0].client, props.templates.client, "남의 컨트롤러 client 를 빌렸습니다.");
   assert.equal(rows[0].notify, props.templates.notify);
@@ -328,24 +257,7 @@ test("튜토리얼 버튼 표시 행은 백엔드 스냅샷 값을 그대로 그
 
 test("튜토리얼 버튼 표시를 누르면 반대 값으로 백엔드 동사를 부른다 — 지역 판정 없음", () => {
   const { calls, props } = ports("system", "normal", FOLDER, ROOT, true);
-  const tree = SettingsSheetView(props);
-  const inputs = [];
-  const walk = (node) => {
-    if (node === null || node === undefined || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (typeof node.type === "function") {
-      let rendered;
-      try { rendered = node.type(node.props); } catch { return; }
-      walk(rendered);
-      return;
-    }
-    if (node.props) {
-      if (node.props.id === "settingsTutorialEntry") inputs.push(node.props);
-      walk(node.props.children);
-    }
-  };
-  walk(tree);
-  const input = inputs[0];
+  const input = sheetProps(props).find((p) => p.id === "settingsTutorialEntry");
   assert.ok(input, "튜토리얼 버튼 표시 체크박스가 없습니다.");
   assert.equal(input.checked, true);
   input.onChange();
@@ -362,29 +274,15 @@ test("튜토리얼 버튼 표시 쓰기가 실패하면 백엔드 사유를 알�
     setEntryVisible: () => Promise.reject(new Error("tutorial set_entry_visible: 디스크가 가득 찼습니다")),
     notify: (message) => { notices.push(message); },
   };
-  const found = [];
-  const walk = (node) => {
-    if (node === null || node === undefined || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    if (typeof node.type === "function") {
-      let rendered;
-      try { rendered = node.type(node.props); } catch { return; }
-      walk(rendered);
-      return;
-    }
-    if (node.props) {
-      if (node.props.id === "settingsTutorialEntry") found.push(node.props);
-      walk(node.props.children);
-    }
-  };
-  walk(SettingsSheetView(props));
-  found[0].onChange();
+  const input = sheetProps(props).find((p) => p.id === "settingsTutorialEntry");
+  assert.ok(input, "튜토리얼 버튼 표시 체크박스가 없습니다.");
+  input.onChange();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(notices, ["tutorial set_entry_visible: 디스크가 가득 찼습니다"]);
 
   notices.length = 0;
   props.tutorial.setEntryVisible = () => { throw new Error("동기 실패"); };
-  found[0].onChange();
+  input.onChange();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(notices, ["동기 실패"], "동기 예외도 같은 길로 알린다");
 });

@@ -19,9 +19,8 @@ from hwpxfiller.application.execution_capture import (
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    THEOREM_EVIDENCE_V1,
+    COMPOSITION_FINGERPRINT_HWPX,
     UnsupportedCompositionContract,
-    theorem_evidence_digest,
 )
 from hwpxfiller.application.execution_compilation import (
     EffectiveFieldBindingBasis,
@@ -41,7 +40,6 @@ from hwpxfiller.application.execution_contract_set import (
     ExecutionBasisIntegrityError,
     ExecutionContractSet,
     ExecutionContractSetIntegrityError,
-    ExecutionContractSetRegistry,
     ExecutionPlanIntegrityError,
     QualificationProfileManifestIntegrityError,
     UnsupportedPlanSchemaError,
@@ -59,7 +57,7 @@ from hwpxfiller.application.execution_contract_set import (
     verify_sealed_plan_integrity,
 )
 
-_THEOREM_DIGEST = theorem_evidence_digest(THEOREM_EVIDENCE_V1)
+_THEOREM_DIGEST = COMPOSITION_FINGERPRINT_HWPX
 _PLAN_SCHEMA = "hwpx-execution-plan/v2"
 
 
@@ -207,27 +205,6 @@ def test_role_change_changes_manifest_digest() -> None:
     a = _contracts()
     b = _contracts(materialization_contract_id="materialization/v2")
     assert a.contract_set_manifest_digest != b.contract_set_manifest_digest
-
-
-def test_registry_same_schema_different_meaning_rejected() -> None:
-    reg = ExecutionContractSetRegistry()
-    reg.register(_contracts())
-    reg.register(_contracts())  # 동일 재등록 idempotent
-    with pytest.raises(ExecutionContractSetIntegrityError):
-        reg.register(_contracts(materialization_contract_id="materialization/v2"))
-
-
-def test_registry_unknown_resolve_no_fallback() -> None:
-    reg = ExecutionContractSetRegistry()
-    with pytest.raises(ExecutionContractSetIntegrityError):
-        reg.resolve("execution-contract-set/v9")
-
-
-def test_registry_preserves_historical_manifest() -> None:
-    reg = ExecutionContractSetRegistry()
-    c = _contracts()
-    reg.register(c)
-    assert reg.resolve(c.contract_set_schema_version) == c
 
 
 def test_bad_schema_version_rejected() -> None:

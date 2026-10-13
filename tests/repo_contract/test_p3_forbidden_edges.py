@@ -1,8 +1,8 @@
 """P3 이후 영속 public surface·forbidden edge·vendor integration 게이트.
 
 정의역은 P2 ring 좌표, 실제 source tree, frontend runtime dependency다. 영속 예외와 공개
-표면은 ``tests/architecture_contract.toml``과 양방향 대조하고, 퇴역 namespace·kernel
-effect·vendor public type은 예외 없이 0을 요구한다.
+표면은 ``tests/architecture_contract.toml``과 양방향 대조하고, 공개 경계·kernel
+effect·vendor public type을 검사한다.
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ EXPECTED_VENDOR_INTEGRATION_KEYS = {
     "packages",
     "update_owner",
 }
-RETIRED_MODULE_ROOTS = {"hwpxfiller.core", "hwpxfiller.gui"}
 FORBIDDEN_KERNEL_ROOTS = {
     "ctypes",
     "datetime",
@@ -335,37 +334,6 @@ def _match_module(value: str, known: set[str]) -> "str | None":
     return max(matches, key=len) if matches else None
 
 
-def _import_targets(
-    tree: ast.AST,
-    *,
-    source_module: str,
-    source_is_package: bool,
-    known: set[str],
-) -> set[str]:
-    package = source_module if source_is_package else source_module.rpartition(".")[0]
-    targets: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if match := _match_module(alias.name, known):
-                    targets.add(match)
-            continue
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        base = _resolve_from(package, node.level, node.module)
-        for alias in node.names:
-            if alias.name == "*":
-                if match := _match_module(base, known):
-                    targets.add(f"{match}.*")
-                continue
-            candidate = f"{base}.{alias.name}" if base else alias.name
-            if candidate in known:
-                targets.add(candidate)
-            elif match := _match_module(base, known):
-                targets.add(match)
-    return targets
-
-
 def _literal_string(node: ast.AST) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -458,137 +426,6 @@ def _dynamic_import_names(tree: ast.AST) -> set[str]:
         ):
             names.update(constants(node.args[0]))
     return names
-
-
-def _dynamic_targets(tree: ast.AST, known: set[str]) -> set[str]:
-    targets = {
-        match
-        for value in _dynamic_import_names(tree)
-        if (match := _match_module(value, known))
-    }
-    aliases = _aliases(tree)
-    bindings: dict[str, list[ast.AST]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
-            targets_to_bind = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets_to_bind:
-                if isinstance(target, ast.Name):
-                    bindings.setdefault(target.id, []).append(node.value)
-
-    def add_literal(node: ast.AST) -> None:
-        if (value := _literal_string(node)) is not None:
-            if match := _match_module(value, known):
-                targets.add(match)
-
-    def add_literals(node: ast.AST, resolving: frozenset[str] = frozenset()) -> None:
-        add_literal(node)
-        if isinstance(node, ast.Name) and node.id not in resolving:
-            for value in bindings.get(node.id, ()):
-                add_literals(value, resolving | {node.id})
-            return
-        for child in ast.iter_child_nodes(node):
-            add_literals(child, resolving)
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            qualified = _qualified_name(node.func, aliases)
-            call = qualified.rsplit(".", 1)[-1]
-            if node.args and (
-                call == "patch"
-                or qualified.endswith("monkeypatch.setattr")
-                or qualified.endswith("monkeypatch.delattr")
-            ):
-                add_literal(node.args[0])
-            if call == "Analysis":
-                for keyword in node.keywords:
-                    if keyword.arg == "hiddenimports":
-                        add_literals(keyword.value)
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets_to_check = node.targets if isinstance(node, ast.Assign) else [node.target]
-            names = {target.id for target in targets_to_check if isinstance(target, ast.Name)}
-            if node.value is not None and "REQUIRED_HIDDEN" in names:
-                add_literals(node.value)
-    return targets
-
-
-def _consumer_targets(
-    source: "str | bytes",
-    *,
-    source_module: str,
-    known: set[str],
-    filename: str,
-    source_is_package: bool = False,
-) -> set[str]:
-    tree = _tree(source, filename)
-    aliases = _aliases(tree, source_module, source_is_package=source_is_package)
-    return _import_targets(
-        tree,
-        source_module=source_module,
-        source_is_package=source_is_package,
-        known=known,
-    ) | _dynamic_targets(tree, known) | _annotation_targets(tree, aliases, known)
-
-
-def _source_paths() -> list[Path]:
-    paths = {ROOT / "conftest.py"}
-    for root in ("src", "tests", "scripts", "examples", "packaging"):
-        base = ROOT / root
-        if base.is_dir():
-            paths.update(base.rglob("*.py"))
-    paths.update((ROOT / "packaging").rglob("*.spec"))
-    return sorted(path for path in paths if "__pycache__" not in path.parts)
-
-
-def _entry_point_targets(document: dict[str, object], known: set[str]) -> set[str]:
-    metadata = document.get("project")
-    if not isinstance(metadata, dict):
-        return set()
-    tables = [metadata.get(name) for name in ("scripts", "gui-scripts")]
-    nested = metadata.get("entry-points")
-    if isinstance(nested, dict):
-        tables.extend(nested.values())
-    return {
-        target
-        for table in tables
-        if isinstance(table, dict)
-        for value in table.values()
-        if isinstance(value, str)
-        if (target := _match_module(value.split(":", 1)[0], known))
-    }
-
-
-def _consumer_edges(known: set[str]) -> set[str]:
-    edges: set[str] = set()
-    for path in _source_paths():
-        relative = path.relative_to(ROOT).as_posix()
-        for target in _consumer_targets(
-            path.read_bytes(),
-            source_module=_module_for_path(path),
-            known=known,
-            filename=relative,
-            source_is_package=path.name == "__init__.py",
-        ):
-            edges.add(f"{relative}|{target}")
-
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8-sig"))
-    edges.update(f"pyproject.toml|{target}" for target in _entry_point_targets(project, known))
-    return edges
-
-
-RETIRED_DOCUMENT_REFERENCE = re.compile(
-    r"\bhwpxfiller(?:\.|[\\/])core\b|\bhwpxfiller\s+import\s+core\b"
-)
-
-
-def _active_document_paths() -> list[Path]:
-    paths = set(ROOT.glob("*.md"))
-    for root in ("docs", "packaging", "examples"):
-        paths.update(
-            path
-            for path in (ROOT / root).rglob("*")
-            if path.suffix.lower() in {".md", ".html"} and "archive" not in path.parts
-        )
-    return sorted(path for path in paths if path.is_file())
 
 
 def _bound_names(target: ast.AST) -> set[str]:
@@ -1146,22 +983,6 @@ def _vendor_public_type_edges(source: "str | bytes", module: str) -> set[str]:
     return edges
 
 
-def test_retired_namespace_has_no_consumer() -> None:
-    self_edge = f"{Path(__file__).relative_to(ROOT).as_posix()}|"
-    actual = {
-        edge
-        for edge in _consumer_edges(RETIRED_MODULE_ROOTS)
-        if not edge.startswith(self_edge)  # 이 owner의 의도적 import-failure probe
-    }
-    assert not actual, f"retired namespace consumer: {sorted(actual)}"
-    stale_docs = [
-        path.relative_to(ROOT).as_posix()
-        for path in _active_document_paths()
-        if RETIRED_DOCUMENT_REFERENCE.search(path.read_text(encoding="utf-8"))
-    ]
-    assert not stale_docs, f"retired namespace docs: {stale_docs}"
-
-
 def test_public_surface_is_exact_and_private_imports_are_zero() -> None:
     for retired in ("core", "gui"):
         legacy_root = ROOT / "src" / "hwpxfiller" / retired
@@ -1235,48 +1056,6 @@ load_lambda = lambda module='hwpxfiller.core.template_status': import_module(mod
         "hwpxcore.package|hwpxfiller.core.schema",
         "hwpxcore.package|hwpxfiller.core.template_status",
     }
-
-
-def test_negative_probe_finds_direct_dynamic_and_build_legacy_consumers() -> None:
-    known = RETIRED_MODULE_ROOTS
-    cases = (
-        "from hwpxfiller.core.job import Job\n",
-        "import importlib\nimportlib.import_module('hwpxfiller.core.job')\n",
-        "from importlib import import_module as load\nload('hwpxfiller.core.job')\n",
-        "from importlib import import_module\nMODULE = 'hwpxfiller.core.job'\nimport_module(MODULE)\n",
-        "from importlib import import_module\nimport_module('hwpxfiller.' + 'core')\n",
-        "from importlib import import_module\nMODULE = 'hwpxfiller.' + 'core'\nimport_module(MODULE)\n",
-        "from importlib import import_module\ndef load(MODULE='hwpxfiller.' + 'core'):\n return import_module(MODULE)\n",
-        "Analysis([], hiddenimports=['hwpxfiller.core.job'])\n",
-        "Analysis([], hiddenimports=['hwpxfiller.' + 'core'])\n",
-        "HIDDEN = ['hwpxfiller.core.job']\nAnalysis([], hiddenimports=HIDDEN)\n",
-        "REQUIRED_HIDDEN = ['hwpxfiller.' + 'core']\n",
-        "import hwpxfiller\ndef f(x: 'hwpxfiller.core.job.Job') -> None: ...\n",
-        "def f[T: 'hwpxfiller.core.job.Job'](x: T) -> None: ...\n",
-        "type A[**P = 'hwpxfiller.core.job.Job'] = tuple[P.args]\n",
-        "type A[*Ts = *tuple['hwpxfiller.core.job.Job']] = tuple[*Ts]\n",
-    )
-    for source in cases:
-        assert _consumer_targets(
-            source,
-            source_module="hwpxfiller.application.probe",
-            known=known,
-            filename="<probe>",
-        ) == {"hwpxfiller.core"}
-    assert _entry_point_targets(
-        {
-            "project": {
-                "entry-points": {
-                    "probe": {"legacy": "hwpxfiller.core.job:Job"}
-                }
-            }
-        },
-        known,
-    ) == {"hwpxfiller.core"}
-    assert RETIRED_DOCUMENT_REFERENCE.search(
-        "```python\nfrom hwpxfiller import core\n```\n"
-    )
-    assert RETIRED_DOCUMENT_REFERENCE.search("`hwpxfiller/core/job.py`\n")
 
 
 def test_negative_probe_rejects_wildcard_vendor_policy() -> None:

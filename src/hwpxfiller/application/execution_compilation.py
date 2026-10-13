@@ -84,8 +84,6 @@ UNSUPPORTED_FIELD_BINDING_RULE = "UNSUPPORTED_FIELD_BINDING_RULE"
 UNSUPPORTED_DOCUMENT_VALUE_POLICY = "UNSUPPORTED_DOCUMENT_VALUE_POLICY"
 NEEDS_CONFIGURATION_REVIEW = "NEEDS_CONFIGURATION_REVIEW"
 NEEDS_CONFIGURATION = "NEEDS_CONFIGURATION"
-NEEDS_BINDING_SEMANTIC_MIGRATION = "NEEDS_BINDING_SEMANTIC_MIGRATION"
-NEEDS_FIELD_BINDING_APPLICATION_REVIEW = "NEEDS_FIELD_BINDING_APPLICATION_REVIEW"
 
 # 정규화 시 deterministic 우선순위(issue blocker 열거 순서).
 _BLOCKER_PRIORITY = (
@@ -98,8 +96,6 @@ _BLOCKER_PRIORITY = (
     SLOT_CONFIGURATION_INCOMPLETE,
     NEEDS_CONFIGURATION_REVIEW,
     NEEDS_CONFIGURATION,
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
 )
 _BLOCKER_PRIORITY_INDEX = {code: i for i, code in enumerate(_BLOCKER_PRIORITY)}
 
@@ -627,9 +623,8 @@ def qualify_and_compile_execution(
             COMPOSITION_STRUCTURE_MISMATCH,
             "composition premise 가 이 template structure 와 다른 digest 에 결속됨",
         )
-    # proof 가 capture 가 admit 한 exact policy 에 결속됨을 확인한다 — 다른 composition/native
-    # primitive contract·theorem evidence 로 증명된 PASS 가 operation 을 authorize 하지 못하게
-    # 세 identity 를 전부 대조한다(fail-closed).
+    # composition 결과가 capture 의 exact policy 에 결속됨을 확인한다. 기존 직렬화
+    # fingerprint 필드도 대조해 다른 계약의 PASS 가 operation 을 승인하지 못하게 한다.
     policy = captured.resolved_seal_policy
     proof_identity = (
         composition_result.composition_contract_id,
@@ -644,7 +639,7 @@ def qualify_and_compile_execution(
     if proof_identity != admitted_identity:
         return ExecutionCompilationContextError(
             COMPOSITION_POLICY_IDENTITY_MISMATCH,
-            "composition proof 의 contract/native-primitive/theorem-evidence identity 가 "
+            "composition proof 의 contract/native-primitive/fingerprint identity 가 "
             "admitted resolved_seal_policy 와 불일치",
         )
 

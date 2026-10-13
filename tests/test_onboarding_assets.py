@@ -30,17 +30,15 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from hwpxfiller.application.field_binding_input import (
-    LegacyFieldBindingEntry,
-    prepare_legacy_field_binding_migration,
-)
 from hwpxfiller.domain.authoring import scan_structure
+from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.lint import similarity
-from hwpxfiller.domain.mapping import SUGGEST_THRESHOLD
+from hwpxfiller.domain.mapping import SUGGEST_THRESHOLD, FieldMapping, MappingProfile
 from hwpxfiller.domain.raw_data_record import SourceText
 from hwpxfiller.domain.schema import extract_schema
 from hwpxfiller.domain.text_render import template_fields
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
+from hwpxfiller.external.job_binding_projection import mapping_rules
 from hwpxfiller.viewmodel.mapping_state import MappingModel
 from hwpxfiller.external.template_inspection import (
     compile_structure_file,
@@ -287,31 +285,28 @@ def test_deposit_token_draws_no_suggestion_so_the_blank_gate_stands() -> None:
 def _bound_source_keys(template: Path) -> "set[str]":
     """제품이 실제로 쓰는 사슬로 **결속된 소스 열**을 낸다.
 
-    `infer_type`(이름 휴리스틱) → `MappingModel` 기본 유형 → 저장 매핑 → legacy migration
-    후보 규칙. 종전에는 이 사슬의 마지막 단계가 열마다 `value_type` 을 선언했고 그것이
+    `infer_type`(이름 휴리스틱) → `MappingModel` 기본 유형 → 저장 매핑 → 실행 규칙.
+    종전에는 이 사슬의 마지막 단계가 열마다 `value_type` 을 선언했고 그것이
     데이터 값과 어긋나면 생성이 막혔다 — 값 유형 어휘 퇴역으로 그 축이 사라졌으므로
     남는 것은 「어떤 열이 문서로 흐르는가」다.
     """
     schema = extract_schema(read_hwpx_package(template))
     model = MappingModel.from_suggestions(schema, list(HEADER))
-    draft = prepare_legacy_field_binding_migration(
-        work_authority_id="onboarding",
-        base_template_application_id="asset",
-        legacy_entries=[
-            LegacyFieldBindingEntry(
-                row.template_field, row.type, row.source, row.const, row.fmt
-            )
+    job = Job(
+        name="onboarding", template_path=str(template),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(row.template_field, row.source, row.type, row.const, row.fmt)
             for row in model.rows
-        ],
-        captured_at="2026-08-26T00:00:00Z",
+        ]),
     )
+    rules = mapping_rules(job)
     assert all(
-        not hasattr(candidate, "value_type") for candidate in draft.candidate_rules
-    ), "migration 후보가 아직 값 유형을 선언한다(어휘 퇴역 위반)"
+        not hasattr(rule, "value_type") for rule in rules
+    ), "실행 규칙이 값 유형을 선언한다(어휘 퇴역 위반)"
     return {
-        candidate.source_key
-        for candidate in draft.candidate_rules
-        if candidate.source_key
+        rule.source_key
+        for rule in rules
+        if rule.source_key
     }
 
 

@@ -13,11 +13,10 @@ from __future__ import annotations
 import pytest
 
 from hwpxfiller.application.execution_composition import (
-    THEOREM_EVIDENCE_TXT_V1,
     TXT_COMPOSITION_CONTRACT_ID,
     TXT_LINE_PRIMITIVE_CONTRACT_V1,
     CompositionPremisesPassed,
-    verify_execution_composition_premises,
+    admit_composition_premises,
 )
 from hwpxfiller.application.execution_structure import (
     OWNER_OPTION,
@@ -129,19 +128,17 @@ def test_execution_structure_admits_the_txt_composition_premises():
     """C1~C10 이 TXT 축 계약으로 실제 증명된다 — 「구조는 냈는데 못 쓴다」를 막는 축."""
     execution = _inspect(_FULL).execution_structure
     assert execution is not None
-    verdict = verify_execution_composition_premises(
+    verdict = admit_composition_premises(
         structure=execution,
         native_primitive_contract=TXT_LINE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_TXT_V1,
         composition_contract_id=TXT_COMPOSITION_CONTRACT_ID,
     )
     assert isinstance(verdict, CompositionPremisesPassed)
 
     # 짝이 아닌 primitive 로는 증명되지 않는다(HWPX composition 을 TXT primitive 로 금지).
-    mismatched = verify_execution_composition_premises(
+    mismatched = admit_composition_premises(
         structure=execution,
         native_primitive_contract=TXT_LINE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_TXT_V1,
         composition_contract_id="hwpx-composition/v1",
     )
     assert not isinstance(mismatched, CompositionPremisesPassed)

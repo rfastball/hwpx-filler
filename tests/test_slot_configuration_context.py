@@ -15,7 +15,6 @@ import pytest
 from hwpxfiller.application.candidate_revision import TemplateRevision
 from hwpxfiller.application.qualification_evidence import (
     QualificationEvidence,
-    QualificationEvidenceError,
     StructureProjection,
     build_manifest,
     content_digest,
@@ -52,14 +51,21 @@ from hwpxfiller.external.text_template_inspection import (
 )
 
 NOW = "2026-08-16T00:00:00Z"
-SCHEMA = "hwpx-structure-projection-v1"
-PROFILE = "hwpx-template-qualification-v1"
+SCHEMA = "hwpx-structure-projection-v4"
+PROFILE = "hwpx-template-qualification-v4"
 WS = "ws-1"
 
 _STRUCTURE = TemplateStructure(
     root_fields=("title",),
     slots=(TemplateSlot(id="s1", shared_fields=(), options=(TemplateOption("o1"),)),),
 )
+
+
+def _projection(structure: TemplateStructure, schema: str = SCHEMA) -> StructureProjection:
+    # S4 consumes the product member of the current execution projection.
+    product = project_structure(structure, "hwpx-structure-projection-v3").payload
+    payload = {"product_structure": product}
+    return StructureProjection(schema, payload, content_digest(payload))
 
 
 def _work(work_id: str = "w1", lineage: str = "L1", current: str = "A1") -> DocumentWork:
@@ -85,7 +91,7 @@ def _evidence(
     return QualificationEvidence(
         evidence_id=evidence_id, attempt_id="AT1", revision_id=revision,
         qualification_profile_id=profile, result="PASS",
-        structure_projection=projection or project_structure(structure, schema),
+        structure_projection=projection or _projection(structure, schema),
         diagnostics=(), engine_metadata={}, qualified_at=NOW,
     )
 
@@ -168,10 +174,10 @@ def test_resolves_exact_context() -> None:
     assert ctx.template_structure == _STRUCTURE
     assert ctx.selection_semantic_contract_id == "slot-selection/v1"
     # template_structure_digest 는 Evidence projection 의 payload_digest 를 그대로 싣는다.
-    assert ctx.template_structure_digest == project_structure(_STRUCTURE, SCHEMA).payload_digest
+    assert ctx.template_structure_digest == _projection(_STRUCTURE).payload_digest
 
 
-def test_v3_projection_restores_labels_and_rejects_missing_label() -> None:
+def test_v4_projection_restores_labels_and_rejects_missing_label() -> None:
     structure = TemplateStructure(
         slots=(
             TemplateSlot(
@@ -181,30 +187,25 @@ def test_v3_projection_restores_labels_and_rejects_missing_label() -> None:
             ),
         )
     )
-    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(
-        "hwpx-structure-projection-v3"
-    )
-    projection = project_structure(structure, "hwpx-structure-projection-v3")
+    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(SCHEMA)
+    projection = _projection(structure)
     assert decoder(projection.payload) == structure
 
     ctx = _resolve(
         _ports(
             evidence=_evidence(
-                profile="hwpx-template-qualification-v3",
-                schema="hwpx-structure-projection-v3",
+                profile=PROFILE,
+                schema=SCHEMA,
                 structure=structure,
             ),
             manifest=_manifest(
-                profile="hwpx-template-qualification-v3",
-                schema="hwpx-structure-projection-v3",
+                profile=PROFILE,
+                schema=SCHEMA,
             ),
         )
     )
     assert ctx.template_structure == structure
     assert ctx.selection_semantic_contract_id == "slot-selection/v1"
-
-    with pytest.raises(QualificationEvidenceError):
-        project_structure(structure, SCHEMA)
 
     invalid_payloads = (
         {
@@ -247,7 +248,7 @@ def test_v3_projection_restores_labels_and_rejects_missing_label() -> None:
     )
     for payload in invalid_payloads:
         with pytest.raises(TemplateStructureIntegrityError):
-            decoder(payload)
+            decoder({"product_structure": payload})
 
 
 def test_applied_input_references_candidate_blob() -> None:
@@ -335,7 +336,7 @@ def test_manifest_media_mismatch_rejected() -> None:
 
 
 def test_manifest_projection_schema_mismatch_rejected() -> None:
-    ports = _ports(manifest=_manifest(schema="hwpx-structure-projection-v2"))
+    ports = _ports(manifest=_manifest(schema="unknown-schema"))
     with pytest.raises(TemplateStructureIntegrityError):
         _resolve(ports)
 
@@ -347,10 +348,11 @@ def test_applied_blob_absent_is_content_integrity() -> None:
 
 
 # ── registry ────────────────────────────────────────────────────────────────────
-def test_unknown_projection_schema_unsupported() -> None:
+@pytest.mark.parametrize("schema", ["hwpx-structure-projection-v1", "hwpx-structure-projection-v2", "hwpx-structure-projection-v3", "unknown-v9"])
+def test_unknown_projection_schema_unsupported(schema: str) -> None:
     ports = _ports(
-        evidence=_evidence(schema="unknown-v9"),
-        manifest=_manifest(schema="unknown-v9"),
+        evidence=_evidence(schema=schema),
+        manifest=_manifest(schema=schema),
     )
     with pytest.raises(UnsupportedTemplateStructureProjection):
         _resolve(ports)
@@ -472,12 +474,12 @@ def test_decoder_registry_rejects_duplicate_schema() -> None:
 def test_decoder_rejects_mistyped_projection_fields(payload: dict) -> None:
     decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(SCHEMA)
     with pytest.raises(TemplateStructureIntegrityError):
-        decoder(payload)
+        decoder({"product_structure": payload})
 
 
 def test_malformed_projection_payload_is_integrity_error() -> None:
-    # digest 는 유효하지만 v1 구조가 아닌 payload(slots 키 없음) → decoder fail-closed.
-    bad_payload = {"root_fields": ["t"]}
+    # digest 는 유효하지만 제품 구조가 없는 payload → decoder fail-closed.
+    bad_payload = {"product_structure": {"root_fields": ["t"]}}
     broken = replace(
         _evidence(),
         structure_projection=StructureProjection(
@@ -487,12 +489,3 @@ def test_malformed_projection_payload_is_integrity_error() -> None:
     ports = _ports(evidence=broken)
     with pytest.raises(TemplateStructureIntegrityError):
         _resolve(ports)
-
-
-# ── no-latest-fallback / no side-effects ────────────────────────────────────────
-def test_past_application_restores_with_same_decoder_and_contract() -> None:
-    # 앱 업데이트 뒤에도 과거 schema 로 태어난 Evidence 가 같은 decoder·contract 로 복원된다.
-    ctx = _resolve(_ports())
-    again = _resolve(_ports())
-    assert ctx.template_structure == again.template_structure
-    assert ctx.selection_semantic_contract_id == again.selection_semantic_contract_id

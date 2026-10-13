@@ -333,34 +333,3 @@ def test_record_validation_context_error_is_restated_not_swallowed(tmp_path) -> 
     assert isinstance(result, ManagedRunRefused)
     assert result.code  # 검증기 사유의 재진술(빈 코드 없음)
     assert list(out.iterdir()) == []
-
-
-def test_plan_resolver_rejects_an_unknown_plan_ref(tmp_path) -> None:
-    """process-local plan resolver 는 고정 digest 하나만 내준다 — 다른 ref 는 위조로 닫는다.
-
-    이 resolver 는 ``run_managed_generation`` 안의 지역 closure 라 바깥에서 부를 수 없다.
-    ``MaterializationInputPort`` 조립 seam 하나만 가로채 그 closure 를 붙잡고, 고의로 다른
-    ref 를 넣어 방어적 KeyError 갈래를 직접 잰다(다른 모든 호출은 항상 같은 digest 를 쓰므로
-    이 갈래는 정상 흐름에서 나지 않는다).
-    """
-    import hwpxfiller.external.managed_generation as mg
-
-    case, registry, manifest, basis, out = _kit(tmp_path)
-    captured: dict[str, object] = {}
-    real_port = mg.MaterializationInputPort
-
-    def spying_port(*, plan_resolver, vdr_store):
-        captured["resolver"] = plan_resolver
-        return real_port(plan_resolver=plan_resolver, vdr_store=vdr_store)
-
-    import pytest as _pytest
-
-    with _pytest.MonkeyPatch.context() as mp:
-        mp.setattr(mg, "MaterializationInputPort", spying_port)
-        _run(
-            case, registry, manifest, basis, out, tmp_path,
-            [_snapshot("r1", "홍길동", "1000")], ["공고서-001.hwpx"],
-        )
-    assert "resolver" in captured
-    with pytest.raises(KeyError):
-        captured["resolver"]("sha256:" + "0" * 64)

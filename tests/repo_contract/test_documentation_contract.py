@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -41,27 +42,28 @@ def _review(root: Path, ident: str = "workflow-primary") -> None:
     docs.acknowledge_review(root, f"{topic['document']}#{ident}")
 
 
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    _put(tmp_path, "pyproject.toml", '[project]\nversion="1.0.0"\nrequires-python=">=3.13"\n'
+@pytest.fixture(scope="module")
+def repo_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("docs-contract")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    _put(root, "pyproject.toml", '[project]\nversion="1.0.0"\nrequires-python=">=3.13"\n'
          '[project.scripts]\nexample="example:main"\n')
-    _put(tmp_path, ".python-version", "3.13\n")
-    _put(tmp_path, ".node-version", "24.18.1\n")
-    _put(tmp_path, "package.json", json.dumps({"engines": {"node": "24.18.1", "npm": "11.16.0"},
+    _put(root, ".python-version", "3.13\n")
+    _put(root, ".node-version", "24.18.1\n")
+    _put(root, "package.json", json.dumps({"engines": {"node": "24.18.1", "npm": "11.16.0"},
                                               "packageManager": "npm@11.16.0"}))
-    _put(tmp_path, "src/hwpxfiller/webapp/app.py", 'class WebFrontend:\n'
+    _put(root, "src/hwpxfiller/webapp/app.py", 'class WebFrontend:\n'
          '    def initial(self, screen: str): pass\n    def direct(self, path: str): pass\n')
-    _put(tmp_path, "src/hwpxfiller/webapp/selftest_api.py",
+    _put(root, "src/hwpxfiller/webapp/selftest_api.py",
          "class SelftestHostFacade:\n    def selftest_claim(self, token=None): pass\n")
-    _put(tmp_path, "src/hwpxfiller/webapp/action_registry.py",
+    _put(root, "src/hwpxfiller/webapp/action_registry.py",
          '_COMMON = {"ping": _schema(optional="epoch")}\n'
          '_REGISTRY = {"job": {**_COMMON, "run": _schema("row", "confirm")}}\n')
-    _put(tmp_path, ".github/workflows/quality.yml", 'name: quality\njobs:\n'
+    _put(root, ".github/workflows/quality.yml", 'name: quality\njobs:\n'
          '  static:\n    steps: []\n  quality-gate:\n    needs:\n      - static\n    steps: []\n')
-    _put(tmp_path, "tests/evidence.py", "def test_behavior(): pass\n")
-    _put(tmp_path, "frontend/js/bridge.js", "// bridge\n")
-    _put(tmp_path, "src/entry.py", "# entry\n")
+    _put(root, "tests/evidence.py", "def test_behavior(): pass\n")
+    _put(root, "frontend/js/bridge.js", "// bridge\n")
+    _put(root, "src/entry.py", "# entry\n")
     data: dict = {"document": [], "topic": [], "support": []}
     hashes = dict(source_sha256="0" * 64, body_sha256="0" * 64)
     for role, (kind, name) in docs.SLOTS.items():
@@ -72,7 +74,7 @@ def repo(tmp_path: Path) -> Path:
             text += f'<a id="{ident}"></a>\n## 현재 상태\n\noriginal\n'
             if role == "product":
                 text += "\n### Platform\n\nweb\n"
-            _put(tmp_path, f"src/{role}.py", f"# {role}\n")
+            _put(root, f"src/{role}.py", f"# {role}\n")
             sources = [f"src/{role}.py"]
             if role == "workflow":
                 sources = ["src/hwpxfiller/webapp/*.py"]
@@ -83,25 +85,31 @@ def repo(tmp_path: Path) -> Path:
         elif kind == "machine":
             text = "# Machine contract fixture\n"
         data["document"].append(item)
-        _put(tmp_path, name, text)
+        _put(root, name, text)
     secondary = dict(id="workflow-secondary", document=docs.CORE["workflow"], sources=["src/secondary.py"],
                      tests=["tests/evidence.py"], **hashes)
     data["topic"].append(secondary)
-    _put(tmp_path, "src/secondary.py", "# independent\n")
-    path = tmp_path / docs.CORE["workflow"]
+    _put(root, "src/secondary.py", "# independent\n")
+    path = root / docs.CORE["workflow"]
     path.write_text(docs.read(path) + '\n<a id="workflow-secondary"></a>\n## 결과\n\nindependent\n',
                     encoding="utf-8", newline="\n")
-    _manifest(tmp_path, data)
-    docs.write_generated(tmp_path)
+    _manifest(root, data)
+    docs.write_generated(root)
     # Synthetic test fixture bootstrap, not an approval of repository prose.
     for topic in data["topic"]:
-        docs.acknowledge_review(tmp_path, f"{topic['document']}#{topic['id']}")
+        docs.acknowledge_review(root, f"{topic['document']}#{topic['id']}")
     for item in data["document"]:
         if item["kind"] == "current":
-            docs.acknowledge_review(tmp_path, item["path"])
-    assert docs.check(tmp_path) == []
-    return tmp_path
+            docs.acknowledge_review(root, item["path"])
+    assert docs.check(root) == []
+    return root
 
+
+
+@pytest.fixture
+def repo(tmp_path: Path, repo_template: Path) -> Path:
+    shutil.copytree(repo_template, tmp_path, dirs_exist_ok=True)
+    return tmp_path
 
 def test_repository_documentation_contract() -> None:
     assert docs.check(docs.ROOT) == []

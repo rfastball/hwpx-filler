@@ -2150,18 +2150,6 @@ file = "src/hwpxfiller/external/seal_execution_plan_service.py"
 text = "Field Binding capture 의 Work identity 가 이동했습니다"
 
 [[sentence]]
-file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "이전 Field Binding 의 Work 상태를 확인할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "현재 템플릿 Application 을 확인할 수 없습니다"
-
-[[sentence]]
-file = "src/hwpxfiller/external/seal_execution_plan_service.py"
-text = "현재 템플릿의 Field 구조를 확인할 수 없습니다"
-
-[[sentence]]
 file = "src/hwpxfiller/external/template_change.py"
 text = "actor {} 는 이 Work 에 접근할 수 없습니다"
 
@@ -2184,10 +2172,6 @@ text = "적용 무결성 확인에 실패했습니다 — 저장된 확인 결�
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"
 text = "'{}' 템플릿 파일이 없어 저장하지 않았습니다. 삭제를 되돌리거나 다른 템플릿을 선택하세요."
-
-[[sentence]]
-file = "src/hwpxfiller/viewmodel/edit_session.py"
-text = ". 연결을 검토한 뒤 다시 저장하세요."
 
 [[sentence]]
 file = "src/hwpxfiller/viewmodel/edit_session.py"

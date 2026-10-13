@@ -1,6 +1,6 @@
-"""S3-08 (#658): legacy Job bootstrap + Configuration provenance 실행 guard 계약.
+"""첫 Job 등록과 Configuration 실행 guard 계약.
 
-bootstrap 은 read migration 이 아니라 명시 write command 다 — legacy Job JSON 을 만지지 않고
+bootstrap 은 명시 write command 다.
 capture→qualify→PASS→INITIALIZATION Application 을 원자로 만들거나, 실패면 가짜 Application 없이
 repair 로 닫는다. guard 는 과거 Configuration 이 새 current Application 실행 권위로 조용히
 재사용되지 않게 한다.
@@ -28,11 +28,7 @@ from hwpxfiller.application.work_bootstrap import (
     BOOTSTRAP_OK,
     TEMPLATE_INITIALIZATION_REQUIRED,
 )
-from hwpxfiller.application.work_template_state import (
-    INITIALIZATION,
-    decode_aggregate,
-    encode_aggregate,
-)
+from hwpxfiller.application.work_template_state import INITIALIZATION
 from hwpxfiller.external.candidate_store import CandidateObjectStore
 from hwpxfiller.external.prepare_orchestration_runner import bootstrap_work
 from hwpxfiller.external.qualification_store import QualificationObjectStore
@@ -40,9 +36,9 @@ from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
 
 PROF = "prof-v1"
 GEN = 3
-BYTES = b"legacy template bytes"
+BYTES = b"template bytes"
 LINEAGE = TemplateLineage("LIN1", "hwpx", "SB1", GEN, "t0")
-BINDING = MutableSourceBinding("SB1", "hwpx", "C:/legacy.hwpx", {}, GEN)
+BINDING = MutableSourceBinding("SB1", "hwpx", "C:/template.hwpx", {}, GEN)
 
 
 def _good_reader(_b):
@@ -78,7 +74,6 @@ def _bootstrap(wstore, qstore, cstore, *, reader=_good_reader, outcome="PASS", r
     return bootstrap_work(
         wstore, cstore, qstore, work_id="W1", bootstrap_request_id=request,
         lineage=LINEAGE, binding=BINDING, reader=reader, profile=_profile(outcome),
-        legacy_template_revision=7, legacy_binding_revision=4, legacy_source_reference="job://J1",
         observation_id="OBS1", revision_id="REV1", attempt_id="AT1", evidence_id="EV1",
         application_id="A1", engine_metadata={"e": "1"}, actor="t",
         captured_at="t1", created_at="t1", started_at="t2", completed_at="t3", qualified_at="t3",
@@ -87,7 +82,7 @@ def _bootstrap(wstore, qstore, cstore, *, reader=_good_reader, outcome="PASS", r
 
 # ─── 성공 ─────────────────────────────────────────────────────────────────────
 
-def test_legacy_job_bootstraps_to_initialization_application(tmp_path):
+def test_first_job_bootstraps_to_initialization_application(tmp_path):
     wstore, qstore, cstore = _stores(tmp_path)
     outcome = _bootstrap(wstore, qstore, cstore)
     assert outcome.result == BOOTSTRAP_OK
@@ -95,21 +90,6 @@ def test_legacy_job_bootstraps_to_initialization_application(tmp_path):
     a1 = agg.applications[0]
     assert a1.origin == INITIALIZATION and a1.application_epoch == 1
     assert agg.work.current_template_application_id == "A1"
-    mp = agg.migration_provenance
-    assert mp is not None and mp.legacy_template_revision == 7
-    assert mp.bootstrap_request_id == "BR1" and mp.legacy_source_reference == "job://J1"
-
-
-def test_legacy_counters_are_not_new_identity(tmp_path):
-    wstore, qstore, cstore = _stores(tmp_path)
-    _bootstrap(wstore, qstore, cstore)
-    agg = wstore.load("W1")
-    # legacy template_revision=7 은 provenance 일 뿐, Application/Revision id 로 재사용되지 않는다.
-    assert agg.applications[0].application_id == "A1"  # "7" 아님
-    assert agg.applications[0].pass_evidence_id == "EV1"
-    assert str(agg.migration_provenance.legacy_template_revision) not in {
-        agg.applications[0].application_id
-    }
 
 
 def test_bootstrap_is_idempotent(tmp_path):
@@ -168,22 +148,6 @@ def test_manifest_media_mismatch_requires_initialization(tmp_path):
     assert not wstore.exists("W1")
 
 
-def test_migration_provenance_survives_prepare(tmp_path):
-    # bootstrap 뒤 첫 prepare 가 migration provenance 를 조용히 지우지 않는다.
-    from hwpxfiller.application.prepare_template_change import PreparePins
-    from hwpxfiller.external.work_template_store import start_prepare
-
-    wstore, qstore, cstore = _stores(tmp_path)
-    _bootstrap(wstore, qstore, cstore)
-    start_prepare(
-        wstore, work_id="W1", prepare_request_id="RQ1", actor="t",
-        resolve_pins=lambda _w: PreparePins("SB1", GEN, PROF),
-        preparation_id="P1", execution_session_id="S1", started_at="t5",
-    )
-    mp = wstore.load("W1").migration_provenance
-    assert mp is not None and mp.legacy_template_revision == 7  # 보존됨
-
-
 def test_concurrent_create_collision_reconciles(tmp_path, monkeypatch):
     # exists() 가 놓친 동시 생성(WorkAggregateExists)을 기존 aggregate 로 화해한다.
     wstore, qstore, cstore = _stores(tmp_path)
@@ -192,21 +156,3 @@ def test_concurrent_create_collision_reconciles(tmp_path, monkeypatch):
     outcome = _bootstrap(wstore, qstore, cstore)  # 같은 request(같은 ids) 재전송
     assert outcome.result == BOOTSTRAP_OK
     assert outcome.aggregate.applications[0].application_id == "A1"  # 먼저 commit 한 것
-
-
-# ─── migration codec ──────────────────────────────────────────────────────────
-
-def test_migration_provenance_round_trips(tmp_path):
-    wstore, qstore, cstore = _stores(tmp_path)
-    _bootstrap(wstore, qstore, cstore)
-    agg = wstore.load("W1")
-    assert decode_aggregate(encode_aggregate(agg)) == agg  # migration_provenance 포함
-
-
-def test_legacy_aggregate_without_migration_key_decodes(tmp_path):
-    # migration_provenance 키가 없는(bootstrap 아닌) aggregate 도 decode 된다(None).
-    wstore, qstore, cstore = _stores(tmp_path)
-    _bootstrap(wstore, qstore, cstore)
-    data = encode_aggregate(wstore.load("W1"))
-    del data["migration_provenance"]
-    assert decode_aggregate(data).migration_provenance is None

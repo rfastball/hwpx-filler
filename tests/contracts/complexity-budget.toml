@@ -483,7 +483,7 @@ function_complexity = 34
 function_complexity = 11
 
 [budget."scripts/live101/driver.py"]
-module_statements = 428
+module_statements = 424
 
 [budget."scripts/live101/driver.py::_run_with_home.drive"]
 function_complexity = 11
@@ -577,7 +577,7 @@ class_methods = 30
 function_complexity = 14
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py"]
-module_statements = 323
+module_statements = 320
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py::RecordValidationSummary.__post_init__"]
 function_complexity = 13
@@ -597,9 +597,6 @@ function_complexity = 11
 [budget."src/hwpxfiller/application/execution_compilation.py::qualify_and_compile_execution"]
 function_complexity = 24
 function_statements = 67
-
-[budget."src/hwpxfiller/application/execution_composition.py"]
-module_statements = 356
 
 [budget."src/hwpxfiller/application/execution_composition.py::_premise_c2"]
 function_complexity = 12
@@ -626,11 +623,7 @@ function_complexity = 18
 function_complexity = 20
 
 [budget."src/hwpxfiller/application/generation_delivery.py"]
-module_statements = 530
-
-[budget."src/hwpxfiller/application/generation_delivery.py::_resolve"]
-function_complexity = 27
-function_statements = 78
+module_statements = 343
 
 [budget."src/hwpxfiller/application/generation_delivery.py::_resolve_current"]
 function_complexity = 46
@@ -639,14 +632,8 @@ function_statements = 89
 [budget."src/hwpxfiller/application/generation_delivery.py::resolve_delivery_field_value"]
 function_complexity = 12
 
-[budget."src/hwpxfiller/application/legacy_field_binding_store_v1.py::_migrate_revision"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/application/legacy_field_binding_store_v1.py::migrate_stored_v1"]
-function_complexity = 15
-
 [budget."src/hwpxfiller/application/record_validation.py"]
-module_statements = 386
+module_statements = 361
 
 [budget."src/hwpxfiller/application/record_validation.py::_evaluate_review"]
 function_complexity = 11
@@ -693,9 +680,6 @@ function_complexity = 12
 [budget."src/hwpxfiller/application/slot_token.py::open_configuration_token"]
 function_complexity = 11
 
-[budget."src/hwpxfiller/application/stored_field_binding.py::StoredWorkFieldBinding.__post_init__"]
-function_complexity = 13
-
 [budget."src/hwpxfiller/application/template_qualification.py::qualify_template"]
 function_complexity = 11
 
@@ -703,8 +687,7 @@ function_complexity = 11
 function_complexity = 14
 
 [budget."src/hwpxfiller/application/work_template_state.py::validate_aggregate"]
-function_complexity = 28
-function_statements = 58
+function_complexity = 22
 
 [budget."src/hwpxfiller/cli.py"]
 module_statements = 385
@@ -932,13 +915,13 @@ function_complexity = 18
 function_complexity = 11
 
 [budget."src/hwpxfiller/external/job_store.py"]
-module_statements = 354
+module_statements = 341
 
 [budget."src/hwpxfiller/external/job_store.py::JobRegistry"]
 class_methods = 32
 
 [budget."src/hwpxfiller/external/job_store.py::_rules_values_or_raise"]
-function_complexity = 13
+function_complexity = 12
 
 [budget."src/hwpxfiller/external/managed_generation.py::run_managed_generation"]
 function_complexity = 12
@@ -959,14 +942,8 @@ function_complexity = 12
 [budget."src/hwpxfiller/external/prepare_orchestration_runner.py::apply_prepared_change_under_fence"]
 function_complexity = 11
 
-[budget."src/hwpxfiller/external/seal_execution_capture_runner.py::SealExecutionCaptureRunner.read_current_field_binding_review"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/external/seal_execution_plan_service.py::SealExecutionPlanService.unrepresented_legacy_rules"]
-function_complexity = 15
-
 [budget."src/hwpxfiller/external/settings.py"]
-module_statements = 334
+module_statements = 330
 
 [budget."src/hwpxfiller/external/settings.py::load_last_data_source"]
 function_complexity = 16
@@ -1008,10 +985,10 @@ function_complexity = 13
 function_complexity = 15
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py"]
-module_statements = 399
+module_statements = 394
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation._save_locked"]
-function_complexity = 21
+function_complexity = 17
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation.save"]
 function_complexity = 12
@@ -1132,7 +1109,7 @@ class_methods = 21
 function_complexity = 22
 
 [budget."src/hwpxfiller/webapp/app.py"]
-module_statements = 683
+module_statements = 679
 
 [budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
 class_methods = 39
@@ -1169,7 +1146,7 @@ function_complexity = 15
 function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession"]
-class_methods = 39
+class_methods = 37
 
 [budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession.resolve_delivery"]
 function_complexity = 12
@@ -1236,10 +1213,10 @@ function_complexity = 15
 function_complexity = 16
 
 [budget."src/hwpxfiller/webapp/screen_job.py"]
-module_statements = 906
+module_statements = 902
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController"]
-class_methods = 110
+class_methods = 109
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController._capture_current_selected_records"]
 function_complexity = 11
@@ -1251,7 +1228,7 @@ function_complexity = 16
 function_complexity = 25
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController._do_select_job"]
-function_complexity = 12
+function_complexity = 11
 
 [budget."src/hwpxfiller/webapp/screen_job.py::JobController._generate_managed_locked"]
 function_complexity = 14
@@ -1326,7 +1303,7 @@ module_statements = 1787
 module_statements = 1308
 
 [budget."tests/js/n06_editor.test.js"]
-module_statements = 1135
+module_statements = 1132
 
 [budget."tests/repo_contract/test_architecture.py::test_screen_controllers_stay_transport_thin"]
 function_complexity = 36
@@ -1339,9 +1316,6 @@ function_complexity = 22
 
 [budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_import_names"]
 function_complexity = 21
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_targets"]
-function_complexity = 24
 
 [budget."tests/repo_contract/test_p3_forbidden_edges.py::_facade_exports"]
 function_complexity = 21
@@ -1371,7 +1345,7 @@ module_statements = 1589
 function_complexity = 43
 
 [budget."tests/test_job.py"]
-module_statements = 1134
+module_statements = 1057
 
 [budget."tests/test_web_authoring_layout.py::test_authoring_columns_scale_and_narrow_sheet"]
 function_complexity = 22
@@ -1395,4 +1369,4 @@ module_statements = 2123
 module_statements = 3865
 
 [budget."tests/test_webapp_job_binding_review.py"]
-module_statements = 993
+module_statements = 990

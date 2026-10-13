@@ -199,16 +199,9 @@ def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
     assert doc["output_digest"].startswith("sha256:")
     assert "[원장]" in capsys.readouterr().err
 
-
-def test_ledger_rerun_accumulates_evidence(tmp_path):
-    """원장 재실행 — 이전 실행의 증거 사이드카를 덮지 않고 축적한다(RC-02)."""
-    data = _xlsx(tmp_path / "d.xlsx",
-                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
-    out = tmp_path / "out"
-    args = ["--template", TEMPLATE, "--data", data, "--out", str(out),
-            "--pattern", "공고-{{입찰공고번호}}", "--ledger"]
-    assert main(args) == 0
-    assert main(args + ["--overwrite"]) == 0  # 산출물 재생성은 명시 확정, 원장은 새 파일
+    # 재실행은 기존 증거를 남기고 새 원장을 추가한다.
+    assert main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+                 "--pattern", "공고-{{입찰공고번호}}", "--ledger", "--overwrite"]) == 0
     assert len(list(out.glob("fill-ledger-*.json"))) == 2
 
 
@@ -229,19 +222,7 @@ def test_cli_blocks_overwrite_by_default(tmp_path, capsys):
     assert sentinel.read_bytes() == b"user-edited"  # 무경고 파괴 금지
     err = capsys.readouterr().err
     assert "덮어쓰" in err and "--overwrite" in err  # 시끄럽게 + 다음 행동 안내
-
-
-def test_cli_overwrite_optin_passes(tmp_path):
-    """--overwrite 옵트인 — 명시 확정 시에만 기존 산출물을 교체한다."""
-    data = _xlsx(tmp_path / "d.xlsx",
-                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
-    out = tmp_path / "out"
-    args = ["--template", TEMPLATE, "--data", data, "--out", str(out),
-            "--pattern", "공고-{{입찰공고번호}}"]
-    assert main(args) == 0
-    sentinel = out / "공고-R26BK00000001.hwpx"
-    sentinel.write_bytes(b"user-edited")
-
+    # 명시 확정 뒤에만 수기 보정본이 교체된다.
     assert main(args + ["--overwrite"]) == 0
     assert sentinel.read_bytes()[:2] == b"PK"  # 재생성본으로 교체됨
 
@@ -308,22 +289,6 @@ def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
     assert "입찰공고번호" in err and "--ack-empty" in err  # 시끄럽게 + 다음 행동 안내
 
 
-def test_cli_ack_empty_injects_marker(tmp_path):
-    """--ack-empty 옵트인 — GUI 와 같은 미입력 표식을 넣고 진행(조용한 누름틀 잔존 금지)."""
-    from hwpxfiller.domain.fields import read_fields
-
-    data = _xlsx(tmp_path / "d.xlsx",
-                 [["", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
-    out = tmp_path / "out"
-    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
-               "--pattern", "공고-{{공고명}}", "--ack-empty"])
-    assert rc == 0
-    (doc,) = list(out.glob("*.hwpx"))
-    fields = read_fields(read_hwpx_package(doc))
-    assert fields["입찰공고번호"] == "〘미입력·입찰공고번호〙"  # GUI 와 동일 표식(단일 출처)
-    assert fields["공고명"] == "관급자재 구매"
-
-
 def test_cli_ack_empty_ledger_records_marker_evidence(tmp_path):
     """--ack-empty + --ledger — 원장이 표식이 든 **그 문서**를 가리킨다(RC-03 원장 갈림 봉합).
 
@@ -346,7 +311,9 @@ def test_cli_ack_empty_ledger_records_marker_evidence(tmp_path):
     (entry,) = payload["delivered"]
     doc = out / entry["relative_path"]
     assert entry["output_digest"] == "sha256:" + hashlib.sha256(doc.read_bytes()).hexdigest()
-    assert read_fields(read_hwpx_package(doc))["입찰공고번호"] == "〘미입력·입찰공고번호〙"
+    fields = read_fields(read_hwpx_package(doc))
+    assert fields["입찰공고번호"] == "〘미입력·입찰공고번호〙"
+    assert fields["공고명"] == "관급자재 구매"
 
 
 # --------------------------------------------------------------- 나라장터 소스

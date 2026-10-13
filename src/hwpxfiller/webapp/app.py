@@ -41,7 +41,7 @@ from ..web_artifact import (
 )
 from ..external.hwpx_engine import make_hwpx_engine
 from ..host.locations import default_template_authority_dir, home_dir
-from ..external.template_root import TemplateRoot, migrate_legacy_text_templates
+from ..external.template_root import TemplateRoot
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 이 조립부와 작업 공간 조립(workspace_graph)만 한다.
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
@@ -237,17 +237,6 @@ class WebFrontend:
         # 해석기를 각자 부르던 자리들이 루트를 바꿀 수 있게 되는 순간 갈리기 때문이다.
         # 튜토리얼 연습 환경(#1126)은 그 과정의 홈에 묶인 자기 홀더를 따로 든다.
         user_root = template_root if template_root is not None else TemplateRoot()
-        # 레거시 TXT 1회 이관(U6-A §4) — 지정이 없어 기본 루트를 쓰는 경우에만, 옛
-        # ``home/text_templates`` 를 서식 폴더로 **옮긴다**. 결과는 조용히 넘기지 않고
-        # 부팅 뒤 경보 채널로 한 번 재진술한다(아래 ``settings.alert``).
-        self._text_templates_migration = migrate_legacy_text_templates(
-            home=home_dir(), root=user_root
-        )
-        # 재진술은 **두 채널**이 받는다: 내구성 로그(경보)와 화면(서식 폴더 존의 사유).
-        # 로그만 두면 사용자는 자기 TXT 가 옮겨진 사실을 영영 모른다(조용한 이동 금지).
-        migration_notice = self._text_templates_migration.restate(user_root.path())
-        if migration_notice:
-            settings.alert(migration_notice)
         # 진행 중인 런의 **단일 사실**(9R P1) — 규칙을 쓰는 표면이 여럿이라(「문서 만들기」·
         # 라이브러리 재연결·편집기 진입) 자물쇠가 한 화면 소유이면 나머지가 조용히 빠진다.
         # 작업 공간 사이에서도 하나다: 연습 환경 전환은 진행 중인 런을 거절한다.
@@ -264,7 +253,6 @@ class WebFrontend:
             root = user_root if home is None else TemplateRoot(default_root=home / "templates")
             return build_graph(
                 home, push, token, template_root=root,
-                migration_notice=migration_notice if home is None else "",
                 tutorial_ctrl=tutorial_ctrl, generation_lock=generation_lock,
                 hwpx_engine=hwpx_engine,
                 discover_registered_data=discover_registered_data,

@@ -78,7 +78,7 @@ def _ctx(structure: TemplateStructure) -> SlotConfigurationContext:
         pass_evidence_id="E1",
         revision_id="R1",
         qualification_profile_id="P1",
-        structure_projection_schema_version="hwpx-structure-projection-v1",
+        structure_projection_schema_version="hwpx-structure-projection-v4",
         template_structure=structure,
         template_structure_digest="sha256:d",
         selection_semantic_contract_id="slot-selection/v1",

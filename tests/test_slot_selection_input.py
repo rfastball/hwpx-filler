@@ -8,6 +8,10 @@ from types import SimpleNamespace
 import pytest
 
 from hwpxfiller.application.slot_configuration_context import SlotConfigurationContext
+from hwpxfiller.application.execution_structure import (
+    LABELED_EXECUTION_QUALIFICATION_PROFILE_ID,
+    LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+)
 from hwpxfiller.application.slot_selection_input import (
     SlotConfigurationSnapshot,
     SlotlessSelectionContext,
@@ -47,8 +51,8 @@ def _ctx(structure: TemplateStructure, app: str = "A1") -> SlotConfigurationCont
     return SlotConfigurationContext(
         workspace_instance_id="ws-1", work_id="w1", template_application_id=app,
         template_lineage_id="L1", application_epoch=1, pass_evidence_id="E1",
-        revision_id="R1", qualification_profile_id="hwpx-template-qualification-v1",
-        structure_projection_schema_version="hwpx-structure-projection-v1",
+        revision_id="R1", qualification_profile_id=LABELED_EXECUTION_QUALIFICATION_PROFILE_ID,
+        structure_projection_schema_version=LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
         template_structure=structure, template_structure_digest="sha256:struct",
         selection_semantic_contract_id=CONTRACT, selection_semantic_contract=V1,
     )
@@ -176,7 +180,9 @@ def test_storage_order_independent_digest() -> None:
 from hwpxfiller.application.candidate_revision import TemplateRevision  # noqa: E402
 from hwpxfiller.application.qualification_evidence import (  # noqa: E402
     QualificationEvidence,
+    StructureProjection,
     build_manifest,
+    content_digest,
     project_structure,
 )
 from hwpxfiller.application.slot_command import ConfigurationCommandContext  # noqa: E402
@@ -196,8 +202,8 @@ from hwpxfiller.external.work_configuration_store import (  # noqa: E402
     WorkSlotConfigurationStore,
 )
 
-SCHEMA = "hwpx-structure-projection-v1"
-PROFILE = "hwpx-template-qualification-v1"
+SCHEMA = LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA
+PROFILE = LABELED_EXECUTION_QUALIFICATION_PROFILE_ID
 
 
 class _Qual:
@@ -234,10 +240,12 @@ def _ports(structure: TemplateStructure = _SLOTTED, current: str = "A1"):
         previous_application_id=None, origin=INITIALIZATION, prepared_change_id=None,
         actor="t", applied_at=NOW,
     )
+    product = project_structure(structure, "hwpx-structure-projection-v3").payload
+    payload = {"product_structure": product}
     evidence = QualificationEvidence(
         evidence_id="E1", attempt_id="AT1", revision_id="R1",
         qualification_profile_id=PROFILE, result="PASS",
-        structure_projection=project_structure(structure, SCHEMA),
+        structure_projection=StructureProjection(SCHEMA, payload, content_digest(payload)),
         diagnostics=(), engine_metadata={}, qualified_at=NOW,
     )
     manifest = build_manifest(

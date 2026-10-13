@@ -39,7 +39,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, ContextManager, Protocol
 
-from ..domain.job import JOB_MAPPING_AUTHORITY, DEFAULT_FILENAME_PATTERN, Job, rules_values, template_media
+from ..domain.job import DEFAULT_FILENAME_PATTERN, Job, rules_values, template_media
 from ..domain.mapping import MappingProfile
 from .job_editor_state import (
     EMPTY_PRESERVED,
@@ -595,7 +595,6 @@ class EditSaveOperation:
         after_mapping_saved: "Callable[[str], object] | None" = None,
         save_guard: "Callable[[], ContextManager[bool]] | None" = None,
         validate_binding: "Callable[[Job], object] | None" = None,
-        unrepresented_legacy_rules: "Callable[[Job, Job, frozenset[str]], tuple[str, ...]] | None" = None,
     ) -> None:
         self.edit = edit
         self.store = store
@@ -608,7 +607,6 @@ class EditSaveOperation:
         self._after_mapping_saved = after_mapping_saved
         self._save_guard = save_guard or (lambda: nullcontext(True))
         self._validate_binding = validate_binding or (lambda _job: None)
-        self._unrepresented_legacy_rules = unrepresented_legacy_rules
 
     def _set_notice(self, text: str, level: str = "muted") -> None:
         self.edit.notice_text = text
@@ -791,7 +789,6 @@ class EditSaveOperation:
             favorited_at=str(preserved["favorited_at"]),
             reviewed_rules=dict(preserved["reviewed_rules"]),
             authority_id=str(preserved["authority_id"]),
-            binding_authority=JOB_MAPPING_AUTHORITY,
         )
         previous = self.store.load(job.name) if self.store.exists(job.name) else None
         if previous is not None and previous.template_path == job.template_path:
@@ -807,20 +804,6 @@ class EditSaveOperation:
                     job.mapping.mappings.append(deepcopy(item))
                     present.add(item.template_field)
         self._validate_binding(job)
-        if previous is not None and self._unrepresented_legacy_rules is not None:
-            missing_rules = self._unrepresented_legacy_rules(
-                previous, job,
-                frozenset(self.edit.schema.field_names()) if self.edit.schema else frozenset(),
-            )
-            if missing_rules:
-                return {
-                    "ok": False,
-                    "block_reason": (
-                        "이전 연결 규칙을 현재 편집기에서 보존할 수 없습니다: "
-                        + ", ".join(missing_rules)
-                        + ". 연결을 검토한 뒤 다시 저장하세요."
-                    ),
-                }
         self.store.save(job, allow_overwrite=True)
         saved = self.edit.job_name
         try:

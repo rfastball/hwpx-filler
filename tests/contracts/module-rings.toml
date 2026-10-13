@@ -13,580 +13,483 @@ HOST = 2
 module = "hwpxcore"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/__init__.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxcore.bookmark_region"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/bookmark_region.py"]
-oracle_nodeid = "tests/test_bookmark_regions.py"
 
 [[unit]]
 module = "hwpxcore.native_admission"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/native_admission.py"]
-oracle_nodeid = "tests/test_native_admission.py"
 
 [[unit]]
 module = "hwpxcore.field_occurrence"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/field_occurrence.py"]
-oracle_nodeid = "tests/test_fields.py::test_supported_ordinary_field_grammar"
 
 [[unit]]
 module = "hwpxcore.structural_boundary"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/structural_boundary.py"]
-oracle_nodeid = "tests/test_structural_boundary_scan.py"
 
 [[unit]]
 module = "hwpxcore.lineseg"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/lineseg.py"]
-oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxcore.package"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/package.py"]
-oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxcore.text_extract"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/text_extract.py"]
-oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxcore.text_model"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/text_model.py"]
-oracle_nodeid = "tests/test_extract_synthetic.py"
 
 [[unit]]
 module = "hwpxcore.shape_text"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/shape_text.py"]
-oracle_nodeid = "tests/test_extract_synthetic.py"
 
 [[unit]]
 module = "hwpxfiller"
 target = "RETIRE"
 source_write_set = ["src/hwpxfiller/__init__.py"]
-oracle_nodeid = "tests/test_naming.py"
 
 [[unit]]
 module = "hwpxfiller.cli"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/cli.py"]
-oracle_nodeid = "tests/test_cli.py"
 
 [[unit]]
 module = "hwpxfiller.data"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/__init__.py"]
-oracle_nodeid = "tests/test_data_factory.py"
 
 [[unit]]
 module = "hwpxfiller.data.excel"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/excel.py"]
-oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_injects_marker"
 
 [[unit]]
 module = "hwpxfiller.data.factory"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/factory.py"]
-oracle_nodeid = "tests/test_data_factory.py::test_csv_roundtrip_through_factory"
 
 [[unit]]
 module = "hwpxfiller.data.nara"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/nara.py"]
-oracle_nodeid = "tests/test_cli.py::test_nara_auth_failure_is_loud_exit_1"
 
 [[unit]]
 module = "hwpxfiller.data.pclm"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/pclm.py"]
-oracle_nodeid = "tests/test_data_pclm.py::test_reads_records_and_fields_as_a_datasource"
 
 [[unit]]
 module = "hwpxfiller.data.pipeline"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/pipeline.py"]
-oracle_nodeid = "tests/test_data_factory.py::test_make_source_pipeline_kind"
 
 [[unit]]
 module = "hwpxfiller.data.secret_store"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/secret_store.py"]
-oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_ledger_records_marker_evidence"
 
 [[unit]]
 module = "hwpxfiller.viewmodel"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/__init__.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.domain.text_template"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/domain/text_template.py"]
-oracle_nodeid = "tests/test_text_registry.py"
 
 [[unit]]
 module = "hwpxfiller.external.output_files"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/external/output_files.py"]
-oracle_nodeid = "tests/test_headless_generation.py::test_second_run_asks_to_overwrite_and_overwrite_rewrites"
 
 [[unit]]
 module = "hwpxfiller.external.template_files"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/external/template_files.py"]
-oracle_nodeid = "tests/test_webapp_template.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.compile_badge"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/compile_badge.py"]
-oracle_nodeid = "tests/test_compile_badge.py::test_every_compile_state_has_label_and_level"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.edit_session"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/edit_session.py"]
-oracle_nodeid = "tests/test_edit_session.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.file_filters"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/file_filters.py"]
-oracle_nodeid = "tests/test_file_filters.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.filter_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/filter_state.py"]
-oracle_nodeid = "tests/test_filter_state.py::test_apply_state_partial_column_loss"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.home_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/home_state.py"]
-oracle_nodeid = "tests/test_dataset_pool_state.py::test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.job_editor_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/job_editor_state.py"]
-oracle_nodeid = "tests/test_job_editor_state.py::test_overwrite_confirm_only_when_covering_another_job"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.mapping_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/mapping_state.py"]
-oracle_nodeid = "tests/test_job_editor_state.py::test_all_fields_declared_empty_is_savable_but_a_void_row_is_not"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.record_range"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/record_range.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.result_errors"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/result_errors.py"]
-oracle_nodeid = "tests/test_cli.py::test_fill_notes_surface_on_stderr_once_per_batch"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.review_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/review_state.py"]
-oracle_nodeid = "tests/test_review_state.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.run_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/run_state.py"]
-oracle_nodeid = "tests/test_run_state.py::test_data_input_is_explicit_and_vm_owns_no_data"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.selection_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/selection_state.py"]
-oracle_nodeid = "tests/test_selection_state.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.slice_assist"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/slice_assist.py"]
-oracle_nodeid = "tests/test_slice_assist.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.template_manager_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/template_manager_state.py"]
-oracle_nodeid = "tests/test_compile_badge.py::test_template_manager_rows_derive_from_single_source"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.tutorial_lessons"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/tutorial_lessons.py"]
-oracle_nodeid = "tests/test_webapp_tutorial.py::test_new_lessons_restart_keeps_completion_but_clears_round_evidence"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.tutorial_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/tutorial_state.py"]
-oracle_nodeid = "tests/test_tutorial_state.py::test_every_milestone_transitions_exactly_once"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.txt_card"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/txt_card.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.txt_card_diff"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/txt_card_diff.py"]
-oracle_nodeid = "tests/test_txt_card_edit.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.txt_card_edit"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/txt_card_edit.py"]
-oracle_nodeid = "tests/test_txt_card_edit.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.txt_queue"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/txt_queue.py"]
-oracle_nodeid = "tests/test_txt_queue.py::test_advance_to_next_uncopied_is_opt_in"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.work_candidates"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/work_candidates.py"]
-oracle_nodeid = "tests/test_webapp_job.py"
 
 [[unit]]
 module = "hwpxfiller.viewmodel.work_mode"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/work_mode.py"]
-oracle_nodeid = "tests/test_webapp_workbench.py"
 
 [[unit]]
 module = "hwpxfiller.naming"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/naming.py"]
-oracle_nodeid = "tests/test_naming.py"
 
 [[unit]]
 module = "hwpxfiller.web_artifact"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/web_artifact.py"]
-oracle_nodeid = "tests/_press_probe.py"
 
 [[unit]]
 module = "hwpxfiller.webapp"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/__init__.py"]
-oracle_nodeid = "tests/test_boot_budget.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.__main__"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/__main__.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.action_registry"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/action_registry.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py::test_unknown_screen_action_and_payload_are_rejected_loudly"
 
 [[unit]]
 module = "hwpxfiller.webapp.app"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/app.py"]
-oracle_nodeid = "tests/test_webapp_bridge.py::test_native_close_guard_allows_clean_and_blocks_armed_session"
 
 [[unit]]
 module = "hwpxfiller.webapp.blocker_affordance"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/blocker_affordance.py"]
-oracle_nodeid = "tests/repo_contract/test_blocker_affordance_registry.py::test_every_blocker_declares_an_affordance"
 
 [[unit]]
 module = "hwpxfiller.webapp.boot_budget"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/boot_budget.py"]
-oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
 
 [[unit]]
 module = "hwpxfiller.webapp.data_zone"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/data_zone.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.registered_data"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/registered_data.py"]
-oracle_nodeid = "tests/test_webapp_editor_sheet_tabs.py::test_registered_pclm_defaults_preserve_existing_order"
 
 [[unit]]
 module = "hwpxfiller.webapp.active_work_session"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/active_work_session.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.artifact_view_session"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/artifact_view_session.py"]
-oracle_nodeid = "tests/test_webapp_job_artifact_view.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.document_run_coordinator"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/document_run_coordinator.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.editor_presentation"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/editor_presentation.py"]
-oracle_nodeid = "tests/test_webapp_editor.py::test_sequence_example_reads_the_token_not_the_rendered_names"
 
 [[unit]]
 module = "hwpxfiller.webapp.editor_session"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/editor_session.py"]
-oracle_nodeid = "tests/test_webapp_editor.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.editor_sources"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/editor_sources.py"]
-oracle_nodeid = "tests/test_webapp_editor.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.editor_transitions"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/editor_transitions.py"]
-oracle_nodeid = "tests/test_webapp_editor.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.job_list"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_list.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.job_presentation"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_presentation.py"]
-oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.job_execution_session"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_execution_session.py"]
-oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.live_run"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/live_run.py"]
-oracle_nodeid = "tests/test_live_run_contract.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.managed_run_result"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/managed_run_result.py"]
-oracle_nodeid = "tests/test_webapp_job_binding_review.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.output_folder_zone"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/output_folder_zone.py"]
-oracle_nodeid = "tests/test_output_folder_zone.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.pool_column"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/pool_column.py"]
-oracle_nodeid = "tests/test_webapp_pool_column.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.product_api"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/product_api.py"]
-oracle_nodeid = "tests/test_web_product_api.py::test_facade_absent_is_its_own_type_and_not_a_descriptor_error"
 
 [[unit]]
 module = "hwpxfiller.webapp.authoring_proposal"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/authoring_proposal.py"]
-oracle_nodeid = "tests/test_webapp_authoring_proposal.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_authoring"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_authoring.py"]
-oracle_nodeid = "tests/test_webapp_authoring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_editor"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_editor.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_job"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_job.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_library"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_library.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_pool"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_pool.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_template"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_template.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding.py"]
-oracle_nodeid = "tests/test_tutorial_walk.py::test_lesson_one_walks_single_actions_to_three_documents"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_match_editor"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_match_editor.py"]
-oracle_nodeid = "tests/test_webapp_tutorial.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_match_results"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_match_results.py"]
-oracle_nodeid = "tests/test_webapp_tutorial.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_guide"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_guide.py"]
-oracle_nodeid = "tests/test_tutorial_lessons_contract.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_match_authoring"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_match_authoring.py"]
-oracle_nodeid = "tests/test_tutorial_walk.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_seed"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_seed.py"]
-oracle_nodeid = "tests/test_tutorial_lessons_contract.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_practice"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_practice.py"]
-oracle_nodeid = "tests/test_tutorial_sandbox.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.onboarding_settings"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/onboarding_settings.py"]
-oracle_nodeid = "tests/test_webapp_tutorial_entry_visible.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.workspace_graph"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/workspace_graph.py"]
-oracle_nodeid = "tests/test_tutorial_sandbox.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.workspace_switch"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/workspace_switch.py"]
-oracle_nodeid = "tests/test_tutorial_sandbox.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_tutorial"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_tutorial.py"]
-oracle_nodeid = "tests/test_webapp_tutorial.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.tutorial_loop"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/tutorial_loop.py"]
-oracle_nodeid = "tests/test_webapp_tutorial.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_workbench"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_workbench.py"]
-oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screens"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screens.py"]
-oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.selftest_api"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/selftest_api.py"]
-oracle_nodeid = "tests/test_selftest_api.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.selftest_runner"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/selftest_runner.py"]
-oracle_nodeid = "tests/test_live_run_contract.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.slot_configuration_product"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/slot_configuration_product.py"]
-oracle_nodeid = "tests/test_slot_configuration_product.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.template_groups"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/template_groups.py"]
-oracle_nodeid = "tests/test_template_groups.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.workbench_observation_product"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/workbench_observation_product.py"]
-oracle_nodeid = "tests/test_webapp_job_slot_configuration.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.txt_materialization"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/txt_materialization.py"]
-oracle_nodeid = "tests/test_txt_materialization.py"

@@ -54,12 +54,19 @@ def _with_call_line(func: ast.FunctionDef, target: str) -> int | None:
     return min(lines) if lines else None
 
 
-# ── apply 가 PerWorkFence 를 획득 ─────────────────────────────────────────────────
-def test_apply_acquires_work_fence() -> None:
-    # R2-05b: ProfileFence 제거로 public Apply 는 PerWorkFence 하나만 획득한다.
+# ── public Apply 가 WorkFence 아래에서 helper 를 호출 ──────────────────────────
+def test_public_apply_acquires_fence_and_wires_helper() -> None:
     apply = _func(_tree(RUNNER), "apply_prepared_change")
     work_line = _with_call_line(apply, "per_work_mutation_fence")
     assert work_line is not None, "public Apply 가 WorkFence 를 획득하지 않는다"
+    under_fence_calls = [
+        call
+        for call in ast.walk(apply)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "apply_prepared_change_under_fence"
+    ]
+    assert under_fence_calls, "apply 가 under-fence helper 를 호출하지 않는다"
 
 
 # ── WorkFence·Store lease 가 shared lock-order ledger 에 참여 ─────────────────────
@@ -91,19 +98,3 @@ def test_lock_order_guards_from_host_module() -> None:
     # (work_fence_order_guard 는 per_work_fence 가 직접 소유하므로 import census 대상이 아니다).
     assert "per_work_mutation_fence" in _imports_from(RUNNER, FENCE_MODULE)
     assert "store_lease_order_guard" in _imports_from(WORK_STORE, FENCE_MODULE)
-
-
-# ── public Apply call path 가 under-fence helper 를 배선한다 ─────────────────────────
-def test_public_apply_wires_under_fence_helper() -> None:
-    # public apply 는 PerWorkFence 아래에서 under-fence helper 를 호출한다(admission gate 없이 exact
-    # qualification evidence 로 fail-closed — R2-05a 로 mutable admission, R2-05b 로 ProfileFence 제거).
-    tree = _tree(RUNNER)
-    apply = _func(tree, "apply_prepared_change")
-    under_fence_calls = [
-        call
-        for call in ast.walk(apply)
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Name)
-        and call.func.id == "apply_prepared_change_under_fence"
-    ]
-    assert under_fence_calls, "apply 가 under-fence helper 를 호출하지 않는다"

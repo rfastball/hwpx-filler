@@ -5,9 +5,8 @@ S5-02..05 는 semantic payload 와 stable ordering 을 고정했다. 이 slice �
 1. **closed byte framing set** — :mod:`hwpxfiller.domain.canonical_execution_encoding` 가 capture·
    basis·Plan digest 의 단일 byte framing 이다(각 slice 의 ``# ponytail:`` content_digest 자리를
    대신한다). 이 모듈은 그 encoder 로 basis·Plan·contract-set·qualification digest 를 낸다.
-2. **immutable ExecutionContractSet** — issue 가 열거한 12 contract 역할 + theorem evidence digest
-   를 하나의 closed manifest 로 묶는다. unknown → latest fallback 금지, 같은 schema version 의 의미
-   수정 금지, 과거 manifest 삭제 금지(append-only registry).
+2. **immutable ExecutionContractSet** — contract 역할과 기존 직렬화 composition fingerprint 를
+   하나의 closed manifest 로 묶는다. unknown → latest fallback 금지.
 3. **Plan identity 계약** — ``plan_semantic_digest`` framing + ``PlanCompilationKey`` functional
    dependency(같은 key → 최대 1 plan digest) + Plan decode 시 nested digest 재계산 검증.
 
@@ -39,9 +38,7 @@ from hwpxfiller.application.execution_compilation import (
     required_source_key_set_digest,
 )
 from hwpxfiller.application.execution_composition import (
-    DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-    TheoremEvidenceRegistry,
-    theorem_evidence_digest,
+    composition_fingerprint,
 )
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
@@ -197,42 +194,19 @@ def build_execution_contract_set(
     materialization_base_contract_id: str,
     materialization_contract_id: str,
     composition_theorem_evidence_manifest_digest: str,
-    theorem_registry: "TheoremEvidenceRegistry | None" = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> ExecutionContractSet:
-    """모든 contract 역할을 exact 하게 결속해 closed set 을 만든다(fail-closed).
-
-    theorem/base 결속을 실측한다: materialization base 는 admitted base contract 여야 하고,
-    ``composition_theorem_evidence_manifest_digest`` 는 (composition, native primitive) 로 registry 가
-    resolve 한 canonical theorem evidence digest 와 정확히 일치해야 한다 — 미등록 pair 는 latest 로
-    fallback 하지 않고 registry.resolve 가 시끄럽게 닫는다.
-
-    R2-01(#740): ``theorem_registry=None`` 은 theorem runtime bureaucracy 결합을 끊은 semantic
-    kernel 용 opt-out 이다 — registry 를 consult 하지 않고 caller 가 신뢰하는 digest 를 그대로
-    싣는다(digest 는 여전히 nonempty). 결과 ExecutionContractSet 은 registry 검증 경로와 **byte
-    동일**하다(검증만 생략, 구성값 동일). 기존 caller 는 default registry 로 종전대로 검증한다.
-    """
+    """Exact contract roles, supported composition pair, and serialized fingerprint."""
     if materialization_base_contract_id != MATERIALIZATION_BASE_CONTRACT_ID:
         raise ExecutionContractSetIntegrityError(
             f"materialization base contract 가 admitted base 가 아니다(latest fallback 없음): "
             f"{materialization_base_contract_id!r}"
         )
-    if theorem_registry is not None:
-        # theorem evidence 는 (composition, native primitive) 로 registry 가 resolve — 미등록은 fail-closed.
-        registered = theorem_registry.resolve(
-            composition_contract_id, native_primitive_contract_id
-        )
-        if theorem_evidence_digest(registered) != _require_nonempty(
-            composition_theorem_evidence_manifest_digest,
-            "composition_theorem_evidence_manifest_digest",
-        ):
-            raise ExecutionContractSetIntegrityError(
-                "composition_theorem_evidence_manifest_digest 가 등록된 theorem evidence 와 불일치"
-            )
-    else:
-        # registry 미consult(kernel opt-out) — digest 는 caller 신뢰값이되 비어 있을 수 없다(fail-closed).
-        _require_nonempty(
-            composition_theorem_evidence_manifest_digest,
-            "composition_theorem_evidence_manifest_digest",
+    expected_fingerprint = composition_fingerprint(
+        composition_contract_id, native_primitive_contract_id
+    )
+    if composition_theorem_evidence_manifest_digest != expected_fingerprint:
+        raise ExecutionContractSetIntegrityError(
+            "composition fingerprint 가 supported contract pair 와 불일치"
         )
     roles = {
         "slot_selection_contract_id": _require_nonempty(
@@ -285,34 +259,6 @@ def build_execution_contract_set(
         contract_set_manifest_digest=canonical_execution_digest(manifest_payload),
         **roles,
     )
-
-
-class ExecutionContractSetRegistry:
-    """schema version → closed manifest 의 append-only registry. unknown → latest fallback 없음.
-
-    같은 schema version 에 다른 manifest 를 등록하면(=같은 ID 의 의미 수정) 거절한다. 과거 manifest 를
-    삭제/자동 대체하지 않는다.
-    """
-
-    def __init__(self) -> None:
-        self._by_schema: dict[str, ExecutionContractSet] = {}
-
-    def register(self, contracts: ExecutionContractSet) -> None:
-        key = contracts.contract_set_schema_version
-        existing = self._by_schema.get(key)
-        if existing is not None and existing != contracts:
-            raise ExecutionContractSetIntegrityError(
-                f"contract set schema {key!r} 의 의미 수정 금지 — 이미 다른 manifest 등록됨"
-            )
-        self._by_schema[key] = contracts
-
-    def resolve(self, contract_set_schema_version: str) -> ExecutionContractSet:
-        contracts = self._by_schema.get(contract_set_schema_version)
-        if contracts is None:
-            raise ExecutionContractSetIntegrityError(
-                f"미등록 contract set schema(latest fallback 없음): {contract_set_schema_version!r}"
-            )
-        return contracts
 
 
 # ─── Qualification Profile semantic digest ────────────────────────────────────────────

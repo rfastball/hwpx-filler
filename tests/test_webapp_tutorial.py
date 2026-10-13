@@ -26,7 +26,7 @@ from _output_folder_pick import pick_output_folder
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job, rules_fingerprints
+from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
@@ -624,7 +624,6 @@ def _job_controller(
                 FieldMapping(template_field="추정가격", source="presmptPrce"),
             ]),
             filename_pattern=f"{name}-{{{{seq:001}}}}",
-            binding_authority=JOB_MAPPING_AUTHORITY,
             **binding,
         )
         job.reviewed_rules = rules_fingerprints(job)
@@ -810,13 +809,13 @@ def test_generation_from_a_template_compiled_in_this_session(tmp_path):
     assert str(Milestone.GENERATE_FROM_COMPILED) in seen
 
 
-def test_new_lessons_invite_once_and_ignore_legacy_progress(tmp_path, monkeypatch):
+def test_new_lessons_invite_once_and_rejects_invalid_progress(tmp_path, monkeypatch):
     from hwpxfiller.viewmodel.tutorial_lessons import LessonProgress
     from hwpxfiller.webapp.onboarding import first_launch_candidate
 
     new_home = tmp_path / "new"
     assert first_launch_candidate(new_home)
-    state = LessonProgress({"achieved": ["T0", "T17"], "dismissed": False}, first_launch=True)
+    state = LessonProgress({}, first_launch=True)
     assert state.snapshot()["invitation"]["visible"]
     assert not any(row["completed"] for row in state.snapshot()["scenarios"])
     state.later()

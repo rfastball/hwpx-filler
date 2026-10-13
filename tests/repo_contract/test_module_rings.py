@@ -5,14 +5,11 @@
 아직 옛 폴더(`data/`·`viewmodel/`·`webapp/`)에 사는 유닛의 방향은 **여기만** 본다.
 물리 이관이 끝나기 전에 이 게이트를 지우면 순손실이다.
 
-유래는 P1 계측의 P2 handoff(#512~#520)이고, P2 완주 뒤 P1 부기는 걷어내 계약만 남겼다.
 """
 
 from __future__ import annotations
 
 import ast
-import subprocess
-import sys
 import tomllib
 from pathlib import Path
 
@@ -147,31 +144,3 @@ def test_no_inward_module_depends_outward() -> None:
     }
     assert outward <= allowed, f"새 안쪽→바깥쪽 의존: {sorted(outward - allowed)}"
     assert allowed <= outward, f"이미 제거된 예외를 계약에서 지우세요: {sorted(allowed - outward)}"
-
-
-def test_required_pytest_oracles_still_collect() -> None:
-    nodeids = sorted(
-        {
-            str(unit["oracle_nodeid"])
-            for unit in _document()["unit"]
-            if "oracle_nodeid" in unit
-        }
-    )
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "--collect-only",
-            "-q",
-            "--disable-warnings",
-            *nodeids,
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr

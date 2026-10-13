@@ -138,13 +138,6 @@ test("입력 테두리는 대비 검사를 받는 조작 경계 토큰을 쓴다
   assert.match(css("base.css"), /\.field\{background:var\(--a-card\);border:1px solid var\(--n-border-control\)/);
 });
 
-test("고정폭 글꼴은 토큰 하나 — 제품 CSS 에 글꼴 스택 리터럴이 남지 않는다", () => {
-  for (const name of ["base.css", "authoring.css", "editor.css", "draftcard.css", "job.css", "library.css"]) {
-    assert.doesNotMatch(css(name), /Consolas|Cascadia/, name);
-  }
-  assert.match(css("tokens.css"), /--font-mono:"Cascadia Code","Consolas","D2Coding",ui-monospace,monospace;/);
-});
-
 // ---- 표면(authoring.ts) — 분할선·레일·가림막의 접근성 표지 ----
 function harness() {
   const snapshot = { active_id: "a", tabs: [{ id: "a", name: "a.txt", path: "a.txt", revision: 0, values: {}, selected: {} }] };

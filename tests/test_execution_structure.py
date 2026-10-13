@@ -46,19 +46,11 @@ from hwpxfiller.application.execution_structure import (
 from hwpxfiller.application.qualification_evidence import (
     StructureProjection,
     content_digest,
-    project_structure,
-)
-from hwpxfiller.application.slot_configuration_context import (
-    DEFAULT_STRUCTURE_DECODER_REGISTRY,
 )
 from hwpxfiller.application.template_qualification import (
     TemplateOption,
     TemplateSlot,
     TemplateStructure,
-)
-from hwpxfiller.domain.slot_selection import (
-    DEFAULT_SELECTION_SEMANTIC_REGISTRY,
-    SelectionSemanticBindingKey,
 )
 
 # ── 공용 fixture 재료 ──────────────────────────────────────────────────────────────
@@ -160,14 +152,6 @@ def _relation(struct):
 
 
 # ── schema / determinism ──────────────────────────────────────────────────────────
-def test_product_structure_v1_lossless() -> None:
-    struct = _base_structure()
-    # v2 product_structure 는 v1 project_structure payload 와 정확히 같은 shape·순서.
-    v1_payload = project_structure(struct.product_structure, "hwpx-structure-projection-v1").payload
-    v2_product = encode_execution_structure(struct)["product_structure"]
-    assert v2_product == dict(v1_payload)
-
-
 def test_repeated_field_occurrence_ordinal_and_order() -> None:
     struct = _base_structure()
     occ = [o for o in struct.field_occurrences if o.field_id == "성명"]
@@ -542,21 +526,7 @@ def test_classify_span_relation_direct() -> None:
     assert classify_span_relation((0, 20), (10, 30)) == CROSSING
 
 
-# ── additive compatibility ─────────────────────────────────────────────────────────
-def test_projection_v1_bytes_and_evidence_unchanged() -> None:
-    struct = TemplateStructure(root_fields=("성명",), slots=())
-    v1 = project_structure(struct, "hwpx-structure-projection-v1")
-    # v1 payload 는 v2 키를 얻지 않는다(무변경).
-    assert set(v1.payload) == {"root_fields", "slots"}
-    assert "product_structure" not in v1.payload
-    assert v1.payload_digest == content_digest(v1.payload)
-    # v1 selection binding 도 그대로 slot-selection/v1.
-    v1_key = SelectionSemanticBindingKey(
-        "hwpx-template-qualification-v1", "hwpx-structure-projection-v1"
-    )
-    assert DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(v1_key).contract_id == "slot-selection/v1"
-
-
+# ── execution profile ──────────────────────────────────────────────────────────────
 def test_new_profile_emits_v2() -> None:
     manifest = build_execution_manifest(
         media="hwpx",
@@ -567,52 +537,6 @@ def test_new_profile_emits_v2() -> None:
     )
     assert manifest.projection_schema_version == EXECUTION_STRUCTURE_PROJECTION_SCHEMA
     assert manifest.qualification_profile_id == EXECUTION_QUALIFICATION_PROFILE_ID
-
-
-def test_s4_decoder_reads_product_structure_from_v2() -> None:
-    struct = _base_structure()
-    projection = execution_pass_projection(struct)
-    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(EXECUTION_STRUCTURE_PROJECTION_SCHEMA)
-    assert decoder(projection.payload) == struct.product_structure
-
-
-def test_v2_decoder_rejects_missing_product_structure() -> None:
-    from hwpxfiller.application.slot_configuration_context import (
-        TemplateStructureIntegrityError,
-    )
-
-    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(EXECUTION_STRUCTURE_PROJECTION_SCHEMA)
-    with pytest.raises(TemplateStructureIntegrityError):
-        decoder({"field_occurrences": []})
-
-
-def test_new_profile_v2_binding_returns_slot_selection_v1() -> None:
-    key = SelectionSemanticBindingKey(
-        EXECUTION_QUALIFICATION_PROFILE_ID, EXECUTION_STRUCTURE_PROJECTION_SCHEMA
-    )
-    assert DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(key).contract_id == "slot-selection/v1"
-    # unknown pair 는 latest 로 풀리지 않는다.
-    from hwpxfiller.domain.slot_selection import (
-        UnsupportedSelectionSemanticContractError,
-    )
-
-    with pytest.raises(UnsupportedSelectionSemanticContractError):
-        DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(
-            SelectionSemanticBindingKey("ghost", EXECUTION_STRUCTURE_PROJECTION_SCHEMA)
-        )
-
-
-def test_v2_binding_reuses_v1_manifest_identity() -> None:
-    v1_key = SelectionSemanticBindingKey(
-        "hwpx-template-qualification-v1", "hwpx-structure-projection-v1"
-    )
-    v2_key = SelectionSemanticBindingKey(
-        EXECUTION_QUALIFICATION_PROFILE_ID, EXECUTION_STRUCTURE_PROJECTION_SCHEMA
-    )
-    # 같은 slot-selection/v1 semantic — S4 selection 의미를 그대로 재사용.
-    assert DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(
-        v1_key
-    ) == DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(v2_key)
 
 
 def test_new_profile_admission_state_not_auto_created() -> None:
@@ -630,40 +554,6 @@ def test_new_profile_admission_state_not_auto_created() -> None:
 
 
 # ── seal / manifest integrity ──────────────────────────────────────────────────────
-def test_old_profile_v1_is_not_sealable() -> None:
-    from hwpxfiller.application.execution_structure import build_execution_manifest  # noqa: F401
-    from hwpxfiller.application.qualification_evidence import build_manifest
-
-    v1_manifest = build_manifest(
-        qualification_profile_id="hwpx-template-qualification-v1",
-        media="hwpx",
-        adapter_contract_version="hwpx-inspection-v1",
-        product_rule_version="hwpx-qualification-rules-v1",
-        operation_alphabet_version="hwpx-operations-v1",
-        projection_schema_version="hwpx-structure-projection-v1",
-        manifest_payload={},
-        created_at="t",
-    )
-    v2_projection = execution_pass_projection(_base_structure())
-    with pytest.raises(ExecutionProfileNotSealable):
-        seal_execution_profile(v1_manifest, v2_projection)
-
-
-def test_v2_manifest_with_v1_projection_not_sealable() -> None:
-    manifest = build_execution_manifest(
-        media="hwpx",
-        adapter_contract_version="a",
-        product_rule_version="p",
-        operation_alphabet_version="o",
-        created_at="t",
-    )
-    v1_projection = StructureProjection(
-        "hwpx-structure-projection-v1", {"x": 1}, content_digest({"x": 1})
-    )
-    with pytest.raises(ExecutionProfileNotSealable):
-        seal_execution_profile(manifest, v1_projection)
-
-
 def test_seal_v2_pair_succeeds() -> None:
     manifest = build_execution_manifest(
         media="hwpx",

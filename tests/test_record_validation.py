@@ -28,8 +28,7 @@ from hwpxfiller.application.execution_compilation import (
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    THEOREM_EVIDENCE_V1,
-    theorem_evidence_digest,
+    COMPOSITION_FINGERPRINT_HWPX,
 )
 from hwpxfiller.application.execution_contract_set import (
     ExecutionBasis,
@@ -53,13 +52,11 @@ from hwpxfiller.application.record_validation import (
     UNSUPPORTED_RECORD_REVIEW_CONTRACT,
     UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
     UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
-    ImmutableVdrStore,
     CurrentValidatedDataRecord,
     RecordValidationBlocked,
     RecordValidationContextError,
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
-    VdrRetentionError,
     marked_missing_fields,
     missing_value_marker,
     validate_data_record_against_plan,
@@ -80,7 +77,7 @@ from hwpxfiller.domain.raw_data_record import (
 )
 
 _POLICY_ID = "document-content-value/v1"
-_THEOREM = theorem_evidence_digest(THEOREM_EVIDENCE_V1)
+_THEOREM = COMPOSITION_FINGERPRINT_HWPX
 _PROV = RawRecordCaptureProvenance(
     source_adapter_contract_id="excel-adapter/v1", captured_at="2026-01-01T00:00:00+09:00"
 )
@@ -887,24 +884,8 @@ def test_constant_with_a_slice_is_context_error() -> None:
 
 
 # ─── immutable VDR ref / retention ───────────────────────────────────────────────────────
-def test_vdr_store_content_addressed_resolve_and_idempotent() -> None:
-    store = ImmutableVdrStore()
-    vdr = _validate()
-    ref = store.put(vdr)
-    assert ref == vdr.validated_record_digest
-    assert store.put(vdr) == ref  # create-once idempotent
-    resolved = store.resolve(ref)
-    assert resolved.canonical_payload_bytes == vdr.canonical_payload_bytes
 
 
-def test_vdr_store_rejects_tampered_and_unknown_ref() -> None:
-    store = ImmutableVdrStore()
-    vdr = _validate()
-    tampered = dataclasses.replace(vdr, validated_record_digest="sha256:wrong")
-    with pytest.raises(VdrRetentionError):
-        store.put(tampered)  # digest ≠ bytes 재계산
-    with pytest.raises(VdrRetentionError):
-        store.resolve("sha256:does-not-exist")
 
 
 # ─── Codex 리뷰: 미지원 version/contract 는 v1 로 풀지 않고 fail-closed (findings 1~6·9) ────────

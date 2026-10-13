@@ -164,25 +164,49 @@ _MEASURE = """() => {
 }"""
 
 
-def _render(width: int, height: int, scale: str, app_style: str = "") -> dict:
+@pytest.fixture(scope="module")
+def chrome_browser():
     from playwright.sync_api import sync_playwright
 
-    from _press_probe import _built_css_path, _loopback_document
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="chrome")
+        try:
+            yield browser
+        finally:
+            browser.close()
+
+
+def _measure_page(browser, url: str, width: int, height: int,
+                  script: str, *, forced_colors: str | None = None, wait_ms: int = 120) -> dict:
+    options = {"viewport": {"width": width, "height": height}}
+    if forced_colors is not None:
+        options["forced_colors"] = forced_colors
+    context = browser.new_context(**options)
+    try:
+        page = context.new_page()
+        page.goto(url, wait_until="networkidle")
+        if wait_ms:
+            page.wait_for_timeout(wait_ms)
+        return page.evaluate(script)
+    finally:
+        context.close()
+
+
+def _measure_document(browser, html: str, artifact_id: str, width: int, height: int, script: str) -> dict:
+    from _press_probe import _loopback_document
+
+    with _loopback_document(html) as (url, served_artifact_id):
+        assert served_artifact_id == artifact_id
+        return _measure_page(browser, url, width, height, script)
+
+
+def _render(browser, width: int, height: int, scale: str, app_style: str = "") -> dict:
+    from _press_probe import _built_css_path
 
     css_path, artifact_id = _built_css_path()
     rows = _OUTLINE_ROWS
     html = _SCAFFOLD.format(css_path=css_path, scale=scale, rows=rows, app_style=app_style, icon=_ICON)
-    with _loopback_document(html) as (url, served_artifact_id):
-        assert served_artifact_id == artifact_id
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
-            try:
-                page = browser.new_context(viewport={"width": width, "height": height}).new_page()
-                page.goto(url, wait_until="networkidle")
-                page.wait_for_timeout(120)
-                return page.evaluate(_MEASURE)
-            finally:
-                browser.close()
+    return _measure_document(browser, html, artifact_id, width, height, _MEASURE)
 
 
 #: 1028×740 은 CI live-webview2 창의 클라이언트 폭이다(1024 급 화면) — 구조가 기본으로 서야 하는 폭.
@@ -194,8 +218,8 @@ _CASES = [(width, height, scale) for width, height in ((1440, 900), (1028, 740),
 @pytest.mark.browser
 @pytest.mark.skipif(_GATE, reason=_REASON)
 @pytest.mark.parametrize(("width", "height", "scale"), _CASES)
-def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale: str) -> None:
-    m = _render(width, height, scale)
+def test_authoring_columns_scale_and_narrow_sheet(chrome_browser, width: int, height: int, scale: str) -> None:
+    m = _render(chrome_browser, width, height, scale)
     narrow = m["container"] <= 64 * m["root"] + 0.5   # 속성 시트
     rail = m["container"] <= 52 * m["root"] + 0.5     # 구조 레일(핵심 패널이라 더 좁을 때만)
     where = f"{width}x{height}@{scale} (root {m['root']}px, 작업대 {m['container']:.0f}px)"
@@ -257,10 +281,10 @@ def test_authoring_columns_scale_and_narrow_sheet(width: int, height: int, scale
 
 @pytest.mark.browser
 @pytest.mark.skipif(_GATE, reason=_REASON)
-def test_saved_width_is_rem_and_follows_font_scale() -> None:
+def test_saved_width_is_rem_and_follows_font_scale(chrome_browser) -> None:
     """분할선으로 맞춘 폭(기준 px 256 = 16rem)은 배율을 따라 자란다 — 125% 에서 320px."""
-    normal = _render(1440, 900, "normal", "--authoring-outline-w:16rem;--authoring-properties-w:20rem")
-    large = _render(1440, 900, "large", "--authoring-outline-w:16rem;--authoring-properties-w:20rem")
+    normal = _render(chrome_browser, 1440, 900, "normal", "--authoring-outline-w:16rem;--authoring-properties-w:20rem")
+    large = _render(chrome_browser, 1440, 900, "large", "--authoring-outline-w:16rem;--authoring-properties-w:20rem")
     assert normal["outline"]["width"] == pytest.approx(256, abs=0.5)
     assert large["outline"]["width"] == pytest.approx(320, abs=0.5)
     assert normal["properties"]["width"] == pytest.approx(320, abs=0.5)
@@ -293,25 +317,16 @@ _MEASURE_FORCED = """() => ({...Object.fromEntries(["field", "marker"].map((id) 
 
 @pytest.mark.browser
 @pytest.mark.skipif(_GATE, reason=_REASON)
-def test_lintpad_spans_stay_distinct_in_forced_colors() -> None:
-    from playwright.sync_api import sync_playwright
-
+def test_lintpad_spans_stay_distinct_in_forced_colors(chrome_browser) -> None:
     from _press_probe import _built_css_path, _loopback_document
 
-    css_path, _artifact = _built_css_path()
-    measured = {}
-    with _loopback_document(_FORCED.format(css_path=css_path)) as (url, _served):
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
-            try:
-                for mode in ("active", "none"):
-                    context = browser.new_context(viewport={"width": 800, "height": 400}, forced_colors=mode)
-                    page = context.new_page()
-                    page.goto(url, wait_until="networkidle")
-                    measured[mode] = page.evaluate(_MEASURE_FORCED)
-                    context.close()
-            finally:
-                browser.close()
+    css_path, artifact_id = _built_css_path()
+    html = _FORCED.format(css_path=css_path)
+    with _loopback_document(html) as (url, served_artifact_id):
+        assert served_artifact_id == artifact_id
+        measured = {mode: _measure_page(chrome_browser, url, 800, 400,
+                                        _MEASURE_FORCED, forced_colors=mode, wait_ms=0)
+                    for mode in ("active", "none")}
     active, plain = measured["active"], measured["none"]
     # 전제: 강제 색상은 그림자를 지운다 — 그래서 실보더가 필요하다.
     assert active["field"]["shadow"] == "none" and active["marker"]["shadow"] == "none", active
@@ -381,10 +396,9 @@ _MEASURE_TRIAL = """() => {
 }"""
 
 
-def _render_trial(width: int, height: int, scale: str, media: str, dock: str = "open", trial_open: bool = True) -> dict:
-    from playwright.sync_api import sync_playwright
-
-    from _press_probe import _built_css_path, _loopback_document
+def _render_trial(browser, width: int, height: int, scale: str, media: str,
+                  dock: str = "open", trial_open: bool = True) -> dict:
+    from _press_probe import _built_css_path
 
     css_path, artifact_id = _built_css_path()
     # 결과 칸 HTML 에는 중괄호가 없다 — 이어서 뼈대 전체를 한 번 format 한다({icon} 등).
@@ -393,17 +407,7 @@ def _render_trial(width: int, height: int, scale: str, media: str, dock: str = "
     shell = "authoring-shell" + (" dock-max" if dock == "max" else "") + (" trial-open" if trial_open else "")
     scaffold = scaffold.replace('<div class="authoring-shell">', f'<div class="{shell}">')
     html = scaffold.format(css_path=css_path, scale=scale, rows=_OUTLINE_ROWS, app_style="", icon=_ICON)
-    with _loopback_document(html) as (url, served_artifact_id):
-        assert served_artifact_id == artifact_id
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
-            try:
-                page = browser.new_context(viewport={"width": width, "height": height}).new_page()
-                page.goto(url, wait_until="networkidle")
-                page.wait_for_timeout(120)
-                return page.evaluate(_MEASURE_TRIAL)
-            finally:
-                browser.close()
+    return _measure_document(browser, html, artifact_id, width, height, _MEASURE_TRIAL)
 
 
 @pytest.mark.browser
@@ -411,11 +415,11 @@ def _render_trial(width: int, height: int, scale: str, media: str, dock: str = "
 @pytest.mark.parametrize(("width", "height"), [(1440, 900), (1366, 768), (1028, 740)])
 @pytest.mark.parametrize("scale", ["normal", "large"])
 @pytest.mark.parametrize("media", ["hwpx", "txt"])
-def test_trial_result_fills_the_dock(width: int, height: int, scale: str, media: str) -> None:
+def test_trial_result_fills_the_dock(chrome_browser, width: int, height: int, scale: str, media: str) -> None:
     """IDE-04(P-02): 결과 칸은 고정 20rem 이 아니라 독 패널의 남은 높이를 채운다 — 1440×900(물리 2518×1574)과
     1028×740 에서 독 패널 높이의 절반 이상이고, 상태 줄 바로 아래(스크롤 없이 윗변이 보인다)에 선다. 통과 범위 문장과
     접힌 구획은 결과 아래다. HWPX 결과 iframe 은 칸을 가득 채우고, TXT 결과는 칸 자체가 스크롤 상자다."""
-    m = _render_trial(width, height, scale, media)
+    m = _render_trial(chrome_browser, width, height, scale, media)
     where = f"{media} {width}x{height}@{scale}"
     panel, output, result = m["panel"], m["output"], m["result"]
     # 몸통 하한: 결과 시험 중인 낮은 창(≤820px)은 32vh, 그 밖은 40vh 그대로.
@@ -445,10 +449,10 @@ def test_trial_result_fills_the_dock(width: int, height: int, scale: str, media:
 @pytest.mark.browser
 @pytest.mark.skipif(_GATE, reason=_REASON)
 @pytest.mark.parametrize("media", ["hwpx", "txt"])
-def test_trial_result_grows_with_a_maximized_dock(media: str) -> None:
+def test_trial_result_grows_with_a_maximized_dock(chrome_browser, media: str) -> None:
     """IDE-04: 결과 칸은 고정 높이(옛 20rem)가 아니다 — 독을 최대화하면 보이는 출력 열을 끝까지 채우고, 통과 범위 문장과
     접힌 구획은 그 바로 아래(열 스크롤 한 번)에 선다."""
-    m = _render_trial(1440, 900, "normal", media, dock="max")
+    m = _render_trial(chrome_browser, 1440, 900, "normal", media, dock="max")
     assert m["result"]["height"] > 20 * m["root"], f"{media}: 최대화한 독에서 결과 칸이 자라지 않습니다 {m['result']}"
     assert abs(m["result"]["bottom"] - m["output"]["bottom"]) <= 12.5, f"{media}: 결과 칸이 보이는 열을 다 쓰지 않습니다 {m}"
     assert 0 < m["outputOverflow"] <= 8 * m["root"], f"{media}: 결과 아래 구획의 넘침이 예상 밖입니다({m['outputOverflow']}px)"
@@ -459,8 +463,8 @@ def test_trial_result_grows_with_a_maximized_dock(media: str) -> None:
 @pytest.mark.skipif(_GATE, reason=_REASON)
 @pytest.mark.parametrize(("width", "height", "trial_open", "floor"), [
     (1028, 740, True, 0.32), (1366, 768, True, 0.32), (1028, 740, False, 0.4), (1440, 900, True, 0.4)])
-def test_body_floor_drops_only_during_a_trial_in_short_windows(width: int, height: int, trial_open: bool, floor: float) -> None:
+def test_body_floor_drops_only_during_a_trial_in_short_windows(chrome_browser, width: int, height: int, trial_open: bool, floor: float) -> None:
     """IDE-04: 결과 시험 독이 몸통을 누르면 몸통은 하한에서 멈춘다 — 결과 시험 중(셸 trial-open)이고 창 높이가 820px 이하일
     때만 32vh, 셸 표지가 없거나 높은 창이면 40vh 그대로다."""
-    m = _render_trial(width, height, "normal", "hwpx", trial_open=trial_open)
+    m = _render_trial(chrome_browser, width, height, "normal", "hwpx", trial_open=trial_open)
     assert abs(m["body"]["height"] - floor * m["viewport"]) <= 1, (width, height, trial_open, m["body"], m["viewport"])

@@ -23,13 +23,12 @@ from hwpxfiller.application.execution_composition import (
     DEFAULT_RUNTIME_CONFORMANCE_REGISTRY,
     NATIVE_PRIMITIVE_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_V1,
-    THEOREM_EVIDENCE_V1,
     CompositionPremiseContextError,
     CompositionPremisesPassed,
     NativePrimitiveContractManifest,
     RuntimeMaterializerConformanceNotAdmitted,
     UnsupportedNativePrimitiveContract as CompositionUnsupportedNativePrimitiveContract,
-    verify_execution_composition_premises,
+    admit_composition_premises,
 )
 from hwpxfiller.domain.canonical_execution_encoding import CANONICAL_ENCODING_VERSION
 from hwpxfiller.external.materialization_conformance import (
@@ -142,9 +141,8 @@ def test_theorem_pass_but_actual_removal_fail_stays_independent() -> None:
     # 유효 plan(theorem PASS)인데 output 이 unselected option 을 제거하지 못한 경우.
     case = _build_case(_one_of_two())
     # theorem evidence 는 여전히 PASS 다(static admission).
-    comp = verify_execution_composition_premises(
+    comp = admit_composition_premises(
         structure=case.structure, native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(comp, CompositionPremisesPassed)
     # 그런데 actual output(=source, 아무것도 제거 안 함)은 conformance FAIL.
@@ -178,8 +176,8 @@ def test_wrong_native_primitive_contract_rejected_at_compile_boundary() -> None:
         envelope_postcondition_contract_id="x", intentional_blank_write_contract_id="x",
         primitive_semantics_version="1",
     )
-    result = verify_execution_composition_premises(
-        structure=case.structure, native_primitive_contract=bad, theorem_evidence=THEOREM_EVIDENCE_V1
+    result = admit_composition_premises(
+        structure=case.structure, native_primitive_contract=bad
     )
     assert isinstance(result, CompositionPremiseContextError)
     assert result.code == CompositionUnsupportedNativePrimitiveContract.code

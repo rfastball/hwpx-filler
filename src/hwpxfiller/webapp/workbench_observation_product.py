@@ -10,7 +10,7 @@ active Work·S4 content 선택 요약·orchestration 상태)을 :class:`Workbenc
 - ``data_scope``          — 데이터 마운트·record scope(:func:`data_scope_from_session`)
 - ``content_selection``   — S4 projection 이 이미 판정한 content 선택 요약(:func:`content_selection_from_view`)
 - ``active_work``         — active Work 식별(:func:`active_work_from_session`)
-- ``orchestration``       — controller 가 든 session-scoped :class:`AutomaticSealOrchestration`
+- ``orchestration``       — controller 세션의 실행 상태
 
 나머지 축(``admission``·``delivery``·``record_validation``·
 ``binding_review_needed``·``active_field_requirement_ids``·
@@ -31,7 +31,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from ..application.automatic_seal_orchestration import AutomaticSealOrchestration
 from ..application.document_creation_workbench import (
     ActiveWorkContext,
     ContentSelectionSummary,
@@ -48,8 +47,6 @@ from ..application.document_creation_workbench import (
 )
 from ..application.execution_compilation import (
     ACTIVE_FIELD_UNBOUND,
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     REQUIRED_SOURCE_KEY_MISSING,
 )
 from ..application.field_binding_input import INACTIVE_ONLY, PRESERVED
@@ -155,8 +152,6 @@ _BINDING_BLOCKERS = frozenset(
     (
         ACTIVE_FIELD_UNBOUND,
         REQUIRED_SOURCE_KEY_MISSING,
-        NEEDS_BINDING_SEMANTIC_MIGRATION,
-        NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     )
 )
 
@@ -205,7 +200,7 @@ def execution_verdicts_from_fresh(
 
     - :class:`CurrentSealedPlanObservation` — current Work 가 sealable 이다. admission/readiness 를
       그대로 shape 한다(예: NOT_ADMITTED + NOT_READY = S6 미출하 정상 종료). CURRENT 상태는 status
-      축에서 orchestration.SETTLED_CURRENT 가 나른다.
+      축에서 세션 CURRENT 상태가 나른다.
     - :class:`CurrentWorkExecutionObservation` — seal 불가, current Work 만 관찰됐다. sealability
       (DOMAIN_BLOCKED/POLICY_BLOCKED/CONTEXT_ERROR)를 7상태 축으로 나른다. admission 은 정직한
       NOT_ADMITTED(READY 과장 0).
@@ -276,7 +271,7 @@ class WorkbenchObservationProduct:
         # 때문이고, 미주입 조립이 조용히 「연결 필요」를 외치지 않게 하려는 것이다.
         active_work_data_bound: bool = True,
         slot_view: CurrentSlotConfigurationView | None,
-        orchestration: AutomaticSealOrchestration,
+        orchestration: str,
         fresh_observation: FreshExecutionObservation | None = None,
         active_field_requirement_ids: tuple[str, ...] = (),
         binding_review_needed: bool = False,
@@ -358,13 +353,13 @@ class WorkbenchObservationProduct:
     def execution_status(
         self,
         *,
-        orchestration: AutomaticSealOrchestration,
+        orchestration: str,
         fresh_observation: FreshExecutionObservation | None,
     ) -> tuple[str, str]:
         """작업대 execution status 7상태 (code, phrase) — verdict 로 파생(NO_EVIDENCE 정확).
 
         R2(#740): CURRENT/STALE/CHECKING/NO_EVIDENCE 는 orchestration 이, DOMAIN/POLICY/CONTEXT 는
-        fresh observation 이 나른다 — 증거 없음(orchestration IDLE)을 STALE 로 뭉개지 않는다. phrase
+        fresh observation 이 나른다 — 증거 없음(NO_EVIDENCE)을 STALE 로 뭉개지 않는다. phrase
         정본은 :data:`WORKBENCH_EXECUTION_STATUS_PHRASE`(#726 §3).
         """
         verdicts = execution_verdicts_from_fresh(fresh_observation)

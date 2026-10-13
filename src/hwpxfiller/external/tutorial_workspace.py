@@ -33,16 +33,6 @@ _ENTRY = "entry.json"
 MODIFIED_REASON = "연습 파일이 수정됐습니다. 현재 파일을 보존합니다."
 
 
-def _legacy_progress(raw: dict) -> dict:
-    """#1126 이전 기록에서 위치·완료만 가져온다 — 옛 연습 사본 경로(문맥)는 쓰지 않는다."""
-    records = raw.get("records") if isinstance(raw.get("records"), dict) else {}
-    assert isinstance(records, dict)
-    kept = {lesson: {"checkpoint": entry.get("checkpoint"), "completed": entry.get("completed")}
-            for lesson, entry in records.items() if isinstance(entry, dict)}
-    return {"version": raw.get("version"), "invite_seen": raw.get("invite_seen"),
-            "selected": raw.get("selected"), "records": kept}
-
-
 def _damaged_entry(detail: object) -> bool:
     settings.alert(f"튜토리얼 버튼 표시 설정 판독 실패 — 표시로 엽니다: {detail!r}")
     return True
@@ -60,7 +50,7 @@ class TutorialWorkspace:
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return _legacy_progress(settings.load_legacy_tutorial_lessons())
+            return {}
         except (OSError, ValueError) as exc:
             settings.alert(f"튜토리얼 학습 기록 판독 실패 — 처음 상태로 엽니다: {exc!r}")
             return {}

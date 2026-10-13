@@ -37,7 +37,6 @@ from hwpxfiller.application.execution_capture import (
     CapturedSelection,
     CaptureExecutionQualificationResult,
     CapturedTemplateExecutionInput,
-    DomainBlockedFieldBinding,
     DomainBlockedSelection,
     ExecutionCaptureContextError,
     ExecutionCaptureIntegrityError,
@@ -52,23 +51,13 @@ from hwpxfiller.application.execution_structure import (
     decode_execution_structure,
     template_structure_digest,
 )
-from hwpxfiller.domain.field_binding import is_current_field_binding_contract
 from hwpxfiller.application.field_binding_input import (
     CurrentApplicationFieldStructure,
-    BROKEN,
     FieldBindingApplicationReview,
     FieldBindingInputIntegrityError,
-    FieldBindingRevision,
-    FieldReviewClassification,
-    NEEDS_BINDING_SEMANTIC_MIGRATION,
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-    NEW_ACTIVE_FIELD,
-    build_field_binding_input,
-    review_basis_digest,
     review_field_binding_for_current_application,
-    revision_from_input,
 )
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.application.qualification_evidence import content_digest
 from hwpxfiller.application.seal_execution_plan import WorkExecutionSummary
 from hwpxfiller.application.slot_configuration_context import (
@@ -86,8 +75,7 @@ from hwpxfiller.application.work_slot_configuration import WorkSlotConfiguration
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
 from .candidate_store import CandidateObjectStore, CandidateStoreError
-from .field_binding_store import WorkFieldBindingStore, load_current_revision
-from .job_binding_projection import job_binding_input, mapping_rules, source_schema_keys
+from .job_binding_projection import job_binding_input
 from .qualification_store import QualificationObjectStore, QualificationStoreError
 from .work_configuration_store import (
     ConfigurationAggregateNotFound,
@@ -128,20 +116,10 @@ CONTEXT_ERROR_TYPES = (
 
 @dataclass(frozen=True)
 class CurrentFieldBindingReview:
-    """Exact current Active Field set plus the canonical Binding review.
-
-    ``prior_revision`` 은 review 가 실제로 대조한 그 판본이다(#877) — commit 이 비활성 Field 규칙을
-    보존하려면 분류와 **같은** 판본을 봐야 한다. ancestor Application 의 판본일 수 있으므로
-    호출자가 store 를 다시 뒤져 고르지 않는다(같은 상태의 두 판정 금지).
-    """
+    """Exact current Active Field set and Job Mapping review."""
 
     active_field_ids: tuple[str, ...]
     review: FieldBindingApplicationReview
-    prior_revision: FieldBindingRevision | None
-
-    @property
-    def has_prior_revision(self) -> bool:
-        return self.prior_revision is not None
 
 
 class _WorkStateReadAdapter:
@@ -171,41 +149,24 @@ class SealExecutionCaptureRunner:
         qualification_store: QualificationObjectStore,
         candidate_store: CandidateObjectStore,
         slot_config_store: WorkSlotConfigurationStore,
-        field_binding_store: WorkFieldBindingStore,
         clock: Callable[[], str],
-        job_for_work: Callable[[str], Job | None] | None = None,
+        job_for_work: Callable[[str], Job | None],
     ) -> None:
         self._work_state = work_state_store
         self._work_read = _WorkStateReadAdapter(work_state_store)
         self._qualification = qualification_store
         self._candidate = candidate_store
         self._slot_config = slot_config_store
-        self._field_binding = field_binding_store
         self._clock = clock
         self._job_for_work = job_for_work
 
-    def _job(self, work_id: str) -> Job | None:
-        if self._job_for_work is None:
-            return None  # isolated capture-runner tests retain the legacy S5 seam
+    def _job(self, work_id: str) -> Job:
         job = self._job_for_work(work_id)
         if job is None:
             raise ExecutionCaptureIntegrityError(f"Work {work_id!r} 의 Job 이 없습니다")
+        if job.authority_id != work_id:
+            raise ExecutionCaptureIntegrityError("Field Binding 의 Work identity 가 이동했습니다")
         return job
-
-    @staticmethod
-    def _legacy_conflicting_ids(job: Job, revision: FieldBindingRevision) -> tuple[str, ...]:
-        """An unmarked split save is never silently resolved in either direction."""
-        if not is_current_field_binding_contract(revision.field_binding_semantic_contract_id):
-            return ()  # the existing semantic-migration blocker owns outdated revisions
-        rules = {rule.field_id: rule for rule in mapping_rules(job)}
-        conflicts = tuple(
-            rule.field_id
-            for rule in revision.binding_rules
-            if rules.get(rule.field_id) != rule
-        )
-        if set(source_schema_keys(job.mapping)) != set(revision.source_schema_keys):
-            return tuple(dict.fromkeys((*conflicts, *(rule.field_id for rule in revision.binding_rules))))
-        return conflicts
 
     # ── fresh observation summary(fence 유무는 caller 가 안다) ──────────────────────
     def read_summary(
@@ -289,19 +250,12 @@ class SealExecutionCaptureRunner:
             aggregate = self._work_state.load(work_authority_id)
             application_id = aggregate.work.current_template_application_id
             job = job if job is not None else self._job(work_authority_id)
-            if job is not None and job.authority_id != work_authority_id:
-                raise ExecutionCaptureIntegrityError("Field Binding review 의 Work identity 가 이동했습니다")
-            if job is not None and job.binding_authority == JOB_MAPPING_AUTHORITY:
-                old_revision = revision_from_input(
-                    job_binding_input(job, workspace_instance_id, application_id, self._clock())
-                )
-            else:
-                old_revision = self._nearest_binding_revision(aggregate, application_id)
+            binding = job_binding_input(
+                job, workspace_instance_id, application_id, self._clock()
+            )
             schema_keys = source_schema_keys
             if schema_keys is None:
-                schema_keys = (
-                    old_revision.source_schema_keys if old_revision is not None else ()
-                )
+                schema_keys = binding.source_schema_keys
             current_structure = self.current_application_field_structure(
                 workspace_instance_id,
                 work_authority_id,
@@ -310,50 +264,10 @@ class SealExecutionCaptureRunner:
             if current_structure is None:
                 return None
             active_ids = current_structure.active_field_ids
-            if old_revision is not None:
-                review = review_field_binding_for_current_application(
-                    old_revision, current_structure
-                )
-                if job is not None and not job.binding_authority:
-                    conflicts = set(self._legacy_conflicting_ids(job, old_revision))
-                    if conflicts:
-                        review = FieldBindingApplicationReview(
-                            work_authority_id=review.work_authority_id,
-                            target_application_id=review.target_application_id,
-                            review_basis_digest=review.review_basis_digest,
-                            classifications=tuple(
-                                FieldReviewClassification(
-                                    item.field_id,
-                                    BROKEN if item.field_id in conflicts else item.category,
-                                )
-                                for item in review.classifications
-                            ),
-                        )
-            else:
-                review = FieldBindingApplicationReview(
-                    work_authority_id=work_authority_id,
-                    target_application_id=application_id,
-                    review_basis_digest=review_basis_digest(current_structure),
-                    classifications=tuple(
-                        FieldReviewClassification(field_id, NEW_ACTIVE_FIELD)
-                        for field_id in active_ids
-                    ),
-                )
-            return CurrentFieldBindingReview(active_ids, review, old_revision)
-
-    def _nearest_binding_revision(
-        self, aggregate: WorkTemplateStateAggregate, application_id: str
-    ) -> FieldBindingRevision | None:
-        applications = {item.application_id: item for item in aggregate.applications}
-        current_id: str | None = application_id
-        while current_id is not None:
-            revision = load_current_revision(
-                self._field_binding, aggregate.work.work_id, current_id
+            review = review_field_binding_for_current_application(
+                binding, current_structure
             )
-            if revision is not None:
-                return revision
-            current_id = applications[current_id].previous_application_id
-        return None
+            return CurrentFieldBindingReview(active_ids, review)
     # ── under-fence exact capture(Product 가 PerWorkFence 아래 부르는 injectable 포트) ─────
     def capture_execution(
         self,
@@ -498,43 +412,9 @@ class SealExecutionCaptureRunner:
         application_id: str, now: str,
     ):
         job = self._job(work_authority_id)
-        if job is not None and job.binding_authority == JOB_MAPPING_AUTHORITY:
-            return CapturedFieldBinding(
-                job_binding_input(job, workspace_instance_id, application_id, now)
-            )
-        revision = load_current_revision(self._field_binding, work_authority_id, application_id)
-        if revision is None:
-            return DomainBlockedFieldBinding(
-                NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-                "current Application 에 field binding revision 이 없다",
-            )
-        if not is_current_field_binding_contract(
-            revision.field_binding_semantic_contract_id
-        ):
-            # outdated 판(v2)은 legacy ``type`` 을 잃은 채라 규칙만으로는 표시형을 알 수 없고, v3 는
-            # 가공(v4)을, v4 는 v5 가 더한 가공을 실을 자리가 없다. 현재 판으로 다시 짓지 않고(그러면 표시형·가공 없음으로
-            # 조용히 읽힌다) 결속 축 blocker 로 닫는다. 명시적 편집기 저장이 현재 Job Mapping
-            # 권위를 세우면 풀린다.
-            return DomainBlockedFieldBinding(
-                NEEDS_BINDING_SEMANTIC_MIGRATION,
-                "현재 Field Binding 판본이 이전 판("
-                f"{revision.field_binding_semantic_contract_id})이라 표시형·가공을 다시 확정해야 한다",
-            )
-        if job is not None and self._legacy_conflicting_ids(job, revision):
-            return DomainBlockedFieldBinding(
-                NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
-                "저장된 Mapping과 이전 Field Binding 판본이 달라 명시적 편집기 저장이 필요합니다",
-            )
-        field_binding = build_field_binding_input(
-            workspace_instance_id=workspace_instance_id,
-            work_authority_id=revision.work_authority_id,
-            base_template_application_id=revision.base_template_application_id,
-            binding_rules=revision.binding_rules,
-            source_schema_keys=revision.source_schema_keys,
-            raw_record_contract_id=revision.raw_record_contract_id,
-            captured_at=now,
+        return CapturedFieldBinding(
+            job_binding_input(job, workspace_instance_id, application_id, now)
         )
-        return CapturedFieldBinding(field_binding)
 
 
 def context_error_code(exc: Exception) -> str:

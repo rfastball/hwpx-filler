@@ -131,7 +131,7 @@ def test_public_apply_holds_fence_before_delegating(monkeypatch: pytest.MonkeyPa
         _FakeStore(), None, None,
         workspace_instance_id="ws-app", work_id="W-app",
         change_id="C", actor="a", authorize=lambda _w, _a: None,
-        new_application_id="A", provenance_id="P", outbox_event_id="O", applied_at="t",
+        new_application_id="A", applied_at="t",
     )
     assert outcome == "sentinel-outcome"
     assert aggregate is _agg

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.domain.text_slice import text_slice_from_payload
 from hwpxfiller.domain.text_structure import scan_text_structure
@@ -97,7 +97,6 @@ class _Harness:
         self.registry.save(
             Job(
                 name="안내문", template_path=str(self.template), mapping=_profile(),
-                binding_authority=JOB_MAPPING_AUTHORITY,
             )
         )
         self.slot_product = SlotConfigurationProduct(

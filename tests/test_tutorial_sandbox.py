@@ -13,9 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY, Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
-from hwpxfiller.external import settings
 from hwpxfiller.external.tutorial_workspace import TutorialWorkspace
 from hwpxfiller.host import locations
 from hwpxfiller.viewmodel.tutorial_lessons import NOTICE_CONSTANTS
@@ -54,8 +53,7 @@ def _user_environment(app, tmp_path: Path) -> Job:
     data = tmp_path / "내 데이터.csv"
     data.write_text("이름\n가\n나\n", encoding="utf-8-sig")
     saved = Job(name="내 작업", template_path=str(template), data_path=str(data),
-                mapping=MappingProfile(mappings=[FieldMapping("이름", "이름")]),
-                binding_authority=JOB_MAPPING_AUTHORITY)
+                mapping=MappingProfile(mappings=[FieldMapping("이름", "이름")]))
     job.registry.save(saved)
     job.load_data_path(str(data))
     assert job.dispatch("prefer_work", {"name": saved.name})["promoted"]
@@ -234,23 +232,6 @@ def test_crash_in_practice_boots_into_user_environment_and_resumes(tmp_path, mon
     assert restarted._context()["home"] == lesson_home
     assert second._job_registry.names() == [job_name]
     assert restarted.snapshot()["checkpoint"] == 1 and restarted.snapshot()["practice"]["active"]
-
-
-def test_progress_lives_outside_user_settings_and_migrates_legacy_once(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
-    legacy = {"version": 1, "invite_seen": True, "selected": "first_hwpx", "records": {
-        "first_hwpx": {"checkpoint": 3, "completed": True, "context": {
-            "assets": {"물품 구매입찰 공고.hwpx": {"path": "C:/사용자/서식/옛 사본.hwpx"}}}}}}
-    home.mkdir()
-    (home / "settings.json").write_text(json.dumps({"tutorial": {"lessons": legacy}}), encoding="utf-8")
-    workspace = TutorialWorkspace()
-    migrated = workspace.load_progress()
-    assert migrated["records"]["first_hwpx"] == {"checkpoint": 3, "completed": True}
-    workspace.save_progress({"version": 1, "invite_seen": True, "selected": None, "records": {}})
-    assert workspace.load_progress()["records"] == {}
-    assert json.loads((home / "settings.json").read_text(encoding="utf-8")) == {"tutorial": {"lessons": legacy}}
-    assert settings.load_legacy_tutorial_lessons() == legacy
 
 
 def _capture_pushes(app, monkeypatch) -> list:

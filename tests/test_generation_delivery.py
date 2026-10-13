@@ -1,10 +1,4 @@
-"""S5-13(#709) exact batch output-name resolution + managed GenerationPlan bridge.
-
-filename-pattern/v1 target Field namespace 보존·Active VDR 재사용/inactive FieldBinding 해석·
-batch-level date/seq/suffix/ordinal(한 번만)·resolved relative path 결정성·canonical digest·
-ManagedGenerationPlan/MaterializationInput 경계·managed/legacy/continuation 분리·runtime admission seam
-을 본다. native write/Artifact/route cutover 는 하지 않는다(비범위).
-"""
+"""현행 생성 배달의 이름 해석, 충돌 처리, 입력 무결성 계약."""
 
 from __future__ import annotations
 
@@ -34,17 +28,15 @@ from hwpxfiller.application.execution_compilation import (
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    THEOREM_EVIDENCE_V1,
+    COMPOSITION_FINGERPRINT_HWPX,
     RuntimeMaterializerConformanceManifest,
     RuntimeMaterializerConformanceRegistry,
     runtime_conformance_digest,
-    theorem_evidence_digest,
 )
 from hwpxfiller.application.execution_contract_set import (
     ExecutionBasis,
     build_execution_contract_set,
     build_sealed_plan,
-    plan_semantic_digest,
 )
 from hwpxfiller.application.execution_semantic_kernel import (
     ExecutionContractSemantics,
@@ -52,7 +44,6 @@ from hwpxfiller.application.execution_semantic_kernel import (
 )
 from hwpxfiller.application.record_validation import (
     CurrentValidatedDataRecord,
-    ImmutableVdrStore,
     ValidatedDataRecord,
     validate_data_record_against_current_value,
     validate_data_record_against_plan,
@@ -65,6 +56,7 @@ from hwpxfiller.domain.field_binding import (
     SOURCE,
     ExactText,
     FieldBindingRule,
+    TextSlice,
 )
 from hwpxfiller.domain.raw_data_record import (
     RawRecordCaptureProvenance,
@@ -74,7 +66,7 @@ from hwpxfiller.domain.raw_data_record import (
 )
 
 _POLICY_ID = "document-content-value/v1"
-_THEOREM = theorem_evidence_digest(THEOREM_EVIDENCE_V1)
+_THEOREM = COMPOSITION_FINGERPRINT_HWPX
 _PROV = RawRecordCaptureProvenance(
     source_adapter_contract_id="excel-adapter/v1", captured_at="2026-01-01T00:00:00+09:00"
 )
@@ -214,29 +206,6 @@ def _basis_dto(plan, pattern=_PATTERN, inactive_rules=(_DEPT_RULE,)):
     return res
 
 
-def _resolve(plan, snapshots, *, pattern=_PATTERN, basis=None, clock=_CLOCK,
-             overwrite=gd.OVERWRITE_EXISTING, out_dir="C:/out"):
-    vdrs = [_vdr(plan, s) for s in snapshots]
-    basis = basis if basis is not None else _basis_dto(plan, pattern)
-    assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
-    return gd.resolve_generation_delivery_plan(
-        sealed_execution_plan=plan,
-        exact_pattern=pattern,
-        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=basis,
-        ordered_raw_snapshots=snapshots,
-        ordered_validated_records=vdrs,
-        captured_delivery_clock=clock,
-        output_directory_basis=out_dir,
-        overwrite_policy=overwrite,
-    )
-
-
-def _ok(res) -> gd.ResolvedGenerationDeliveryPlan:
-    assert isinstance(res, gd.ResolvedGenerationDeliveryPlan), res
-    return res
-
-
 def _current_plan() -> SealedExecutionPlanValue:
     legacy = _plan()
     basis = legacy.execution_basis
@@ -273,8 +242,12 @@ def _resolve_current(
     occupancy_entries=None,
     collision="ADD_SUFFIX",
     inactive_rules=(),
+    basis=None,
+    clock=_CLOCK,
+    records=None,
 ):
-    basis = _basis_dto(plan, pattern=pattern, inactive_rules=inactive_rules)
+    if basis is None:
+        basis = _basis_dto(plan, pattern=pattern, inactive_rules=inactive_rules)
     assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
     entries = (
         tuple(occupancy_entries)
@@ -283,23 +256,24 @@ def _resolve_current(
     )
     return gd.resolve_current_generation_delivery(
         sealed_execution_plan=plan,
-        ordered_validated_records=tuple(_current_vdr(plan, item) for item in snapshots),
+        ordered_validated_records=(
+            tuple(_current_vdr(plan, item) for item in snapshots)
+            if records is None else records
+        ),
         ordered_raw_snapshots=snapshots,
         delivery_binding_basis=basis,
         exact_pattern=pattern,
-        captured_delivery_clock=_CLOCK,
+        captured_delivery_clock=clock,
         run_delivery_intent=RunDeliveryIntent("C:/out", collision),
-        path_occupancy=gd.PathOccupancyObservation("C:/out", entries, _CLOCK),
+        path_occupancy=gd.PathOccupancyObservation("C:/out", entries, clock),
     )
 
 
-def test_current_resolver_consumes_current_values_without_legacy_identity() -> None:
+def test_current_resolver_returns_planned_path() -> None:
     plan = _current_plan()
     result = _resolve_current(plan, (_snapshot(),))
     assert isinstance(result, gd.CurrentResolvedDelivery), result
     assert result.ordered_items[0].resolved_output_relative_path == "홍길동.hwpx"
-    assert not hasattr(result, "bound_plan_semantic_digest")
-    assert not hasattr(result.ordered_items[0], "validated_record_ref")
 
 
 def test_current_resolver_fails_closed_on_validation_basis_mismatch() -> None:
@@ -492,6 +466,81 @@ def test_current_inactive_fields_share_one_frozen_source_key() -> None:
     assert result.ordered_items[0].resolved_output_relative_path == "1-1.hwpx"
 
 
+def test_current_inactive_filename_applies_slice_before_format() -> None:
+    rule = FieldBindingRule(
+        field_id="f_dept",
+        binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="dept",
+        format_kind="amount",
+        format_code="{:,}",
+        text_slice=TextSlice("split", delimiter="원", index=1),
+    )
+    result = _resolve_current(
+        _current_plan(),
+        (_snapshot(dept="1500000원 (VAT 포함)"),),
+        pattern="{{f_dept}}",
+        inactive_rules=(rule,),
+    )
+    assert isinstance(result, gd.CurrentResolvedDelivery), result
+    assert result.ordered_items[0].resolved_output_relative_path == "1,500,000.hwpx"
+
+
+@pytest.mark.parametrize(
+    ("pattern", "inactive_rules"),
+    [
+        ("{{f_blank}}", ()),
+        ("{{f_missing}}", (
+            FieldBindingRule(
+                "f_missing", SOURCE, DOCUMENT_CONTENT_VALUE_POLICY_V1,
+                source_key="missing",
+            ),
+        )),
+        ("{{f_empty}}", (
+            FieldBindingRule("f_empty", INTENTIONAL_BLANK, DOCUMENT_CONTENT_VALUE_POLICY_V1),
+        )),
+    ],
+)
+def test_current_unresolved_field_blocks_output_name(pattern, inactive_rules) -> None:
+    result = _resolve_current(
+        _current_plan(), (_snapshot(),), pattern=pattern, inactive_rules=inactive_rules
+    )
+    assert isinstance(result, gd.DeliveryPlanBlocked), result
+    assert result.blockers[0].code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
+
+
+def test_current_rejects_tampered_binding_basis() -> None:
+    plan = _current_plan()
+    basis = _basis_dto(plan, pattern="{{f_name}}", inactive_rules=())
+    assert isinstance(basis, gd.GenerationDeliveryBindingBasis)
+    result = _resolve_current(
+        plan, (_snapshot(),),
+        basis=dataclasses.replace(basis, delivery_binding_basis_digest="sha256:wrong"),
+    )
+    assert isinstance(result, gd.DeliveryPlanContextError), result
+    assert result.code == gd.DELIVERY_BINDING_BASIS_INTEGRITY_ERROR
+
+
+def test_current_rejects_tampered_raw_snapshot_and_invalid_clock() -> None:
+    plan = _current_plan()
+    snapshot = _snapshot()
+    record = _current_vdr(plan, snapshot)
+    tampered = dataclasses.replace(snapshot, _values={**snapshot._values, "name": SourceText("변조")})
+    result = _resolve_current(plan, (tampered,), records=(record,))
+    assert isinstance(result, gd.DeliveryPlanContextError), result
+    assert result.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
+
+    result = _resolve_current(plan, (snapshot,), clock="not-a-date")
+    assert isinstance(result, gd.DeliveryPlanContextError), result
+    assert result.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
+
+
+def test_current_rejects_path_escape() -> None:
+    result = _resolve_current(_current_plan(), (_snapshot(),), pattern="../{{f_name}}")
+    assert isinstance(result, gd.DeliveryPlanContextError), result
+    assert result.code == gd.OUTPUT_PATH_ESCAPE_DETECTED
+
+
 # ═══ pattern compatibility ══════════════════════════════════════════════════════════════════
 def test_pattern_token_union_and_order() -> None:
     tokens = gd.parse_filename_pattern(_PATTERN, filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID)
@@ -557,19 +606,6 @@ def test_old_filename_fixtures_exact_parity_with_naming_v1() -> None:
 
 
 # ═══ token values ═════════════════════════════════════════════════════════════════════════
-def test_active_token_reuses_exact_vdr_value() -> None:
-    plan = _plan()
-    res = _ok(_resolve(plan, (_snapshot(name="홍길동"),), pattern="{{f_name}}-{{seq}}"))
-    # VDR document_value("홍길동") 재사용 → clean_filename 후 파일명.
-    assert res.ordered_items[0].resolved_output_relative_path == "홍길동-1.hwpx"
-    fv = [t for t in res.ordered_items[0].resolved_token_values if t.kind == "FIELD"]
-    assert fv[0].field_id == "f_name" and fv[0].value == "홍길동"
-
-
-def test_inactive_token_resolves_from_field_binding_revision() -> None:
-    plan = _plan()
-    res = _ok(_resolve(plan, (_snapshot(dept="재무과"),), pattern="{{f_dept}}"))
-    assert res.ordered_items[0].resolved_output_relative_path == "재무과.hwpx"
 
 
 def test_inactive_binding_ambiguous_blocker() -> None:
@@ -586,26 +622,6 @@ def test_inactive_binding_ambiguous_blocker() -> None:
     assert res.blockers[0].code == gd.OUTPUT_NAME_BINDING_AMBIGUOUS
 
 
-def test_intentional_blank_active_token_unresolved() -> None:
-    # Active INTENTIONAL_BLANK 필드는 VDR 에서 "" → 조용한 빈 파일명 대신 미해소 blocker.
-    plan = _plan()
-    res = _resolve(plan, (_snapshot(),), pattern="{{f_blank}}-{{seq}}")
-    assert isinstance(res, gd.DeliveryPlanBlocked)
-    assert (res.blockers[0].code, res.blockers[0].field_id) == (gd.OUTPUT_NAME_TOKEN_UNRESOLVED, "f_blank")
-
-
-def test_intentional_blank_inactive_token_unresolved() -> None:
-    blank_rule = FieldBindingRule(
-        field_id="f_note", binding_kind=INTENTIONAL_BLANK,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    )
-    plan = _plan()
-    basis = _basis_dto(plan, pattern="{{f_note}}", inactive_rules=(blank_rule,))
-    res = _resolve(plan, (_snapshot(),), pattern="{{f_note}}", basis=basis)
-    assert isinstance(res, gd.DeliveryPlanBlocked)
-    assert res.blockers[0].code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
-
-
 def test_no_binding_unresolved() -> None:
     res = _basis_dto(_plan(), pattern="{{f_unknown}}", inactive_rules=())
     assert isinstance(res, gd.DeliveryPlanBlocked)
@@ -614,316 +630,13 @@ def test_no_binding_unresolved() -> None:
     )
 
 
-def test_inactive_source_missing_key_unresolved() -> None:
-    plan = _plan()
-    snap = _snapshot(extra_pairs=())  # dept 있음 → 있는 케이스; 여기선 없는 키 규칙
-    rule = FieldBindingRule(
-        field_id="f_ghost", binding_kind=SOURCE,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="ghost",
-    )
-    basis = _basis_dto(plan, pattern="{{f_ghost}}", inactive_rules=(rule,))
-    res = _resolve(plan, (snap,), pattern="{{f_ghost}}", basis=basis)
-    assert isinstance(res, gd.DeliveryPlanBlocked)
-    assert res.blockers[0].code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
 
 
-def test_output_name_value_resolution_failed_code_is_retired() -> None:
-    """타입 대조가 유일 생산자였다 — 어휘째 퇴역하고 문안도 함께 걷혔다."""
-    from hwpxfiller.external.current_execution_preparation import DELIVERY_BLOCKER_PHRASES
-
-    assert not hasattr(gd, "OUTPUT_NAME_VALUE_RESOLUTION_FAILED")
-    assert "OUTPUT_NAME_VALUE_RESOLUTION_FAILED" not in DELIVERY_BLOCKER_PHRASES
 
 
-def test_inactive_constant_token_resolves() -> None:
-    rule = FieldBindingRule(
-        field_id="f_kind", binding_kind=CONSTANT,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        canonical_constant_value=ExactText("공고"),
-    )
-    plan = _plan()
-    basis = _basis_dto(plan, pattern="{{f_kind}}-{{seq}}", inactive_rules=(rule,))
-    res = _ok(_resolve(plan, (_snapshot(),), pattern="{{f_kind}}-{{seq}}", basis=basis))
-    assert res.ordered_items[0].resolved_output_relative_path == "공고-1.hwpx"
 
 
-def test_no_implicit_trim_or_normalization() -> None:
-    plan = _plan()
-    res = _ok(_resolve(plan, (_snapshot(dept="  각 과  "),), pattern="{{f_dept}}"))
-    # PRESERVE_EXACT — 앞뒤 공백 보존(clean_filename 은 공백을 지우지 않는다).
-    assert res.ordered_items[0].resolved_output_relative_path == "  각 과  .hwpx"
-
-
-# ═══ batch semantics ═════════════════════════════════════════════════════════════════════
-def test_captured_clock_applied_exactly_once() -> None:
-    plan = _plan()
-    res = _ok(_resolve(
-        plan,
-        (_snapshot(identity="r1", name="A"), _snapshot(identity="r2", name="B")),
-        pattern="{{f_name}}-{{date:YYYYMMDD}}",
-    ))
-    dates = {i.resolved_token_values[-1].value for i in res.ordered_items}
-    assert dates == {"20260304"}  # 두 item 이 같은 batch clock 을 공유
-    assert res.captured_delivery_clock == _CLOCK
-
-
-def test_seq_deterministic_by_ordered_batch() -> None:
-    plan = _plan()
-    res = _ok(_resolve(
-        plan, (_snapshot(identity="r1", name="A"), _snapshot(identity="r2", name="B")),
-        pattern="{{f_name}}-{{seq:001}}",
-    ))
-    seqs = [i.resolved_token_values[-1].value for i in res.ordered_items]
-    assert seqs == ["001", "002"]
-
-
-def test_duplicate_suffix_deterministic() -> None:
-    plan = _plan()
-    # 서로 다른 record 가 같은 base name 으로 수렴 → _1 접미사.
-    res = _ok(_resolve(
-        plan, (_snapshot(identity="r1", name="같은"), _snapshot(identity="r2", name="같은")),
-        pattern="{{f_name}}",
-    ))
-    paths = [i.resolved_output_relative_path for i in res.ordered_items]
-    assert paths == ["같은.hwpx", "같은_1.hwpx"]
-
-
-def test_item_ordinal_stable() -> None:
-    plan = _plan()
-    res = _ok(_resolve(
-        plan,
-        tuple(_snapshot(identity=f"r{k}", name=f"n{k}") for k in range(3)),
-        pattern="{{f_name}}",
-    ))
-    assert [i.item_ordinal for i in res.ordered_items] == [0, 1, 2]
-
-
-def test_reorder_changes_sealed_batch_and_digest() -> None:
-    plan = _plan()
-    a = _snapshot(identity="r1", name="A")
-    b = _snapshot(identity="r2", name="B")
-    res1 = _ok(_resolve(plan, (a, b), pattern="{{f_name}}-{{seq}}"))
-    res2 = _ok(_resolve(plan, (b, a), pattern="{{f_name}}-{{seq}}"))
-    # 입력 순서가 batch authority — 재정렬은 seq/ordinal/path 를 바꾸고 digest 도 다르다.
-    assert res1.ordered_items[0].resolved_output_relative_path == "A-1.hwpx"
-    assert res2.ordered_items[0].resolved_output_relative_path == "B-1.hwpx"
-    assert res1.delivery_plan_digest != res2.delivery_plan_digest
-
-
-def test_same_inputs_same_delivery_digest() -> None:
-    plan = _plan()
-    snaps = (_snapshot(identity="r1", name="A"), _snapshot(identity="r2", name="B"))
-    d1 = _ok(_resolve(plan, snaps)).delivery_plan_digest
-    d2 = _ok(_resolve(plan, snaps)).delivery_plan_digest
-    assert d1 == d2
-
-
-def test_forbidden_chars_sanitized_and_path_escape_detected() -> None:
-    plan = _plan()
-    # 값 안 separator 는 clean_filename 이 '_' 로 치환 → 탈출 불가.
-    res = _ok(_resolve(plan, (_snapshot(name="a/b\\c"),), pattern="{{f_name}}"))
-    assert res.ordered_items[0].resolved_output_relative_path == "a_b_c.hwpx"
-    # 패턴 리터럴의 separator 는 v1 이 청소하지 않으므로 최종 방어가 탈출을 막는다.
-    escape = _resolve(plan, (_snapshot(),), pattern="../{{f_name}}")
-    assert isinstance(escape, gd.DeliveryPlanContextError)
-    assert escape.code == gd.OUTPUT_PATH_ESCAPE_DETECTED
-
-
-# ═══ context / integrity fail-closed ══════════════════════════════════════════════════════
-def test_unsupported_delivery_and_overwrite_contract() -> None:
-    plan = _plan()
-    vdrs = [_vdr(plan, _snapshot())]
-    basis = _basis_dto(plan)
-    common = dict(
-        sealed_execution_plan=plan,
-        exact_pattern=_PATTERN,
-        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=basis,
-        ordered_raw_snapshots=(_snapshot(),),
-        ordered_validated_records=vdrs,
-        captured_delivery_clock=_CLOCK,
-        output_directory_basis="C:/out",
-    )
-    bad_delivery = gd.resolve_generation_delivery_plan(
-        overwrite_policy=gd.OVERWRITE_EXISTING, delivery_contract_id="generation-delivery/v999", **common
-    )
-    assert isinstance(bad_delivery, gd.DeliveryPlanContextError)
-    assert bad_delivery.code == gd.UNSUPPORTED_DELIVERY_CONTRACT
-    bad_overwrite = gd.resolve_generation_delivery_plan(overwrite_policy="NUKE", **common)
-    assert isinstance(bad_overwrite, gd.DeliveryPlanContextError)
-    assert bad_overwrite.code == gd.UNSUPPORTED_OVERWRITE_POLICY
-
-
-def test_tampered_delivery_binding_basis_rejected() -> None:
-    plan = _plan()
-    basis = _basis_dto(plan)
-    tampered = dataclasses.replace(basis, exact_pattern="다른-{{f_name}}")
-    res = gd.resolve_generation_delivery_plan(
-        sealed_execution_plan=plan,
-        exact_pattern=_PATTERN,
-        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=tampered,
-        ordered_raw_snapshots=(_snapshot(),),
-        ordered_validated_records=[_vdr(plan, _snapshot())],
-        captured_delivery_clock=_CLOCK,
-        output_directory_basis="C:/out",
-        overwrite_policy=gd.OVERWRITE_EXISTING,
-    )
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.DELIVERY_BINDING_BASIS_INTEGRITY_ERROR
-
-
-def test_count_mismatch_and_raw_vdr_mismatch_and_plan_mismatch() -> None:
-    plan = _plan()
-    basis = _basis_dto(plan)
-    s1, s2 = _snapshot(identity="r1"), _snapshot(identity="r2", name="B")
-    # count mismatch.
-    res = gd.resolve_generation_delivery_plan(
-        sealed_execution_plan=plan,
-        exact_pattern=_PATTERN, filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=basis, ordered_raw_snapshots=(s1, s2),
-        ordered_validated_records=[_vdr(plan, s1)], captured_delivery_clock=_CLOCK,
-        output_directory_basis="C:/out", overwrite_policy=gd.OVERWRITE_EXISTING,
-    )
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
-    # raw ↔ VDR mismatch: snapshot s2 와 s1 의 VDR 을 짝지운다.
-    res2 = gd.resolve_generation_delivery_plan(
-        sealed_execution_plan=plan,
-        exact_pattern=_PATTERN, filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=basis, ordered_raw_snapshots=(s2,),
-        ordered_validated_records=[_vdr(plan, s1)], captured_delivery_clock=_CLOCK,
-        output_directory_basis="C:/out", overwrite_policy=gd.OVERWRITE_EXISTING,
-    )
-    assert isinstance(res2, gd.DeliveryPlanContextError)
-    assert res2.code == gd.RAW_VALIDATED_RECORD_MISMATCH
-
-
-def test_bad_clock_rejected() -> None:
-    plan = _plan()
-    res = _resolve(plan, (_snapshot(),), clock="not-a-date")
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
-
-
-def test_resolved_plan_integrity_recompute_and_tamper() -> None:
-    plan = _plan()
-    res = _ok(_resolve(plan, (_snapshot(),)))
-    gd.verify_resolved_delivery_plan_integrity(res)
-    bad = dataclasses.replace(res, delivery_plan_digest="sha256:wrong")
-    with pytest.raises(gd.ResolvedDeliveryPlanIntegrityError):
-        gd.verify_resolved_delivery_plan_integrity(bad)
-    # item path tamper → per-item basis digest 재계산 불일치.
-    item = res.ordered_items[0]
-    bad_item = dataclasses.replace(item, resolved_output_relative_path="hacked.hwpx")
-    bad2 = dataclasses.replace(res, ordered_items=(bad_item,))
-    with pytest.raises(gd.ResolvedDeliveryPlanIntegrityError):
-        gd.verify_resolved_delivery_plan_integrity(bad2)
-
-
-# ═══ ManagedGenerationPlan ═══════════════════════════════════════════════════════════════
-def _managed(plan, snaps, **over):
-    res = _ok(_resolve(plan, snaps))
-    return gd.build_managed_generation_plan(
-        sealed_execution_plan_ref=plan_semantic_digest(plan),
-        resolved_delivery_plan=res,
-        output_directory="C:/abs/out",
-        created_at="2026-03-04T09:15:00+09:00",
-        **over,
-    )
-
-
-def test_managed_plan_holds_exact_refs_and_paths() -> None:
-    plan = _plan()
-    snaps = (_snapshot(identity="r1", name="A"), _snapshot(identity="r2", name="B"))
-    mgp = _managed(plan, snaps)
-    gd.verify_managed_generation_plan_integrity(mgp)
-    assert mgp.sealed_execution_plan_ref == plan_semantic_digest(plan)
-    items = mgp.resolved_delivery_plan.ordered_items
-    assert [i.validated_record_ref for i in items] == [_vdr(plan, s).validated_record_digest for s in snaps]
-    assert [i.resolved_output_relative_path for i in items] == [
-        "공고서-A-20260304-001.hwpx", "공고서-B-20260304-002.hwpx",
-    ]
-
-
-def test_managed_plan_has_no_legacy_template_or_live_mapping() -> None:
-    fields = {f.name for f in dataclasses.fields(gd.ManagedGenerationPlan)}
-    # legacy template path·live Mapping·filename pattern 재해석 결과를 저장하지 않는다.
-    assert "template" not in fields
-    assert not any("mapping" in f for f in fields)
-    assert "filename_pattern" not in fields
-    # 실행 naming authority 는 resolved path 이고, 재파싱할 pattern 을 managed plan 이 들고 있지 않다.
-    mgp = _managed(_plan(), (_snapshot(),))
-    assert all(
-        isinstance(i.resolved_output_relative_path, str) and i.resolved_output_relative_path.endswith(".hwpx")
-        for i in mgp.resolved_delivery_plan.ordered_items
-    )
-
-
-def test_progress_cancel_excluded_from_delivery_identity() -> None:
-    plan, snaps = _plan(), (_snapshot(),)
-    a = _managed(plan, snaps, progress_cancel_context={"done": 0})
-    b = _managed(plan, snaps, progress_cancel_context={"done": 5, "cancelled": True})
-    assert a.managed_generation_plan_digest == b.managed_generation_plan_digest
-
-
-# ═══ boundaries: MaterializationInput / adapters / runtime admission ══════════════════════
-def test_materialization_input_excludes_output_path() -> None:
-    fields = {f.name for f in dataclasses.fields(gd.MaterializationInput)}
-    assert fields == {"sealed_execution_plan_ref", "validated_record_ref"}
-    assert not any("path" in f or "ordinal" in f or "disposition" in f for f in fields)
-
-
-def test_materialization_input_port_resolves_plan_and_vdr() -> None:
-    plan = _plan()
-    snap = _snapshot()
-    vdr = _vdr(plan, snap)
-    store = ImmutableVdrStore()
-    store.put(vdr)
-    mgp = _managed(plan, (snap,))
-    port = gd.MaterializationInputPort(
-        plan_resolver=lambda ref: plan, vdr_store=store
-    )
-    mi = gd.materialization_inputs_of(mgp)[0]
-    resolved_plan, resolved_vdr = port.resolve(mi)
-    assert plan_semantic_digest(resolved_plan) == mi.sealed_execution_plan_ref
-    assert resolved_vdr.validated_record_digest == vdr.validated_record_digest
-
-
-def test_materialization_input_port_rejects_plan_ref_mismatch() -> None:
-    plan = _plan()
-    snap = _snapshot()
-    store = ImmutableVdrStore()
-    store.put(_vdr(plan, snap))
-    port = gd.MaterializationInputPort(plan_resolver=lambda ref: plan, vdr_store=store)
-    bad = gd.MaterializationInput(
-        sealed_execution_plan_ref="sha256:not-the-plan",
-        validated_record_ref=_vdr(plan, snap).validated_record_digest,
-    )
-    with pytest.raises(gd.MaterializationInputResolutionError):
-        port.resolve(bad)
-
-
-def test_guarantee_is_owned_only_by_the_managed_adapter() -> None:
-    plan = _plan()
-    mgp = _managed(plan, (_snapshot(),))
-    managed = gd.ManagedPlanMaterializationAdapter(managed_plan=mgp)
-    assert gd.has_s5_exact_delivery_guarantee(managed) is True
-    assert gd.has_s5_exact_delivery_guarantee(object()) is False
-    # managed adapter 는 Plan+VDR MaterializationInput 을 낸다(다른 생성기 입력으로 변환 0).
-    assert all(isinstance(mi, gd.MaterializationInput) for mi in managed.materialization_inputs())
-
-
-def test_slotless_managed_bridge_same_contract() -> None:
-    # SLOTLESS Plan(remove operation 0)도 같은 bridge·delivery contract 를 쓴다.
-    plan = _plan()
-    assert plan.execution_basis.selection.slot_mode == "SLOTLESS"
-    assert not plan.ordered_operations or all(
-        o["op"] == "APPLY_FIELD_BINDING" for o in plan.ordered_operations
-    )
-    res = _ok(_resolve(plan, (_snapshot(),)))
-    assert res.delivery_contract_id == gd.DELIVERY_CONTRACT_ID
+# ═══ runtime admission ═══════════════════════════════════════════════════════════════════
 
 
 def _runtime_manifest(status="PASS"):
@@ -1034,156 +747,6 @@ def test_guard_relative_path_branches() -> None:
     gd._guard_relative_path("ok.hwpx")  # 통과
 
 
-def test_managed_plan_integrity_tamper() -> None:
-    mgp = _managed(_plan(), (_snapshot(),))
-    with pytest.raises(gd.ManagedGenerationPlanIntegrityError):
-        gd.verify_managed_generation_plan_integrity(
-            dataclasses.replace(mgp, managed_generation_plan_digest="sha256:x")
-        )
-    with pytest.raises(gd.ManagedGenerationPlanIntegrityError):
-        gd.verify_managed_generation_plan_integrity(
-            dataclasses.replace(mgp, delivery_contract_id="generation-delivery/v999")
-        )
-
-
-def test_resolved_plan_integrity_ordinal_and_dup_path() -> None:
-    res = _ok(_resolve(_plan(), (_snapshot(identity="r1", name="A"), _snapshot(identity="r2", name="B"))))
-    a, b = res.ordered_items
-    # ordinal 뒤섞기.
-    with pytest.raises(gd.ResolvedDeliveryPlanIntegrityError):
-        gd.verify_resolved_delivery_plan_integrity(dataclasses.replace(res, ordered_items=(b, a)))
-
-
-# ═══ Codex review findings (trust-boundary·cross-binding·windows FS) ═══════════════════════
-def _resolve_explicit(plan, snaps, vdrs, *, pattern, basis=None):
-    return gd.resolve_generation_delivery_plan(
-        sealed_execution_plan=plan,
-        exact_pattern=pattern,
-        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
-        delivery_binding_basis=basis if basis is not None else _basis_dto(plan, pattern),
-        ordered_raw_snapshots=snaps,
-        ordered_validated_records=vdrs,
-        captured_delivery_clock=_CLOCK,
-        output_directory_basis="C:/out",
-        overwrite_policy=gd.OVERWRITE_EXISTING,
-    )
-
-
-def test_forged_vdr_payload_rejected() -> None:
-    # F1: 원본 digest 를 유지한 채 document_value 를 위조한 VDR 은 filename 을 forged 값으로 만들지 못한다.
-    plan, snap = _plan(), _snapshot()
-    vdr = _vdr(plan, snap)
-    base = dict(vdr.semantic_payload_encoded)
-    rvs = [dict(x) for x in base["resolved_requirement_values"]]
-    rvs[0] = {**rvs[0], "document_value": "FORGED"}
-    base["resolved_requirement_values"] = rvs
-    forged = dataclasses.replace(vdr, semantic_payload_encoded=base)  # validated_record_digest 그대로
-    res = _resolve_explicit(plan, (snap,), [forged], pattern="{{f_name}}")
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
-
-
-def test_forged_raw_snapshot_rejected() -> None:
-    # F2: 원본 digest/identity 를 유지한 채 _values 를 위조한 raw snapshot 은 inactive filename 값을 오염 못 시킨다.
-    plan, snap = _plan(), _snapshot(dept="원본")
-    forged = dataclasses.replace(
-        snap, _values={**dict(snap._values), "dept": SourceText("HACKED")}
-    )
-    basis = _basis_dto(plan, pattern="{{f_dept}}")
-    res = _resolve_explicit(plan, (forged,), [_vdr(plan, snap)], pattern="{{f_dept}}", basis=basis)
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
-
-
-def test_managed_builder_rejects_plan_ref_not_bound_to_delivery_plan() -> None:
-    # F3: delivery plan 의 VDR 이 결속된 Plan 과 다른 ref 를 봉인하면 거절(모든 MaterializationInput 이 나중에 실패).
-    plan = _plan()
-    res = _ok(_resolve(plan, (_snapshot(),)))
-    assert res.bound_plan_semantic_digest == plan_semantic_digest(plan)
-    with pytest.raises(gd.ManagedGenerationPlanIntegrityError):
-        gd.build_managed_generation_plan(
-            sealed_execution_plan_ref="sha256:wrong-plan",
-            resolved_delivery_plan=res,
-            output_directory="C:/out",
-            created_at="t",
-        )
-
-
-def test_inactive_format_code_sealed_and_fail_closed() -> None:
-    # F4: inactive SOURCE 의 kind 없는 format_code(v2 모양)는 봉인되되, 어느 해석기인지 몰라 조용히
-    # 원문으로 풀지 않고 fail-closed(v3 표시형 계약).
-    rule = FieldBindingRule(
-        field_id="f_dept", binding_kind=SOURCE,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="dept", format_code="UPPER",
-    )
-    plan = _plan()
-    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    assert basis.output_name_requirements[0].value_expression["format_code"] == "UPPER"
-    res = _resolve(plan, (_snapshot(),), pattern="{{f_dept}}", basis=basis)
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT
-
-
-def test_inactive_source_token_is_rendered_with_the_rule_format() -> None:
-    """파일 이름의 inactive token 도 Active 값과 같은 해석기로 서식한다(legacy 파일 이름과 동일)."""
-    rule = FieldBindingRule(
-        field_id="f_dept", binding_kind=SOURCE,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="dept", format_code="{:,}", format_kind="amount",
-    )
-    plan = _plan()
-    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    sealed = basis.output_name_requirements[0].value_expression
-    assert (sealed["format_kind"], sealed["format_code"]) == ("amount", "{:,}")
-    res = _ok(_resolve(plan, (_snapshot(dept="1500000"),), pattern="{{f_dept}}", basis=basis))
-    assert [item.resolved_output_relative_path for item in res.ordered_items] == [
-        "1,500,000.hwpx"
-    ]
-
-
-def test_inactive_source_token_is_sliced_before_the_format() -> None:
-    """파일 이름의 inactive token 도 Active 값과 같은 순서다 — 공백 정책 → 가공 → 표시형(v4)."""
-    from hwpxfiller.domain.text_slice import TextSlice
-
-    rule = FieldBindingRule(
-        field_id="f_dept", binding_kind=SOURCE,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="dept", format_code="{:,}", format_kind="amount",
-        text_slice=TextSlice("split", delimiter="원", index=1),
-    )
-    plan = _plan()
-    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    sealed = basis.output_name_requirements[0].value_expression
-    assert sealed["text_slice"] == {"mode": "split", "delimiter": "원", "index": 1}
-    res = _ok(_resolve(
-        plan, (_snapshot(dept="1500000원 (VAT 포함)"),), pattern="{{f_dept}}", basis=basis
-    ))
-    assert [item.resolved_output_relative_path for item in res.ordered_items] == [
-        "1,500,000.hwpx"
-    ]
-
-
-def test_inactive_source_token_uses_a_v5_new_mode_slice() -> None:
-    """파일 이름 토큰도 v5 새 방식(‘x’ 지우기)을 쓴다 — Active 값과 같은 판정기다."""
-    from hwpxfiller.domain.text_slice import TextSlice
-
-    rule = FieldBindingRule(
-        field_id="f_dept", binding_kind=SOURCE,
-        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-        source_key="dept",
-        text_slice=TextSlice("remove", find="(VAT 포함)"),
-    )
-    plan = _plan()
-    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    sealed = basis.output_name_requirements[0].value_expression
-    assert sealed["text_slice"] == {"mode": "remove", "find": "(VAT 포함)"}
-    res = _ok(_resolve(
-        plan, (_snapshot(dept="1,500,000원 (VAT 포함)"),), pattern="{{f_dept}}", basis=basis
-    ))
-    assert [item.resolved_output_relative_path for item in res.ordered_items] == [
-        "1,500,000원.hwpx"
-    ]
 
 
 def test_inactive_source_without_slice_keeps_the_sealed_shape() -> None:
@@ -1231,44 +794,3 @@ def test_unsupported_document_value_resolution_contract_rejected_in_basis() -> N
     )
     assert isinstance(res, gd.DeliveryPlanContextError)
     assert res.code == gd.UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT
-
-
-def test_dedup_case_insensitive_on_windows_fs() -> None:
-    # F7: 대소문자만 다른 이름은 Windows FS 에서 같은 파일 → 접미사(철자는 원본 보존).
-    plan = _plan()
-    res = _ok(_resolve(
-        plan,
-        (_snapshot(identity="r1", name="Report"), _snapshot(identity="r2", name="report")),
-        pattern="{{f_name}}",
-    ))
-    assert [i.resolved_output_relative_path for i in res.ordered_items] == [
-        "Report.hwpx", "report_1.hwpx",
-    ]
-
-
-def test_pattern_literal_colon_rejected_as_drive_relative() -> None:
-    # F8: 리터럴 ':' 는 drive-relative(C:x)·ADS 를 만들어 output root 를 버릴 수 있다 → 거절.
-    plan = _plan()
-    res = _resolve(plan, (_snapshot(),), pattern="C:{{f_name}}")
-    assert isinstance(res, gd.DeliveryPlanContextError)
-    assert res.code == gd.OUTPUT_PATH_ESCAPE_DETECTED
-
-
-def test_no_native_write_or_route_cutover_in_module() -> None:
-    # native write·HWPX mutation·legacy generator 로의 conversion 경로가 이 모듈에 없다.
-    modules = {m for m in _module_imports(gd) }
-    for forbidden in ("zipfile", "lxml", "hwpxcore", "hwpxfiller.batch", "hwpxfiller.external.hwpx_engine"):
-        assert not any(m == forbidden or m.startswith(forbidden + ".") for m in modules), forbidden
-
-
-def _module_imports(mod) -> set[str]:
-    import ast
-
-    tree = ast.parse(inspect.getsource(mod))
-    out: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            out.update(a.name for a in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            out.add(node.module)
-    return out

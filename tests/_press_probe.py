@@ -110,7 +110,10 @@ def measure_press(scaffold: str, width: int, motion: str) -> dict:
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
+            browser = playwright.chromium.launch(
+                channel="chrome",
+                args=[f"--explicitly-allowed-ports={urlsplit(url).port}"],
+            )
             try:
                 context = browser.new_context(
                     viewport={"width": max(width + 200, 800), "height": 600},
@@ -215,7 +218,10 @@ def measure_viewport_rects(
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
+            browser = playwright.chromium.launch(
+                channel="chrome",
+                args=[f"--explicitly-allowed-ports={urlsplit(url).port}"],
+            )
             try:
                 context = browser.new_context(
                     viewport={"width": width, "height": height},
@@ -276,7 +282,10 @@ def measure_forced_colors() -> dict:
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel="chrome")
+            browser = playwright.chromium.launch(
+                channel="chrome",
+                args=[f"--explicitly-allowed-ports={urlsplit(url).port}"],
+            )
             try:
                 measured = {}
                 for mode in ("active", "none"):

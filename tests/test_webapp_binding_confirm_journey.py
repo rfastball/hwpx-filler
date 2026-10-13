@@ -26,7 +26,6 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.external.field_binding_store import WorkFieldBindingStore
 from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.template_root import TemplateRoot
 from hwpxfiller.external.text_registry import TextTemplateRegistry
@@ -109,7 +108,6 @@ def _wire(tmp_path: Path):
         template_root=tpl_root,
         after_mapping_saved=job_ctrl.on_editor_mapping_saved,
         save_guard=job_ctrl.editor_save_guard,
-        unrepresented_legacy_rules=job_ctrl.unrepresented_legacy_rules,
         binding_confirm_pending=job_ctrl.editor_binding_confirm_pending,
     )
     return job_ctrl, editor, tpl, reg
@@ -183,9 +181,7 @@ def test_new_work_prepares_its_saved_mapping_without_a_binding_commit(
     # ③ 확인 — 결속 축 blocker 가 없고 S5 판본도 쓰지 않았다.
     job_ctrl.dispatch("resolve_execution", {})
     assert "REVIEW_BINDING" not in _blockers(job_ctrl)
-    assert not WorkFieldBindingStore(tpl.parent / "authority" / "field_bindings").exists(
-        reg.load(WORK).authority_id
-    )
+    assert not (tpl.parent / "authority" / "field_bindings").exists()
 
     # ④ 편집기 재진입 — 확정할 것이 없으므로 확정 동사도 서지 않는다(거울상 음성).
     editor.load_job(WORK)

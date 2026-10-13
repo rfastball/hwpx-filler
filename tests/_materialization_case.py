@@ -36,8 +36,7 @@ from hwpxfiller.application.execution_capture import (
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
-    THEOREM_EVIDENCE_V1,
-    theorem_evidence_digest,
+    COMPOSITION_FINGERPRINT_HWPX,
 )
 from hwpxfiller.application.execution_structure import (
     ENVELOPE_CAPABILITY_KEYS,
@@ -326,7 +325,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         composition_contract_id=COMPOSITION_CONTRACT_ID,
         native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest=theorem_evidence_digest(THEOREM_EVIDENCE_V1),
+        composition_theorem_evidence_manifest_digest=COMPOSITION_FINGERPRINT_HWPX,
         materialization_contract_id="materialization/v1",
         plan_schema_version="hwpx-execution-plan/v2",
         canonical_encoding_version=CANONICAL_ENCODING_VERSION,

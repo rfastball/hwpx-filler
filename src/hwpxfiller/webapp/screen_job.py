@@ -1370,7 +1370,7 @@ class JobController:
         # 권위가 없다면 확인을 시작하지 않는다(실패 정리 뒤 유령 Work ID 재발급 방지).
         if job.media == "hwpx" and was_prepared:
             self._maybe_auto_check(effective_basis_changed=True)
-        elif job.media == "hwpx" and job.binding_authority and job.authority_id:
+        elif job.media == "hwpx" and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
         if mount_notice:
             # 마운트가 실패했거나 무엇을 초기화했는지는 조용히 넘기지 않는다.
@@ -2434,15 +2434,6 @@ class JobController:
             if admitted:
                 self.runs.lock.release()
 
-    def unrepresented_legacy_rules(
-        self, previous: Job, candidate: Job, editor_field_ids: frozenset[str]
-    ) -> tuple[str, ...]:
-        if self.execution.seal_execution is None:
-            return ()
-        return self.execution.seal_execution.unrepresented_legacy_rules(
-            previous, candidate, editor_field_ids
-        )
-
     @_serialized
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
         """Observe a saved Job definition; the atomic Job write already committed it."""
@@ -2483,11 +2474,7 @@ class JobController:
             self._run_automatic_seal()
 
     def _run_automatic_seal(self) -> None:
-        """진행 중 orchestration(CHECKING)에서 실 seal 을 돌리고 결과로 다음 상태를 판정한다.
-
-        route/context 예외는 seal 실패(연속 실패 수 상한 → 수동 복구)로, 반환된 terminal outcome 은
-        '실행됨'으로 본다(qualification/policy block 은 실패가 아니라 not-current 로 알린다).
-        """
+        """현재 작업을 검사하고 세션의 실행 상태를 갱신한다."""
         self.execution.run_automatic_seal(self.work.name)
 
     def _capture_current_selected_records(
@@ -2784,15 +2771,12 @@ class JobController:
         )
 
     def _do_resolve_execution(self, p: dict) -> dict:
-        """사용자 요청으로 자동 봉인 경로를 다시 시작한다.
-
-        실패 상태는 수동 복구 전이를 먼저 거치며, 서비스 미주입은 명시적으로 거절한다.
-        """
+        """사용자 요청으로 현재 작업을 다시 검사한다."""
         if self.execution.seal_execution is None:
             raise ValueError("실행 확인 기능이 조립되지 않았습니다")
         if not self.work.name:
             raise ValueError("먼저 문서 작업을 선택하세요.")
-        if self.execution.start_manual_recovery():
+        if self.execution.start_after_durable_change():
             self._run_automatic_seal()
         return {"ok": True}
 

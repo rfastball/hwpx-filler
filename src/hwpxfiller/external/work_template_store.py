@@ -25,7 +25,6 @@ from pathlib import Path
 
 from hwpxfiller.application.prepare_template_change import (
     PreparePins,
-    PreparePlan,
     find_preparation_by_request,
     plan_prepare,
 )
@@ -34,7 +33,6 @@ from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
     SCHEMA_VERSION,
     DocumentWork,
-    MigrationProvenance,
     TemplateChangePreparation,
     WorkTemplateApplication,
     WorkTemplateStateAggregate,
@@ -208,13 +206,8 @@ def initialize_work(
     pass_evidence_id: str,
     actor: str,
     applied_at: str,
-    migration_provenance: "MigrationProvenance | None" = None,
 ) -> WorkTemplateStateAggregate:
-    """exact PASS Evidence 로 새 Work 를 하나의 aggregate 최초 commit 으로 만든다.
-
-    ``migration_provenance`` 가 있으면 legacy Job bootstrap(S3-08)의 출처를 함께 못박는다 —
-    legacy counter 는 출처일 뿐 identity 가 아니다.
-    """
+    """exact PASS Evidence 로 새 Work 를 하나의 aggregate 최초 commit 으로 만든다."""
     _require_pass_evidence(
         qualification_store, candidate_store, pass_evidence_id, template_lineage_id
     )
@@ -242,9 +235,6 @@ def initialize_work(
         applications=(application,),
         preparations=(),
         prepared_changes=(),
-        apply_provenance=(),
-        outbox_events=(),
-        migration_provenance=migration_provenance,
     )
     store.create(aggregate)
     return aggregate
@@ -261,17 +251,8 @@ def start_prepare(
     execution_session_id: str,
     started_at: str,
     authorize: "Callable[[DocumentWork, str], None] | None" = None,
-    on_worker_handoff: "Callable[[TemplateChangePreparation], None] | None" = None,
 ) -> TemplateChangePreparation:
-    """짧은 Work aggregate transaction 으로 prepare intent 를 시작한다(멱등).
-
-    base/source binding/profile 은 ``resolve_pins`` port 가 current Work 에서 서버-side 로 산출한다
-    (client 입력을 받지 않는다). 새 Preparation 을 만들고 commit 에 성공한 경우에만 lock 밖에서
-    ``on_worker_handoff`` 를 **한 번** 호출한다 — capture/qualification I/O 는 Work lock 안에서
-    돌리지 않는다(#654). 같은 (work, prepare_request_id) 재전송은 mutation·worker 없이 기존 것을
-    반환한다.
-    """
-    plan_holder: dict = {}
+    """서버가 고정한 pin 으로 prepare intent 를 시작한다. 같은 요청은 기존 값을 반환한다."""
     with store.update(work_id) as txn:
         aggregate = txn.aggregate
         if authorize is not None:
@@ -280,21 +261,15 @@ def start_prepare(
         # 돌려주는 게 계약인데, source/profile resolver 가 이제 와 실패하면 replay 가 터진다.
         existing = find_preparation_by_request(aggregate, prepare_request_id)
         if existing is not None:
-            plan_holder["plan"] = PreparePlan(aggregate, existing, created=False)
-        else:
-            pins = resolve_pins(aggregate.work)
-            plan = plan_prepare(
-                aggregate,
-                prepare_request_id=prepare_request_id,
-                pins=pins,
-                preparation_id=preparation_id,
-                execution_session_id=execution_session_id,
-                started_at=started_at,
-            )
-            txn.aggregate = plan.aggregate
-            plan_holder["plan"] = plan
-    plan = plan_holder["plan"]
-    # commit 성공(with 블록이 예외 없이 끝남) + 새 Preparation 일 때만 후속 worker 를 넘긴다.
-    if plan.created and on_worker_handoff is not None:
-        on_worker_handoff(plan.preparation)
-    return plan.preparation
+            return existing
+        pins = resolve_pins(aggregate.work)
+        plan = plan_prepare(
+            aggregate,
+            prepare_request_id=prepare_request_id,
+            pins=pins,
+            preparation_id=preparation_id,
+            execution_session_id=execution_session_id,
+            started_at=started_at,
+        )
+        txn.aggregate = plan.aggregate
+        return plan.preparation

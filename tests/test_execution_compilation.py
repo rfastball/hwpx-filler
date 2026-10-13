@@ -55,14 +55,13 @@ from hwpxfiller.application.execution_compilation import (
 )
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
+    COMPOSITION_FINGERPRINT_HWPX,
     NATIVE_PRIMITIVE_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_V1,
-    THEOREM_EVIDENCE_V1,
     CompositionPremisesBlocked,
     CompositionPremisesPassed,
     CompositionPremiseContextError,
-    theorem_evidence_digest,
-    verify_execution_composition_premises,
+    admit_composition_premises,
 )
 from hwpxfiller.application.execution_structure import (
     ENVELOPE_CAPABILITY_KEYS,
@@ -180,10 +179,9 @@ def _slotless_structure():
 
 
 def _passed(structure):
-    result = verify_execution_composition_premises(
+    result = admit_composition_premises(
         structure=structure,
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(result, CompositionPremisesPassed), result
     return result
@@ -251,9 +249,7 @@ def _policy(**over):
         composition_contract_id=COMPOSITION_CONTRACT_ID,
         native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest=theorem_evidence_digest(
-            THEOREM_EVIDENCE_V1
-        ),
+        composition_theorem_evidence_manifest_digest=COMPOSITION_FINGERPRINT_HWPX,
         materialization_contract_id="mat/1",
         plan_schema_version="plan/1",
         canonical_encoding_version="enc/1",
@@ -678,10 +674,9 @@ def test_same_span_target_blocks_before_compile():
         resolver_stability_facts=RESOLVER_FACTS,
         admitted_relation_profile="unadmitted",
     )
-    comp = verify_execution_composition_premises(
+    comp = admit_composition_premises(
         structure=structure,
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(comp, CompositionPremisesBlocked)
     # compiler 는 Blocked 를 받으면 operation 을 만들지 않고 context error 로 닫는다.

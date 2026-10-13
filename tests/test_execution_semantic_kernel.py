@@ -30,13 +30,11 @@ from hwpxfiller.application.execution_capture import (
 )
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
+    COMPOSITION_FINGERPRINT_HWPX,
     NATIVE_PRIMITIVE_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_V1,
-    THEOREM_EVIDENCE_V1,
     CompositionPremisesBlocked,
-    TheoremEvidenceRegistry,
-    theorem_evidence_digest,
-    verify_execution_composition_premises,
+    admit_composition_premises,
 )
 from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
 from hwpxfiller.application.execution_semantic_kernel import (
@@ -92,7 +90,6 @@ from hwpxfiller.application.execution_structure import (
     build_execution_structure,
 )
 from hwpxfiller.application.seal_execution_plan import (
-    UnsupportedLocalImplementation,
     compile_candidate,
 )
 from hwpxfiller.application.template_qualification import (
@@ -133,9 +130,7 @@ def _policy(**over) -> ResolvedSealPolicy:
         composition_contract_id=COMPOSITION_CONTRACT_ID,
         native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest=theorem_evidence_digest(
-            THEOREM_EVIDENCE_V1
-        ),
+        composition_theorem_evidence_manifest_digest=COMPOSITION_FINGERPRINT_HWPX,
         materialization_contract_id="materialization/v1",
         plan_schema_version="hwpx-execution-plan/v2",
         canonical_encoding_version=CANONICAL_ENCODING_VERSION,
@@ -221,10 +216,9 @@ def test_effective_meaning_change_changes_active_fields_and_operations():
 def test_composition_premise_violation_is_fail_closed():
     broken = _broken_resolver_structure()
     # self-validate: 실제로 C1~C10 premise 가 FAILED 인 structure 임을 raw verifier 로 못박는다.
-    result = verify_execution_composition_premises(
+    result = admit_composition_premises(
         structure=broken,
         native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
-        theorem_evidence=THEOREM_EVIDENCE_V1,
     )
     assert isinstance(result, CompositionPremisesBlocked), result
     # kernel 은 Plan 을 내지 않고 fail-closed 로 raise 한다.
@@ -436,29 +430,13 @@ def test_contract_semantics_rejects_empty_role():
         dataclasses.replace(semantics, binding_value_contract_id="")
 
 
-# ── R2-01: theorem runtime registry 결합 제거(kernel 은 registry 미consult) ──────────────
-def test_kernel_is_independent_of_theorem_registry_runtime():
-    """kernel 은 theorem registry 가 resolve 못 해도 동일 실행 의미를 낸다 — theorem runtime
-    bureaucracy 와의 결합이 끊겼음을 행위로 증명한다. 대조로 compile_candidate 는 빈 registry 에서
-    fail-closed 로 raise 하지만, kernel 산출 semantic 은 registry-검증 경로(default)와 동일하다."""
-    structure = _structure()
-    authority = _authority(structure)
-
-    kern = compute_sealed_execution_plan(authority)  # registry 미consult → 성공
-    assert isinstance(kern, SealedExecutionPlanValue)
-
+def test_kernel_and_command_compile_same_supported_plan():
+    authority = _authority(_structure())
+    kernel_value = compute_sealed_execution_plan(authority)
+    assert isinstance(kernel_value, SealedExecutionPlanValue)
     captured = _judge(authority)
     assert isinstance(captured, CapturedExecutionInput)
-    # 대조: v1 미등록 빈 registry 에서 기존 seam 은 theorem 을 resolve 못 해 fail-closed.
-    empty_registry = TheoremEvidenceRegistry()
-    with pytest.raises(UnsupportedLocalImplementation):
-        compile_candidate(captured, theorem_registry=empty_registry)
-
-    # 그럼에도 kernel(registry 없음) 산출 semantic 은 registry-검증 compile_candidate(default)와 동일.
-    canonical = compile_candidate(captured)
-    _assert_semantic_parity(kern, canonical)
-
-
+    _assert_semantic_parity(kernel_value, compile_candidate(captured))
 # ── slotless authority 도 순수 재계산된다 ──────────────────────────────────────────────
 def test_slotless_authority_recomputes_plan():
     structure = _slotless_structure()

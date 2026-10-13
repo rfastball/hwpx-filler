@@ -1,10 +1,10 @@
-"""TXT materialization runner (S10-04 · #861) — Plan ref → text artifact bytes.
+"""TXT materialization runner (S10-04 · #861) — 검증된 Plan·VDR → text artifact bytes.
 
 :class:`~hwpxfiller.external.materialization_runner.ProductionMaterializationRunner` 의 TXT
 대칭물이자 TXT executor/verifier(:mod:`text_materialization_conformance`)의 **유일한 production
 소유자**다. 조달 규율·단계 수·산출 타입이 HWPX 쪽과 같다 — 갈리는 것은 매체 primitive 뿐이다:
 
-1. Plan·VDR 복원(:class:`MaterializationInputPort` — digest 재검증·cross-bind·완결성)
+1. 전달받은 Plan·VDR 사용(시작 gate 에서 결속·완결성 확인)
 2. escaping 책임 확인(:func:`require_plaintext_materializer_escaping`) — 실행 전 gate
 3. candidate bytes 조달 + Plan 의 ``exact_content_digest`` 로 재해시 대조
 4. structure 조달 + Plan 의 ``template_structure_digest`` 로 대조
@@ -38,11 +38,7 @@ from hwpxfiller.application.execution_structure import (
     ExecutionTemplateStructure,
     template_structure_digest,
 )
-from hwpxfiller.application.generation_delivery import (
-    MaterializationInput,
-    MaterializationInputPort,
-)
-from hwpxfiller.application.record_validation import ImmutableVdrStore
+from hwpxfiller.application.generation_delivery import MaterializationInput
 from hwpxfiller.domain.field_binding import (
     ESCAPING_PLAINTEXT_MATERIALIZER,
     resolve_document_value_policy,
@@ -100,18 +96,16 @@ def require_plaintext_materializer_escaping(
 
 
 class TxtMaterializationRunner:
-    """Plan ref+VDR ref 에서 검증된 text artifact bytes 까지 — TXT executor/verifier 의 봉합."""
+    """검증된 Plan·VDR 에서 text artifact bytes 까지 — TXT executor/verifier 의 봉합."""
 
     def __init__(
         self,
         *,
-        input_port: MaterializationInputPort,
         candidate_blob_resolver: Callable[[str], bytes],
         structure_resolver: Callable[
             [SealedExecutionPlanSemanticPayload], ExecutionTemplateStructure
         ],
     ) -> None:
-        self._input_port = input_port
         self._candidate_blob_resolver = candidate_blob_resolver
         self._structure_resolver = structure_resolver
 
@@ -119,7 +113,7 @@ class TxtMaterializationRunner:
         self, materialization_input: MaterializationInput
     ) -> MaterializationOutcome:
         """Plan 이 정한 operation 만 수행해 bytes 를 만들고 후행조건으로 재검사한다."""
-        plan, vdr = self._input_port.resolve(materialization_input)
+        plan, vdr = materialization_input.plan, materialization_input.record
 
         # 0. 매체 검문 — 다른 매체의 Plan 을 평문 치환으로 실행하지 않는다(fail-closed).
         contracts = plan.execution_basis.contracts
@@ -182,16 +176,10 @@ class TxtMaterializationRunner:
 
 def txt_materialization_runner(
     root: Path,
-    *,
-    plan_resolver: Callable[[str], SealedExecutionPlanSemanticPayload],
-    vdr_store: ImmutableVdrStore,
 ) -> TxtMaterializationRunner:
     """template authority root 아래 실 store 로 러너를 결선한다(HWPX 조립과 같은 규약)."""
     candidate_store = CandidateObjectStore(root / "candidates")
     return TxtMaterializationRunner(
-        input_port=MaterializationInputPort(
-            plan_resolver=plan_resolver, vdr_store=vdr_store
-        ),
         candidate_blob_resolver=lambda digest: candidate_store.get_blob(
             digest
         ).exact_bytes,

@@ -10,19 +10,16 @@ dict 코덱을 소유한다 — writer lease·atomic replace·store 결속은
 생성·decode 시점에 시끄럽게 거절된다. epoch 은 별도 필드가 아니라 current Application 에서
 파생한다(``new_epoch = current.application_epoch + 1``) — DocumentWork 에 중복 저장하지 않는다.
 
-Preparation·PreparedChange·ApplyProvenance·Outbox 의 최종 필드·상태 집합은 S3-04·S3-06 이
-소유한다. 여기는 그 셋이 aggregate 에 실려 round-trip 하도록 하는 얇은 seam 레코드(identity +
-opaque ``payload``)만 제공한다 — 도메인 필드를 미리 발명하지 않는다(YAGNI).
+Preparation·PreparedChange 의 상태 집합은 S3-04·S3-06 이 소유한다.
 """
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-SCHEMA_VERSION = "work-template-state-v1"
+SCHEMA_VERSION = "work-template-state-v2"
 
 INITIALIZATION = "INITIALIZATION"
 PREPARED_CHANGE = "PREPARED_CHANGE"
@@ -190,43 +187,6 @@ class PreparedTemplateChange:
             raise WorkTemplateStateError(f"미상 prepared change status {self.status!r}")
 
 
-@dataclass(frozen=True)
-class ApplyProvenance:
-    """apply transition 의 audit 상세(S3-07). Application history 가 정본, 이건 감사용 부기다."""
-
-    provenance_id: str
-    work_id: str
-    from_application_id: str
-    to_application_id: str
-    from_pass_evidence_id: str
-    to_pass_evidence_id: str
-    prepared_change_id: str
-    epoch_before: int
-    epoch_after: int
-    actor: str
-    applied_at: str
-
-
-@dataclass(frozen=True)
-class OutboxEvent:
-    """aggregate commit 과 원자적으로 발행되는 outbox 항목의 seam."""
-
-    event_id: str
-    event_type: str
-    payload: Mapping[str, Any]
-
-
-@dataclass(frozen=True)
-class MigrationProvenance:
-    """legacy Job 을 S3 로 bootstrap 한 증거(S3-08). legacy counter 는 **identity 가 아니라 출처**다."""
-
-    bootstrap_request_id: str
-    legacy_template_revision: int
-    legacy_binding_revision: int
-    legacy_source_reference: str
-    migrated_at: str
-
-
 # ─── aggregate ────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -239,9 +199,6 @@ class WorkTemplateStateAggregate:
     applications: tuple[WorkTemplateApplication, ...]
     preparations: tuple[TemplateChangePreparation, ...]
     prepared_changes: tuple[PreparedTemplateChange, ...]
-    apply_provenance: tuple[ApplyProvenance, ...]
-    outbox_events: tuple[OutboxEvent, ...]
-    migration_provenance: MigrationProvenance | None = None  # bootstrap 된 Work 만(S3-08)
 
     def __post_init__(self) -> None:
         validate_aggregate(self)
@@ -313,28 +270,13 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
                 f"prepared_change_id 중복 {change.prepared_change_id}"
             )
         change_ids.add(change.prepared_change_id)
-    # DocumentWork 자기 current preparation pointer 와 provenance→application 링크는
+    # DocumentWork 자기 current preparation pointer 는
     # append-only 라 여기서 dangling 을 막는다(current_application 검증과 대칭). prepared_change
     # 존재·application↔prepared_change 링크는 prepared_changes 수명(apply 후 pruning)을 소유하는
     # S3-04·S3-06 이 지므로 여기서 강제하지 않는다(정당한 pruned history 오거절 방지).
     current_prep = aggregate.work.current_template_preparation_id
     if current_prep is not None and current_prep not in prep_ids:
         raise WorkTemplateStateError("current preparation pointer 가 dangling")
-    provenance_ids: set[str] = set()
-    for prov in aggregate.apply_provenance:
-        if prov.from_application_id not in app_ids or prov.to_application_id not in app_ids:
-            raise WorkTemplateStateError(
-                f"provenance {prov.provenance_id} 가 없는 application 을 가리킨다"
-            )
-        if prov.provenance_id in provenance_ids:
-            raise WorkTemplateStateError(f"provenance_id 중복 {prov.provenance_id}")
-        provenance_ids.add(prov.provenance_id)
-    # outbox event_id 유일성 — dispatcher 가 event_id 로 dedup 하므로 중복은 전달 유실을 부른다.
-    event_ids: set[str] = set()
-    for event in aggregate.outbox_events:
-        if event.event_id in event_ids:
-            raise WorkTemplateStateError(f"outbox event_id 중복 {event.event_id}")
-        event_ids.add(event.event_id)
 
 
 # ─── codec: 저장 어댑터가 쓰는 native-free dict ↔ 값 ──────────────────────────
@@ -454,60 +396,10 @@ def encode_aggregate(aggregate: WorkTemplateStateAggregate) -> dict[str, Any]:
             }
             for c in aggregate.prepared_changes
         ],
-        "apply_provenance": [
-            {
-                "provenance_id": pr.provenance_id,
-                "work_id": pr.work_id,
-                "from_application_id": pr.from_application_id,
-                "to_application_id": pr.to_application_id,
-                "from_pass_evidence_id": pr.from_pass_evidence_id,
-                "to_pass_evidence_id": pr.to_pass_evidence_id,
-                "prepared_change_id": pr.prepared_change_id,
-                "epoch_before": pr.epoch_before,
-                "epoch_after": pr.epoch_after,
-                "actor": pr.actor,
-                "applied_at": pr.applied_at,
-            }
-            for pr in aggregate.apply_provenance
-        ],
-        "outbox_events": [
-            {
-                "event_id": e.event_id,
-                "event_type": e.event_type,
-                "payload": dict(e.payload),
-            }
-            for e in aggregate.outbox_events
-        ],
-        "migration_provenance": _encode_migration(aggregate.migration_provenance),
     }
-
-
-def _encode_migration(mp: "MigrationProvenance | None") -> dict[str, Any] | None:
-    if mp is None:
-        return None
-    return {
-        "bootstrap_request_id": mp.bootstrap_request_id,
-        "legacy_template_revision": mp.legacy_template_revision,
-        "legacy_binding_revision": mp.legacy_binding_revision,
-        "legacy_source_reference": mp.legacy_source_reference,
-        "migrated_at": mp.migrated_at,
-    }
-
-
-def _decode_migration(data: "Mapping[str, Any] | None") -> "MigrationProvenance | None":
-    if data is None:
-        return None
-    return MigrationProvenance(
-        bootstrap_request_id=data["bootstrap_request_id"],
-        legacy_template_revision=data["legacy_template_revision"],
-        legacy_binding_revision=data["legacy_binding_revision"],
-        legacy_source_reference=data["legacy_source_reference"],
-        migrated_at=data["migrated_at"],
-    )
 
 
 def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
-    # payload 는 caller/디스크 소유였으므로 deep-copy 로 alias 를 끊는다(frozen 은 nested 를 못 막음).
     return WorkTemplateStateAggregate(
         schema_version=data["schema_version"],
         aggregate_version=data["aggregate_version"],
@@ -528,29 +420,4 @@ def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
             )
             for c in data["prepared_changes"]
         ),
-        apply_provenance=tuple(
-            ApplyProvenance(
-                provenance_id=pr["provenance_id"],
-                work_id=pr["work_id"],
-                from_application_id=pr["from_application_id"],
-                to_application_id=pr["to_application_id"],
-                from_pass_evidence_id=pr["from_pass_evidence_id"],
-                to_pass_evidence_id=pr["to_pass_evidence_id"],
-                prepared_change_id=pr["prepared_change_id"],
-                epoch_before=pr["epoch_before"],
-                epoch_after=pr["epoch_after"],
-                actor=pr["actor"],
-                applied_at=pr["applied_at"],
-            )
-            for pr in data["apply_provenance"]
-        ),
-        outbox_events=tuple(
-            OutboxEvent(
-                event_id=e["event_id"],
-                event_type=e["event_type"],
-                payload=copy.deepcopy(e["payload"]),
-            )
-            for e in data["outbox_events"]
-        ),
-        migration_provenance=_decode_migration(data.get("migration_provenance")),
     )

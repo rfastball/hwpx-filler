@@ -39,7 +39,7 @@ from ..application.generation_delivery import (
     DeliveryPlanContextError,
 )
 from ..application.run_delivery_intent import OVERWRITE_EXPLICIT, RunDeliveryIntent
-from ..domain.job import JOB_MAPPING_AUTHORITY, Job
+from ..domain.job import Job
 from ..domain.mapping import MappingProfile
 from .current_execution_preparation import (
     DELIVERY_BLOCKER_PHRASES,
@@ -124,7 +124,6 @@ def run_headless_generation(
             template_path=str(Path(template_path).resolve()),
             mapping=mapping,
             filename_pattern=filename_pattern,
-            binding_authority=JOB_MAPPING_AUTHORITY,
         )
     )
 

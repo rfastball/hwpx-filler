@@ -22,7 +22,6 @@ from _output_folder_pick import pick_output_folder
 from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
 )
-from hwpxfiller.domain.job import JOB_MAPPING_AUTHORITY
 from hwpxfiller.host.locations import home_dir
 
 
@@ -91,7 +90,6 @@ def test_freshly_compiled_slot_work_generates_without_reconfirming_bindings(app,
     assert wb["input_requirements"] == []
     assert "REVIEW_BINDING" not in wb["blockers"]
     assert wb["primary_action"] == "CREATE_DOCUMENTS"
-    assert app.controllers["job"].registry.load("공고작업").binding_authority == JOB_MAPPING_AUTHORITY
     assert not list((home_dir() / "template_authority" / "field_bindings").glob("*.json"))
 
     result = app.generate("job")
