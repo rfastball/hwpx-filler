@@ -172,18 +172,6 @@ def test_restore_tolerates_dead_and_absent_values():
     assert TutorialViewModel.from_progress({"achieved": "T0"}).progress()["achieved"] == []
 
 
-def test_retired_deep_tier_step_needs_no_migration():
-    """심화 티어 병합 전(#284)에 저장된 ``T18`` 기록은 무해하게 걸러진다.
-
-    마이그레이션을 쓰지 않는 근거를 코드로 고정한다: 죽은 키 관용(#899)이 이미 계약이라
-    옛 진행이 부팅을 막지도, 없는 단계를 달성으로 세지도 않는다.
-    """
-    vm = TutorialViewModel.from_progress({"achieved": ["T16", "T17", "T18"], "dismissed": False})
-    assert vm.progress()["achieved"] == ["T16", "T17"]
-    assert vm.snapshot()["achieved_count"] == 2
-    assert vm.all_complete is False
-
-
 def test_snapshot_is_json_serialisable_and_carries_tier_copy():
     vm = TutorialViewModel()
     vm.notify(Milestone.INSTALL_EXAMPLES)

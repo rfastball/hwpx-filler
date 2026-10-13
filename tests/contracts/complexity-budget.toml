@@ -483,7 +483,7 @@ function_complexity = 34
 function_complexity = 11
 
 [budget."scripts/live101/driver.py"]
-module_statements = 428
+module_statements = 424
 
 [budget."scripts/live101/driver.py::_run_with_home.drive"]
 function_complexity = 11
@@ -915,7 +915,7 @@ function_complexity = 18
 function_complexity = 11
 
 [budget."src/hwpxfiller/external/job_store.py"]
-module_statements = 347
+module_statements = 343
 
 [budget."src/hwpxfiller/external/job_store.py::JobRegistry"]
 class_methods = 32
@@ -1303,7 +1303,7 @@ module_statements = 1787
 module_statements = 1308
 
 [budget."tests/js/n06_editor.test.js"]
-module_statements = 1135
+module_statements = 1132
 
 [budget."tests/repo_contract/test_architecture.py::test_screen_controllers_stay_transport_thin"]
 function_complexity = 36
@@ -1316,9 +1316,6 @@ function_complexity = 22
 
 [budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_import_names"]
 function_complexity = 21
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_targets"]
-function_complexity = 24
 
 [budget."tests/repo_contract/test_p3_forbidden_edges.py::_facade_exports"]
 function_complexity = 21
@@ -1348,7 +1345,7 @@ module_statements = 1589
 function_complexity = 43
 
 [budget."tests/test_job.py"]
-module_statements = 1097
+module_statements = 1060
 
 [budget."tests/test_web_authoring_layout.py::test_authoring_columns_scale_and_narrow_sheet"]
 function_complexity = 22

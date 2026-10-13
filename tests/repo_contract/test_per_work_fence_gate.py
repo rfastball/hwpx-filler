@@ -24,14 +24,10 @@ def _under_fence_defs() -> dict[str, Path]:
     return defs
 
 
-def test_under_fence_helpers_exist() -> None:
-    # 뿌리 계약이 성립하려면 최소 하나(S3 Apply)는 있어야 한다 — 오탐 방지 양성 대조.
-    defs = _under_fence_defs()
-    assert "apply_prepared_change_under_fence" in defs
-
-
 def test_under_fence_helpers_not_referenced_outside_defining_module() -> None:
     defs = _under_fence_defs()
+    # 뿌리 계약이 성립해야 빈 정의 집합을 우회 없음으로 오인하지 않는다.
+    assert "apply_prepared_change_under_fence" in defs
     defining_paths = set(defs.values())
     offenders: list[str] = []
     for path in SRC.rglob("*.py"):

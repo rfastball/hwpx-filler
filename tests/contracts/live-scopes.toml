@@ -86,7 +86,6 @@ shared = [
   "tests/conftest.py",
   "tests/_live_budget.py",
   "tests/_web_source.py",
-  "tests/_web_artifact_contract.py",
   "tests/test_web_selftest_gate.py",
   "tests/contracts/live-scopes.toml",
   "tests/contracts/selftest-probe-graph.json",

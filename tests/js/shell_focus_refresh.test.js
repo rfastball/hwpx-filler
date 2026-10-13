@@ -29,7 +29,7 @@ async function withShellGlobals(run) {
   }
 }
 
-function buildShell(refreshScreen, currentScreen = "job") {
+function buildShell(refreshScreen, currentScreen = () => "job") {
   return withShellGlobals(async () => {
     const { createAppShell } = await import("../../frontend/src/shell/app.ts");
     return createAppShell({
@@ -51,7 +51,7 @@ function buildShell(refreshScreen, currentScreen = "job") {
       shellNav: {
         go() {},
         refresh() {},
-        currentScreen: () => currentScreen,
+        currentScreen,
         beginClosePrompt: () => true,
         endClosePrompt() {},
       },
@@ -69,15 +69,19 @@ function focusHandlers(shell) {
 
 test("창으로 돌아오면 현재 화면을 다시 묻는다", async () => {
   const asked = [];
+  let screen = "job";
   const shell = await buildShell((screen) => {
     asked.push(screen);
     return Promise.resolve(null);
-  });
+  }, () => screen);
 
   const handlers = focusHandlers(shell);
   assert.equal(handlers.length, 1, "포커스 복귀 갱신 서술이 없습니다(또는 중복입니다).");
   handlers[0](new Event("focus"));
   assert.deepEqual(asked, ["job"], "현재 화면이 아니라 다른 화면을 물었습니다.");
+  screen = "library";
+  handlers[0](new Event("focus"));
+  assert.deepEqual(asked, ["job", "library"], "화면 전환 뒤 이전 화면을 다시 물었습니다.");
 });
 
 test("갱신 실패는 셸을 무너뜨리지 않는다 — 편의이지 계약이 아니다", async () => {
@@ -94,17 +98,7 @@ test("아직 아무 화면도 안 섰으면 묻지 않는다", async () => {
   const shell = await buildShell((screen) => {
     asked.push(screen);
     return Promise.resolve(null);
-  }, null);
+  }, () => null);
   focusHandlers(shell)[0](new Event("focus"));
   assert.deepEqual(asked, [], "물을 대상이 없는데 물었습니다.");
-});
-
-test("포커스 갱신은 지금 선 화면을 따라간다", async () => {
-  const asked = [];
-  const shell = await buildShell((screen) => {
-    asked.push(screen);
-    return Promise.resolve(null);
-  }, "library");
-  focusHandlers(shell)[0](new Event("focus"));
-  assert.deepEqual(asked, ["library"]);
 });

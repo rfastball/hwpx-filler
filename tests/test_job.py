@@ -18,7 +18,6 @@ from hwpxfiller.domain.job import (
     Job,
     RunRequest,
     data_binding_matches,
-    data_binding_of,
     has_data_binding,
 )
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -181,14 +180,6 @@ def test_data_kind_round_trips_and_old_json_lands_on_excel():
 
     with pytest.raises(ValueError):
         decode_job({**encode_job(_job()), "data_kind": 7})
-
-
-def test_data_binding_of_carries_the_kind_in_the_tail():
-    """결속 한 벌은 ``(path, sheet, header_row, kind)`` 네 값이다 — 종류가 꼬리에 선다."""
-    assert data_binding_of(Job(name="빈")) == ("", "", 0, "")
-    bound = Job(name="a", data_path="/db/pclm.sqlite", data_sheet="계약",
-                data_kind="pclm")
-    assert data_binding_of(bound) == ("/db/pclm.sqlite", "계약", 0, "pclm")
 
 
 def test_data_binding_matches_splits_on_kind_before_identity():
@@ -356,6 +347,9 @@ def test_registry_save_load_names_delete(tmp_path):
     """작업당 JSON 1개 — 저장·존재·목록·로드·삭제 왕복."""
     reg = JobRegistry(tmp_path)
     assert reg.list_jobs() == []  # 빈 디렉터리
+    assert not reg.exists("입찰공고서")
+    with pytest.raises(FileNotFoundError):
+        reg.load("입찰공고서")
     reg.save(_job())
     assert reg.exists("입찰공고서")
     assert reg.names() == ["입찰공고서"]
@@ -363,19 +357,6 @@ def test_registry_save_load_names_delete(tmp_path):
     reg.delete("입찰공고서")
     assert not reg.exists("입찰공고서")
     assert reg.list_jobs() == []
-
-
-def test_registry_exists_guards_missing_and_deleted_name(tmp_path):
-    """UD-03 실행 진입 가드의 링0 술어 — 미저장·삭제 후 이름은 exists()=False,
-    load 는 예외. app._open_run 이 load 직행 전 이 술어로 '사라진 작업'을 걸러낸다."""
-    reg = JobRegistry(tmp_path)
-    assert not reg.exists("사라진작업")            # 미저장 → False
-    with pytest.raises(FileNotFoundError):
-        reg.load("사라진작업")                     # 가드 없이 load 직행하면 예외
-    reg.save(Job(name="사라진작업", template_path="/t.hwpx"))
-    assert reg.exists("사라진작업")
-    reg.delete("사라진작업")
-    assert not reg.exists("사라진작업")            # 삭제 후 → False(가드가 잡는 상태)
 
 
 def test_registry_missing_directory_lists_empty(tmp_path):
@@ -412,12 +393,7 @@ def test_registry_save_rejects_slug_collision_different_name(tmp_path):
     # 첫 작업이 온전 보존된다(덮이지 않음).
     assert reg.load("예산/2026").template_path == "/a.hwpx"
     assert [j.template_path for j in reg.list_jobs()] == ["/a.hwpx"]
-
-
-def test_registry_save_allow_overwrite_bypasses_guard(tmp_path):
-    """명시적 opt-in(allow_overwrite) 은 slug 충돌을 통과 — 확정된 덮어쓰기."""
-    reg = JobRegistry(tmp_path)
-    reg.save(Job(name="예산/2026", template_path="/a.hwpx"))
+    # 같은 충돌을 명시 승인하면 새 작업으로 교체된다.
     reg.save(Job(name="예산_2026", template_path="/b.hwpx"), allow_overwrite=True)
     assert len(reg.list_jobs()) == 1
     assert reg.load("예산_2026").template_path == "/b.hwpx"

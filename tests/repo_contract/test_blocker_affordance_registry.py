@@ -170,43 +170,36 @@ def test_a_declaration_without_a_reason_is_refused() -> None:
         BlockerAffordance(kind=NO_VERB_BY_DESIGN, rationale="")
 
 
-# ─────────────────────────────────────────────────── 2. 액션 실재 ──
+# ──────────────────────────────── 2·3. 액션·셀렉터 실재 ──
 
 
-@pytest.mark.parametrize("code", [c for c in BLOCKER_CODES])
-def test_declared_verb_action_exists(code: str) -> None:
-    """활성 동사가 지목한 좌표가 registry 또는 ``WebFrontend`` 공개 메서드로 실재한다."""
-    affordance = BLOCKER_AFFORDANCES[code]
-    if affordance.dispatch_action is not None:
-        screen, _, action = affordance.dispatch_action.partition(".")
-        assert screen in ACTION_REGISTRY, f"{code}: 모르는 화면 {screen!r}"
-        assert action in ACTION_REGISTRY[screen], (
-            f"{code}: {screen!r} 에 등록되지 않은 액션 {action!r}"
-        )
-    if affordance.bridge_method is not None:
-        assert affordance.bridge_method in _webfrontend_public_methods(), (
-            f"{code}: WebFrontend 공개 메서드가 아닙니다 — {affordance.bridge_method!r}"
-        )
-
-
-# ─────────────────────────────────────────────────── 3. 셀렉터 실재 ──
-
-
-@pytest.mark.parametrize("code", [c for c in BLOCKER_CODES])
-def test_declared_selector_tokens_exist_in_frontend(code: str) -> None:
-    """선언한 셀렉터의 id/클래스 토큰이 프런트 source 에 실재한다.
-
-    「그 상태에서 실제로 서는가」는 못 본다(모듈 머리말의 한계) — 여기서 잡는 것은 이름이
-    갈렸는데 표가 안 따라온 자리다.
-    """
-    selector = BLOCKER_AFFORDANCES[code].selector
-    if selector is None:
-        return
+def test_declared_affordance_actions_and_selectors_exist() -> None:
+    """전수 선언을 한 번 순회해 액션과 프런트 셀렉터의 누락을 코드별로 보고한다."""
     text = _frontend_text()
-    tokens = _SELECTOR_TOKEN.findall(selector)
-    assert tokens, f"{code}: 셀렉터에서 실재를 물어볼 토큰이 없습니다 — {selector!r}"
-    missing = [token for token in tokens if token not in text]
-    assert not missing, f"{code}: 프런트에 없는 셀렉터 토큰 {missing} — {selector!r}"
+    methods = _webfrontend_public_methods()
+    failures: list[str] = []
+    for code in BLOCKER_CODES:
+        affordance = BLOCKER_AFFORDANCES[code]
+        if affordance.dispatch_action is not None:
+            screen, _, action = affordance.dispatch_action.partition(".")
+            if screen not in ACTION_REGISTRY:
+                failures.append(f"{code}: 모르는 화면 {screen!r}")
+            elif action not in ACTION_REGISTRY[screen]:
+                failures.append(f"{code}: {screen!r} 에 등록되지 않은 액션 {action!r}")
+        if affordance.bridge_method is not None and affordance.bridge_method not in methods:
+            failures.append(
+                f"{code}: WebFrontend 공개 메서드가 아닙니다 — {affordance.bridge_method!r}"
+            )
+        selector = affordance.selector
+        if selector is not None:
+            tokens = _SELECTOR_TOKEN.findall(selector)
+            if not tokens:
+                failures.append(f"{code}: 셀렉터에서 실재를 물어볼 토큰이 없습니다 — {selector!r}")
+            else:
+                missing = [token for token in tokens if token not in text]
+                if missing:
+                    failures.append(f"{code}: 프런트에 없는 셀렉터 토큰 {missing} — {selector!r}")
+    assert not failures, "\n".join(failures)
 
 
 # ─────────────────────────────────────────────── 4. 역방향(고아 0) ──

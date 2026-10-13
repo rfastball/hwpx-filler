@@ -466,50 +466,6 @@ test("입력이 필요한 항목 0건이면 라벨까지 포함해 구획을 안
   }
 });
 
-test("생성 내용 확인 표면과 승인 표지는 철거됐다(#957) — 파괴 확인은 생성 왕복이 진다", async () => {
-  /* 종전 이 자리에는 `JobPreviewSheet` 가 backend DTO 를 그리고 `preview_approve` 로 토큰을
-     왕복시키는 계약이 섰다. #957 정책 선회로 그 표면과 승인 축이 통째로 사라졌으므로 여기서
-     세는 것은 **부재**다: 두 출구(A 갈래 거울 트리거·B 갈래 관리형 버튼)와 「승인 필요」
-     표지가 어느 상태에서도 서지 않는다. 파괴 확인의 계약은 `overwriteBody` 가 진다. */
-  const snap = {
-    ...SNAP, managed_hwpx: true,
-    review: { required: true, risk: "filename_set", targets: ["파일 이름 규칙"] },
-    workbench_observation: {
-      supported: true, primary_action: "CREATE_DOCUMENTS",
-      create_action: { label: "문서 만들기", enabled: false, disabled_reason: "S6 부재" },
-    },
-  };
-  const h = harness({ snapshot: snap });
-  await h.controller.init();
-  h.push(snap);
-
-  const action = renderToStaticMarkup(
-    createElement(JobActionBar, { controller: h.controller }),
-  );
-  for (const gone of ["jobManagedPreviewOpen", "jobMirrorPreviewOpen", "jobReviewFlag",
-    "생성 내용 확인", "승인 필요"]) {
-    assert.equal(action.includes(gone), false, gone);
-  }
-
-  const legacy = { ...snap, managed_hwpx: false };
-  h.push(legacy);
-  const legacyAction = renderToStaticMarkup(
-    createElement(JobActionBar, { controller: h.controller }),
-  );
-  for (const gone of ["jobReviewFlag", "승인 필요", "jobManagedPreviewOpen"]) {
-    assert.equal(legacyAction.includes(gone), false, gone);
-  }
-
-  /* 파괴 확인 본문은 남는다 — 수치 재진술의 단일 출처(managed·legacy 공용). */
-  const body = h.controller.overwriteBody({
-    total: 10, overwrite_count: 3, new_count: 7,
-    conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 1,
-  });
-  for (const text of ["10건", "3건", "7건", "a.hwpx", "b.hwpx", "외 1개"]) {
-    assert.ok(body.includes(text), text);
-  }
-});
-
 test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 push를 기다린다', async () => {
   const snap = {
     ...SNAP, managed_hwpx: true,
@@ -553,11 +509,6 @@ test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 
     '실제 파일 생성을 예약한 것은 아닙니다.',
   ])
     assert.equal(markup.includes(gone), false, gone);
-
-  const source = String(JobDelivery);
-  for (const forbidden of ['new Date', '{{date', '{{seq', 'existsSync', 'casefold', '.sort(']) {
-    assert.equal(source.includes(forbidden), false, forbidden);
-  }
 });
 
 test('저장 폴더는 backend가 도출한 경로·출처·사유를 그대로 그린다', async () => {

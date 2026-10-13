@@ -66,7 +66,7 @@ title = "사용자 소개·실행"
 max_lines = 230
 sources = ["docs/product.md"]
 tests = ["tests/test_job.py"]
-source_sha256 = "ac9bab07e057f2d2a24471b167661d07569059e4a87972c873f98ebb7a4a0d80"
+source_sha256 = "ec35564087d77504a51bfe8e86f407aba40a837f132b5ad2c7d2cd233a0487be"
 body_sha256 = "dae16dde030f8292969d4ebb509b979592787d17b61c0598d21e3c5082aa7620"
 
 [[document]]
@@ -77,7 +77,7 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "76f8dece441203ae6aba14e249fb2c39b5f89f0da1fa29c15774e712f43f729b"
+source_sha256 = "9b8a601f7b5ad098c487e76018f5129b38280e5552e04aff0d031b2025eaa8a2"
 body_sha256 = "637293d174af842bc01ba7e5ae56890a21f85a53acb7b3361edd1b1154d7523c"
 
 [[document]]
@@ -145,7 +145,7 @@ id = "product-purpose"
 document = "docs/product.md"
 sources = ["pyproject.toml", "src/hwpxfiller/cli.py"]
 tests = ["tests/test_job.py"]
-source_sha256 = "47642c5d86dc7d70cccb3ed1e90682201f6eee77a34040772ebb4607bd9275b5"
+source_sha256 = "5ce97412baaf460bcd482aa2ea2d76081e7480e7154a237c997360c00e522321"
 body_sha256 = "a3ae61c2fc1f49c6b6bb6ca48d847e3fb11597c375440a64a44b46b8c471cf7a"
 
 [[topic]]
@@ -153,7 +153,7 @@ id = "product-scope"
 document = "docs/product.md"
 sources = ["packaging/verify_specs.py", "packaging/hwpx_filler_web.spec", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial_lessons.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxcore/package.py", "src/hwpxfiller/external/hwpx_package_io.py", "frontend/src/react/*.ts", "frontend/index.html"]
 tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_package_budget.py"]
-source_sha256 = "c607f43ef5cbcd797942d3cfb6014139209b2cd7aeadde3ba33d8504993b60bc"
+source_sha256 = "d32e90b1cd7571950d1c42c50e2672366260c95e8bba0c7833f2e5034d34208f"
 body_sha256 = "14c9d2ed7adcb710c45f52d57bea44ca804b8e9e90852aaa02561571cd2988cd"
 
 [[topic]]
@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "b85248ce32e5e869e363f799172c0ff0c4864a582fe1ce104bf76c4c3e93f4ea"
+source_sha256 = "fde7bdc2437d937ab0de1facee1eab19a610a43ddb294dfd12cf052d070831e7"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/workspace_*.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/host/native/dialogs.py", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_native_positive.py"]
-source_sha256 = "32c2c48a52f0e65e477e751c1c4b63f6654fa4df32ed843754b279d509c2ac5c"
+source_sha256 = "285d08a77aed02faf96477936a16f3a5b515d66c454cf5a26230644ad1288e07"
 body_sha256 = "82bb343e80b2b3f4d17338bf2b913cf19a3125562108afd28769af607eec7c6b"
 
 [[topic]]
@@ -185,7 +185,7 @@ id = "workflow-definition"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/viewmodel/edit_session.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py", "src/hwpxfiller/external/job_store.py", "src/hwpxfiller/external/job_binding_projection.py", "src/hwpxfiller/external/seal_execution_plan_service.py", "src/hwpxfiller/external/seal_execution_capture_runner.py", "src/hwpxfiller/domain/format_engine.py", "src/hwpxfiller/domain/field_induction/transforms.py"]
 tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py", "tests/test_seal_execution_plan_service.py", "tests/test_webapp_binding_confirm_journey.py", "tests/test_format_engine.py", "tests/test_value_format_matrix.py"]
-source_sha256 = "80c3360fe51c174ad4b1f56d5262a50a64b9688597db949ecf8bda6736f01a24"
+source_sha256 = "2fae560788fdaaaf4f503cc3a5c952349447614f7d66517707ffee1c14ea6444"
 body_sha256 = "d0aa8ba6332f377d15363bed09d517c3bc6589b8189e3db61e829c5509330c88"
 
 [[topic]]
@@ -225,7 +225,7 @@ id = "workflow-storage"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/external/tutorial_workspace.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts"]
 tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_tutorial_walk.py"]
-source_sha256 = "2022d6e964a8a63c88c68a77e2e81e19e64d665ef992a7c0bd4c4cc6828c18ef"
+source_sha256 = "ebe25e4e1e977406051d28ca6bc135050ce10a7249ded16e913ccf80daacbd24"
 body_sha256 = "8b22c957c227183353a85861b3b1a0f3a2348dec43ad93fb5eb89fa6bb8a68fa"
 
 [[topic]]
@@ -257,7 +257,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
 tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "644b2e033ff7c3f707d04459df01032875657029b46f1af9e2e216ae2fc096f8"
+source_sha256 = "bef4135035c881cc1e30b909bb51f235d281707a8d52c492c75288486b24e7be"
 body_sha256 = "a60ff73d9e896ea57cfac1804d787463026c63450c5fc529b8a4f3170f01de00"
 
 [[topic]]
@@ -265,7 +265,7 @@ id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
 tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "9a587adafc434a622b3f359e6911d2e7ac9df8d691dcbbd8e2cd89501e02e54b"
+source_sha256 = "87d8f57c56e26c083e9e569b2bf4e727c974a1c3a1d123a6efbdceb6884dfdf2"
 body_sha256 = "3b28ef2501aa93a17d2ab6dd6602b69f145cf2d38b10c47b1a1c6129aabab6da"
 
 [[topic]]
@@ -273,7 +273,7 @@ id = "documentation"
 document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
 tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "1a1288fb37e3f0d9e24df5c99f7ec3a8e4e6e9a91578dee605d9d26490576527"
+source_sha256 = "aa0aa7861dd5143bc235d9dbb104bad378a278d066a4844bfc1f623a461fd10c"
 body_sha256 = "2583be20ae728c271f27072fd32f26055efa573b13c9e0b93e534991a5c062bf"
 
 [[support]]

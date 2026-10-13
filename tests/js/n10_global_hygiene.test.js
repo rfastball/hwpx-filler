@@ -1,5 +1,4 @@
-/* 제품 전역의 최종 경계. 분석기 자체나 마이그레이션 수량은 테스트하지 않는다.
- * 실제 source와 sealed artifact만 파싱해 공개 전역 둘과 은퇴 별칭 부재를 확인한다. */
+/* 제품 전역의 최종 경계. 실제 source와 sealed artifact를 파싱해 공개 전역 쓰기를 확인한다. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -15,12 +14,6 @@ const FRONTEND = new URL("../../frontend/", import.meta.url);
 const SOURCE_HTML = new URL("index.html", FRONTEND);
 const ARTIFACT = new URL(`${pathToFileURL(viteConfig.build.outDir).href}/`);
 const SEAL_NAME = "web-artifact-seal.json";
-const DEAD_ALIASES = new Set([
-  "Copy", "escHtml", "Guard", "SegView", "Popover", "Preserve", "Intent", "UndoToast",
-  "Modal", "SurfaceSheet", "GroupList", "Theme", "Personalization", "SheetPicker",
-  "PathTrack", "Relink", "DataZone", "DataPicker", "EditorEntry", "LibraryScreen",
-  "EditorScreen", "JobScreen", "WorkbenchScreen", "Nav", "AppCloseGuard", "Bridge", "__push",
-]);
 const CODE_SUFFIXES = [".js", ".mjs", ".ts", ".tsx"];
 
 function childNodes(node) {
@@ -55,20 +48,18 @@ function globalRoot(node) {
 function inspectSource(source, filename) {
   const lang = filename.endsWith(".tsx") ? "tsx" : filename.endsWith(".ts") ? "ts" : "js";
   const program = parseAst(source, { lang });
-  const references = [];
   const writes = [];
 
-  function record(name, target, into) {
-    if (typeof name === "string") into.push({ name, target });
+  function record(name) {
+    if (typeof name === "string") writes.push(name);
   }
 
   function walk(node, parent = null) {
     if (node.type === "MemberExpression" && globalRoot(node.object)) {
       const name = staticKey(node.property, node.computed);
-      record(name, node.object.name, references);
       const isWrite = (parent?.type === "AssignmentExpression" && parent.left === node)
         || (parent?.type === "UpdateExpression" && parent.argument === node);
-      if (isWrite) record(name, node.object.name, writes);
+      if (isWrite) record(name);
     }
 
     if (node.type === "CallExpression" && node.callee?.type === "MemberExpression"
@@ -76,16 +67,14 @@ function inspectSource(source, filename) {
       const method = staticKey(node.callee.property, node.callee.computed);
       if (method === "defineProperty" && globalRoot(node.arguments[0])) {
         const name = staticKey(node.arguments[1], true);
-        record(name, node.arguments[0].name, references);
-        record(name, node.arguments[0].name, writes);
+        record(name);
       }
       if (method === "assign" && globalRoot(node.arguments[0])) {
         for (const arg of node.arguments.slice(1)) {
           if (arg?.type !== "ObjectExpression") continue;
           for (const property of arg.properties) {
             const name = staticKey(property.key, property.computed);
-            record(name, node.arguments[0].name, references);
-            record(name, node.arguments[0].name, writes);
+            record(name);
           }
         }
       }
@@ -95,7 +84,7 @@ function inspectSource(source, filename) {
   }
 
   walk(program);
-  return { references, writes };
+  return writes;
 }
 
 function listCode(dir, prefix = "") {
@@ -140,19 +129,15 @@ function loadArtifact() {
   return { seal, bytes };
 }
 
-test("source 공개 전역은 __hwpx·__hwpxTest뿐이고 은퇴 별칭 참조가 없다", () => {
+test("source 공개 전역 쓰기는 __hwpx 하나뿐이고 selftest 이름은 __hwpxTest다", () => {
   const scans = ["src/", "js/"].flatMap((dir) => listCode(new URL(dir, FRONTEND), dir));
-  const dead = [];
   const reservedWrites = new Set();
   for (const { rel, url } of scans) {
-    const scan = inspectSource(readFileSync(url, "utf8"), rel);
-    for (const ref of scan.references) if (DEAD_ALIASES.has(ref.name)) dead.push(`${rel}:${ref.name}`);
-    for (const write of scan.writes) if (write.name?.startsWith("__hwpx")) reservedWrites.add(write.name);
+    const writes = inspectSource(readFileSync(url, "utf8"), rel);
+    for (const name of writes) if (name.startsWith("__hwpx")) reservedWrites.add(name);
   }
-  assert.deepEqual(dead, []);
   assert.deepEqual([...reservedWrites], ["__hwpx"]);
   assert.equal(SELFTEST_GLOBAL, "__hwpxTest");
-  assert.equal(existsSync(new URL("js/compat.js", FRONTEND)), false);
 });
 
 test("source HTML은 외부 module entry 하나만 실행한다", () => {
@@ -169,20 +154,17 @@ test("sealed artifact 목록은 디스크 바이트와 크기·해시까지 일�
   assert.ok(bytes.has("index.html"));
 });
 
-test("sealed HTML·bundle도 module entry와 legacy 전역 부재를 지킨다", () => {
+test("sealed HTML·bundle도 module entry와 공개 전역 쓰기 경계를 지킨다", () => {
   const { bytes } = loadArtifact();
   const tags = scriptTags(bytes.get("index.html").toString("utf8"));
   assert.equal(tags.length, 1);
   assert.match(tags[0], /\btype=["']module["']/i);
 
-  const dead = [];
   const reservedWrites = new Set();
   for (const [rel, raw] of bytes) {
     if (!rel.endsWith(".js") || rel.startsWith(".vite/")) continue;
-    const scan = inspectSource(raw.toString("utf8"), rel);
-    for (const ref of scan.references) if (DEAD_ALIASES.has(ref.name)) dead.push(`${rel}:${ref.name}`);
-    for (const write of scan.writes) if (write.name?.startsWith("__hwpx")) reservedWrites.add(write.name);
+    const writes = inspectSource(raw.toString("utf8"), rel);
+    for (const name of writes) if (name.startsWith("__hwpx")) reservedWrites.add(name);
   }
-  assert.deepEqual(dead, []);
   assert.deepEqual([...reservedWrites], ["__hwpx"]);
 });

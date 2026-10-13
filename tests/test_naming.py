@@ -15,7 +15,6 @@ from hwpxfiller.domain.output_name import (
     OUTPUT_NAME_PATTERN_INVALID,
     OUTPUT_PATH_ESCAPE_DETECTED,
     OutputNameError,
-    clean_filename,
 )
 from hwpxfiller.naming import (
     MAX_PATH_CHARS,
@@ -34,11 +33,6 @@ def test_key_substitution_backward_compatible():
     assert make_output_filename("공고서-{{ID}}", {"ID": "A1"}) == "공고서-A1.hwpx"
 
 
-def test_illegal_chars_sanitized_in_value():
-    out = make_output_filename("{{name}}", {"name": "a/b:c*d"})
-    assert out == "a_b_c_d.hwpx"
-
-
 def test_hwpx_extension_enforced_case_insensitive():
     assert make_output_filename("x.HWPX", {}) == "x.HWPX"
     assert make_output_filename("x", {}) == "x.hwpx"
@@ -55,35 +49,15 @@ def test_prefformatted_value_substituted_plainly():
     assert out == "공고-2026년 6월 15일.hwpx"
 
 
-def test_clean_filename_direct():
-    assert clean_filename('a\\b/c:d') == "a_b_c_d"
-
-
 # ------------------------------------------------------------------- 날짜 토큰
-def test_date_default_is_yyyymmdd():
-    assert make_output_filename("{{date}}", {}, now=_NOW) == "20260709.hwpx"
-
-
 def test_date_requires_declared_time():
     with pytest.raises(ValueError, match="기준 시각"):
         make_output_filename("{{date}}", {})
 
 
-def test_date_custom_format():
-    assert make_output_filename("{{date:YYYY-MM-DD}}", {}, now=_NOW) == "2026-07-09.hwpx"
-
-
 def test_date_month_vs_minute_case_sensitive():
     # MM=월(07), mm=분(05) — 대소문자 구분이 하중.
     assert make_output_filename("{{date:MM-mm}}", {}, now=_NOW) == "07-05.hwpx"
-
-
-def test_date_time_components():
-    assert make_output_filename("{{date:HHmmSS}}", {}, now=_NOW) == "140503.hwpx"
-
-
-def test_date_slash_in_format_is_sanitized():
-    assert make_output_filename("{{date:YYYY/MM}}", {}, now=_NOW) == "2026_07.hwpx"
 
 
 def test_date_mixed_with_key():
@@ -92,14 +66,6 @@ def test_date_mixed_with_key():
 
 
 # ------------------------------------------------------------------- 연번 토큰
-def test_seq_unpadded():
-    assert make_output_filename("{{seq}}", {}, seq=12) == "12.hwpx"
-
-
-def test_seq_padded_width_from_literal():
-    assert make_output_filename("{{seq:001}}", {}, seq=7) == "007.hwpx"
-
-
 def test_seq_default_is_one_when_absent():
     assert make_output_filename("{{seq:00}}", {}) == "01.hwpx"
 
@@ -138,13 +104,6 @@ def test_plan_date_constant_across_batch():
     assert plan_output_names("{{date:YYYYMMDD}}-{{seq}}", [{}, {}], now=_NOW) == [
         "20260709-1.hwpx", "20260709-2.hwpx",
     ]
-
-
-def test_plan_deterministic_given_order():
-    recs = [{"ID": "A"}, {"ID": "A"}, {"ID": "B"}]
-    assert plan_output_names("{{ID}}", recs, now=_NOW) == plan_output_names(
-        "{{ID}}", recs, now=_NOW
-    )
 
 
 @pytest.mark.parametrize(

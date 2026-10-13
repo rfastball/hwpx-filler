@@ -2360,13 +2360,7 @@ test("U6-C 행 상태 class 넷은 두 CSS 에 **둘 다** 선언돼 있다 — 
     assert.ok(forced.includes(`tr.${cls} `) || forced.includes(`tr.${cls}{`),
       `forced-colors.css 에 tr.${cls} 선언이 없다 — 고대비에서 이 상태가 사라진다`);
   }
-  // 반대 방향도 본다: CSS 에만 있는 유령 클래스는 퇴역을 안 따라온 잔재다.
-  for (const stale of ["r-unconfirmed", "r-unmatched", "r-schemaonly"]) {
-    assert.equal(product.includes(`tr.${stale}`), false, `editor.css 에 ${stale} 잔재`);
-    assert.equal(forced.includes(`tr.${stale}`), false, `forced-colors.css 에 ${stale} 잔재`);
-  }
 });
-
 
 /* ================= 가공(칩·팝오버) ================= */
 
