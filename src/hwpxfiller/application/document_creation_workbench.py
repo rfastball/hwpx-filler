@@ -15,7 +15,7 @@ backend Product/Application 계약이 진다.
   readiness 는 그 모듈의 :func:`decide_materialization_readiness` **권위 함수**로 파생한다
   (R2(#740): currentness 축은 orchestration 상태로 흡수 — 별도 입력이 없다)
   (재구현 아님). template change 는 :mod:`hwpxfiller.application.selection_compatibility` verdict, orchestration 은
-  :mod:`hwpxfiller.application.automatic_seal_orchestration` 상태를 그대로 소비한다.
+  세션의 실행 상태를 그대로 소비한다.
 - store/webapp/viewmodel/pywebview 를 import 하지 않는다(``tests/repo_contract/test_architecture.py`` 의
   링 경계가 강제). S6-absent runtime conformance(``s6_absent_runtime_conformance``)는 webapp 소유라
   여기서 import 하지 않고, **이미 파생된** ``RuntimePolicyAdmission`` verdict 로 받는다.
@@ -36,12 +36,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from hwpxfiller.application.automatic_seal_orchestration import (
+from hwpxfiller.application.workbench_execution_status import (
     CHECKING,
-    FAILED,
-    SETTLED_CURRENT,
-    STALE as ORCHESTRATION_STALE,
-    AutomaticSealOrchestration,
+    CURRENT,
+    STALE,
 )
 from hwpxfiller.application.document_creation_vocabulary import (
     BLOCKER_CODES,
@@ -165,11 +163,7 @@ _DEEP_LINK_ROUTES: dict[str, str] = {
     CONTEXT_ERROR: "workbench.context_recovery",
 }
 
-# CHECKING/FAILED 의 사용자 문안은 downstream(workbench)이 소유한다(automatic_seal_orchestration
-# docstring). SETTLED_CURRENT/STALE 은 vocabulary 정본 문안을 쓴다. 전부 순수 한국어라 내부어(Slot/
-# Sealed/digest/Plan)를 담지 않는다(#724 §테스트 12).
 _CHECKING_PHRASE = "설정을 확인하고 있습니다"
-_FAILED_PHRASE = "설정 확인에 실패했습니다. 다시 시도해 주세요"
 _RUNTIME_DISABLED_PHRASE = "현재 환경에서는 문서를 만들 수 없습니다"
 _POLICY_DISABLED_PHRASE = "정책상 지금은 문서를 만들 수 없습니다"
 _CREATE_PREPARATION_DISABLED_PHRASE = "필요한 준비를 먼저 완료해 주세요"
@@ -465,7 +459,7 @@ class WorkbenchCompositionInput:
     content_selection: ContentSelectionSummary
     active_work: ActiveWorkContext
     admission: RuntimePolicyAdmission
-    orchestration: AutomaticSealOrchestration
+    orchestration: str
     delivery: DeliveryPreviewSummary
     record_validation: RecordValidationSummary = field(default_factory=RecordValidationSummary)
     template_change_verdict: str | None = None
@@ -519,7 +513,7 @@ class DocumentCreationWorkbenchObservation:
     # R2(#740): currentness 축은 orchestration 으로 흡수(별도 필드 없음).
     admission: RuntimePolicyAdmission
     materialization_readiness: str  # decide_materialization_readiness 권위 함수 결과
-    orchestration: AutomaticSealOrchestration
+    orchestration: str
     record_validation: RecordValidationSummary
     delivery: DeliveryPreviewSummary
     run_delivery_intent: RunDeliveryIntent | None
@@ -571,7 +565,7 @@ class DocumentCreationWorkbenchObservation:
         blocker 가 Primary Action 을 가져갔는지와 무관하게 무장돼 있어야 한다. 비활성은 자동
         확인이 진행 중일 때뿐이고, 그때도 숨기지 않고 사유를 병기한다.
         """
-        if self.orchestration.state == CHECKING:
+        if self.orchestration == CHECKING:
             return _CHECKING_PHRASE
         return None
 
@@ -706,10 +700,10 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
         present.add(REVIEW_DELIVERY)
 
     # execution(checking / stale) — orchestration verdict(R2(#740): currentness 축 흡수).
-    # STALE 은 orchestration STALE/FAILED 가 나른다(durable command 가 settle 됐으나 재확인 필요).
-    if inp.orchestration.state == CHECKING:
+    # STALE 은 마지막 seal 이 현재 설정을 확정하지 못했음을 뜻한다.
+    if inp.orchestration == CHECKING:
         present.add(EXECUTION_CHECKING)
-    if inp.orchestration.state in (ORCHESTRATION_STALE, FAILED):
+    if inp.orchestration == STALE:
         present.add(EXECUTION_STALE)
 
     # runtime / policy / 미확인 — admission verdict(재판정 아님)
@@ -763,20 +757,18 @@ def _disabled_reason(
         if _has_runtime_reason(inp.admission):
             return _RUNTIME_DISABLED_PHRASE
         return _POLICY_DISABLED_PHRASE
-    if primary_action == RESOLVE_EXECUTION and inp.orchestration.state == CHECKING:
+    if primary_action == RESOLVE_EXECUTION and inp.orchestration == CHECKING:
         return _CHECKING_PHRASE
     return None
 
 
 def _execution_status_phrase(inp: WorkbenchCompositionInput) -> str:
     """실행 상태 사용자 문안 — orchestration verdict 에서 파생(R2(#740): currentness 흡수, 새 판정 아님)."""
-    if inp.orchestration.state == CHECKING:
+    if inp.orchestration == CHECKING:
         return _CHECKING_PHRASE
-    if inp.orchestration.state == FAILED:
-        return _FAILED_PHRASE
-    if inp.orchestration.state == ORCHESTRATION_STALE:
+    if inp.orchestration == STALE:
         return USER_VOCABULARY["Plan stale"]
-    if inp.orchestration.state == SETTLED_CURRENT:
+    if inp.orchestration == CURRENT:
         return USER_VOCABULARY["Plan current"]
     return ""
 

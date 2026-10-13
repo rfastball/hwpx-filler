@@ -8,9 +8,7 @@
 않는다** — 이미 backend 권위가 내린 verdict 를 받아 그 관계를 하나의 코드로 **재라벨**할 뿐이다.
 그 verdict 들의 정본은:
 
-- orchestration 상태 — :mod:`hwpxfiller.application.automatic_seal_orchestration`
-  (IDLE/CHECKING/SETTLED_CURRENT/STALE/FAILED). R2(#740): CURRENT/STALE/CHECKING/NO_EVIDENCE 는
-  이 축이 나른다(currentness 축이 흡수됐다 — current value 는 자명히 현재).
+- 세션 실행 상태(NO_EVIDENCE/CHECKING/CURRENT/STALE).
 - runtime-policy admission / current-work sealability —
   :mod:`hwpxfiller.application.fresh_execution_observation`
   (:class:`RuntimePolicyAdmission` · sealability 어휘). DOMAIN/POLICY/CONTEXT 축을 나른다.
@@ -26,13 +24,6 @@ workbench composer 가 진다. 정의 순서가 계약이다(``scripts/gen_bridg
 
 from __future__ import annotations
 
-from hwpxfiller.application.automatic_seal_orchestration import (
-    CHECKING as ORCHESTRATION_CHECKING,
-    FAILED as ORCHESTRATION_FAILED,
-    SETTLED_CURRENT as ORCHESTRATION_SETTLED_CURRENT,
-    STALE as ORCHESTRATION_STALE,
-    AutomaticSealOrchestration,
-)
 from hwpxfiller.application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
     DOMAIN_BLOCKED as SEALABILITY_DOMAIN_BLOCKED,
@@ -42,7 +33,7 @@ from hwpxfiller.application.fresh_execution_observation import (
 )
 
 # ─── 7상태 machine-code(정의 순서 = 계약) ───────────────────────────────────────────────
-NO_EVIDENCE = "NO_EVIDENCE"  # 현재 설정을 확인해야 합니다 — 아직 확인 증거 없음(orchestration IDLE)
+NO_EVIDENCE = "NO_EVIDENCE"  # 현재 설정을 확인해야 합니다
 CHECKING = "CHECKING"  # 현재 설정을 확인하고 있습니다 — automatic seal 진행 중
 CURRENT = "CURRENT"  # 현재 설정이 반영됐습니다
 STALE = "STALE"  # 설정이 바뀌어 다시 확인해야 합니다
@@ -89,7 +80,7 @@ def _has_context_error(
 
 def derive_workbench_execution_status(
     *,
-    orchestration: AutomaticSealOrchestration,
+    orchestration: str,
     admission: RuntimePolicyAdmission | None = None,
     current_work_sealability: str | None = None,
 ) -> str:
@@ -99,8 +90,7 @@ def derive_workbench_execution_status(
     흡수됐다** — CURRENT/STALE/CHECKING/NO_EVIDENCE 는 orchestration 상태가 나르고, fresh observation
     은 DOMAIN/POLICY/CONTEXT 축만 나른다(current value 는 자명히 현재라 별도 currentness 가 없다):
 
-    - ``orchestration`` — automatic seal 진행 상태(필수). CURRENT=SETTLED_CURRENT, STALE=STALE/FAILED,
-      CHECKING=CHECKING, NO_EVIDENCE=IDLE.
+    - ``orchestration`` — 세션의 마지막 seal 상태(NO_EVIDENCE/CHECKING/CURRENT/STALE).
     - ``admission`` — runtime-policy admission verdict(CONTEXT_ERROR 만 status 축에 영향;
       NOT_ADMITTED/ADMITTED 자체는 §5 의 **별도** admission/readiness 축이라 여기서 status 를
       바꾸지 않는다). fresh observation 축 실패(ExecutionObservationContextError)도 ring2 가
@@ -114,22 +104,22 @@ def derive_workbench_execution_status(
        않는다는 계약과 정합).
     2. **CHECKING** — automatic seal 진행 중(orchestration CHECKING).
     3. **DOMAIN_BLOCKED / POLICY_BLOCKED** — current Work sealability 가 막혔다.
-    4. **STALE** — orchestration STALE/FAILED(basis 가 움직였다·자동 확인이 stale/실패로 끝났다).
+    4. **STALE** — seal 이 현재 basis 를 확정하지 못했다.
        CURRENT 보다 앞선다(설정 변화가 반영 주장보다 우선).
-    5. **CURRENT** — orchestration SETTLED_CURRENT(반영됨).
-    6. **NO_EVIDENCE** — 그 밖(orchestration IDLE): 아직 확인 증거 없음.
+    5. **CURRENT** — 세션의 seal 이 반영됨.
+    6. **NO_EVIDENCE** — 아직 확인 증거 없음.
     """
     if _has_context_error(admission, current_work_sealability):
         return CONTEXT_ERROR
-    if orchestration.state == ORCHESTRATION_CHECKING:
+    if orchestration == CHECKING:
         return CHECKING
     if current_work_sealability == SEALABILITY_DOMAIN_BLOCKED:
         return DOMAIN_BLOCKED
     if current_work_sealability == SEALABILITY_POLICY_BLOCKED:
         return POLICY_BLOCKED
-    if orchestration.state in (ORCHESTRATION_STALE, ORCHESTRATION_FAILED):
+    if orchestration == STALE:
         return STALE
-    if orchestration.state == ORCHESTRATION_SETTLED_CURRENT:
+    if orchestration == CURRENT:
         return CURRENT
     return NO_EVIDENCE
 

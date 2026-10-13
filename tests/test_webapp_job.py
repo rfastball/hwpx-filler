@@ -5807,9 +5807,7 @@ def test_external_source_edit_does_not_reenter_applied_work(tmp_path, execution_
     pick_output_folder(ctrl, tmp_path / "out")
     _write_template(tmp_path / "t.hwpx", ["공고명", "추정가격", "담당자"])  # B — 미적용
     ctrl.execution.invalidate()
-    ctrl.execution.orchestration = replace(
-        ctrl.execution.orchestration, state="IDLE" if execution_status == "NO_EVIDENCE" else "STALE"
-    )
+    ctrl.execution.orchestration = execution_status
 
     snap = ctrl.refresh_panel()
     assert snap["workbench_observation"]["execution_status_code"] == execution_status

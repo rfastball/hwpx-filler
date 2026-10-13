@@ -2474,11 +2474,7 @@ class JobController:
             self._run_automatic_seal()
 
     def _run_automatic_seal(self) -> None:
-        """진행 중 orchestration(CHECKING)에서 실 seal 을 돌리고 결과로 다음 상태를 판정한다.
-
-        route/context 예외는 seal 실패(연속 실패 수 상한 → 수동 복구)로, 반환된 terminal outcome 은
-        '실행됨'으로 본다(qualification/policy block 은 실패가 아니라 not-current 로 알린다).
-        """
+        """현재 작업을 검사하고 세션의 실행 상태를 갱신한다."""
         self.execution.run_automatic_seal(self.work.name)
 
     def _capture_current_selected_records(
@@ -2775,15 +2771,12 @@ class JobController:
         )
 
     def _do_resolve_execution(self, p: dict) -> dict:
-        """사용자 요청으로 자동 봉인 경로를 다시 시작한다.
-
-        실패 상태는 수동 복구 전이를 먼저 거치며, 서비스 미주입은 명시적으로 거절한다.
-        """
+        """사용자 요청으로 현재 작업을 다시 검사한다."""
         if self.execution.seal_execution is None:
             raise ValueError("실행 확인 기능이 조립되지 않았습니다")
         if not self.work.name:
             raise ValueError("먼저 문서 작업을 선택하세요.")
-        if self.execution.start_manual_recovery():
+        if self.execution.start_after_durable_change():
             self._run_automatic_seal()
         return {"ok": True}
 

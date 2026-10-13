@@ -435,16 +435,13 @@ def test_missing_source_column_projects_reachable_row_target(tmp_path: Path) -> 
 def test_stale_orchestration_hides_old_record_validation_and_target(
     tmp_path: Path,
 ) -> None:
-    from hwpxfiller.application.automatic_seal_orchestration import (
-        AutomaticSealOrchestration,
-    )
 
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
     _mount_rows(ctrl, [{'other': '값'}])
     target = _zone(ctrl)['record_validation']['issues'][0]['recovery_target']
 
-    ctrl.execution.orchestration = AutomaticSealOrchestration(state='STALE')
+    ctrl.execution.orchestration = "STALE"
     assert _zone(ctrl)['record_validation']['issue_count'] == 0
     with pytest.raises(ValueError, match='현재 데이터 확인 결과가 없습니다'):
         ctrl.dispatch('recover_record_issue', {'target': target})
@@ -1160,15 +1157,12 @@ def test_stale_projects_backend_execution_action_when_it_is_primary(
     tmp_path: Path,
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
-    from hwpxfiller.application.automatic_seal_orchestration import (
-        AutomaticSealOrchestration,
-    )
 
     ctrl.data.datasource = object()
     ctrl.data.records = [{}]
     ctrl.data.selection = SelectionModel(1)
 
-    ctrl.execution.orchestration = AutomaticSealOrchestration(state="STALE")
+    ctrl.execution.orchestration = "STALE"
     zone = _zone(ctrl)
 
     assert zone["primary_action"] == "RESOLVE_EXECUTION"
@@ -1530,7 +1524,7 @@ def test_refresh_observation_reobserves_current(tmp_path: Path) -> None:
     ctrl.dispatch("resolve_execution", {})
     digest_after_seal = ctrl.execution.sealed_basis_digest
     ctrl.dispatch("refresh_observation", {})
-    # 재관찰은 같은 basis 를 재계산한다(같은 digest) — orchestration 은 SETTLED_CURRENT 유지.
+    # 재관찰은 같은 basis 를 재계산한다(같은 digest) — 세션 CURRENT 유지.
     assert ctrl.execution.sealed_basis_digest == digest_after_seal
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
@@ -1540,10 +1534,10 @@ def test_refresh_observation_standalone_observes_without_orchestration_transitio
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     # 사전 resolve 없이 refresh 만 해도 seal(순수 재계산)이 돌아 관찰을 얻는다 — orchestration 은
-    # 건드리지 않으므로 IDLE 유지(자동 확인 궤도와 분리).
+    # 건드리지 않으므로 NO_EVIDENCE 유지.
     ctrl.dispatch("refresh_observation", {})
     assert ctrl.execution.fresh_observation is not None
-    assert ctrl.execution.orchestration.state == "IDLE"
+    assert ctrl.execution.orchestration == "NO_EVIDENCE"
 
 
 # ── 반복 resolve 는 same-basis 를 같은 digest 로 재봉인(recompute 안정성) ──────────────────────────
@@ -1554,7 +1548,7 @@ def test_repeated_resolve_keeps_stable_basis_digest(tmp_path: Path) -> None:
     ctrl.dispatch("resolve_execution", {})
     # basis 가 안 움직였으면 순수 재계산은 같은 execution_basis_digest 를 낸다.
     assert ctrl.execution.sealed_basis_digest == first
-    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.orchestration == "CURRENT"
 
 
 # ── 미주입 loud 거절(조용한 no-op 금지) ─────────────────────────────────────────────────────────
@@ -1589,9 +1583,6 @@ def test_verdicts_from_current_work_observation() -> None:
 
 
 def test_normalized_binding_blocker_selects_review_binding() -> None:
-    from hwpxfiller.application.automatic_seal_orchestration import (
-        AutomaticSealOrchestration,
-    )
 
     fresh = CurrentWorkExecutionObservation(
         work_authority_ref="w",
@@ -1605,7 +1596,7 @@ def test_normalized_binding_blocker_selects_review_binding() -> None:
         total_record_count=1,
         active_work_ref="w",
         slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
-        orchestration=AutomaticSealOrchestration(),
+        orchestration="NO_EVIDENCE",
         fresh_observation=fresh,
     )
     assert result.primary_action == "REVIEW_BINDING"
@@ -1643,24 +1634,6 @@ class _UnchangedOutcome:
 class _SlotResp:
     def __init__(self, changed: bool) -> None:
         self.mutation_outcome = _ChangedOutcome() if changed else _UnchangedOutcome()
-
-
-def test_changed_slot_mutation_triggers_auto_seal(tmp_path: Path) -> None:
-    ctrl = _controller(tmp_path, with_binding=True)
-    # durable mutation CHANGED → effective_basis_changed True → CHECKING → seal → SETTLED_CURRENT.
-    ctrl._maybe_auto_check(_SlotResp(changed=True))
-    assert ctrl.execution.fresh_observation is not None
-    assert ctrl.execution.sealed_basis_digest is not None  # binding 있으니 sealed
-    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
-    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
-
-
-def test_unchanged_slot_mutation_does_not_trigger_seal(tmp_path: Path) -> None:
-    ctrl = _controller(tmp_path, with_binding=True)
-    ctrl._maybe_auto_check(_SlotResp(changed=False))
-    # 무변경 mutation → 반응할 basis 변경 없음(seal 미실행, 증거 없음 유지).
-    assert ctrl.execution.fresh_observation is None
-    assert ctrl.execution.orchestration.state == "IDLE"
 
 
 def test_changed_mutation_without_binding_settles_not_current(tmp_path: Path) -> None:
@@ -1771,34 +1744,45 @@ def test_zone_does_not_swallow_unexpected_exception(tmp_path: Path) -> None:
         _zone(ctrl)
 
 
-# ── resolve_execution: FAILED 에서 수동 복구 후 재확인 ───────────────────────────────────────────
-def test_resolve_execution_recovers_from_failed(tmp_path: Path) -> None:
-    from hwpxfiller.application.automatic_seal_orchestration import AutomaticSealOrchestration
-
-    ctrl = _controller(tmp_path, with_binding=True)
-    ctrl.execution.orchestration = AutomaticSealOrchestration(
-        state="FAILED", consecutive_seal_failures=3
-    )
-    ctrl.dispatch("resolve_execution", {})
-    # FAILED → 수동 복구(IDLE) → CHECKING → 실 seal → SETTLED_CURRENT(binding 있음).
-    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
-    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
-
-
 # ── fresh 축 degrade(seal 실패는 조용히 CURRENT 로 두지 않는다) ─────────────────────────────────
 class _RaisingSeal:
     """seal 이 예외를 던지는 fake seal 서비스 — degrade 경로 가드."""
 
+    calls = 0
+
     def seal_execution_plan(self, work, req):
+        self.calls += 1
         raise RuntimeError("seal boom")
 
 
-def test_auto_seal_failure_leaves_last_observation(tmp_path: Path) -> None:
-    ctrl = _controller(tmp_path, with_binding=True, wire_seal=False)
-    ctrl.execution.seal_execution = _RaisingSeal()
-    # route/context 예외 = 전이 실패(수동 복구 상한). 조용한 crash 아님, 마지막 관찰 보존(None).
-    ctrl._maybe_auto_check(_SlotResp(changed=True))
+def test_setting_change_retries_after_repeated_seal_failures(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    working_seal = ctrl.execution.seal_execution
+    failing_seal = _RaisingSeal()
+    ctrl.execution.seal_execution = failing_seal
+    ctrl._maybe_auto_check(_SlotResp(changed=False))
+    assert failing_seal.calls == 0
+    assert ctrl.execution.orchestration == "NO_EVIDENCE"
+
+    for _ in range(4):
+        ctrl._maybe_auto_check(_SlotResp(changed=True))
+        assert ctrl.execution.orchestration == "STALE"
+    assert failing_seal.calls == 4
     assert ctrl.execution.fresh_observation is None
+
+    _zone(ctrl)
+    assert failing_seal.calls == 4  # observation does not retry a failed seal
+    ctrl.execution.orchestration = "CHECKING"
+    ctrl.dispatch("resolve_execution", {})
+    assert failing_seal.calls == 4  # a running seal is not started twice
+
+    ctrl.execution.orchestration = "STALE"
+    ctrl.execution.seal_execution = working_seal
+    ctrl._maybe_auto_check(_SlotResp(changed=True))
+    assert ctrl.execution.orchestration == "CURRENT"
+    assert ctrl.execution.fresh_observation is not None
+    assert ctrl.execution.sealed_basis_digest is not None
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
 def test_refresh_observation_failure_surfaces_context_error(tmp_path: Path) -> None:
@@ -1831,11 +1815,11 @@ def test_work_switch_resets_execution_evidence(tmp_path: Path) -> None:
     ctrl.dispatch("resolve_execution", {})
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
     assert ctrl.execution.sealed_basis_digest is not None
-    # 다른 Work 로 전환 → 세션 실행 증거 무효화(orchestration IDLE·관찰/디지스트 None).
+    # 다른 Work 로 전환 → 세션 실행 증거 무효화(NO_EVIDENCE·관찰/디지스트 None).
     ctrl.work.name = "다른작업"
     assert ctrl.execution.fresh_observation is None
     assert ctrl.execution.sealed_basis_digest is None
-    assert ctrl.execution.orchestration.state == "IDLE"
+    assert ctrl.execution.orchestration == "NO_EVIDENCE"
 
 
 def test_same_work_reassignment_keeps_evidence(tmp_path: Path) -> None:
@@ -1844,7 +1828,7 @@ def test_same_work_reassignment_keeps_evidence(tmp_path: Path) -> None:
     obs = ctrl.execution.fresh_observation
     ctrl.work.name = WORK_REF  # 같은 값 재대입은 재설정하지 않는다.
     assert ctrl.execution.fresh_observation is obs
-    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.orchestration == "CURRENT"
 
 
 # ── 사용자 문안 내부어 노출 0(#725 §테스트 12 계약 유지) ─────────────────────────────────────────
@@ -1932,7 +1916,7 @@ def test_binding_commit_reuses_auto_check_and_reaches_current(tmp_path: Path) ->
 
     assert result == {}
     assert ctrl.execution.sealed_basis_digest is not None
-    assert ctrl.execution.orchestration.state == "SETTLED_CURRENT"
+    assert ctrl.execution.orchestration == "CURRENT"
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
@@ -1950,7 +1934,7 @@ def test_binding_commit_for_other_work_does_not_absorb_observation(
     assert result == {}
     assert ctrl.execution.fresh_observation is None
     assert ctrl.execution.sealed_basis_digest is None
-    assert ctrl.execution.orchestration.state == "IDLE"
+    assert ctrl.execution.orchestration == "NO_EVIDENCE"
 
 
 def test_template_apply_rechecks_same_work_execution_evidence(tmp_path: Path) -> None:

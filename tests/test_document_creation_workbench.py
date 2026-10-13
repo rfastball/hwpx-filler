@@ -10,7 +10,7 @@ S6 부재 admission 은 실제 권위 경로(webapp ``s6_absent_runtime_conforma
 재구현하지 않음을 증명한다.
 
 R2(#740): currentness 축(SemanticCurrentness CURRENT/STALE)은 orchestration 으로 흡수됐다 —
-CURRENT/STALE 은 orchestration 상태(SETTLED_CURRENT/STALE/FAILED)가 나른다. profile revocation 은
+CURRENT/STALE 은 세션 상태가 나른다. profile revocation 은
 admission 축을 떠나 fresh observation 의 current-work sealability 로 갔으므로, admission 의 policy
 축 blocker 는 EXECUTION_BASE_NOT_ADMITTED 로 재현한다.
 """
@@ -46,13 +46,7 @@ from hwpxfiller.application.document_creation_workbench import (
     compose_primary_action,
     decide_active_work_after_data_transition,
 )
-from hwpxfiller.application.automatic_seal_orchestration import (
-    CHECKING,
-    FAILED,
-    SETTLED_CURRENT,
-    STALE as ORCH_STALE,
-    AutomaticSealOrchestration,
-)
+from hwpxfiller.application.workbench_execution_status import CHECKING, CURRENT, STALE
 from hwpxfiller.application.fresh_execution_observation import (
     ADMITTED,
     EXECUTION_BASE_NOT_ADMITTED,
@@ -97,7 +91,7 @@ def _s6_absent_admission() -> RuntimePolicyAdmission:
 def _clear_input(**overrides: object) -> WorkbenchCompositionInput:
     """blocker 0 → CREATE_DOCUMENTS 가 나오는 완전 정리 상태(ADMITTED 가정). override 로 축을 흔든다.
 
-    orchestration 은 SETTLED_CURRENT(반영됨) — R2 이후 CURRENT 는 이 상태가 나른다.
+    orchestration 은 CURRENT(반영됨)이다.
     """
     base: dict[str, object] = dict(
         data_scope=DataScopeSummary(
@@ -113,7 +107,7 @@ def _clear_input(**overrides: object) -> WorkbenchCompositionInput:
             bound_to_current_data=True,
         ),
         admission=RuntimePolicyAdmission(ADMITTED),
-        orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),
+        orchestration=CURRENT,
         delivery=DeliveryPreviewSummary(resolvable=True, planned_output_names=("문서-1.hwpx",)),
         record_validation=RecordValidationSummary(has_blocking_issues=False),
         template_change_verdict=AUTO_KEEP,
@@ -156,13 +150,13 @@ def _observation(**overrides: object) -> DocumentCreationWorkbenchObservation:
         ({"binding_review_needed": True}, "REVIEW_BINDING", "REVIEW_BINDING"),
         # orchestration CHECKING → EXECUTION_CHECKING → RESOLVE_EXECUTION
         (
-            {"orchestration": AutomaticSealOrchestration(state=CHECKING)},
+            {"orchestration": CHECKING},
             "EXECUTION_CHECKING",
             RESOLVE_EXECUTION,
         ),
         # orchestration STALE → EXECUTION_STALE → RESOLVE_EXECUTION (R2: currentness 흡수)
         (
-            {"orchestration": AutomaticSealOrchestration(state=ORCH_STALE)},
+            {"orchestration": STALE},
             "EXECUTION_STALE",
             RESOLVE_EXECUTION,
         ),
@@ -318,10 +312,10 @@ def test_s6_absent_is_current_not_admitted_not_ready() -> None:
     assert admission.state == NOT_ADMITTED
     assert MATERIALIZATION_CONTRACT_NOT_ADMITTED in admission.reasons
 
-    # orchestration SETTLED_CURRENT(반영됨) + S6 부재 admission.
+    # 세션 CURRENT(반영됨) + S6 부재 admission.
     obs = _observation(admission=admission)
     # CURRENT 는 orchestration 축이 나른다(R2: currentness 흡수).
-    assert obs.orchestration.state == SETTLED_CURRENT
+    assert obs.orchestration == CURRENT
     # readiness 는 decide_materialization_readiness 권위 함수 결과 → NOT_READY(S6 부재를 READY 로 과장 금지).
     assert obs.materialization_readiness == NOT_READY
     # runtime 축 blocker 로 정직하게 표현.
@@ -338,7 +332,7 @@ def test_s6_absent_is_current_not_admitted_not_ready() -> None:
 
 
 def test_admitted_current_is_ready_and_can_create() -> None:
-    """대조군: ADMITTED + orchestration SETTLED_CURRENT 면 READY 이고 CREATE_DOCUMENTS 가 열린다(활성)."""
+    """대조군: ADMITTED + 세션 CURRENT 면 READY 이고 CREATE_DOCUMENTS 가 열린다(활성)."""
     obs = _observation(admission=RuntimePolicyAdmission(ADMITTED))
     assert obs.materialization_readiness == READY
     assert obs.blockers == ()
@@ -367,7 +361,7 @@ def test_historical_outcome_does_not_dominate_fresh_stale() -> None:
     """historical PlanPublished + orchestration STALE → primary 는 STALE 지배(RESOLVE_EXECUTION)."""
     historical = HistoricalOutcomeSummary(outcome_kind="PLAN_PUBLISHED", observed_at="2026-08-18T00:00:00Z")
     obs = _observation(
-        orchestration=AutomaticSealOrchestration(state=ORCH_STALE),
+        orchestration=STALE,
         historical_outcome=historical,
     )
     # 부차 필드로 보존되지만 현재 상태를 지배하지 못한다.
@@ -376,12 +370,6 @@ def test_historical_outcome_does_not_dominate_fresh_stale() -> None:
     assert obs.primary_action == RESOLVE_EXECUTION
     # historical PlanPublished 가 "생성 가능"으로 새지 않는다.
     assert obs.primary_action != CREATE_DOCUMENTS
-
-
-def test_orchestration_failed_needs_manual_recovery_but_stays_stale_blocker() -> None:
-    obs = _observation(orchestration=AutomaticSealOrchestration(state=FAILED, consecutive_seal_failures=3))
-    assert "EXECUTION_STALE" in obs.blockers
-    assert obs.orchestration.requires_manual_recovery is True
 
 
 # ══════════════════════════════════════ data transition 규칙(#724 §9) ═══════════════════════════
@@ -439,9 +427,8 @@ _INTERNAL_TERMS = (
     "overrides",
     [
         {},
-        {"orchestration": AutomaticSealOrchestration(state=CHECKING)},
-        {"orchestration": AutomaticSealOrchestration(state=FAILED, consecutive_seal_failures=3)},
-        {"orchestration": AutomaticSealOrchestration(state=ORCH_STALE)},
+        {"orchestration": CHECKING},
+        {"orchestration": STALE},
         {"admission": RuntimePolicyAdmission(NOT_ADMITTED, (MATERIALIZATION_CONTRACT_NOT_ADMITTED,))},
         {"admission": RuntimePolicyAdmission(NOT_ADMITTED, (EXECUTION_BASE_NOT_ADMITTED,))},
     ],

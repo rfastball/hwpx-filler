@@ -10,13 +10,11 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 import uuid
 
-from ..application.automatic_seal_orchestration import (
-    FAILED,
-    SETTLED_CURRENT,
-    AutomaticSealOrchestration,
-    on_durable_command_settled,
-    on_seal_settled,
-    request_manual_recovery,
+from ..application.workbench_execution_status import (
+    CHECKING,
+    CURRENT,
+    NO_EVIDENCE,
+    STALE,
 )
 from ..application.document_creation_workbench import (
     DeliveryPreviewSummary,
@@ -59,8 +57,8 @@ class WorkbenchConfiguration:
 
 def prepare_for_generate(execution: "JobExecutionSession", work_ref: str) -> None:
     """A generate request prepares the current Work before execution validation."""
-    if not execution.is_settled_current and execution.orchestration.state != "CHECKING":
-        if execution.start_manual_recovery():
+    if not execution.is_settled_current:
+        if execution.start_after_durable_change():
             execution.run_automatic_seal(work_ref)
 
 
@@ -77,7 +75,7 @@ class JobExecutionSession:
         self.slot_configuration = slot_configuration
         self.workbench_product = workbench_observation
         self.seal_execution = seal_execution
-        self.orchestration = AutomaticSealOrchestration()
+        self.orchestration = NO_EVIDENCE
         self.fresh_observation: FreshExecutionObservation | None = None
         self.sealed_basis_digest: str | None = None
         self.sealed_plan_payload = None
@@ -338,13 +336,14 @@ class JobExecutionSession:
             response = self.seal_execution.seal_execution_plan(
                 work_ref, uuid.uuid4().hex
             )
-        except Exception:  # noqa: BLE001 - product failures drive the state machine.
-            self.settle_seal(succeeded=False, current=False)
+        except Exception:  # noqa: BLE001 - the next request may retry a failed seal.
+            self.orchestration = STALE
             return
         self.absorb_seal_response(response)
-        self.settle_seal(
-            succeeded=True,
-            current=isinstance(response.fresh_observation, CurrentSealedPlanObservation),
+        self.orchestration = (
+            CURRENT
+            if isinstance(response.fresh_observation, CurrentSealedPlanObservation)
+            else STALE
         )
 
     def refresh_observation(self, work_ref: str) -> None:
@@ -360,11 +359,11 @@ class JobExecutionSession:
 
     @property
     def is_settled_current(self) -> bool:
-        return self.orchestration.state == SETTLED_CURRENT
+        return self.orchestration == CURRENT
 
     def invalidate(self) -> None:
         """작업 기준이 바뀌면 모든 세션 실행 증거를 버린다."""
-        self.orchestration = AutomaticSealOrchestration()
+        self.orchestration = NO_EVIDENCE
         self.fresh_observation = None
         self.sealed_basis_digest = None
         self.sealed_plan_payload = None
@@ -381,25 +380,10 @@ class JobExecutionSession:
         self.delivery_preparation = None
 
     def start_after_durable_change(self) -> bool:
-        transition = on_durable_command_settled(
-            self.orchestration,
-            durable_command_succeeded=True,
-            effective_basis_changed=True,
-        )
-        self.orchestration = transition.next_state
-        return transition.should_start_seal
-
-    def start_manual_recovery(self) -> bool:
-        if self.orchestration.state == FAILED:
-            self.orchestration = request_manual_recovery(self.orchestration)
-        return self.start_after_durable_change()
-
-    def settle_seal(self, *, succeeded: bool, current: bool) -> None:
-        self.orchestration = on_seal_settled(
-            self.orchestration,
-            seal_succeeded=succeeded,
-            resulting_currentness_current=current,
-        )
+        if self.orchestration == CHECKING:
+            return False
+        self.orchestration = CHECKING
+        return True
 
     def absorb_seal_response(self, response) -> None:
         """한 응답에서 나온 관찰·basis·payload를 같은 세대로 보관한다."""

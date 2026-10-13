@@ -577,7 +577,7 @@ class_methods = 30
 function_complexity = 14
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py"]
-module_statements = 323
+module_statements = 320
 
 [budget."src/hwpxfiller/application/document_creation_workbench.py::RecordValidationSummary.__post_init__"]
 function_complexity = 13
@@ -1146,7 +1146,7 @@ function_complexity = 15
 function_complexity = 13
 
 [budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession"]
-class_methods = 39
+class_methods = 37
 
 [budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession.resolve_delivery"]
 function_complexity = 12

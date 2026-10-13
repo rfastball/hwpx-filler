@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .automatic_seal_orchestration import CHECKING
+from .workbench_execution_status import CHECKING
 from .document_creation_workbench import (
     DocumentCreationWorkbenchObservation,
     EXECUTION_NO_EVIDENCE,
@@ -16,7 +16,7 @@ def can_request_create(observation: DocumentCreationWorkbenchObservation) -> boo
         return True
     blockers = set(observation.blockers)
     return (
-        observation.orchestration.state != CHECKING
+        observation.orchestration != CHECKING
         and bool(blockers & {EXECUTION_NO_EVIDENCE, EXECUTION_STALE})
         and blockers <= {EXECUTION_NO_EVIDENCE, EXECUTION_STALE, REVIEW_DELIVERY}
     )

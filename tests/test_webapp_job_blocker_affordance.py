@@ -28,10 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.application.automatic_seal_orchestration import (
-    CHECKING,
-    AutomaticSealOrchestration,
-)
+from hwpxfiller.application.workbench_execution_status import CHECKING
 from hwpxfiller.application.document_creation_workbench import (
     _CHECKING_PHRASE,
     _CREATE_PREPARATION_DISABLED_PHRASE,
@@ -116,7 +113,7 @@ def test_checking_keeps_the_verb_disabled_with_a_reason() -> None:
     가 선언하는 것이 정확히 이 중간 형태다.
     """
     assert BLOCKER_AFFORDANCES["EXECUTION_CHECKING"].kind == AUTOMATIC_PROGRESS
-    observation = _observation(orchestration=AutomaticSealOrchestration(state=CHECKING))
+    observation = _observation(orchestration=CHECKING)
     assert "EXECUTION_CHECKING" in observation.blockers
     assert observation.resolve_execution_disabled_reason == _CHECKING_PHRASE
 

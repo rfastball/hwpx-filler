@@ -11,21 +11,17 @@
     T2 선택→새 입력 항목 설명        → content 변경이 Active Field requirement 변화로 반영(원인 표현)
     T3 Binding blocker 수정 뒤 복귀  → REVIEW_BINDING + deep-link target 존재
     T4 Template Apply preserved/broken → AUTO_KEEP 재승인 없음, REVIEW_REQUIRED/DETACHED 만 행동
-    T5 SETTLED_CURRENT + NOT_ADMITTED → RUNTIME_NOT_ADMITTED, primary disabled + reason, READY 아님
+    T5 CURRENT + NOT_ADMITTED → RUNTIME_NOT_ADMITTED, primary disabled + reason, READY 아님
     T6 stale command 뒤 fresh 복귀    → EXECUTION_STALE, fresh 지배
     T7 생성 예정 문서 vs 실제 결과    → delivery 요약 "생성 예정", Artifact 아님
 
 R2(#740): currentness 축(SemanticCurrentness)이 orchestration 으로 흡수됐다 — CURRENT/STALE 는
-orchestration 상태(SETTLED_CURRENT/STALE)가 나른다(별도 currentness 입력 없음).
+세션 상태(CURRENT/STALE)가 나른다(별도 currentness 입력 없음).
 """
 
 from __future__ import annotations
 
-from hwpxfiller.application.automatic_seal_orchestration import (
-    SETTLED_CURRENT,
-    STALE as ORCH_STALE,
-    AutomaticSealOrchestration,
-)
+from hwpxfiller.application.workbench_execution_status import CURRENT, STALE
 from hwpxfiller.application.document_creation_workbench import (
     CREATE_DOCUMENTS,
     RESOLVE_EXECUTION,
@@ -84,7 +80,7 @@ def _input(**overrides: object) -> WorkbenchCompositionInput:
             active=True, work_ref="work-1", exact_context_restorable=True, bound_to_current_data=True
         ),
         admission=RuntimePolicyAdmission(ADMITTED),
-        orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),
+        orchestration=CURRENT,
         delivery=DeliveryPreviewSummary(resolvable=True, planned_output_names=("문서-1.hwpx", "문서-2.hwpx")),
         record_validation=RecordValidationSummary(has_blocking_issues=False),
         template_change_verdict=AUTO_KEEP,
@@ -190,9 +186,9 @@ def test_h4_template_apply_preserved_vs_broken() -> None:
 
 # ══════════════════════════════════════ H5 / T5 ════════════════════════════════════════════════
 def test_h5_current_but_not_admitted() -> None:
-    """T5: SETTLED_CURRENT + NOT_ADMITTED → RUNTIME_NOT_ADMITTED, primary disabled + reason, READY 아님.
+    """T5: CURRENT + NOT_ADMITTED → RUNTIME_NOT_ADMITTED, primary disabled + reason, READY 아님.
 
-    R2(#740): '반영됨'은 orchestration SETTLED_CURRENT(baseline)가 나른다 — currentness 필드는 없다.
+    '반영됨'은 세션 CURRENT가 나른다 — 별도 currentness 필드는 없다.
     그 위에서 runtime admission 이 NOT_ADMITTED 면 정직하게 RUNTIME_NOT_ADMITTED 로 막힌다.
     """
     verdict = PASS
@@ -201,7 +197,7 @@ def test_h5_current_but_not_admitted() -> None:
     assert MATERIALIZATION_CONTRACT_NOT_ADMITTED in admission.reasons
 
     obs = _obs(admission=admission)
-    assert obs.orchestration.state == SETTLED_CURRENT, f"{verdict}: 반영됨은 SETTLED_CURRENT 로 정직해야 한다"
+    assert obs.orchestration == CURRENT, f"{verdict}: 반영됨은 CURRENT 로 정직해야 한다"
     assert "RUNTIME_NOT_ADMITTED" in obs.blockers
     assert obs.materialization_readiness == NOT_READY, f"{verdict}: S6 부재를 READY 로 과장하지 않는다"
     assert obs.primary_action == RESOLVE_RUNTIME_POLICY
@@ -209,7 +205,7 @@ def test_h5_current_but_not_admitted() -> None:
     # disabled 이지만 숨기지 않고 사유와 함께.
     assert obs.primary_action_enabled is False
     assert obs.disabled_reason, f"{verdict}: 비활성 Primary Action 은 사유와 함께여야 한다"
-    # H5 판정: PASS — SETTLED_CURRENT + NOT_ADMITTED 를 정직하게 해석한다.
+    # H5 판정: PASS — CURRENT + NOT_ADMITTED 를 정직하게 해석한다.
     assert verdict == PASS
 
 
@@ -221,7 +217,7 @@ def test_h6_stale_command_then_fresh_recovery() -> None:
     # 과거 사건(historical)은 보존하되, orchestration 이 STALE 이면 STALE 이 지배한다.
     historical = HistoricalOutcomeSummary(outcome_kind="STALE_EXECUTION_BASIS", observed_at="2026-08-18T00:00:00Z")
     stale = _obs(
-        orchestration=AutomaticSealOrchestration(state=ORCH_STALE),
+        orchestration=STALE,
         historical_outcome=historical,
     )
     assert "EXECUTION_STALE" in stale.blockers, f"{verdict}: stale command 는 EXECUTION_STALE 로 표현"
@@ -229,12 +225,12 @@ def test_h6_stale_command_then_fresh_recovery() -> None:
     assert stale.historical_outcome is historical  # 부차 보존
     assert stale.execution_status_phrase == "설정이 바뀌어 다시 확인해야 합니다"
 
-    # orchestration 이 다시 SETTLED_CURRENT 로 정착하면(자동 seal 재확인) stale 이 사라지고 복구된다.
+    # seal 이 다시 CURRENT 로 정착하면 stale 이 사라지고 복구된다.
     recovered = _obs(
-        orchestration=AutomaticSealOrchestration(state=SETTLED_CURRENT),
+        orchestration=CURRENT,
         historical_outcome=historical,
     )
-    assert "EXECUTION_STALE" not in recovered.blockers, f"{verdict}: SETTLED_CURRENT 복귀로 stale 이 사라져야 한다"
+    assert "EXECUTION_STALE" not in recovered.blockers, f"{verdict}: CURRENT 복귀로 stale 이 사라져야 한다"
     # H6 판정: PASS — stale 뒤 fresh state 가 지배하고 복구된다.
     assert verdict == PASS
 

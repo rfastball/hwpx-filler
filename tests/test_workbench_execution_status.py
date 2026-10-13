@@ -10,9 +10,6 @@ observation 의 sealability·admission 이 나른다(current value 는 자명히
 
 from __future__ import annotations
 
-from hwpxfiller.application.automatic_seal_orchestration import (
-    AutomaticSealOrchestration,
-)
 from hwpxfiller.application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
     ADMITTED,
@@ -34,38 +31,27 @@ from hwpxfiller.application.workbench_execution_status import (
     derive_workbench_execution_status,
 )
 
-IDLE = AutomaticSealOrchestration()  # state=IDLE
-CHECKING_ORCH = AutomaticSealOrchestration(state="CHECKING")
-SETTLED = AutomaticSealOrchestration(state="SETTLED_CURRENT")
-STALE_ORCH = AutomaticSealOrchestration(state="STALE")
-FAILED_ORCH = AutomaticSealOrchestration(state="FAILED", consecutive_seal_failures=3)
-
-
 # ── 각 상태의 대표 조합(R2: CURRENT/STALE/CHECKING/NO_EVIDENCE 는 orchestration 소스) ──────────
 def test_no_evidence_when_idle_and_no_observation() -> None:
-    assert derive_workbench_execution_status(orchestration=IDLE) == NO_EVIDENCE
+    assert derive_workbench_execution_status(orchestration=NO_EVIDENCE) == NO_EVIDENCE
 
 
 def test_checking_when_orchestration_checking() -> None:
-    assert derive_workbench_execution_status(orchestration=CHECKING_ORCH) == CHECKING
+    assert derive_workbench_execution_status(orchestration=CHECKING) == CHECKING
 
 
 def test_current_when_orchestration_settled_current() -> None:
-    assert derive_workbench_execution_status(orchestration=SETTLED) == CURRENT
+    assert derive_workbench_execution_status(orchestration=CURRENT) == CURRENT
 
 
 def test_stale_when_orchestration_stale() -> None:
-    assert derive_workbench_execution_status(orchestration=STALE_ORCH) == STALE
-
-
-def test_stale_when_orchestration_failed() -> None:
-    assert derive_workbench_execution_status(orchestration=FAILED_ORCH) == STALE
+    assert derive_workbench_execution_status(orchestration=STALE) == STALE
 
 
 def test_domain_blocked_from_sealability() -> None:
     assert (
         derive_workbench_execution_status(
-            orchestration=IDLE, current_work_sealability=SEALABILITY_DOMAIN_BLOCKED
+            orchestration=NO_EVIDENCE, current_work_sealability=SEALABILITY_DOMAIN_BLOCKED
         )
         == DOMAIN_BLOCKED
     )
@@ -74,7 +60,7 @@ def test_domain_blocked_from_sealability() -> None:
 def test_policy_blocked_from_sealability() -> None:
     assert (
         derive_workbench_execution_status(
-            orchestration=IDLE, current_work_sealability=SEALABILITY_POLICY_BLOCKED
+            orchestration=NO_EVIDENCE, current_work_sealability=SEALABILITY_POLICY_BLOCKED
         )
         == POLICY_BLOCKED
     )
@@ -84,7 +70,7 @@ def test_context_error_from_admission() -> None:
     # fresh 축 실패는 ring2 가 admission=CONTEXT_ERROR 로 넘긴다 → CONTEXT_ERROR.
     assert (
         derive_workbench_execution_status(
-            orchestration=SETTLED,
+            orchestration=CURRENT,
             admission=RuntimePolicyAdmission(state=ADMISSION_CONTEXT_ERROR, reasons=("X",)),
         )
         == CONTEXT_ERROR
@@ -94,7 +80,7 @@ def test_context_error_from_admission() -> None:
 def test_context_error_from_sealability() -> None:
     assert (
         derive_workbench_execution_status(
-            orchestration=IDLE, current_work_sealability=SEALABILITY_CONTEXT_ERROR
+            orchestration=NO_EVIDENCE, current_work_sealability=SEALABILITY_CONTEXT_ERROR
         )
         == CONTEXT_ERROR
     )
@@ -105,7 +91,7 @@ def test_context_error_outranks_everything() -> None:
     # 다른 축이 정상이어도 CONTEXT_ERROR 하나면 CONTEXT_ERROR(fail-loud).
     assert (
         derive_workbench_execution_status(
-            orchestration=CHECKING_ORCH,
+            orchestration=CHECKING,
             current_work_sealability=SEALABILITY_CONTEXT_ERROR,
         )
         == CONTEXT_ERROR
@@ -116,7 +102,7 @@ def test_checking_outranks_domain_blocked() -> None:
     # 자동 재확인 중이면 sealability 의 DOMAIN_BLOCKED 위로 CHECKING 이 선다.
     assert (
         derive_workbench_execution_status(
-            orchestration=CHECKING_ORCH,
+            orchestration=CHECKING,
             current_work_sealability=SEALABILITY_DOMAIN_BLOCKED,
         )
         == CHECKING
@@ -127,7 +113,7 @@ def test_domain_blocked_outranks_current() -> None:
     # orchestration SETTLED 이어도 current Work 가 seal 불가면 DOMAIN_BLOCKED(막힌 항목이 반영 주장보다 우선).
     assert (
         derive_workbench_execution_status(
-            orchestration=SETTLED,
+            orchestration=CURRENT,
             current_work_sealability=SEALABILITY_DOMAIN_BLOCKED,
         )
         == DOMAIN_BLOCKED
@@ -136,9 +122,9 @@ def test_domain_blocked_outranks_current() -> None:
 
 def test_admission_not_admitted_alone_does_not_change_status() -> None:
     # §5 admission/readiness 는 별도 축이다 — NOT_ADMITTED 하나로 status 를 바꾸지 않는다
-    # (SETTLED_CURRENT + NOT_ADMITTED 는 정상 S6-absent 상태다).
+    # (CURRENT + NOT_ADMITTED 는 정상 S6-absent 상태다).
     status = derive_workbench_execution_status(
-        orchestration=SETTLED,
+        orchestration=CURRENT,
         admission=RuntimePolicyAdmission(
             state=NOT_ADMITTED, reasons=("MATERIALIZATION_CONTRACT_NOT_ADMITTED",)
         ),
@@ -161,7 +147,7 @@ def test_status_codes_are_exactly_seven_in_contract_order() -> None:
 
 def test_every_derivation_returns_a_declared_code() -> None:
     # 어떤 verdict 조합이든 반환은 항상 선언된 7 코드 중 하나(조용한 미지 상태 0).
-    orchestrations = [IDLE, CHECKING_ORCH, SETTLED, STALE_ORCH, FAILED_ORCH]
+    orchestrations = [NO_EVIDENCE, CHECKING, CURRENT, STALE]
     sealabilities = [
         None,
         SEALABILITY_DOMAIN_BLOCKED,
