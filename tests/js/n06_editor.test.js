@@ -217,17 +217,16 @@ test("init 2회 — initial 추가 등록 0, 같은 promise 공유", async () =>
   const first = h.controller.init();
   await first;
   assert.equal(h.counts.initial, 1, "initial 당김 1회");
-  /* U6-B(#976): 좌 열의 정본이 `tpl` 채널이라 편집기는 그 채널을 **구독한다**. 계약은
-     「구독하지 않는다」가 아니라 「정확히 하나」다 — 중복 설치가 곧 두 벌 갱신이다. */
-  assert.equal(h.store.listenerCount("tpl"), 1, "tpl 구독은 정확히 하나");
-  assert.equal(h.store.listenerCount("pool"), 1, "pool 구독도 정확히 하나");
+  /* 화면 model이 아직 구독되지 않았다면 runtime도 store 구독을 설치하지 않는다. */
+  assert.equal(h.store.listenerCount("tpl"), 0, "tpl 유휴 구독 0");
+  assert.equal(h.store.listenerCount("pool"), 0, "pool 유휴 구독 0");
 
   const second = h.controller.init();
   assert.equal(second, first, "성공한 init 재호출은 같은 promise 를 공유한다");
   await second;
   await h.controller.init();
   assert.equal(h.counts.initial, 1, "initial 추가 당김 0");
-  assert.equal(h.store.listenerCount("tpl"), 1, "tpl 구독 재유입 0");
+  assert.equal(h.store.listenerCount("tpl"), 0, "tpl 구독 재유입 0");
 });
 
 /** 재스캔 발신만 뽑는다 — 채널 순서(tpl → pool)까지 계약이다. */
@@ -365,7 +364,7 @@ test("tpl 재스캔은 editor 재당김을 태우지 않고, 변이 동사는 �
   await h.controller.handleSlotVerb("decompile", "특약", {});
   assert.equal(h.counts.initial - beforeMutate, 1,
     "변이 동사 완료가 재당김 하나를 소유한다");
-  assert.equal(h.store.listenerCount("tpl"), 1);
+  assert.equal(h.store.listenerCount("tpl"), 0);
 });
 
 test("동시 2회 init — 같은 초기화 promise, initial 1회", async () => {
@@ -375,7 +374,7 @@ test("동시 2회 init — 같은 초기화 promise, initial 1회", async () => 
   assert.equal(first, second);
   await Promise.all([first, second]);
   assert.equal(h.counts.initial, 1);
-  assert.equal(h.store.listenerCount("tpl"), 1);
+  assert.equal(h.store.listenerCount("tpl"), 0);
 });
 
 test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 initial 만 다시 당긴다", async () => {
@@ -390,7 +389,7 @@ test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 init
   await assert.rejects(h.controller.init(), /boot fail/, "rejection 은 호출자에게 전파된다");
   assert.equal(h.counts.initial, 1);
   const afterFail = h.store.listenerCount("tpl");
-  assert.equal(afterFail, 1, "실패해도 구독은 하나다");
+  assert.equal(afterFail, 0, "실패해도 유휴 구독은 없다");
 
   fail = false;
   await h.controller.init();   // 회복 — 스스로 재시도하지 않고 명시적 호출이 다시 당긴다
@@ -403,7 +402,7 @@ test("rerender — 재당김 하나를 태우고 구독을 늘리지 않는다",
   await h.controller.init();
   await h.controller.rerender();
   assert.equal(h.counts.initial, 2, "rerender 는 스냅샷을 다시 묻는다");
-  assert.equal(h.store.listenerCount("tpl"), 1, "rerender 는 구독을 새로 설치하지 않는다");
+  assert.equal(h.store.listenerCount("tpl"), 0, "rerender 는 구독을 새로 설치하지 않는다");
 });
 
 test("저장은 blur 없는 이름 draft를 set_name 뒤에 정산한다", async () => {
@@ -506,7 +505,6 @@ test("이탈 — discard_patch → refresh→go(refreshed:true) → 초점 복�
     refreshList: () => { h.trace.push(["ports.refreshList"]); },
     openBrowseNeedsAction: async () => {},
   });
-  h.ports.jobRun.bind({ attach: () => () => {} });
   h.ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     restoreEntryFocus: () => { h.trace.push(["ports.restoreEntryFocus"]); },

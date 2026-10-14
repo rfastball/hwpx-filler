@@ -1053,6 +1053,13 @@ def test_repair_entry_without_a_mount_keeps_the_empty_data_gate(tmp_path, monkey
     assert editor.has_unsaved_work() is False
     assert "다시 읽지 못했습니다" not in (snap["notice"] or {}).get("text", "")
 
+    assert frontend.open_job_in_editor("공고문", {
+        "entry_reason": "document_browser_repair", "section": "template",
+    }) == "공고문"
+    snap = editor.snapshot()
+    assert snap["section"] == "template"
+    assert snap["context"]["return_context"] == {}
+
 
 def test_repair_entry_restates_a_handoff_that_cannot_be_reread(tmp_path, monkeypatch):
     """#878 — 인계 참조를 다시 읽지 못하면 **사유를 재진술**하고, 진입은 계속한다.

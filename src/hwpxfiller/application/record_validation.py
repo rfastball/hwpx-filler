@@ -50,7 +50,6 @@ from hwpxfiller.application.execution_contract_set import (
     plan_semantic_digest,
     verify_sealed_plan_integrity,
 )
-from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
     CanonicalExecutionEncodingError,
@@ -242,34 +241,8 @@ class ValidatedDataRecord:
         )
 
 
-@dataclass(frozen=True)
-class CurrentRecordValidationBasis:
-    raw_record_contract_id: str
-    source_schema_contract_id: str
-    binding_value_contract_id: str
-    record_validation_contract_id: str
-    record_review_contract_id: str
-    document_value_resolution_contract_id: str
-    active_field_requirements: tuple[Mapping[str, Any], ...]
-
-
-@dataclass(frozen=True)
-class CurrentValidatedDataRecord:
-    validation_basis: CurrentRecordValidationBasis
-    record_identity: str
-    raw_record_digest: str
-    resolved_requirement_values: tuple[tuple[str, str], ...]
-    validation_provenance: ValidationProvenance
-
-    def document_values_in_order(self) -> tuple[tuple[str, str], ...]:
-        return self.resolved_requirement_values
-
-
 ValidateDataRecordResult = (
     ValidatedDataRecord | RecordValidationBlocked | RecordValidationContextError
-)
-ValidateCurrentDataRecordResult = (
-    CurrentValidatedDataRecord | RecordValidationBlocked | RecordValidationContextError
 )
 
 
@@ -522,8 +495,9 @@ def validate_data_record_against_plan(
     실패는 user-fixable blocker 로 낮추지 않는다(fail-closed).
     """
     try:
+        context = _prepare_validation_context(plan)
         return _validate(
-            plan=plan,
+            context=context,
             snapshot=snapshot,
             review_evidence=review_evidence,
             record_review_required=record_review_required,
@@ -534,246 +508,112 @@ def validate_data_record_against_plan(
         return RecordValidationContextError(sig.code, sig.detail)
 
 
-def _verify_current_snapshot(snapshot: RawDataRecordSnapshot) -> None:
+def validate_data_records_against_plan(
+    *,
+    plan: SealedExecutionPlanSemanticPayload,
+    snapshots: Iterable[RawDataRecordSnapshot],
+    validated_at: str,
+    runtime_clock: str | None = None,
+) -> tuple[ValidateDataRecordResult, ...]:
+    """한 계획의 검증·digest를 한 번 계산하고 각 고정 행을 독립 검증한다."""
+    snapshots = tuple(snapshots)
+    try:
+        context = _prepare_validation_context(plan)
+    except _ContextSignal as sig:
+        return tuple(RecordValidationContextError(sig.code, sig.detail) for _ in snapshots)
+    results: list[ValidateDataRecordResult] = []
+    for snapshot in snapshots:
+        try:
+            results.append(_validate(
+                context=context, snapshot=snapshot, review_evidence=None,
+                record_review_required=False, validated_at=validated_at,
+                runtime_clock=runtime_clock,
+            ))
+        except _ContextSignal as sig:
+            results.append(RecordValidationContextError(sig.code, sig.detail))
+    return tuple(results)
+
+
+@dataclass(frozen=True)
+class _ValidationContext:
+    plan: SealedExecutionPlanSemanticPayload
+    plan_digest: str
+    basis_digest: str
+    unsupported_contract: _ContextSignal | None
+
+
+def _prepare_validation_context(plan: SealedExecutionPlanSemanticPayload) -> _ValidationContext:
+    """Plan 신뢰 경계를 batch당 한 번 통과한다."""
+    try:
+        verify_sealed_plan_integrity(
+            plan, supported_plan_schemas=SUPPORTED_PLAN_SCHEMA_VERSIONS
+        )
+        plan_digest = plan_semantic_digest(plan)
+        basis_digest = execution_basis_digest(plan.execution_basis)
+    except (
+        ExecutionPlanIntegrityError,
+        UnsupportedPlanSchemaError,
+        ExecutionBasisIntegrityError,
+        UnsupportedCanonicalEncodingError,
+        CanonicalExecutionEncodingError,
+    ) as exc:
+        raise _ContextSignal(PLAN_INTEGRITY_ERROR, str(exc)) from exc
+    contracts = plan.execution_basis.contracts
+    unsupported: _ContextSignal | None = None
+    for name, supported, code in (
+        ("raw_record_contract_id", RAW_RECORD_CONTRACT_ID, UNSUPPORTED_RAW_RECORD_CONTRACT),
+        ("source_schema_contract_id", SOURCE_SCHEMA_VERSION, UNSUPPORTED_SOURCE_SCHEMA_CONTRACT),
+        ("binding_value_contract_id", BINDING_VALUE_VERSION, UNSUPPORTED_BINDING_VALUE_CONTRACT),
+        ("record_validation_contract_id", RECORD_VALIDATION_CONTRACT_ID, UNSUPPORTED_RECORD_VALIDATION_CONTRACT),
+        ("record_review_contract_id", RECORD_REVIEW_CONTRACT_ID, UNSUPPORTED_RECORD_REVIEW_CONTRACT),
+        ("document_value_resolution_contract_id", DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID, UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT),
+    ):
+        if getattr(contracts, name) != supported:
+            unsupported = _ContextSignal(code, f"미지원 {name}: {getattr(contracts, name)!r}")
+            break
+    return _ValidationContext(plan, plan_digest, basis_digest, unsupported)
+
+
+def _verify_snapshot_for_plan(
+    context: _ValidationContext, snapshot: RawDataRecordSnapshot
+) -> None:
+    """행 무결성을 먼저 확인한 뒤 해당 계획의 계약과 대조한다."""
     try:
         verify_raw_record_snapshot(snapshot)
     except RawRecordIntegrityError as exc:
         raise _ContextSignal(RAW_RECORD_INTEGRITY_ERROR, str(exc)) from exc
     except CanonicalExecutionEncodingError as exc:
         raise _ContextSignal(RAW_RECORD_CANONICALIZATION_ERROR, str(exc)) from exc
+    if context.unsupported_contract is not None:
+        raise context.unsupported_contract
 
-
-def _validate_record_contracts(contracts: Any, snapshot: RawDataRecordSnapshot) -> None:
-    expected = (
-        ("raw_record_contract_id", RAW_RECORD_CONTRACT_ID, UNSUPPORTED_RAW_RECORD_CONTRACT),
-        ("source_schema_contract_id", SOURCE_SCHEMA_VERSION, UNSUPPORTED_SOURCE_SCHEMA_CONTRACT),
-        ("binding_value_contract_id", BINDING_VALUE_VERSION, UNSUPPORTED_BINDING_VALUE_CONTRACT),
-        (
-            "record_validation_contract_id",
-            RECORD_VALIDATION_CONTRACT_ID,
-            UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
-        ),
-        (
-            "record_review_contract_id",
-            RECORD_REVIEW_CONTRACT_ID,
-            UNSUPPORTED_RECORD_REVIEW_CONTRACT,
-        ),
-        (
-            "document_value_resolution_contract_id",
-            DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID,
-            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-        ),
-    )
-    for name, supported, code in expected:
-        if getattr(contracts, name) != supported:
-            raise _ContextSignal(code, f"unsupported {name}")
-    payload = snapshot.semantic_payload_encoded
-    if payload["raw_record_contract_id"] != contracts.raw_record_contract_id:
+    contracts = context.plan.execution_basis.contracts
+    snap_payload = snapshot.semantic_payload_encoded
+    if snap_payload["raw_record_contract_id"] != contracts.raw_record_contract_id:
         raise _ContextSignal(
-            UNSUPPORTED_RAW_RECORD_CONTRACT, "snapshot raw record contract mismatch"
+            UNSUPPORTED_RAW_RECORD_CONTRACT,
+            "snapshot 의 raw_record_contract_id 가 Plan 과 불일치",
         )
-    if payload["source_schema_contract_id"] != contracts.source_schema_contract_id:
+    if snap_payload["source_schema_contract_id"] != contracts.source_schema_contract_id:
         raise _ContextSignal(
-            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT, "snapshot source schema contract mismatch"
+            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
+            "snapshot 의 source_schema_contract_id 가 Plan 과 불일치",
         )
-
-
-def current_record_validation_basis(
-    plan: SealedExecutionPlanValue,
-) -> CurrentRecordValidationBasis:
-    contracts = plan.contract_semantics
-    return CurrentRecordValidationBasis(
-        raw_record_contract_id=contracts.raw_record_contract_id,
-        source_schema_contract_id=contracts.source_schema_contract_id,
-        binding_value_contract_id=contracts.binding_value_contract_id,
-        record_validation_contract_id=contracts.record_validation_contract_id,
-        record_review_contract_id=contracts.record_review_contract_id,
-        document_value_resolution_contract_id=(contracts.document_value_resolution_contract_id),
-        active_field_requirements=tuple(_freeze(r) for r in plan.active_field_requirements),
-    )
-
-
-def validate_data_record_against_current_value(
-    *,
-    plan: SealedExecutionPlanValue,
-    snapshot: RawDataRecordSnapshot,
-    validated_at: str,
-    runtime_clock: str | None = None,
-) -> ValidateCurrentDataRecordResult:
-    basis = current_record_validation_basis(plan)
-    try:
-        return _validate_current_value(
-            plan=plan,
-            snapshot=snapshot,
-            validated_at=validated_at,
-            validation_basis=basis,
-            runtime_clock=runtime_clock,
-        )
-    except _ContextSignal as sig:
-        return RecordValidationContextError(sig.code, sig.detail)
-
-
-def validate_data_records_against_current_value(
-    *,
-    plan: SealedExecutionPlanValue,
-    snapshots: Iterable[RawDataRecordSnapshot],
-    validated_at: str,
-    runtime_clock: str | None = None,
-) -> tuple[ValidateCurrentDataRecordResult, ...]:
-    """여러 record 를 한 batch 로 검증한다 — ``runtime_clock`` 은 batch 전체가 **공유**한다(레코드마다
-    시각을 다시 찍으면 한 batch 안에서 「오늘 날짜」가 하위-일 경계를 넘어 갈린다)."""
-    basis = current_record_validation_basis(plan)
-    results: list[ValidateCurrentDataRecordResult] = []
-    for snapshot in snapshots:
-        try:
-            results.append(
-                _validate_current_value(
-                    plan=plan,
-                    snapshot=snapshot,
-                    validated_at=validated_at,
-                    validation_basis=basis,
-                    runtime_clock=runtime_clock,
-                )
-            )
-        except _ContextSignal as sig:
-            results.append(RecordValidationContextError(sig.code, sig.detail))
-    return tuple(results)
-
-
-def _validate_current_value(
-    *,
-    plan: SealedExecutionPlanValue,
-    snapshot: RawDataRecordSnapshot,
-    validated_at: str,
-    validation_basis: CurrentRecordValidationBasis,
-    runtime_clock: str | None = None,
-) -> ValidateCurrentDataRecordResult:
-    if plan.plan_schema_version not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
-        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported plan schema")
-    if plan.canonical_encoding_version != CANONICAL_ENCODING_VERSION:
-        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported canonical encoding")
-    _verify_current_snapshot(snapshot)
-    _validate_record_contracts(plan.contract_semantics, snapshot)
-    field_ids = [requirement.get("field_id") for requirement in plan.active_field_requirements]
-    if any(not isinstance(field_id, str) or not field_id for field_id in field_ids):
-        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "invalid current field identity")
-    if len(set(field_ids)) != len(field_ids):
-        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "duplicate current field identity")
-    blockers: list[RecordValidationBlocker] = []
-    resolved: list[tuple[str, str]] = []
-    marked: list[str] = []
-    for requirement in plan.active_field_requirements:
-        outcome = _resolve_requirement(requirement, snapshot, runtime_clock)
-        if isinstance(outcome, RecordValidationBlocker):
-            blockers.append(outcome)
-        else:
-            field_id = str(requirement["field_id"])
-            resolved.append((field_id, outcome.document_value))
-            if outcome.missing_marked:
-                marked.append(field_id)
-    if blockers:
-        return RecordValidationBlocked(tuple(blockers))
-    record = CurrentValidatedDataRecord(
-        validation_basis=validation_basis,
-        record_identity=snapshot.record_identity,
-        raw_record_digest=snapshot.raw_record_digest,
-        resolved_requirement_values=tuple(resolved),
-        validation_provenance=ValidationProvenance(
-            validation_facts=_validation_facts(len(resolved), marked),
-            record_review_evidence_refs=(),
-            validated_at=validated_at,
-        ),
-    )
-    try:
-        verify_current_validated_record_completeness(
-            record, plan, snapshot, expected_basis=validation_basis
-        )
-    except ValidatedRecordIntegrityError as exc:
-        raise _ContextSignal(VALIDATED_RECORD_INTEGRITY_ERROR, str(exc)) from exc
-    return record
 
 
 def _validate(
     *,
-    plan: SealedExecutionPlanSemanticPayload,
+    context: _ValidationContext,
     snapshot: RawDataRecordSnapshot,
     review_evidence: RecordReviewEvidence | None,
     record_review_required: bool,
     validated_at: str,
     runtime_clock: str | None = None,
 ) -> ValidateDataRecordResult:
-    # (1) Plan canonical integrity — nested digest·bijection·operation order·supported schema 재검증.
-    #     tautological self-schema 가 아니라 validator 의 exact supported set 으로 검증한다(미지원 schema
-    #     를 v1 로 풀지 않는다). verifier 가 낼 수 있는 integrity·미지원-version 예외를 전부 잡아 결과
-    #     union 밖으로 새지 않게 PLAN_INTEGRITY_ERROR 로 닫는다.
-    try:
-        verify_sealed_plan_integrity(
-            plan, supported_plan_schemas=SUPPORTED_PLAN_SCHEMA_VERSIONS
-        )
-    except (
-        ExecutionPlanIntegrityError,
-        UnsupportedPlanSchemaError,
-        ExecutionBasisIntegrityError,
-        UnsupportedCanonicalEncodingError,
-    ) as exc:
-        raise _ContextSignal(PLAN_INTEGRITY_ERROR, str(exc)) from exc
-    # raw snapshot canonical integrity — digest·lookup·identity 재계산 실패는 결과 union 으로 매핑한다.
-    try:
-        verify_raw_record_snapshot(snapshot)
-    except RawRecordIntegrityError as exc:
-        raise _ContextSignal(RAW_RECORD_INTEGRITY_ERROR, str(exc)) from exc
-    except CanonicalExecutionEncodingError as exc:
-        raise _ContextSignal(RAW_RECORD_CANONICALIZATION_ERROR, str(exc)) from exc
-
-    contracts = plan.execution_basis.contracts
-    plan_digest = plan_semantic_digest(plan)
-    basis_digest = execution_basis_digest(plan.execution_basis)
-
-    # (2) 미지원 contract — 모든 관여 contract id 를 exact supported constant 와 대조한다. 미지원은
-    #     v1 로 풀지 않고 user-fixable 로도 낮추지 않는다(fail-closed context error).
-    if contracts.raw_record_contract_id != RAW_RECORD_CONTRACT_ID:
-        raise _ContextSignal(
-            UNSUPPORTED_RAW_RECORD_CONTRACT,
-            f"미지원 raw record contract: {contracts.raw_record_contract_id!r}",
-        )
-    snap_payload = snapshot.semantic_payload_encoded
-    if snap_payload["raw_record_contract_id"] != RAW_RECORD_CONTRACT_ID:
-        raise _ContextSignal(
-            UNSUPPORTED_RAW_RECORD_CONTRACT,
-            "snapshot 의 raw_record_contract_id 가 지원 contract 와 불일치",
-        )
-    if contracts.source_schema_contract_id != SOURCE_SCHEMA_VERSION:
-        raise _ContextSignal(
-            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
-            f"미지원 source schema contract: {contracts.source_schema_contract_id!r}",
-        )
-    # snapshot 의 source schema contract 가 Plan 과 일치해야 literal 을 같은 의미로 읽는다.
-    if snap_payload["source_schema_contract_id"] != contracts.source_schema_contract_id:
-        raise _ContextSignal(
-            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
-            "snapshot 의 source_schema_contract_id 가 Plan source schema contract 와 불일치",
-        )
-    if contracts.binding_value_contract_id != BINDING_VALUE_VERSION:
-        raise _ContextSignal(
-            UNSUPPORTED_BINDING_VALUE_CONTRACT,
-            f"미지원 binding value contract: {contracts.binding_value_contract_id!r}",
-        )
-    if contracts.record_validation_contract_id != RECORD_VALIDATION_CONTRACT_ID:
-        raise _ContextSignal(
-            UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
-            f"미지원 record validation contract: {contracts.record_validation_contract_id!r}",
-        )
-    if contracts.record_review_contract_id != RECORD_REVIEW_CONTRACT_ID:
-        raise _ContextSignal(
-            UNSUPPORTED_RECORD_REVIEW_CONTRACT,
-            f"미지원 record review contract: {contracts.record_review_contract_id!r}",
-        )
-    if contracts.document_value_resolution_contract_id != DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID:
-        raise _ContextSignal(
-            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-            f"미지원 document value resolution contract: "
-            f"{contracts.document_value_resolution_contract_id!r}",
-        )
+    plan = context.plan
+    _verify_snapshot_for_plan(context, snapshot)
+    plan_digest = context.plan_digest
+    basis_digest = context.basis_digest
 
     # 순서 키를 가진 blocker 수집 — Plan requirement order 로 deterministic 정렬한다.
     ordered_blockers: list[tuple[int, RecordValidationBlocker]] = []
@@ -830,7 +670,9 @@ def _validate(
         validation_provenance=provenance,
     )
     # 완결성·Plan 결속을 최종 재검증한다(claim 신뢰 금지 — restored input 도 같은 검증을 받는다).
-    verify_validated_record_completeness(record, plan)
+    _verify_validated_record_completeness(
+        record, plan, context.plan_digest, context.basis_digest
+    )
     return record
 
 
@@ -910,6 +752,17 @@ def verify_validated_record_completeness(
     sequence 가 Plan active_field_requirements sequence 와 정확히 동일(집합·순서·중복 0·누락 0·추가 0).
     S6 는 count/order 를 재조립하지 않는다 — 이 검증이 그 전제를 진다.
     """
+    _verify_validated_record_completeness(
+        record, plan, plan_semantic_digest(plan), execution_basis_digest(plan.execution_basis)
+    )
+
+
+def _verify_validated_record_completeness(
+    record: ValidatedDataRecord,
+    plan: SealedExecutionPlanSemanticPayload,
+    expected_plan_digest: str,
+    expected_basis_digest: str,
+) -> None:
     payload = record.semantic_payload_encoded
     if canonical_execution_digest(payload) != record.validated_record_digest:
         raise ValidatedRecordIntegrityError(
@@ -925,9 +778,9 @@ def verify_validated_record_completeness(
         raise ValidatedRecordIntegrityError(
             f"미지원 VDR canonical encoding version: {payload.get('canonical_encoding_version')!r}"
         )
-    if payload["plan_semantic_digest"] != plan_semantic_digest(plan):
+    if payload["plan_semantic_digest"] != expected_plan_digest:
         raise ValidatedRecordIntegrityError("VDR plan_semantic_digest 가 Plan 과 불일치")
-    if payload["execution_basis_digest"] != execution_basis_digest(plan.execution_basis):
+    if payload["execution_basis_digest"] != expected_basis_digest:
         raise ValidatedRecordIntegrityError("VDR execution_basis_digest 가 Plan 과 불일치")
     contracts = plan.execution_basis.contracts
     if payload["record_validation_contract_id"] != contracts.record_validation_contract_id:
@@ -939,6 +792,12 @@ def verify_validated_record_completeness(
         raise ValidatedRecordIntegrityError(
             "VDR document_value_resolution_contract_id 가 Plan 과 불일치"
         )
+    _verify_record_values_in_order(payload, plan)
+
+
+def _verify_record_values_in_order(
+    payload: Mapping[str, Any], plan: SealedExecutionPlanSemanticPayload
+) -> None:
     plan_fields = [str(r["field_id"]) for r in plan.active_field_requirements]
     vdr_fields = [str(rv["field_id"]) for rv in payload["resolved_requirement_values"]]
     if len(set(vdr_fields)) != len(vdr_fields):
@@ -954,31 +813,29 @@ def verify_validated_record_completeness(
             )
 
 
-# ─── 최소 immutable VDR ref/retention port ─────────────────────────────────────────────────
-def verify_current_validated_record_completeness(
-    record: CurrentValidatedDataRecord,
-    plan: SealedExecutionPlanValue,
+def check_validated_record_for_delivery(
+    record: ValidatedDataRecord,
+    plan: SealedExecutionPlanSemanticPayload,
     snapshot: RawDataRecordSnapshot,
-    *,
-    expected_basis: CurrentRecordValidationBasis | None = None,
-) -> None:
-    expected_basis = expected_basis or current_record_validation_basis(plan)
-    if record.validation_basis != expected_basis:
-        raise ValidatedRecordIntegrityError("current VDR validation basis mismatch")
-    if record.record_identity != snapshot.record_identity:
-        raise ValidatedRecordIntegrityError("current VDR record identity mismatch")
-    if record.raw_record_digest != snapshot.raw_record_digest:
-        raise ValidatedRecordIntegrityError("current VDR raw record digest mismatch")
-    expected_fields = [str(r["field_id"]) for r in plan.active_field_requirements]
-    actual_fields = [field_id for field_id, _ in record.resolved_requirement_values]
-    if len(set(actual_fields)) != len(actual_fields):
-        raise ValidatedRecordIntegrityError("current VDR duplicate field")
-    if actual_fields != expected_fields:
-        raise ValidatedRecordIntegrityError("current VDR field sequence mismatch")
-    if any(not isinstance(value, str) for _, value in record.resolved_requirement_values):
-        raise ValidatedRecordIntegrityError("current VDR value is not logical text")
+    expected_plan_digest: str,
+    expected_basis_digest: str,
+) -> str | None:
+    """배달 입력의 Plan·raw 결속을 분류하고, 그 외 VDR 손상은 예외로 닫는다."""
+    payload = record.semantic_payload_encoded
+    if payload.get("plan_semantic_digest") != expected_plan_digest:
+        return "plan"
+    if (
+        payload.get("record_identity") != snapshot.record_identity
+        or payload.get("raw_record_digest") != snapshot.raw_record_digest
+    ):
+        return "raw"
+    _verify_validated_record_completeness(
+        record, plan, expected_plan_digest, expected_basis_digest
+    )
+    return None
 
 
+# ─── 최소 immutable VDR ref/retention port ─────────────────────────────────────────────────
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType({k: _freeze(v) for k, v in value.items()})

@@ -5,7 +5,7 @@ wall-clock 을 모른다 — exact fact 를 이미 읽어 온 :mod:`hwpxfiller.e
 가 그 값을 넘겨 여기서 상태를 파생시킨다.
 
 **S5F R2-04b-1(#740):** historical durable Plan lookup + digest-vs-stored currentness(CURRENT/STALE)
-축을 제거했다. observation 은 이제 store 에 저장된 과거 Plan 과 대조하지 않고 **current SealedExecutionPlanValue**
+축을 제거했다. observation 은 이제 store 에 저장된 과거 Plan 과 대조하지 않고 **current SealedExecutionPlanSemanticPayload**
 를 직접 계산해 그 위에 runtime admission·readiness 를 얹는다. opaque Plan ref·PublishedPlanObservation·
 SemanticCurrentness 는 사라졌다 — value 가 곧 현재이므로 currentness 는 자명하다.
 
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
+from hwpxfiller.application.execution_contract_set import SealedExecutionPlanSemanticPayload
 from hwpxfiller.application.field_binding_input import FieldBindingInput
 
 # ─── runtime-policy admission ────────────────────────────────────────────────────────
@@ -82,13 +82,13 @@ class RuntimePolicyAdmission:
 
 @dataclass(frozen=True)
 class CurrentSealedPlanObservation:
-    """current sealable Work 의 관찰 — 지금 계산한 SealedExecutionPlanValue + admission + readiness.
+    """current sealable Work 의 관찰 — 지금 계산한 SealedExecutionPlanSemanticPayload + admission + readiness.
 
     historical durable Plan 을 조회·대조하지 않는다(R2-04b-1). value 는 방금 current authority 에서
     재계산됐으므로 currentness 축이 없다 — readiness 는 admission 만으로 갈린다.
     """
 
-    sealed_plan_value: SealedExecutionPlanValue
+    sealed_plan_value: SealedExecutionPlanSemanticPayload
     runtime_policy_admission: RuntimePolicyAdmission
     observed_at: str
     # 같은 current capture 에서 온 exact binding facts. delivery-only inactive token 해석에

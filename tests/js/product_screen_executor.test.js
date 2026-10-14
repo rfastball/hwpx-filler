@@ -48,6 +48,7 @@ function harness({ activeIn = null, claimDuringCommit = null } = {}) {
     doc.activeElement = holder;
   }
   let current = "job";
+  const calls = [];
   const claimed = element("claimed-by-incoming");
   claimed.doc = doc;
   const executor = createProductScreenExecutor({
@@ -64,12 +65,24 @@ function harness({ activeIn = null, claimDuringCommit = null } = {}) {
         }
       },
     },
-    lifecycle: { delegateLeave: () => false },
+    leaveOwners: Object.fromEntries(["editor", "workbench", "authoring"].map((id) => [id,
+      (to) => calls.push([id, to])])),
+    rerenderEditor: () => calls.push(["rerender"]),
     reclaimSurfaces() {},
     notify() {},
   });
-  return { executor, doc, roots, claimed };
+  return { executor, doc, roots, claimed, calls };
 }
+
+test("이탈은 세 몰입 화면의 고정 소유자에게만 위임한다", () => {
+  const h = harness();
+  assert.equal(h.executor.delegateLeave("library", "job"), false);
+  for (const from of ["editor", "workbench", "authoring"]) {
+    assert.equal(h.executor.delegateLeave(from, "job"), true);
+  }
+  h.executor.rerenderEditor();
+  assert.deepEqual(h.calls, [["editor", "job"], ["workbench", "job"], ["authoring", "job"], ["rerender"]]);
+});
 
 test("#795 들어오는 화면이 이미 자기 안에 초점을 세웠으면 전환이 빼앗지 않는다", () => {
   // deep-link 진입이 그 형상이다: 목적 화면이 지목된 자리를 겨눈 **뒤** 전환이 마무리된다.

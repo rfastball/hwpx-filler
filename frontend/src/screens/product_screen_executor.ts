@@ -5,7 +5,6 @@ import { IMMERSIVE_SURFACES } from "../shell/nav.ts";
 import type { ShellExecutor } from "../shell/nav.ts";
 import { PRODUCT_SCREEN_IDS } from "./product_screens.ts";
 import type { ProductScreenId, ProductScreenVisibility } from "./product_screens.ts";
-import type { ScreenLifecycleRegistry } from "./screen_lifecycle_registry.ts";
 
 type ScrollPoint = { top: number; left: number };
 type FocusMemory = { kind: "id" | "data-focus-key"; value: string } | null;
@@ -24,7 +23,8 @@ export type ProductScreenExecutorDeps = {
   doc: Document;
   bridge: BridgePort;
   visibility: ProductScreenVisibility;
-  lifecycle: ScreenLifecycleRegistry;
+  leaveOwners: Record<"editor" | "workbench" | "authoring", (to: string) => unknown>;
+  rerenderEditor(): unknown;
   reclaimSurfaces(): void;
   notify(message: string): void;
 };
@@ -149,7 +149,11 @@ export function createProductScreenExecutor(deps: ProductScreenExecutorDeps): Sh
 
   return {
     delegateLeave(from: string, to: string): boolean {
-      return deps.lifecycle.delegateLeave(from, to);
+      if (!IMMERSIVE_SURFACES.some((surface) => surface.id === from)) return false;
+      const leave = deps.leaveOwners[from as keyof typeof deps.leaveOwners];
+      if (typeof leave !== "function") throw new Error(`화면 수명주기 owner가 결속되지 않았습니다: ${from}`);
+      leave(to);
+      return true;
     },
 
     reclaimSurfaces(): void {
@@ -181,7 +185,7 @@ export function createProductScreenExecutor(deps: ProductScreenExecutorDeps): Sh
     },
 
     rerenderEditor(): void {
-      deps.lifecycle.rerender("editor");
+      deps.rerenderEditor();
     },
   };
 }

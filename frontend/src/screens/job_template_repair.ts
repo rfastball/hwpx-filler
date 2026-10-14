@@ -10,7 +10,7 @@ export function openJobInEditor(entry: EditorEntryPort, name: string | undefined
 
 export function openTemplateRepairInEditor(entry: EditorEntryPort, name?: string): Promise<boolean> {
   return openJobInEditor(entry, name, {
-    entry_reason: "document_browser_repair", section: "template", return_context: { surface: "job" },
+    entry_reason: "document_browser_repair", section: "template",
   });
 }
 

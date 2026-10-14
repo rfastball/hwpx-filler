@@ -2,7 +2,7 @@
 
 이 모듈은 job/webapp 통합 경로(다른 test 파일들)가 대부분 커버하지만, 방어적 raise·loop
 탈출·경계 값 갈래는 통합 경로가 거의 밟지 않는다. 여기는 그 갈래만 직접, 최소 구성으로 잰다
-— exact 상위 계약(``SealedExecutionPlanValue`` 전체)이 필요 없는 함수는 duck-typed
+— exact 상위 계약(``SealedExecutionPlanSemanticPayload`` 전체)이 필요 없는 함수는 duck-typed
 ``SimpleNamespace`` 로, 실제 검증 파이프라인을 타야 하는 함수는 ``tests.test_record_validation``
 의 실 Plan builder 를 재사용한다.
 """

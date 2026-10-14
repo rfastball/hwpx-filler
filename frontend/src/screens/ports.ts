@@ -27,18 +27,6 @@ export type JobReadPort = {
   openBrowseNeedsAction(name: string): Promise<void>;
 };
 
-export type JobRunCallbacks = {
-  onFull(snapshot: unknown): void;
-  onProgress(progress: unknown): void;
-};
-
-export type JobRunPort = {
-  attach(callbacks: JobRunCallbacks): () => void;
-  acceptFull(snapshot: unknown): void;
-  acceptProgress(progress: unknown): void;
-  dispose(): void;
-};
-
 export type JobDataCoordinator = { flushPendingEdits(): Promise<void> };
 
 export type JobRunCoordinationPort = {
@@ -58,7 +46,6 @@ export type EditorEntryPort = {
 export function createScreenPorts() {
   return {
     jobRead: createPort<JobReadPort>("JobReadPort"),
-    jobRun: createPort<JobRunPort>("JobRunPort"),
     jobData: createPort<JobDataCoordinator>("JobDataCoordinator"),
     jobRunCoordination: createPort<JobRunCoordinationPort>("JobRunCoordinationPort"),
     jobRelinkFlow: createPort<JobRelinkFlowPort>("JobRelinkFlowPort"),

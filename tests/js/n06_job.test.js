@@ -17,7 +17,7 @@ import {
   initialRunState,
   isForeignResult,
 } from "../../frontend/src/screens/job_run_state.ts";
-import { JobDataHeader, JobDataTabs, createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
+import { JobDataHeader, JobDataTabs } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
@@ -89,7 +89,7 @@ function harness(options = {}) {
   const editorCalls = [];
   editorEntry.openGuarded = (...args) => { editorCalls.push(args); return options.openGuardedResult ?? true; };
   const ports = {
-    jobRun: port(), jobRunCoordination: port(),
+    jobRunCoordination: port(),
     jobData: port({ flushPendingEdits: () => Promise.resolve() }),
     jobRelinkFlow: port({ relinkTemplateFor: () => Promise.resolve() }),
     editorEntry: port(editorEntry),
@@ -201,7 +201,7 @@ test("선택 불가 blocker는 템플릿 수정 문을 열고 편집기 고르�
   assert.match(html, /id="jobRepairTemplate"/);
   await h.controller.openTemplateRepair();
   assert.deepEqual(h.editorCalls, [["A", {
-    entry_reason: "document_browser_repair", section: "template", return_context: { surface: "job" },
+    entry_reason: "document_browser_repair", section: "template",
   }]]);
 });
 
@@ -223,31 +223,6 @@ test("client 는 객체째 — 발신이 교체한 dispatch 프로퍼티를 본�
   h.controller.resolveExecution();
   assert.deepEqual(seen, [["A", "resolve_execution"], ["B", "resolve_execution"]],
     "메서드를 사전 추출하면 프로브의 스텁이 우회된다");
-});
-
-test("job run adapter는 full/progress 순서를 보존한다", async () => {
-  let value = { full: { id: 1 }, progress: null };
-  const listeners = new Set();
-  const events = [];
-  const adapter = createJobRunAdapter({
-    model: {
-      getSnapshot: () => value,
-      subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
-    },
-  });
-  const release = adapter.attach({
-    onFull: (full) => events.push(["full", full]),
-    onProgress: (progress) => events.push(["progress", progress]),
-  });
-  value = { full: value.full, progress: { done: 1 } };
-  for (const listener of listeners) listener();
-  assert.deepEqual(events, [
-    ["full", { id: 1 }],
-    ["progress", { done: 1 }],
-  ]);
-  release();
-  assert.equal(listeners.size, 0);
-  assert.throws(release, /정확히 한 번/);
 });
 
 /* ================= 실행 정체 reducer ================= */

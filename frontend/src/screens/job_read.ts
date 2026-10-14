@@ -1,6 +1,5 @@
 /* R4-01 job 읽기·선택 표면. Python snapshot의 판정은 그대로 투영하고, DataZone·후보·
-   browse·범위 초안의 DOM/이벤트/비동기 의도는 이 React 경계가 단독 소유한다. 실행·결과는
-   임시 JobRunPort 하류의 legacy remainder에 남는다. */
+   browse·범위 초안의 DOM/이벤트/비동기 의도는 이 React 경계가 단독 소유한다. */
 import {
   Fragment,
   createElement,
@@ -21,8 +20,8 @@ import { SheetTabs, saveSheetOrder } from "./sheet_tabs.ts";
 import { createLatestIntentQueue } from "./latest_intent.ts";
 import { JobDataZone } from "./data_zone.ts";
 import { NoticeBox } from "./notice_box.ts";
-import type { JobRunCallbacks, ScreenPorts } from "./ports.ts";
-import type { JobScreenModel, ScreenModel, ScreenRuntime } from "./runtime.ts";
+import type { ScreenPorts } from "./ports.ts";
+import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 
 type Obj = Record<string, any>;
@@ -836,59 +835,4 @@ export function JobReadEffects(props: { controller: JobReadController; closeButt
     return () => props.closeButton.removeEventListener("click", close);
   }, [props.controller, props.closeButton]);
   return null;
-}
-
-/** raw store 하류 model 하나를 legacy run remainder에 fan-out하는 임시 포트. */
-export function createJobRunAdapter(args: {
-  model: ScreenModel<JobScreenModel>;
-}) {
-  let callbacks: JobRunCallbacks | null = null;
-  let release: (() => void) | null = null;
-  let lastFull: unknown = null;
-  let lastProgress: unknown = null;
-
-  function acceptFull(snapshot: unknown): void {
-    if (callbacks === null) throw new Error("JobRunPort: attach 전 full 전달입니다.");
-    callbacks.onFull(snapshot);
-  }
-
-  function acceptProgress(progress: unknown): void {
-    if (callbacks === null) throw new Error("JobRunPort: attach 전 progress 전달입니다.");
-    callbacks.onProgress(progress);
-  }
-
-  function pump(): void {
-    const next = args.model.getSnapshot();
-    if (next.full !== null && next.full !== lastFull) {
-      lastFull = next.full;
-      lastProgress = null;
-      acceptFull(next.full);
-    }
-    if (next.progress !== null && next.progress !== lastProgress) {
-      lastProgress = next.progress;
-      acceptProgress(next.progress);
-    }
-  }
-
-  return {
-    attach(next: JobRunCallbacks): () => void {
-      if (callbacks !== null || release !== null) throw new Error("JobRunPort: run callback은 정확히 한 번 attach합니다.");
-      callbacks = next;
-      release = args.model.subscribe(pump);
-      pump();
-      return () => {
-        if (release === null) throw new Error("JobRunPort: attach release는 정확히 한 번입니다.");
-        release();
-        release = null;
-        callbacks = null;
-      };
-    },
-    acceptFull,
-    acceptProgress,
-    dispose(): void {
-      if (release !== null) release();
-      release = null;
-      callbacks = null;
-    },
-  };
 }

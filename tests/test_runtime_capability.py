@@ -7,7 +7,7 @@ DEFAULT registry 는 계속 비어 있다(D4 — theorem/runtime disjoint 유지
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+import dataclasses
 
 from hwpxfiller.application.execution_capture import MATERIALIZATION_BASE_CONTRACT_ID
 from hwpxfiller.application.execution_composition import (
@@ -16,7 +16,8 @@ from hwpxfiller.application.execution_composition import (
     NATIVE_PRIMITIVE_CONTRACT_ID,
     PASS,
 )
-from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
+from hwpxfiller.application.execution_contract_set import build_execution_contract_set
+from hwpxfiller.application.execution_composition import composition_fingerprint
 from hwpxfiller.application.fresh_execution_observation import (
     MATERIALIZER_ADMITTED,
     MATERIALIZER_NOT_ADMITTED,
@@ -106,24 +107,15 @@ def test_foreign_capability_digest_is_not_startable() -> None:
 
 
 # ═══ Plan value 파생 registry 판정(웹 관찰 축의 정식 주입 경로) ═══════════════════════════
-def _plan_value_duck(case, **over) -> SimpleNamespace:
-    semantics = ExecutionContractSemantics.from_contract_set(
-        case.plan.execution_basis.contracts
-    )
-    kw = dict(
-        contract_semantics=semantics,
-        plan_schema_version=case.plan.plan_schema_version,
-        canonical_encoding_version=case.plan.canonical_encoding_version,
-    )
-    kw.update(over)
-    return SimpleNamespace(**kw)
+def _plan_value(case, **over):
+    return dataclasses.replace(case.plan, **over)
 
 
 def test_registry_conformance_admits_matching_plan_value() -> None:
     case = _build_case(_one_of_two())
     registry, manifest = admitted_runtime_conformance_registry()
     binding = RuntimeConformanceBinding(registry=registry, manifest=manifest)
-    conformance = registry_conformance_for_plan_value(binding, _plan_value_duck(case))
+    conformance = registry_conformance_for_plan_value(binding, case.plan)
     assert conformance.verdict == MATERIALIZER_ADMITTED
     assert conformance.plan_schema_supported is True
     assert conformance.canonical_encoding_supported is True
@@ -140,7 +132,7 @@ def test_registry_conformance_rejects_unsupported_schema_per_axis() -> None:
     registry, manifest = admitted_runtime_conformance_registry()
     binding = RuntimeConformanceBinding(registry=registry, manifest=manifest)
     conformance = registry_conformance_for_plan_value(
-        binding, _plan_value_duck(case, plan_schema_version="hwpx-execution-plan/v999")
+        binding, _plan_value(case, plan_schema_version="hwpx-execution-plan/v999")
     )
     assert conformance.verdict == MATERIALIZER_NOT_ADMITTED
     assert conformance.plan_schema_supported is False
@@ -218,31 +210,22 @@ def test_binding_picks_the_manifest_of_the_plans_native_primitive() -> None:
     assert binding.manifest_for("미등록/v1") is hwpx  # primary — 질의에서 닫힌다
 
     case = _build_case(_one_of_two())
-    value = _plan_value_duck(case)
-    txt_semantics = ExecutionContractSemantics(
-        raw_record_contract_id=value.contract_semantics.raw_record_contract_id,
-        source_schema_contract_id=value.contract_semantics.source_schema_contract_id,
-        binding_value_contract_id=value.contract_semantics.binding_value_contract_id,
-        record_validation_contract_id=(
-            value.contract_semantics.record_validation_contract_id
-        ),
-        record_review_contract_id=value.contract_semantics.record_review_contract_id,
-        document_value_resolution_contract_id=(
-            value.contract_semantics.document_value_resolution_contract_id
-        ),
+    value = case.plan
+    roles = dataclasses.asdict(value.execution_basis.contracts)
+    roles.pop("contract_set_schema_version")
+    roles.pop("contract_set_manifest_digest")
+    roles.update(
         composition_contract_id=TXT_COMPOSITION_CONTRACT_ID,
         native_primitive_contract_id=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
-        materialization_base_contract_id=(
-            value.contract_semantics.materialization_base_contract_id
-        ),
-        materialization_contract_id=(
-            value.contract_semantics.materialization_contract_id
+        composition_theorem_evidence_manifest_digest=composition_fingerprint(
+            TXT_COMPOSITION_CONTRACT_ID, TXT_NATIVE_PRIMITIVE_CONTRACT_ID
         ),
     )
-    txt_value = SimpleNamespace(
-        contract_semantics=txt_semantics,
-        plan_schema_version=value.plan_schema_version,
-        canonical_encoding_version=value.canonical_encoding_version,
+    txt_value = dataclasses.replace(
+        value,
+        execution_basis=dataclasses.replace(
+            value.execution_basis, contracts=build_execution_contract_set(**roles)
+        ),
     )
     conformance = registry_conformance_for_plan_value(binding, txt_value)
     assert conformance.verdict == MATERIALIZER_ADMITTED

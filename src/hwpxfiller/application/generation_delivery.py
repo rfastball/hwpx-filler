@@ -35,19 +35,17 @@ from hwpxfiller.application.execution_composition import (
 )
 from hwpxfiller.application.execution_contract_set import (
     SealedExecutionPlanSemanticPayload,
+    execution_basis_digest,
     plan_semantic_digest,
 )
 from hwpxfiller.application.record_validation import (
-    CurrentValidatedDataRecord,
     DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID,
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
-    current_record_validation_basis,
-    verify_current_validated_record_completeness,
+    check_validated_record_for_delivery,
     verify_validated_record_completeness,
 )
 from hwpxfiller.application.document_creation_vocabulary import COLLISION_POLICIES
-from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 from hwpxfiller.domain.canonical_execution_encoding import (
     CanonicalExecutionEncodingError,
     canonical_execution_digest,
@@ -663,8 +661,8 @@ def _dedupe_batch(
 
 def resolve_current_generation_delivery(
     *,
-    sealed_execution_plan: SealedExecutionPlanValue,
-    ordered_validated_records: Iterable[CurrentValidatedDataRecord],
+    sealed_execution_plan: SealedExecutionPlanSemanticPayload,
+    ordered_validated_records: Iterable[ValidatedDataRecord],
     ordered_raw_snapshots: Iterable[RawDataRecordSnapshot],
     delivery_binding_basis: GenerationDeliveryBindingBasis,
     exact_pattern: str,
@@ -701,8 +699,8 @@ def resolve_current_generation_delivery(
 
 def _resolve_current(
     *,
-    sealed_execution_plan: SealedExecutionPlanValue,
-    ordered_validated_records: tuple[CurrentValidatedDataRecord, ...],
+    sealed_execution_plan: SealedExecutionPlanSemanticPayload,
+    ordered_validated_records: tuple[ValidatedDataRecord, ...],
     ordered_raw_snapshots: tuple[RawDataRecordSnapshot, ...],
     delivery_binding_basis: GenerationDeliveryBindingBasis,
     exact_pattern: str,
@@ -737,7 +735,7 @@ def _resolve_current(
         != filename_pattern_contract_id
         or delivery_binding_basis.exact_pattern != exact_pattern
         or delivery_binding_basis.base_template_application_id
-        != sealed_execution_plan.template_application_id
+        != sealed_execution_plan.execution_basis.template.template_application_id
     ):
         raise _DeliveryContextSignal(
             DELIVERY_BINDING_BASIS_INTEGRITY_ERROR,
@@ -763,10 +761,18 @@ def _resolve_current(
         requirement.field_id: requirement.value_expression
         for requirement in delivery_binding_basis.output_name_requirements
     }
-    expected_basis = current_record_validation_basis(sealed_execution_plan)
     runtime_by_field = _runtime_date_requirements(
         sealed_execution_plan.active_field_requirements
     )
+    try:
+        expected_plan_digest, expected_basis_digest = (
+            plan_semantic_digest(sealed_execution_plan),
+            execution_basis_digest(sealed_execution_plan.execution_basis),
+        )
+    except CanonicalExecutionEncodingError as exc:
+        raise _DeliveryContextSignal(
+            GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR, str(exc)
+        ) from exc
     blockers: list[DeliveryPlanBlocker] = []
     base_names: list[str] = []
     token_values: list[tuple[ResolvedTokenValue, ...]] = []
@@ -780,28 +786,27 @@ def _resolve_current(
                 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
                 f"item {ordinal} raw snapshot 무결성 실패: {exc}",
             ) from exc
-        if record.validation_basis != expected_basis:
-            raise _DeliveryContextSignal(
-                CURRENT_RECORD_VALIDATION_BASIS_MISMATCH,
-                f"item {ordinal} current VDR validation basis 가 current Plan 과 불일치",
-            )
-        if (
-            record.record_identity != snapshot.record_identity
-            or record.raw_record_digest != snapshot.raw_record_digest
-        ):
-            raise _DeliveryContextSignal(
-                RAW_VALIDATED_RECORD_MISMATCH,
-                f"item {ordinal} raw snapshot 이 current VDR 과 결속되지 않음",
-            )
         try:
-            verify_current_validated_record_completeness(
-                record, sealed_execution_plan, snapshot, expected_basis=expected_basis
+            mismatch = check_validated_record_for_delivery(
+                record, sealed_execution_plan, snapshot,
+                expected_plan_digest, expected_basis_digest,
             )
-        except ValidatedRecordIntegrityError as exc:
+        except (
+            ValidatedRecordIntegrityError, CanonicalExecutionEncodingError,
+            KeyError, TypeError, AttributeError,
+        ) as exc:
             raise _DeliveryContextSignal(
                 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                f"item {ordinal} current VDR 완결성 실패: {exc}",
+                f"item {ordinal} VDR 완결성 실패: {exc}",
             ) from exc
+        if mismatch is not None:
+            raise _DeliveryContextSignal(
+                {
+                    "plan": CURRENT_RECORD_VALIDATION_BASIS_MISMATCH,
+                    "raw": RAW_VALIDATED_RECORD_MISMATCH,
+                }[mismatch],
+                f"item {ordinal} VDR 결속 불일치: {mismatch}",
+            )
 
         active_map = dict(record.document_values_in_order())
         field_values: dict[str, str] = {}
@@ -915,7 +920,7 @@ def _resolve_current(
             disposition = WRITE_NEW
         items.append(
             CurrentResolvedDeliveryItem(
-                record_identity=record.record_identity,
+                record_identity=str(record.semantic_payload_encoded["record_identity"]),
                 item_ordinal=ordinal,
                 resolved_output_relative_path=path,
                 collision_disposition=disposition,

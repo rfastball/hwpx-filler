@@ -95,7 +95,6 @@ import {
   PRODUCT_OVERLAY_COMPONENTS, createProductScreenVisibility, productOverlayComponent,
 } from "./screens/product_screens.ts";
 import { createProductScreenExecutor } from "./screens/product_screen_executor.ts";
-import { createScreenLifecycleRegistry } from "./screens/screen_lifecycle_registry.ts";
 import { createLibraryController } from "./screens/library.ts";
 import { createDataPickerController } from "./screens/data_picker.ts";
 import { createJobReadController } from "./screens/job_read.ts";
@@ -261,8 +260,7 @@ export function bootProduct() {
   const AuthoringController = followBeatRange(runtime.model("tutorial"),
     createAuthoringController({ runtime, client, modal: Modal, navigation, dataPicker: DataPicker, undo: UndoToast }));
   screenPorts.authoring.bind(AuthoringController);
-  /* R4-03 — 실행·결과 표면의 단일 owner. legacy `screens/job.js` 는 이 커밋에서 사라지므로
-     `createJobRunAdapter` 를 거치는 임시 fan-out 도 함께 은퇴한다(port 를 직접 결속한다). */
+  /* 실행·결과 표면의 단일 owner. */
   const JobRunController = createJobRunController({
     runtime, client, ports: screenPorts, services: servicePorts,
     modal: Modal, navigation, doc: document,
@@ -293,20 +291,16 @@ export function bootProduct() {
      `bootProduct` 재호출 방지가 「호출자 유일성」에 더해 구조 한 겹을 얻었다. */
   const shellNav = createShellNav();
   const visibility = createProductScreenVisibility();
-  const lifecycle = createScreenLifecycleRegistry();
-  lifecycle.register("editor", {
-    leaveTo: (...args) => EditorController.leaveTo(...args),
-    rerender: () => EditorController.rerender(),
-  });
-  lifecycle.register("workbench", {
-    leaveTo: (...args) => WorkbenchController.leaveTo(...args),
-  });
-  lifecycle.register("authoring", { leaveTo: (to) => AuthoringController.guarded(() => AuthoringController.leaveTo(to)) });
   shellNav.bindExecutor(createProductScreenExecutor({
     doc: document,
     bridge,
     visibility,
-    lifecycle,
+    leaveOwners: {
+      editor: (to) => EditorController.leaveTo(to),
+      workbench: (to) => WorkbenchController.leaveTo(to),
+      authoring: (to) => AuthoringController.guarded(() => AuthoringController.leaveTo(to)),
+    },
+    rerenderEditor: () => EditorController.rerender(),
     reclaimSurfaces: () => SurfaceSheet.closeAllAndRestore(),
     notify: (message) => window.alert(message),
   }));

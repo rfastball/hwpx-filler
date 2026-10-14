@@ -12,7 +12,7 @@ schema = "complexity-budget/v1"
 function_complexity = 11
 
 [budget."frontend/src/bootstrap.js::bootProduct"]
-function_statements = 59
+function_statements = 55
 
 [budget."frontend/src/domain/canonical_execution_encoding.ts::encodeValue"]
 function_complexity = 14
@@ -236,7 +236,7 @@ function_complexity = 32
 function_complexity = 14
 
 [budget."frontend/src/screens/job_read.ts"]
-module_statements = 461
+module_statements = 423
 
 [budget."frontend/src/screens/job_read.ts::BrowseRow"]
 function_complexity = 12
@@ -263,7 +263,7 @@ function_complexity = 16
 function_complexity = 36
 
 [budget."frontend/src/screens/job_run.ts"]
-module_statements = 419
+module_statements = 407
 
 [budget."frontend/src/screens/job_run.ts::JobActionBar"]
 function_complexity = 23
@@ -623,32 +623,17 @@ function_complexity = 18
 function_complexity = 20
 
 [budget."src/hwpxfiller/application/generation_delivery.py"]
-module_statements = 343
+module_statements = 342
 
 [budget."src/hwpxfiller/application/generation_delivery.py::_resolve_current"]
-function_complexity = 46
+function_complexity = 45
 function_statements = 89
 
 [budget."src/hwpxfiller/application/generation_delivery.py::resolve_delivery_field_value"]
 function_complexity = 12
 
-[budget."src/hwpxfiller/application/record_validation.py"]
-module_statements = 361
-
 [budget."src/hwpxfiller/application/record_validation.py::_evaluate_review"]
 function_complexity = 11
-
-[budget."src/hwpxfiller/application/record_validation.py::_validate"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/application/record_validation.py::_validate_current_value"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/application/record_validation.py::verify_current_validated_record_completeness"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/record_validation.py::verify_validated_record_completeness"]
-function_complexity = 14
 
 [budget."src/hwpxfiller/application/selection_compatibility.py::classify_selection"]
 function_complexity = 19
@@ -1303,7 +1288,7 @@ module_statements = 1787
 module_statements = 1308
 
 [budget."tests/js/n06_editor.test.js"]
-module_statements = 1132
+module_statements = 1131
 
 [budget."tests/repo_contract/test_architecture.py::test_screen_controllers_stay_transport_thin"]
 function_complexity = 36
@@ -1369,4 +1354,4 @@ module_statements = 2123
 module_statements = 3792
 
 [budget."tests/test_webapp_job_binding_review.py"]
-module_statements = 983
+module_statements = 967

@@ -185,7 +185,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
      전송 실패로 남은 키는 다음 클릭이 **같은 키로 재전송**, 성공 뒤 클릭만 새 키(=새 intent). */
   let tpl: TemplateChangeUi = { inFlight: false, requestId: null, notice: "" };
   const listeners = new Set<Listener>();
-  let attached: { onFull(s: unknown): void; onProgress(p: unknown): void } | null = null;
   let releaseModel: (() => void) | null = null;
   let lastFullSeen: unknown = null;
   let lastProgressSeen: unknown = null;
@@ -248,12 +247,10 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       lastFullSeen = next.full;
       lastProgressSeen = null;
       ingestFull(next.full);
-      attached?.onFull(next.full);
     }
     if (next.progress !== null && next.progress !== lastProgressSeen) {
       lastProgressSeen = next.progress;
       setRun(acceptProgress(run, next.progress as any));
-      attached?.onProgress(next.progress);
     }
   }
 
@@ -627,19 +624,6 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     },
   };
 
-  /* JobRunPort·JobRunCoordinationPort — legacy 구현을 **파일째** 지우므로 handoff 상대가
-     없다(#415 D10 과 같은 형태). 빈 port 에 한 번 결속하고 둘째 결속은 throw 한다:
-     중간 dual-dispatch 창이 애초에 생기지 않으므로 불변식은 handoff 보다 강하다. */
-  deps.ports.jobRun.bind({
-    attach(callbacks) {
-      if (attached !== null) throw new Error("JobRunPort: run callback은 정확히 한 번 attach합니다.");
-      attached = callbacks;
-      return () => { attached = null; };
-    },
-    acceptFull(value: unknown) { ingestFull(value); },
-    acceptProgress(value: unknown) { setRun(acceptProgress(run, value as any)); },
-    dispose() { controller.dispose(); },
-  });
   deps.ports.jobRunCoordination.bind({ confirmDestructiveIfArmed });
 
   return controller;

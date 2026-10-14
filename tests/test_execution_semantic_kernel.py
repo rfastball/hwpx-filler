@@ -36,11 +36,10 @@ from hwpxfiller.application.execution_composition import (
     CompositionPremisesBlocked,
     admit_composition_premises,
 )
-from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
+from hwpxfiller.application.execution_contract_set import SealedExecutionPlanSemanticPayload, execution_basis_digest, plan_semantic_digest
 from hwpxfiller.application.execution_semantic_kernel import (
     DurableExecutionAuthority,
     SealedExecutionPlanBlocked,
-    SealedExecutionPlanValue,
     SemanticKernelContextError,
     compute_execution_snapshot,
     compute_sealed_execution_plan,
@@ -63,23 +62,10 @@ def _judge(authority):
 
 
 def _assert_semantic_parity(kern, candidate):
-    """kernel value 가 materialization payload 경계를 통과해도 같은 의미인지 확인한다.
+    assert candidate.plan_payload == kern
+    assert candidate.execution_basis_digest == execution_basis_digest(kern.execution_basis)
 
-    비교 축: effective content/Active Field(active_field_requirements)·ordered operations·exact
-    template/selection/binding basis·소비되는 contract semantics. 비교 대상 아님: plan digest·request
-    id·theorem digest·manifest digest(=closed manifest 의 identity). R2-04b-2 이후 PlanCandidate 는
-    plan_payload(S6 materialization 소비)만 싣고 execution_basis/plan_semantic_digest 는 안 싣는다 —
-    basis 는 payload 안에서 읽는다.
-    """
-    payload = candidate.plan_payload
-    basis = payload.execution_basis
-    assert kern.active_field_requirements == payload.active_field_requirements
-    assert kern.ordered_operations == payload.ordered_operations
-    assert kern.exact_template_execution_basis == basis.template
-    assert kern.effective_selection_basis == basis.selection
-    assert kern.effective_field_binding_basis == basis.field_binding
-    # closed manifest 의 소비 semantics 만 투영해 kernel 의 작은 값과 대조한다.
-    assert kern.contract_semantics == ExecutionContractSemantics.from_contract_set(basis.contracts)
+
 from hwpxfiller.application.execution_structure import (
     OWNER_OPTION,
     OWNER_ROOT,
@@ -191,7 +177,7 @@ def test_same_authority_yields_same_execution_meaning():
     structure = _structure()
     a = compute_sealed_execution_plan(_authority(structure))
     b = compute_sealed_execution_plan(_authority(structure))
-    assert isinstance(a, SealedExecutionPlanValue)
+    assert isinstance(a, SealedExecutionPlanSemanticPayload)
     assert a == b  # frozen value 전체 동등(contract semantics·bases·reqs·ops 포함)
 
 
@@ -200,8 +186,8 @@ def test_effective_meaning_change_changes_active_fields_and_operations():
     structure = _structure()
     plan_o1 = compute_sealed_execution_plan(_authority(structure, selected="o1"))
     plan_o2 = compute_sealed_execution_plan(_authority(structure, selected="o2"))
-    assert isinstance(plan_o1, SealedExecutionPlanValue)
-    assert isinstance(plan_o2, SealedExecutionPlanValue)
+    assert isinstance(plan_o1, SealedExecutionPlanSemanticPayload)
+    assert isinstance(plan_o2, SealedExecutionPlanSemanticPayload)
     # 선택 Option 이 다르면 Active Field 와 ordered operations 가 달라진다(항목↔금액, 제거 대상 반전).
     assert plan_o1.active_field_requirements != plan_o2.active_field_requirements
     assert plan_o1.ordered_operations != plan_o2.ordered_operations
@@ -238,34 +224,21 @@ def test_capture_context_failure_is_fail_closed():
 
 
 # ── 4. Plan store 없이도 durable authority 에서 Plan 재계산 가능 ─────────────────────────
-def test_plan_recomputable_without_store_or_closed_manifest():
-    structure = _structure()
-    plan = compute_sealed_execution_plan(_authority(structure))
-    assert isinstance(plan, SealedExecutionPlanValue)
-    assert plan.active_field_requirements  # 실 Plan value 를 얻었다
-    assert isinstance(plan.contract_semantics, ExecutionContractSemantics)
-    # kernel 은 store/ledger 도, closed contract manifest(ExecutionContractSet/basis/sealed payload)도
-    # 만들지 않는다 — control plane·manifest 밖 재계산의 구조적 증거.
+def test_plan_recomputable_without_store():
+    plan = compute_sealed_execution_plan(_authority(_structure()))
+    assert isinstance(plan, SealedExecutionPlanSemanticPayload)
+    assert plan.active_field_requirements
+    assert plan_semantic_digest(plan)
+    # Store/fence/runtime registry remain outside the pure compiler.
     import inspect
+    import hwpxfiller.application.execution_semantic_kernel as kernel
 
-    import hwpxfiller.application.execution_semantic_kernel as kern
-
-    src = inspect.getsource(kern)
-    # 구성/호출 구문(괄호)으로 확인한다 — 산문 언급이 아니라 실제 사용을 잡는다.
-    forbidden = (
-        "work_execution_plan_store",
-        "stored_execution_plan",
-        "job_store",
-        "build_execution_contract_set(",
-        "ExecutionContractSet(",
-        "build_sealed_plan(",
-        "ExecutionBasis(",
-        "SealedExecutionPlanSemanticPayload(",
-        "compile_candidate(",
-        "theorem_registry=",
-    )
-    for token in forbidden:
-        assert token not in src, f"kernel 이 {token} 를 쓰면 안 된다(closed manifest/control plane 결합)"
+    source = inspect.getsource(kernel)
+    for dependency in (
+        "work_execution_plan_store", "stored_execution_plan", "job_store",
+        "per_work_mutation_fence", "runtime_conformance_registry",
+    ):
+        assert dependency not in source
 
 
 # ── command payload 가 kernel semantic 을 소비 ────────────────────────────────────────────
@@ -273,7 +246,7 @@ def test_candidate_payload_uses_kernel_value(monkeypatch):
     structure = _structure()
     authority = _authority(structure)
     kern_value = compute_sealed_execution_plan(authority)
-    assert isinstance(kern_value, SealedExecutionPlanValue)
+    assert isinstance(kern_value, SealedExecutionPlanSemanticPayload)
 
     # 명령 후보가 같은 kernel 값을 실제로 소비하고 legacy payload 로만 투영한다.
     captured = _judge(authority)
@@ -331,51 +304,6 @@ def test_unbound_active_field_returns_blocked():
 
 
 # ── R2-03: semantic identity digest 비의존(correctness 는 explicit value 로 정의) ──────────
-def test_kernel_value_is_independent_of_the_three_identity_digests():
-    """kernel value 는 qualification_profile_semantic_digest·execution_basis_digest·
-    plan_semantic_digest 를 correctness/identity 로 싣지 않는다 — 그 셋은 legacy identity 경로의 것.
-    (digest 함수·legacy 경로는 이 절개에서 삭제하지 않는다 — 여기선 kernel 비의존만 못박는다.)"""
-    from hwpxfiller.application.execution_contract_set import (
-        execution_basis_digest,
-        plan_semantic_digest,
-        qualification_profile_semantic_digest,
-    )
-
-    structure = _structure()
-    authority = _authority(structure)
-    kern = compute_sealed_execution_plan(authority)
-    assert isinstance(kern, SealedExecutionPlanValue)
-
-    captured = _judge(authority)
-    candidate = compile_candidate(captured)
-    qpd = qualification_profile_semantic_digest(
-        captured.template.qualification.qualification_profile_semantic_payload
-    )
-    ebd = execution_basis_digest(candidate.plan_payload.execution_basis)
-    psd = plan_semantic_digest(candidate.plan_payload)
-    blob = repr(kern)
-    for label, digest in (
-        ("qualification_profile_semantic_digest", qpd),
-        ("execution_basis_digest", ebd),
-        ("plan_semantic_digest", psd),
-    ):
-        assert digest  # legacy 는 여전히 그 digest 를 계산한다(경로 보존 확인)
-        assert digest not in blob, f"kernel value 가 {label} 를 identity 로 실으면 안 된다"
-
-    # kernel 소스도 세 digest 함수를 호출하지 않는다(구성/호출 구문).
-    import inspect
-
-    import hwpxfiller.application.execution_semantic_kernel as k
-
-    src = inspect.getsource(k)
-    for fn in (
-        "qualification_profile_semantic_digest(",
-        "execution_basis_digest(",
-        "plan_semantic_digest(",
-    ):
-        assert fn not in src, f"kernel 이 {fn} 를 호출하면 안 된다"
-
-
 def test_real_meaning_change_shows_in_explicit_value_not_only_digest():
     """실제 의미 변경(선택·binding)은 digest 뿐 아니라 explicit semantic value 로 갈린다."""
     structure = _structure()
@@ -394,8 +322,8 @@ def test_real_meaning_change_shows_in_explicit_value_not_only_digest():
     )
     assert bind_a != bind_b
     assert (
-        bind_a.effective_field_binding_basis.effective_active_binding_rules
-        != bind_b.effective_field_binding_basis.effective_active_binding_rules
+        bind_a.execution_basis.field_binding.effective_active_binding_rules
+        != bind_b.execution_basis.field_binding.effective_active_binding_rules
     )
 
 
@@ -416,27 +344,16 @@ def test_contract_mismatch_is_fail_closed():
         compute_sealed_execution_plan(_authority(structure, policy=bad))
 
 
-def test_contract_semantics_rejects_empty_role():
+def test_contract_set_rejects_empty_role():
     import dataclasses
+    from hwpxfiller.application.execution_contract_set import ExecutionContractSetIntegrityError
 
-    from hwpxfiller.application.execution_contract_semantics import (
-        ExecutionContractSemanticsError,
-    )
-
-    semantics = compute_sealed_execution_plan(_authority(_structure())).contract_semantics
-    assert isinstance(semantics, ExecutionContractSemantics)
-    # 모든 소비 역할은 nonempty 여야 한다 — 빈 역할은 latest 로 풀지 않고 fail-closed.
-    with pytest.raises(ExecutionContractSemanticsError):
-        dataclasses.replace(semantics, binding_value_contract_id="")
+    plan = compute_sealed_execution_plan(_authority(_structure()))
+    assert isinstance(plan, SealedExecutionPlanSemanticPayload)
+    with pytest.raises(ExecutionContractSetIntegrityError):
+        dataclasses.replace(plan.execution_basis.contracts, binding_value_contract_id="")
 
 
-def test_kernel_and_command_compile_same_supported_plan():
-    authority = _authority(_structure())
-    kernel_value = compute_sealed_execution_plan(authority)
-    assert isinstance(kernel_value, SealedExecutionPlanValue)
-    captured = _judge(authority)
-    assert isinstance(captured, CapturedExecutionInput)
-    _assert_semantic_parity(kernel_value, compile_candidate(captured))
 # ── slotless authority 도 순수 재계산된다 ──────────────────────────────────────────────
 def test_slotless_authority_recomputes_plan():
     structure = _slotless_structure()
@@ -452,4 +369,4 @@ def test_slotless_authority_recomputes_plan():
         captured_at="2026-08-18T00:00:00Z",
     )
     plan = compute_sealed_execution_plan(authority)
-    assert isinstance(plan, (SealedExecutionPlanValue, SealedExecutionPlanBlocked))
+    assert isinstance(plan, (SealedExecutionPlanSemanticPayload, SealedExecutionPlanBlocked))

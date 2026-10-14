@@ -31,13 +31,10 @@ from hwpxfiller.application.execution_compilation import (
 from hwpxfiller.application.record_validation import (
     MISSING_VALUE_MARKED,
     RUNTIME_CLOCK_UNAVAILABLE,
-    UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
-    CurrentValidatedDataRecord,
     RecordValidationContextError,
     ValidatedDataRecord,
-    validate_data_record_against_current_value,
     validate_data_record_against_plan,
-    validate_data_records_against_current_value,
+    validate_data_records_against_plan,
 )
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.domain import format_engine
@@ -74,9 +71,7 @@ from hwpxfiller.application.execution_compilation import (
     active_binding_digest,
     required_source_key_set_digest,
 )
-from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
 from hwpxfiller.application.execution_contract_set import build_sealed_plan
-from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 
 NOW = datetime(2026, 6, 15, 18, 4)
 POLICY = DOCUMENT_CONTENT_VALUE_POLICY_V1
@@ -217,20 +212,8 @@ def _plan(rules=None):
     )
 
 
-def _current(plan) -> SealedExecutionPlanValue:
-    basis = plan.execution_basis
-    return SealedExecutionPlanValue(
-        qualification_profile_id="profile-1",
-        template_application_id=basis.template.template_application_id,
-        contract_semantics=ExecutionContractSemantics.from_contract_set(basis.contracts),
-        exact_template_execution_basis=basis.template,
-        effective_selection_basis=basis.selection,
-        effective_field_binding_basis=basis.field_binding,
-        active_field_requirements=plan.active_field_requirements,
-        ordered_operations=plan.ordered_operations,
-        plan_schema_version=plan.plan_schema_version,
-        canonical_encoding_version=plan.canonical_encoding_version,
-    )
+def _current(plan):
+    return plan
 
 
 def test_plan_seals_the_rule_not_the_clock() -> None:
@@ -261,10 +244,10 @@ def test_vdr_renders_the_runtime_date_from_the_given_clock() -> None:
 def test_runtime_date_is_never_missing_or_marked() -> None:
     plan = _current(_plan())
     blank_row = _snapshot(name="")  # 소스 칸이 비어도 실행 시각 값은 선다
-    result = validate_data_record_against_current_value(
+    result = validate_data_record_against_plan(
         plan=plan, snapshot=blank_row, validated_at=_CLOCK, runtime_clock=_CLOCK
     )
-    assert isinstance(result, CurrentValidatedDataRecord), result
+    assert isinstance(result, ValidatedDataRecord), result
     values = dict(result.document_values_in_order())
     assert values["f_today"] == "2026-03-04"
     facts = result.validation_provenance.validation_facts
@@ -274,7 +257,7 @@ def test_runtime_date_is_never_missing_or_marked() -> None:
 
 def test_a_batch_shares_one_runtime_clock() -> None:
     plan = _current(_plan())
-    results = validate_data_records_against_current_value(
+    results = validate_data_records_against_plan(
         plan=plan,
         snapshots=(_snapshot(identity="r1"), _snapshot(identity="r2")),
         validated_at=_CLOCK,
@@ -317,11 +300,11 @@ def test_a_malformed_runtime_date_requirement_is_closed(mutation) -> None:
         if requirement["field_id"] == "f_today":
             requirement["value_expression"] = {**requirement["value_expression"], **mutation}
     forged = dataclasses.replace(plan, active_field_requirements=tuple(requirements))
-    result = validate_data_record_against_current_value(
+    result = validate_data_record_against_plan(
         plan=forged, snapshot=_snapshot(), validated_at=_CLOCK, runtime_clock=_CLOCK
     )
     assert isinstance(result, RecordValidationContextError), result
-    assert result.code == UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
+    assert result.code == "PLAN_INTEGRITY_ERROR"
 
 
 # ─── 파일 이름 — 한 시각(RC-02) ─────────────────────────────────────────────────────
@@ -336,10 +319,10 @@ def _resolve_current(plan, *, pattern, inactive_rules=(), vdr_clock, delivery_cl
     )
     assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
     snapshot = _snapshot()
-    record = validate_data_record_against_current_value(
+    record = validate_data_record_against_plan(
         plan=plan, snapshot=snapshot, validated_at=vdr_clock, runtime_clock=vdr_clock
     )
-    assert isinstance(record, CurrentValidatedDataRecord), record
+    assert isinstance(record, ValidatedDataRecord), record
     return basis, gd.resolve_current_generation_delivery(
         sealed_execution_plan=plan,
         ordered_validated_records=(record,),

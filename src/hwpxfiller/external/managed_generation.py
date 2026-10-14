@@ -31,7 +31,7 @@ from ..application.generation_delivery import CurrentResolvedDelivery
 from ..application.record_validation import (
     RecordValidationBlocked,
     ValidatedDataRecord,
-    validate_data_record_against_plan,
+    validate_data_records_against_plan,
 )
 from ..application.slotless_run_bridge import (
     APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
@@ -165,13 +165,13 @@ def run_managed_generation(
     #    파일 이름의 날짜 토큰이 이미 그 값으로 섰으므로, 본문이 실행 진입 시각(``validated_at``)을
     #    따로 쓰면 이름과 본문이 하위-일 경계에서 갈린다. 두 번째 시계를 읽지 않는다.
     validated_records: list[ValidatedDataRecord] = []
-    for ordinal, snapshot in enumerate(ordered_raw_snapshots):
-        validated = validate_data_record_against_plan(
-            plan=plan_payload,
-            snapshot=snapshot,
-            validated_at=validated_at,
-            runtime_clock=resolved_delivery.captured_delivery_clock,
-        )
+    results = validate_data_records_against_plan(
+        plan=plan_payload,
+        snapshots=ordered_raw_snapshots,
+        validated_at=validated_at,
+        runtime_clock=resolved_delivery.captured_delivery_clock,
+    )
+    for ordinal, validated in enumerate(results):
         if isinstance(validated, ValidatedDataRecord):
             validated_records.append(validated)
             continue
