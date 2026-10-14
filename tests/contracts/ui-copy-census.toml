@@ -607,22 +607,6 @@ text = "JobReadPort: 확인할 작업 이름이 비었습니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
-text = "JobRunPort: attach release는 정확히 한 번입니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
-text = "JobRunPort: attach 전 full 전달입니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
-text = "JobRunPort: attach 전 progress 전달입니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
-text = "JobRunPort: run callback은 정확히 한 번 attach합니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_read.ts"
 text = "job snapshot: has_data/has_job 판정이 없습니다."
 
 [[sentence]]
@@ -708,10 +692,6 @@ text = "이 결과는 '{}' 실행입니다. 지금은 그 작업이 열려 있�
 [[sentence]]
 file = "frontend/src/screens/job_result.ts"
 text = "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다."
-
-[[sentence]]
-file = "frontend/src/screens/job_run.ts"
-text = "JobRunPort: run callback은 정확히 한 번 attach합니다."
 
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
@@ -1060,6 +1040,10 @@ text = "읽을 시트를 고르세요."
 [[sentence]]
 file = "frontend/src/screens/runtime.ts"
 text = "screen model subscribe가 초기화되지 않았습니다."
+
+[[sentence]]
+file = "frontend/src/screens/runtime.ts"
+text = "screen model 구독은 정확히 한 번 해제해야 합니다."
 
 [[sentence]]
 file = "frontend/src/screens/runtime.ts"

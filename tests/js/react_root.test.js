@@ -21,10 +21,6 @@ import {
   PRODUCT_SCREEN_IDS,
   createProductScreenVisibility,
 } from "../../frontend/src/screens/product_screens.ts";
-import {
-  SCREEN_LIFECYCLE_OWNER_IDS,
-  createScreenLifecycleRegistry,
-} from "../../frontend/src/screens/screen_lifecycle_registry.ts";
 import { judgeReactRuntime } from "../../frontend/src/selftest/probes/react_runtime.js";
 
 /* 커밋 마커를 받는 최소 컨테이너 대역 — 속성 저장소 하나뿐, 거동 판정은 없다. */
@@ -235,25 +231,6 @@ test("제품 화면 visibility는 한 활성 화면만 동기 발행한다", () 
   release();
   visibility.activate("workbench");
   assert.deepEqual(seen, ["library", "editor"]);
-});
-
-test("화면 lifecycle registry는 owner만 위임하고 중복·해제 뒤 호출을 거절한다", () => {
-  assert.deepEqual([...SCREEN_LIFECYCLE_OWNER_IDS], ["editor", "workbench", "authoring"]);
-  const registry = createScreenLifecycleRegistry();
-  const calls = [];
-  const release = registry.register("editor", {
-    leaveTo: (target) => calls.push(["leave", target]),
-    rerender: () => calls.push(["rerender"]),
-  });
-  assert.equal(registry.delegateLeave("library", "job"), false);
-  assert.equal(registry.delegateLeave("editor", "job"), true);
-  assert.equal(registry.rerender("editor"), true);
-  assert.deepEqual(calls, [["leave", "job"], ["rerender"]]);
-  assert.throws(() => registry.register("editor", {}), /중복 등록/);
-  assert.throws(() => registry.register("settings", {}), /집합 밖 등록/);
-  release();
-  assert.throws(() => registry.delegateLeave("editor", "job"), /해제된 뒤 호출/);
-  assert.throws(release, /두 번 해제/);
 });
 
 test("React runtime marker 판정은 commit·revision·단일 root 세 축을 모두 문다", () => {

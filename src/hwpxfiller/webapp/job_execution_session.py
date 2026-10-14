@@ -22,7 +22,7 @@ from ..application.document_creation_workbench import (
     RecordValidationSummary,
     WorkbenchContextIntegrity,
 )
-from ..application.execution_semantic_kernel import SealedExecutionPlanValue
+from ..application.execution_contract_set import SealedExecutionPlanSemanticPayload
 from ..application.field_binding_input import FieldBindingInput
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
@@ -419,7 +419,7 @@ class JobExecutionSession:
         snapshot_generation: int,
         work_ref: str,
         ordered_model_indices: tuple[int, ...],
-        plan: SealedExecutionPlanValue,
+        plan: SealedExecutionPlanSemanticPayload,
     ) -> CurrentRecordPreparation | None:
         cached = self.record_preparation
         if (
@@ -442,7 +442,7 @@ class JobExecutionSession:
         snapshot_generation: int,
         work_ref: str,
         ordered_model_indices: tuple[int, ...],
-        plan: SealedExecutionPlanValue,
+        plan: SealedExecutionPlanSemanticPayload,
         raw_records: tuple[RawDataRecordSnapshot, ...],
         project_issue: Callable,
     ):

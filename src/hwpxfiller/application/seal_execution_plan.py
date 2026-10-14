@@ -47,7 +47,6 @@ from hwpxfiller.application.execution_composition import (
 )
 from hwpxfiller.application.execution_semantic_kernel import (
     SealedExecutionPlanBlocked,
-    SealedExecutionPlanValue,
     SemanticKernelContextError,
     compile_sealed_plan_from_snapshot,
 )
@@ -56,12 +55,8 @@ from hwpxfiller.application.execution_contract_set import (
     CaptureEvidenceProvenance,
     CompleteSealCaptureEvidence,
     DurableSealCaptureEvidence,
-    ExecutionBasis,
-    build_execution_contract_set,
-    build_sealed_plan,
+    SealedExecutionPlanSemanticPayload,
     execution_basis_digest,
-    qualification_profile_semantic_digest,
-    verify_execution_basis_integrity,
 )
 from hwpxfiller.application.slot_selection_input import SlotConfigurationSnapshot
 from hwpxfiller.application.stored_execution_plan import (
@@ -343,7 +338,7 @@ def compile_candidate(
             capture_evidence=evidence,
             captured_execution_input_digest=evidence.captured_execution_input_digest,
         )
-    assert isinstance(value, SealedExecutionPlanValue)
+    assert isinstance(value, SealedExecutionPlanSemanticPayload)
     return _build_plan_candidate(captured, value, evidence)
 
 
@@ -361,61 +356,18 @@ def require_exact_selector_consistency_for_compile(policy: ResolvedSealPolicy) -
 
 def _build_plan_candidate(
     captured: CapturedExecutionInput,
-    value: SealedExecutionPlanValue,
+    value: SealedExecutionPlanSemanticPayload,
     evidence: CompleteSealCaptureEvidence,
 ) -> PlanCandidate:
     policy = captured.resolved_seal_policy
     qual = captured.template.qualification
     applied = captured.template.applied
-    semantics = value.contract_semantics
-    profile_semantic_digest = qualification_profile_semantic_digest(
-        qual.qualification_profile_semantic_payload
-    )
-    contracts = build_execution_contract_set(
-        slot_selection_contract_id=captured.selection.selection_semantic_contract_id,
-        field_binding_contract_id=captured.field_binding.field_binding_semantic_contract_id,
-        source_schema_contract_id=semantics.source_schema_contract_id,
-        raw_record_contract_id=semantics.raw_record_contract_id,
-        execution_semantic_contract_id=policy.execution_semantic_contract_id,
-        binding_value_contract_id=semantics.binding_value_contract_id,
-        document_value_resolution_contract_id=semantics.document_value_resolution_contract_id,
-        record_validation_contract_id=semantics.record_validation_contract_id,
-        record_review_contract_id=semantics.record_review_contract_id,
-        composition_contract_id=semantics.composition_contract_id,
-        native_primitive_contract_id=semantics.native_primitive_contract_id,
-        materialization_base_contract_id=semantics.materialization_base_contract_id,
-        materialization_contract_id=semantics.materialization_contract_id,
-        composition_theorem_evidence_manifest_digest=(
-            policy.composition_theorem_evidence_manifest_digest
-        ),
-    )
-    basis = ExecutionBasis(
-        workspace_instance_id=captured.workspace_instance_id,
-        work_authority_id=captured.work_authority_id,
-        qualification_profile_semantic_digest=profile_semantic_digest,
-        template=value.exact_template_execution_basis,
-        contracts=contracts,
-        selection=value.effective_selection_basis,
-        field_binding=value.effective_field_binding_basis,
-    )
-    verify_execution_basis_integrity(basis)
-    # durable store·dependency retention·plan_semantic_digest identity 는 없다(R2-04b-2). 다만 sealed
-    # plan payload 는 여전히 조립한다 — S6 materialization/conformance gate 가 소비하는 compiled plan
-    # 이라 store artifact 가 아니다. candidate 는 그 payload + final gate staleness 가 쓰는
-    # execution_basis_digest 만 싣는다(publication kind·plan digest 없음).
-    plan_payload = build_sealed_plan(
-        execution_basis=basis,
-        active_field_requirements=value.active_field_requirements,
-        ordered_operations=value.ordered_operations,
-        plan_schema_version=value.plan_schema_version,
-        canonical_encoding_version=value.canonical_encoding_version,
-    )
     return PlanCandidate(
         qualification_profile_id=qual.qualification_profile_id,
         template_application_id=applied.template_application_id,
         resolved_seal_policy=policy,
-        execution_basis_digest=execution_basis_digest(basis),
-        plan_payload=plan_payload,
+        execution_basis_digest=execution_basis_digest(value.execution_basis),
+        plan_payload=value,
         capture_evidence=evidence,
         captured_execution_input_digest=evidence.captured_execution_input_digest,
     )

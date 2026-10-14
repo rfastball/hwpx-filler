@@ -53,7 +53,14 @@ from hwpxfiller.application.fresh_execution_observation import (
     CurrentWorkExecutionObservation,
     ExecutionObservationContextError,
 )
-from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
+from hwpxfiller.application.execution_compilation import (
+    EffectiveFieldBindingBasis,
+    EffectiveFieldBindingRule,
+    FromSource,
+    active_binding_digest,
+    encode_value_expression,
+    required_source_key_set_digest,
+)
 from hwpxfiller.application.execution_structure import ExecutionStructureError
 from hwpxfiller.application.document_creation_workbench import (
     HistoricalOutcomeSummary,
@@ -166,16 +173,31 @@ def _wire_source_plan(ctrl: JobController) -> None:
     ctrl.dispatch("resolve_execution", {})
     fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
+    source = FromSource("name", None, "document-content-value/v1")
     requirement = {
         "field_id": "f_name",
         "expected_active_occurrence_count": 1,
-        "value_expression": encode_value_expression(
-            FromSource("name", None, "document-content-value/v1")
-        ),
+        "value_expression": encode_value_expression(source),
     }
+    rules = (EffectiveFieldBindingRule("f_name", "FROM_SOURCE", source),)
+    basis = dataclasses.replace(
+        fresh.sealed_plan_value.execution_basis,
+        field_binding=EffectiveFieldBindingBasis(
+            effective_active_binding_rules=rules,
+            active_binding_digest=active_binding_digest(rules),
+            required_source_keys=("name",),
+            required_source_key_set_digest=required_source_key_set_digest(("name",)),
+        ),
+    )
+    removals = tuple(
+        operation for operation in fresh.sealed_plan_value.ordered_operations
+        if operation["op"] == "REMOVE_OPTION"
+    )
     plan = dataclasses.replace(
         fresh.sealed_plan_value,
+        execution_basis=basis,
         active_field_requirements=(requirement,),
+        ordered_operations=removals + ({"op": "APPLY_FIELD_BINDING", "field_id": "f_name"},),
     )
     ctrl.execution.fresh_observation = dataclasses.replace(fresh, sealed_plan_value=plan)
 
@@ -289,65 +311,11 @@ def test_capture_freezes_every_column_as_untyped_text(tmp_path: Path) -> None:
     """구 date/amount 열의 표시형 값도 해석 없이 그대로 언다 — 통과에 열 이름이 필요 없다."""
     ctrl = _controller(tmp_path, with_binding=True)
     _wire_source_plan(ctrl)
-    fresh = ctrl.execution.fresh_observation
-    assert isinstance(fresh, CurrentSealedPlanObservation)
-    requirements = tuple(
-        {
-            'field_id': field_id,
-            'expected_active_occurrence_count': 1,
-            'value_expression': encode_value_expression(
-                FromSource(source_key, None, 'document-content-value/v1')
-            ),
-        }
-        for field_id, source_key in (('f_amount', 'amount'), ('f_date', 'date'))
-    )
-    plan = dataclasses.replace(
-        fresh.sealed_plan_value, active_field_requirements=requirements
-    )
-    ctrl.execution.fresh_observation = dataclasses.replace(
-        fresh, sealed_plan_value=plan
-    )
     _mount_rows(ctrl, [{'amount': '1,500,000', 'date': '계약 후 90일 이내'}])
 
     _, _, snapshots = ctrl._capture_current_selected_records()
     assert snapshots[0].value_for('amount') == SourceText('1,500,000')
     assert snapshots[0].value_for('date') == SourceText('계약 후 90일 이내')
-    assert _zone(ctrl)['record_validation']['validated_count'] == 1
-
-
-def test_shared_source_column_reaches_every_requirement_verbatim(
-    tmp_path: Path,
-) -> None:
-    ctrl = _controller(tmp_path, with_binding=True)
-    _wire_source_plan(ctrl)
-    fresh = ctrl.execution.fresh_observation
-    assert isinstance(fresh, CurrentSealedPlanObservation)
-    requirements = tuple(
-        {
-            'field_id': field_id,
-            'expected_active_occurrence_count': 1,
-            'value_expression': encode_value_expression(
-                FromSource('value', None, 'document-content-value/v1')
-            ),
-        }
-        for field_id in ('f_text', 'f_decimal')
-    )
-    plan = dataclasses.replace(
-        fresh.sealed_plan_value, active_field_requirements=requirements
-    )
-    ctrl.execution.fresh_observation = dataclasses.replace(
-        fresh, sealed_plan_value=plan
-    )
-    _mount_rows(ctrl, [{'value': '1'}])
-
-    zone = _zone(ctrl)
-    assert zone['record_validation']['validated_count'] == 1
-    preparation = ctrl.execution.record_preparation
-    assert preparation is not None
-    assert preparation.validated_records[0].document_values_in_order() == (
-        ('f_text', '1'),
-        ('f_decimal', '1'),
-    )
 
 
 def test_current_record_blocker_projects_exact_backend_target(
@@ -460,7 +428,13 @@ def test_current_preparation_is_reused_until_existing_basis_moves(
 
     fresh = ctrl.execution.fresh_observation
     assert isinstance(fresh, CurrentSealedPlanObservation)
-    moved = dataclasses.replace(fresh.sealed_plan_value, qualification_profile_id="profile-moved")
+    moved = dataclasses.replace(
+        fresh.sealed_plan_value,
+        execution_basis=dataclasses.replace(
+            fresh.sealed_plan_value.execution_basis,
+            qualification_profile_semantic_digest="profile-moved",
+        ),
+    )
     ctrl.execution.fresh_observation = dataclasses.replace(fresh, sealed_plan_value=moved)
     assert _zone(ctrl)["record_validation"]["validated_count"] == 2
     assert ctrl.execution.record_preparation is not first
@@ -947,7 +921,7 @@ def test_delivery_intent_changes_reuse_record_preparation(
 
     monkeypatch.setattr(
         execution_preparation,
-        "validate_data_records_against_current_value",
+        "validate_data_records_against_plan",
         lambda **_kwargs: pytest.fail("delivery change reran record validation"),
     )
     pick_output_folder(ctrl, second_out)

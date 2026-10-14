@@ -4,13 +4,13 @@
 
 - ``command_outcome`` — 방금 계산한 terminal seal outcome(ExecutionPlanSealed/blocked/policy/stale). S5-10
   application service(:func:`seal_execution_plan`)가 현재 authority 에서 재계산한다.
-- ``fresh_observation`` — 지금 이 순간 current Work 의 **SealedExecutionPlanValue** 재계산(sealable 이면
+- ``fresh_observation`` — 지금 이 순간 current Work 의 **SealedExecutionPlanSemanticPayload** 재계산(sealable 이면
   그 value + runtime admission + readiness, 아니면 current-work blocker). historical durable Plan 을
   조회·대조하지 않는다.
 
 **S5F R2-04b-1(#740):** historical durable Plan lookup + opaque Plan ref/HMAC + resolve_plan_reference +
 PublishedPlanObservation + digest-vs-stored currentness(CURRENT/STALE) + command_replayed 를 제거했다.
-observation 은 store 의 과거 Plan 이 아니라 current authority 에서 SealedExecutionPlanValue 를 직접
+observation 은 store 의 과거 Plan 이 아니라 current authority 에서 SealedExecutionPlanSemanticPayload 를 직접
 계산한다(value 가 곧 현재라 currentness 축이 없다). command_outcome 의 StaleExecutionBasis(capture→
 final gate concurrency)는 유지한다. **R2-05a 로 mutable Profile admission 조회를, R2-05b(#740)로
 ProfileFence·optimistic Profile discovery 를 제거했다** — observation 은 PerWorkFence 하나 아래에서
@@ -42,10 +42,10 @@ from ..application.execution_composition import (
 )
 from ..application.execution_semantic_kernel import (
     SealedExecutionPlanBlocked,
-    SealedExecutionPlanValue,
     SemanticKernelContextError,
     compile_sealed_plan_from_snapshot,
 )
+from hwpxfiller.application.execution_contract_set import SealedExecutionPlanSemanticPayload
 from ..application.field_binding_input import FieldBindingInput
 from ..application.fresh_execution_observation import (
     DOMAIN_BLOCKED,
@@ -131,14 +131,14 @@ class RuntimeConformanceBinding:
 
 
 def registry_conformance_for_plan_value(
-    binding: RuntimeConformanceBinding, value: SealedExecutionPlanValue
+    binding: RuntimeConformanceBinding, value: SealedExecutionPlanSemanticPayload
 ) -> RuntimeMaterializerConformance:
     """current Plan value 의 계약 축으로 registry admission 을 판정한다(축 재타이핑 0).
 
     raise 하지 않고 bool 로 닫는다 — 이 함수는 `_degrade` 안(관찰 축)에서 불리므로 예외는
     admission 판정이 아니라 관찰 전체의 CONTEXT_ERROR 강등이 된다.
     """
-    semantics = value.contract_semantics
+    semantics = value.execution_basis.contracts
     manifest = binding.manifest_for(semantics.native_primitive_contract_id)
     digest = manifest.runtime_capability_manifest_digest
     admitted = binding.registry.is_admitted(
@@ -365,7 +365,7 @@ class SealExecutionPlanProduct:
 
         R2-05b(#740): ProfileFence·optimistic Profile discovery·bounded retry 를 제거했다 — PerWorkFence
         아래에서 exact authority 를 바로 읽어 capture 한다. exact capture → kernel compile: sealable 이면
-        SealedExecutionPlanValue + admission + readiness, seal 불가면 current-work blocker. store 를
+        SealedExecutionPlanSemanticPayload + admission + readiness, seal 불가면 current-work blocker. store 를
         읽지 않는다(historical Plan lookup 없음).
         """
         with self._work_fence(ws, work_id):
@@ -412,7 +412,7 @@ class SealExecutionPlanProduct:
             return self._blocked_work(
                 work_id, DOMAIN_BLOCKED, app_ref, value.normalized_blockers
             )
-        assert isinstance(value, SealedExecutionPlanValue)
+        assert isinstance(value, SealedExecutionPlanSemanticPayload)
         return self._observe_sealable(exact, policy, value, current.field_binding)
 
     def _blocked_work(
@@ -430,7 +430,7 @@ class SealExecutionPlanProduct:
         self,
         exact: WorkExecutionSummary,
         policy: ResolvedSealPolicy,
-        value: SealedExecutionPlanValue,
+        value: SealedExecutionPlanSemanticPayload,
         current_field_binding: FieldBindingInput,
     ) -> CurrentSealedPlanObservation:
         """current sealable value 에 runtime admission·readiness 를 얹는다.
@@ -445,7 +445,7 @@ class SealExecutionPlanProduct:
             conformance = self._runtime(
                 plan_schema_version=value.plan_schema_version,
                 canonical_encoding_version=value.canonical_encoding_version,
-                materialization_contract_id=value.contract_semantics.materialization_contract_id,
+                materialization_contract_id=value.execution_basis.contracts.materialization_contract_id,
                 execution_base_kind=policy.execution_base_kind,
             )
         admission = decide_runtime_policy_admission(

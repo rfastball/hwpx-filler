@@ -48,7 +48,7 @@ function harness(options = {}) {
     runtime,
     client,
     ports: {
-      jobRun: port(), jobRunCoordination: port(),
+      jobRunCoordination: port(),
       jobData: port({ flushPendingEdits: () => Promise.resolve() }),
       jobRelinkFlow: port({ relinkTemplateFor: () => Promise.resolve() }),
       editorEntry: port({ openGuarded: () => true }),

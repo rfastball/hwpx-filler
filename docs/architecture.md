@@ -32,18 +32,18 @@ Python→웹 제품 경계는 `window.__hwpx`의 snapshot 사건이다. 테스�
 섞지 않는다. 컨트롤러 push sink는 주입되므로 실제 창 없이 dispatch·snapshot을 검사한다.
 `pool`·`tpl`처럼 일부 표면이 구독하는 채널을 최상위 화면으로 설명하지 않는다.
 
-제품 화면은 단일 React 트리다. snapshot store는 도착 순서를 관리하고 `useSyncExternalStore`에
-안정된 참조를 제공한다. 늦은 pull이 새 push를 덮지 않도록 revision을 비교한다.
+제품은 단일 React 트리다. snapshot store는 도착 순서를 보관한다. 일반 model은 store를 직접 구독하고,
+`job`만 full/progress를 합친다. pull은 revision 비교로 새 push를 덮지 않는다.
 웹이 의미 상태를 병합·재판정하지 않는다. 숨김과 파괴는 다르며 실행자가 `hidden`·`inert`·
 `aria-hidden`을 함께 적용한다. 구독·listener·worker·vendor 객체는 설치한 소유자가 해제한다.
-제품의 렌더 계약은 전체 `innerHTML` 재구성 후 범용 복원이 아니다. 연속성은 행동으로 검증한다.
+렌더 연속성은 범용 DOM 복원 없이 행동으로 검증한다.
 
 튜토리얼은 화면과 별도인 셸 표면이다. Python이 학습 위치·연습 자원·성공 사건·단계별 상자 대상과 복귀 문맥을 소유한다.
 웹은 사전 검사·미저장 변경 확인·기존 화면 이탈을 마친 뒤 전환 토큰으로 연습을 시작·종료한다. 취소 시 전환을 확정하지 않는다.
 연습 환경은 과정별 홈에 조립한 별도 그래프이며 전환은 [workspace_switch.py](../src/hwpxfiller/webapp/workspace_switch.py) 한 곳이다. 전환·복귀 문맥은 메모리 값이고 단일 인스턴스 잠금·WebView2 프로필은 실제 앱 홈을 쓴다. 모달 안내는 기존 포커스 경계 안에 둔다. Python이 판정하고 웹은 명령 없는 누르기·메뉴 닫힘만 보고한다. 네이티브 파일 선택은 현재 단계의 연습 사본을 기본 위치로 제시하되 다른 파일도 허용한다.
 
 상단 탭은 `job`(문서 만들기)·`library`(문서 작업), `editor`·`workbench`·`authoring`은 몰입 화면이다.
-이탈 판정은 [shell/nav.ts](../frontend/src/shell/nav.ts), 화면 적용·listener 수명은 셸이 소유한다.
+이탈 판정은 [shell/nav.ts](../frontend/src/shell/nav.ts), 적용·수명·고정 owner 위임은 셸이 맡는다.
 [overlay/engine.ts](../frontend/src/overlay/engine.ts)는 DOM 없는 스택 상태기계로 확인 promise,
 Escape, 초기 포커스와 복귀를 조정한다. Python이 손실 집합을 판정하고 웹이 확인을 표시한다.
 실패한 확인을 성공·무응답으로 바꾸거나 화면별 지름길로 이탈 가드를 우회하지 않는다.
@@ -69,6 +69,9 @@ Studio·WASM·폰트는 같은 고정 원천과 보존 패치로 빌드해 웹 �
 판정한다. 웹은 불투명 token과 projection을 전달·표시하며 token을 파싱해 별도 권위를 만들지
 않는다. 구성·프리셋 mutation은 새 token과 view를 반환하며 실패를 성공 변경처럼 표시하지 않는다.
 엔진 내부 능력을 UI 제공 기능으로 간주하지 않는다. [지원 경계](product.md#product-scope)를 따른다.
+
+준비·물질화의 봉인 계획·검증 기록 표현은 하나다. canonical 인코딩·digest 대조는 유지한다.
+명령 결과와 나중의 관찰은 별개라 관찰 실패가 결과를 지우지 않는다.
 
 HWPX·TXT 구성은 고정된 형식 쌍과 실제 문서 구조로 판정하고, 규칙의 예제·반례는 테스트에서 검증한다.
 제품 실행 중 증거 등록·재증명은 없다. 저장된 계획의 구성 지문은 직렬화 식별값을 유지하며 승인·런타임 검증을 대신하지 않는다.

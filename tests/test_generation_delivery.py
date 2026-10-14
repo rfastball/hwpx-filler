@@ -37,15 +37,10 @@ from hwpxfiller.application.execution_contract_set import (
     ExecutionBasis,
     build_execution_contract_set,
     build_sealed_plan,
-)
-from hwpxfiller.application.execution_semantic_kernel import (
-    ExecutionContractSemantics,
-    SealedExecutionPlanValue,
+    SealedExecutionPlanSemanticPayload,
 )
 from hwpxfiller.application.record_validation import (
-    CurrentValidatedDataRecord,
     ValidatedDataRecord,
-    validate_data_record_against_current_value,
     validate_data_record_against_plan,
 )
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
@@ -206,35 +201,22 @@ def _basis_dto(plan, pattern=_PATTERN, inactive_rules=(_DEPT_RULE,)):
     return res
 
 
-def _current_plan() -> SealedExecutionPlanValue:
-    legacy = _plan()
-    basis = legacy.execution_basis
-    return SealedExecutionPlanValue(
-        qualification_profile_id="profile-1",
-        template_application_id=basis.template.template_application_id,
-        contract_semantics=ExecutionContractSemantics.from_contract_set(basis.contracts),
-        exact_template_execution_basis=basis.template,
-        effective_selection_basis=basis.selection,
-        effective_field_binding_basis=basis.field_binding,
-        active_field_requirements=legacy.active_field_requirements,
-        ordered_operations=legacy.ordered_operations,
-        plan_schema_version=legacy.plan_schema_version,
-        canonical_encoding_version=legacy.canonical_encoding_version,
-    )
+def _current_plan():
+    return _plan()
 
 
 def _current_vdr(
-    plan: SealedExecutionPlanValue, snapshot,
-) -> CurrentValidatedDataRecord:
-    result = validate_data_record_against_current_value(
+    plan: SealedExecutionPlanSemanticPayload, snapshot,
+) -> ValidatedDataRecord:
+    result = validate_data_record_against_plan(
         plan=plan, snapshot=snapshot, validated_at=_CLOCK
     )
-    assert isinstance(result, CurrentValidatedDataRecord), result
+    assert isinstance(result, ValidatedDataRecord), result
     return result
 
 
 def _resolve_current(
-    plan: SealedExecutionPlanValue,
+    plan: SealedExecutionPlanSemanticPayload,
     snapshots,
     *,
     pattern="{{f_name}}",
@@ -279,12 +261,13 @@ def test_current_resolver_returns_planned_path() -> None:
 def test_current_resolver_fails_closed_on_validation_basis_mismatch() -> None:
     plan, snapshot = _current_plan(), _snapshot()
     record = _current_vdr(plan, snapshot)
-    record = dataclasses.replace(
-        record,
-        validation_basis=dataclasses.replace(
-            record.validation_basis, record_validation_contract_id="record-validation/v999"
+    other_plan = dataclasses.replace(
+        plan,
+        execution_basis=dataclasses.replace(
+            plan.execution_basis, qualification_profile_semantic_digest="other-profile"
         ),
     )
+    record = _current_vdr(other_plan, snapshot)
     basis = _basis_dto(plan, pattern="{{f_name}}", inactive_rules=())
     assert isinstance(basis, gd.GenerationDeliveryBindingBasis)
     result = gd.resolve_current_generation_delivery(

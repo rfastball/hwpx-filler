@@ -31,6 +31,11 @@ type MutableModel = {
   subscribeBound: (listener: SnapshotListener) => () => void;
 };
 
+type PlainChannel = {
+  model: ScreenModel;
+  subscriptions: Set<{ release: () => void; connected: boolean }>;
+};
+
 function isProgressDelta(value: unknown): value is { progress: unknown } {
   return value !== null && typeof value === "object"
     && Object.hasOwn(value, "progress");
@@ -38,16 +43,16 @@ function isProgressDelta(value: unknown): value is { progress: unknown } {
 
 export function createScreenRuntime(args: { client: BridgeClient; store: SnapshotStore }) {
   const { client, store } = args;
-  const models = new Map<ScreenName, MutableModel>();
-  const releases = new Map<ScreenName, () => void>();
+  const plain = new Map<ScreenName, PlainChannel>();
+  let jobModel: MutableModel | null = null;
+  let releaseJob: (() => void) | null = null;
   const initials = new Map<ScreenName, Promise<unknown>>();
 
   function notify(model: MutableModel): void {
     for (const listener of [...model.listeners]) listener();
   }
 
-  function reduce(screen: ScreenName, previous: unknown, delivery: unknown): unknown {
-    if (screen !== "job") return delivery;
+  function reduce(previous: unknown, delivery: unknown): JobScreenModel {
     const before = previous as JobScreenModel;
     if (isProgressDelta(delivery)) {
       return { full: before.full, progress: delivery.progress } satisfies JobScreenModel;
@@ -55,11 +60,37 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
     return { full: delivery, progress: null } satisfies JobScreenModel;
   }
 
-  function ensure(screen: ScreenName): MutableModel {
-    const existing = models.get(screen);
+  function ensurePlain(screen: ScreenName): PlainChannel {
+    const existing = plain.get(screen);
     if (existing !== undefined) return existing;
+    const subscribe = store.subscriber(screen);
+    const subscriptions = new Set<{ release: () => void; connected: boolean }>();
+    const channel: PlainChannel = {
+      subscriptions,
+      model: {
+        getSnapshot: () => store.get(screen),
+        subscribe(listener) {
+          const entry = { release: subscribe(listener), connected: true };
+          subscriptions.add(entry);
+          let alive = true;
+          return () => {
+            if (!alive) throw new Error("screen model 구독은 정확히 한 번 해제해야 합니다.");
+            alive = false;
+            if (entry.connected) entry.release();
+            entry.connected = false;
+            subscriptions.delete(entry);
+          };
+        },
+      },
+    };
+    plain.set(screen, channel);
+    return channel;
+  }
+
+  function ensureJob(): MutableModel {
+    if (jobModel !== null) return jobModel;
     const model: MutableModel = {
-      value: screen === "job" ? { full: null, progress: null } : null,
+      value: { full: null, progress: null },
       listeners: new Set(),
       subscribeBound: () => { throw new Error("screen model subscribe가 초기화되지 않았습니다."); },
     };
@@ -74,18 +105,19 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
       };
     };
     const ingest = (): void => {
-      model.value = reduce(screen, model.value, store.get(screen));
+      model.value = reduce(model.value, store.get("job"));
       notify(model);
     };
-    releases.set(screen, store.subscribe(screen, ingest));
+    releaseJob = store.subscribe("job", ingest);
     /* runtime 구성 전에 도착한 push도 현재 store 값으로 따라잡는다. null은 미도착 표지다. */
-    if (store.get(screen) !== null) ingest();
-    models.set(screen, model);
+    if (store.get("job") !== null) ingest();
+    jobModel = model;
     return model;
   }
 
   function model<T = unknown>(screen: ScreenName): ScreenModel<T> {
-    const channel = ensure(screen);
+    if (screen !== "job") return ensurePlain(screen).model as ScreenModel<T>;
+    const channel = ensureJob();
     return {
       getSnapshot: () => channel.value as T,
       subscribe: channel.subscribeBound,
@@ -100,7 +132,7 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
    *  `Main window failed to start`). 규칙을 주석에 두는 대신 여기서 줄 세운다 — 어느
    *  호출자든 안전하다. 이미 준비됐으면 즉시 resolve 라 부팅 지연은 없다. */
   function loadInitial(screen: ScreenName): Promise<unknown> {
-    ensure(screen);
+    model(screen);
     const pending = initials.get(screen);
     if (pending !== undefined) return pending;
     const sinceRevision = store.revision(screen);
@@ -125,7 +157,7 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
      `Bridge.initial(SCREEN).then(render)` 의 후계). 같은 ingest 경로·같은 revision 가드를
      쓰므로 늦게 도착한 당김이 그사이 온 push 를 덮지 않는다. */
   function refresh(screen: ScreenName): Promise<unknown> {
-    ensure(screen);
+    model(screen);
     const sinceRevision = store.revision(screen);
     return client.initial(screen).then((result) => {
       const value = expectHostValue(result, `${screen} initial`);
@@ -151,12 +183,19 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
     refresh,
     land,
     listenerCount(screen: ScreenName): number {
-      return ensure(screen).listeners.size;
+      return screen === "job" ? ensureJob().listeners.size : ensurePlain(screen).subscriptions.size;
     },
     dispose(): void {
-      for (const release of releases.values()) release();
-      releases.clear();
-      models.clear();
+      if (releaseJob !== null) releaseJob();
+      releaseJob = null;
+      jobModel = null;
+      for (const channel of plain.values()) {
+        for (const entry of channel.subscriptions) {
+          if (entry.connected) entry.release();
+          entry.connected = false;
+        }
+      }
+      plain.clear();
       initials.clear();
     },
   };

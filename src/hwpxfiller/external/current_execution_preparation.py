@@ -21,7 +21,7 @@ from ..application.document_creation_workbench import (
     RecordRecoveryTarget,
     WorkbenchContextIntegrity,
 )
-from ..application.execution_semantic_kernel import SealedExecutionPlanValue
+from ..application.execution_contract_set import SealedExecutionPlanSemanticPayload
 from ..application.field_binding_input import FieldBindingInput
 from ..application.generation_delivery import (
     FILENAME_PATTERN_CONTRACT_ID,
@@ -37,7 +37,7 @@ from ..application.generation_delivery import (
     resolve_current_generation_delivery,
 )
 from ..application.record_validation import (
-    CurrentValidatedDataRecord,
+    ValidatedDataRecord,
     MISSING_VALUE_MARKED,
     RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED,
     RECORD_REQUIRED_VALUE_MISSING,
@@ -46,7 +46,7 @@ from ..application.record_validation import (
     RecordValidationBlocker,
     RecordValidationContextError,
     marked_missing_fields,
-    validate_data_records_against_current_value,
+    validate_data_records_against_plan,
 )
 from ..application.run_delivery_intent import RunDeliveryIntent
 from ..viewmodel.run_state import OUTPUT_NAME_INVALID_TEXT
@@ -64,9 +64,9 @@ class CurrentRecordPreparation:
     snapshot_generation: int
     work_ref: str
     ordered_model_indices: tuple[int, ...]
-    execution_value: SealedExecutionPlanValue
+    execution_value: SealedExecutionPlanSemanticPayload
     raw_records: tuple[RawDataRecordSnapshot, ...]
-    validated_records: tuple[CurrentValidatedDataRecord, ...]
+    validated_records: tuple[ValidatedDataRecord, ...]
     record_validation: RecordValidationSummary
 
 
@@ -95,7 +95,7 @@ def current_record_identity(snapshot_generation: int, model_index: int) -> str:
     return f"current-record/{snapshot_generation}/{model_index}"
 
 
-def record_source_key(plan: SealedExecutionPlanValue, field_id: str) -> str:
+def record_source_key(plan: SealedExecutionPlanSemanticPayload, field_id: str) -> str:
     for requirement in plan.active_field_requirements:
         if requirement.get("field_id") != field_id:
             continue
@@ -109,7 +109,7 @@ def record_source_key(plan: SealedExecutionPlanValue, field_id: str) -> str:
 
 def record_issue(
     *,
-    plan: SealedExecutionPlanValue,
+    plan: SealedExecutionPlanSemanticPayload,
     blocker: RecordValidationBlocker,
     generation: int,
     model_index: int,
@@ -190,7 +190,7 @@ def prepare_current_records(
     snapshot_generation: int,
     work_ref: str,
     ordered_model_indices: tuple[int, ...],
-    plan: SealedExecutionPlanValue,
+    plan: SealedExecutionPlanSemanticPayload,
     raw_records: tuple[RawDataRecordSnapshot, ...],
     project_issue: Callable[
         [RecordValidationBlocker, int, str], RecordValidationIssue
@@ -200,13 +200,11 @@ def prepare_current_records(
     # 결과(표식·차단)를 세우는 미리보기 값이다. 파일 이름·생성 문서의 시각 권위는 배달 준비의
     # ``captured_delivery_clock`` 이다(:mod:`hwpxfiller.application.generation_delivery`).
     captured_at = raw_records[0].capture_provenance.captured_at
-    results = validate_data_records_against_current_value(
-        plan=plan,
-        snapshots=raw_records,
-        validated_at=captured_at,
+    results = validate_data_records_against_plan(
+        plan=plan, snapshots=raw_records, validated_at=captured_at,
         runtime_clock=captured_at,
     )
-    validated: list[CurrentValidatedDataRecord] = []
+    validated: list[ValidatedDataRecord] = []
     issues: list[RecordValidationIssue] = []
     blocked_count = 0
     for model_index, snapshot, result in zip(
@@ -370,7 +368,7 @@ def prepare_current_delivery(
         ),
         binding_rules=current_field_binding.binding_rules,
         document_value_resolution_contract_id=(
-            record_preparation.execution_value.contract_semantics
+            record_preparation.execution_value.execution_basis.contracts
             .document_value_resolution_contract_id
         ),
     )

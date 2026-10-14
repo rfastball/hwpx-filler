@@ -205,8 +205,14 @@ test("화면 runtime model이 안정된 subscribe/getSnapshot 결속을 직접 �
   store.ingest("workbench", { open: true });
   assert.equal(calls, 1);
   assert.equal(runtime.listenerCount("workbench"), 0);
+  const active = binding.subscribe(() => { calls += 1; });
+  assert.equal(store.listenerCount("workbench"), 1);
   runtime.dispose();
   assert.equal(store.listenerCount("workbench"), 0);
+  store.ingest("workbench", { open: false });
+  assert.equal(calls, 1, "dispose 뒤 store 알림이 해제된 구독자에게 닿지 않습니다.");
+  active();
+  assert.throws(active, /정확히 한 번/);
 });
 
 test("push port의 안정 dispatch는 late override와 restore를 관측한다", () => {

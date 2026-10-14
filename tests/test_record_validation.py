@@ -37,8 +37,6 @@ from hwpxfiller.application.execution_contract_set import (
     execution_basis_digest,
     plan_semantic_digest,
 )
-from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
-from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 from hwpxfiller.application.record_validation import (
     PLAN_INTEGRITY_ERROR,
     RAW_RECORD_INTEGRITY_ERROR,
@@ -52,7 +50,6 @@ from hwpxfiller.application.record_validation import (
     UNSUPPORTED_RECORD_REVIEW_CONTRACT,
     UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
     UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
-    CurrentValidatedDataRecord,
     RecordValidationBlocked,
     RecordValidationContextError,
     ValidatedDataRecord,
@@ -60,8 +57,7 @@ from hwpxfiller.application.record_validation import (
     marked_missing_fields,
     missing_value_marker,
     validate_data_record_against_plan,
-    validate_data_record_against_current_value,
-    validate_data_records_against_current_value,
+    validate_data_records_against_plan,
     verify_validated_record_completeness,
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
@@ -190,21 +186,8 @@ def _snapshot(pairs=None, *, identity="rec-1"):
     )
 
 
-def _current_plan() -> SealedExecutionPlanValue:
-    legacy = _plan()
-    basis = legacy.execution_basis
-    return SealedExecutionPlanValue(
-        qualification_profile_id="profile-1",
-        template_application_id=basis.template.template_application_id,
-        contract_semantics=ExecutionContractSemantics.from_contract_set(basis.contracts),
-        exact_template_execution_basis=basis.template,
-        effective_selection_basis=basis.selection,
-        effective_field_binding_basis=basis.field_binding,
-        active_field_requirements=legacy.active_field_requirements,
-        ordered_operations=legacy.ordered_operations,
-        plan_schema_version=legacy.plan_schema_version,
-        canonical_encoding_version=legacy.canonical_encoding_version,
-    )
+def _current_plan():
+    return _plan()
 
 
 def _validate(plan=None, snapshot=None, **over):
@@ -217,29 +200,19 @@ def _validate(plan=None, snapshot=None, **over):
 
 
 # ─── exact logical text ──────────────────────────────────────────────────────────────────
-def test_current_value_validator_has_no_legacy_plan_identity_or_review_authority() -> None:
-    result = validate_data_record_against_current_value(
-        plan=_current_plan(), snapshot=_snapshot(), validated_at="now"
+def test_validator_binds_record_to_plan_digest() -> None:
+    plan = _current_plan()
+    result = validate_data_record_against_plan(
+        plan=plan, snapshot=_snapshot(), validated_at="now"
     )
-    assert isinstance(result, CurrentValidatedDataRecord)
-    assert not hasattr(result, "plan_semantic_digest")
-    assert not hasattr(result, "execution_basis_digest")
+    assert isinstance(result, ValidatedDataRecord)
+    assert result.plan_semantic_digest == plan_semantic_digest(plan)
     assert result.validation_provenance.record_review_evidence_refs == ()
-
-    import inspect
-
-    assert set(inspect.signature(validate_data_record_against_current_value).parameters) == {
-        "plan",
-        "snapshot",
-        "validated_at",
-        # 「오늘 날짜」의 실행 시각(#950) — caller 가 캡처한 값 하나다(live 콜백·시계가 아니다).
-        "runtime_clock",
-    }
 
 
 def test_current_value_validator_blocks_a_missing_source_key() -> None:
     """열 자체가 없는 것은 #957 이후에도 blocker 다 — 결속의 구조 결함이라 표식으로 못 덮는다."""
-    result = validate_data_record_against_current_value(
+    result = validate_data_record_against_plan(
         plan=_current_plan(),
         snapshot=_snapshot([("amount", SourceText("1")), ("flag", SourceText("TRUE"))]),
         validated_at="now",
@@ -257,47 +230,51 @@ def test_current_value_validator_marks_blank_rows_instead_of_blocking(empty) -> 
     snap = _snapshot([
         ("name", empty), ("amount", SourceText("1")), ("flag", SourceText("TRUE")),
     ])
-    result = validate_data_record_against_current_value(
+    result = validate_data_record_against_plan(
         plan=_current_plan(), snapshot=snap, validated_at="now"
     )
-    assert isinstance(result, CurrentValidatedDataRecord)
+    assert isinstance(result, ValidatedDataRecord)
     assert dict(result.document_values_in_order())["f_name"] == missing_value_marker("f_name")
     assert marked_missing_fields(result.validation_provenance) == ("f_name",)
 
 
-def test_current_batch_shares_one_validation_basis_value() -> None:
-    results = validate_data_records_against_current_value(
-        plan=_current_plan(),
-        snapshots=(_snapshot(identity='rec-1'), _snapshot(identity='rec-2')),
-        validated_at='now',
-    )
-    first, second = results
-    assert isinstance(first, CurrentValidatedDataRecord)
-    assert isinstance(second, CurrentValidatedDataRecord)
-    assert first.validation_basis is second.validation_basis
+def test_batch_checks_plan_once_and_keeps_each_record_bound(monkeypatch) -> None:
+    import hwpxfiller.application.record_validation as rv
 
-
-def test_current_vdr_basis_ignores_non_validation_execution_meaning() -> None:
     plan = _current_plan()
-    other_contracts = dataclasses.replace(
-        plan.contract_semantics, materialization_contract_id="materialization/v2"
+    calls = 0
+    original = rv.verify_sealed_plan_integrity
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(rv, "verify_sealed_plan_integrity", counted)
+    results = validate_data_records_against_plan(
+        plan=plan,
+        snapshots=(_snapshot(identity="rec-1"), _snapshot(identity="rec-2")),
+        validated_at="now",
     )
-    other = dataclasses.replace(
-        plan,
-        contract_semantics=other_contracts,
-        ordered_operations=tuple(reversed(plan.ordered_operations)),
+    assert calls == 1
+    assert all(isinstance(record, ValidatedDataRecord) for record in results)
+    assert [record.semantic_payload_encoded["record_identity"] for record in results] == [
+        "rec-1", "rec-2"
+    ]
+
+
+def test_record_digest_changes_with_non_record_execution_meaning() -> None:
+    plan = _current_plan()
+    basis = dataclasses.replace(
+        plan.execution_basis, qualification_profile_semantic_digest="other-profile"
     )
-    a = validate_data_record_against_current_value(
-        plan=plan, snapshot=_snapshot(), validated_at="a"
-    )
-    b = validate_data_record_against_current_value(
-        plan=other, snapshot=_snapshot(), validated_at="b"
-    )
-    assert isinstance(a, CurrentValidatedDataRecord)
-    assert isinstance(b, CurrentValidatedDataRecord)
-    assert plan != other
-    assert a.validation_basis == b.validation_basis
-    assert a.document_values_in_order() == b.document_values_in_order()
+    other = dataclasses.replace(plan, execution_basis=basis)
+    first = validate_data_record_against_plan(plan=plan, snapshot=_snapshot(), validated_at="a")
+    second = validate_data_record_against_plan(plan=other, snapshot=_snapshot(), validated_at="b")
+    assert isinstance(first, ValidatedDataRecord)
+    assert isinstance(second, ValidatedDataRecord)
+    assert first.document_values_in_order() == second.document_values_in_order()
+    assert first.validated_record_digest != second.validated_record_digest
 
 
 def test_happy_path_exact_logical_text_all_kinds() -> None:
@@ -311,6 +288,40 @@ def test_happy_path_exact_logical_text_all_kinds() -> None:
         "f_const": "보증금",      # CONSTANT
         "f_blank": "",           # INTENTIONAL_BLANK — exact empty logical text
     }
+
+
+def test_shared_source_column_reaches_each_requirement_verbatim() -> None:
+    original = _plan()
+    rules = tuple(
+        dataclasses.replace(rule, value_expression=FromSource("name", None, _POLICY_ID))
+        if rule.field_id == "f_amount" else rule
+        for rule in _rules()
+    )
+    keys = ("flag", "name")
+    binding = EffectiveFieldBindingBasis(
+        effective_active_binding_rules=rules,
+        active_binding_digest=active_binding_digest(rules),
+        required_source_keys=keys,
+        required_source_key_set_digest=required_source_key_set_digest(keys),
+    )
+    plan = dataclasses.replace(
+        original,
+        execution_basis=dataclasses.replace(original.execution_basis, field_binding=binding),
+        active_field_requirements=tuple(
+            {**requirement, "value_expression": encode_value_expression(rule.value_expression)}
+            for requirement, rule in zip(original.active_field_requirements, rules, strict=True)
+        ),
+    )
+    record = validate_data_record_against_plan(
+        plan=plan,
+        snapshot=_snapshot([
+            ("name", SourceText("1,500,000")), ("flag", SourceText("TRUE")),
+        ]),
+        validated_at="now",
+    )
+    assert isinstance(record, ValidatedDataRecord), record
+    values = dict(record.document_values_in_order())
+    assert values["f_name"] == values["f_amount"] == "1,500,000"
 
 
 def test_source_text_no_implicit_trim() -> None:
@@ -673,6 +684,20 @@ def test_unsupported_raw_record_contract_is_context_error() -> None:
     res = _validate(plan=plan)
     assert isinstance(res, RecordValidationContextError)
     assert res.code == UNSUPPORTED_RAW_RECORD_CONTRACT
+
+
+def test_raw_integrity_error_precedes_unsupported_contract_in_batch() -> None:
+    plan = _plan(_basis(contracts=_contracts(raw_record_contract_id="raw-record/v2")))
+    snapshot = _snapshot()
+    tampered = dataclasses.replace(
+        snapshot, _values={**dict(snapshot._values), "name": SourceText("TAMPERED")}
+    )
+    results = validate_data_records_against_plan(
+        plan=plan, snapshots=(tampered, snapshot), validated_at="now"
+    )
+    assert [result.code for result in results if isinstance(result, RecordValidationContextError)] == [
+        RAW_RECORD_INTEGRITY_ERROR, UNSUPPORTED_RAW_RECORD_CONTRACT,
+    ]
 
 
 def test_format_code_unsupported_is_context_error() -> None:

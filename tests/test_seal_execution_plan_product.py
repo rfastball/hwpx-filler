@@ -3,7 +3,7 @@
 S5F R2-04b(#740): durable Plan store·opaque Plan ref/HMAC·resolve_plan_reference·PublishedPlanObservation·
 digest-vs-stored currentness(CURRENT/STALE)·command_replayed 를 제거했다. command_outcome 성공은
 ``ExecutionPlanSealed``(현재-value, publication kind 없음)이고, observation 은 store 과거 Plan 이 아니라
-current authority 에서 SealedExecutionPlanValue 를 직접 재계산한다(value 가 곧 현재라 currentness 축이
+current authority 에서 SealedExecutionPlanSemanticPayload 를 직접 재계산한다(value 가 곧 현재라 currentness 축이
 없다). command_outcome 의 StaleExecutionBasis(capture→final gate concurrency)와 ProfileFence·runtime
 admission 은 유지한다.
 
@@ -26,7 +26,7 @@ from hwpxfiller.application.execution_capture import (
     QUALIFICATION_PROFILE_REVOKED as CAP_PROFILE_REVOKED,
 )
 from hwpxfiller.application.execution_compilation import SLOT_CONFIGURATION_INCOMPLETE
-from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
+from hwpxfiller.application.execution_contract_set import SealedExecutionPlanSemanticPayload
 from hwpxfiller.application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
     ADMITTED,
@@ -132,7 +132,7 @@ def test_current_sealable_returns_recomputed_plan_value(tmp_path) -> None:
     resp = h.product.seal_execution_plan(_pcmd("r1"))
     obs = resp.fresh_observation
     assert isinstance(obs, CurrentSealedPlanObservation)
-    assert isinstance(obs.sealed_plan_value, SealedExecutionPlanValue)
+    assert isinstance(obs.sealed_plan_value, SealedExecutionPlanSemanticPayload)
     assert obs.current_field_binding == h.world._binding_obs().field_binding
 
 
@@ -345,7 +345,7 @@ def test_product_reaches_real_s5_10_service_and_seals(tmp_path) -> None:
     current = response.fresh_observation.sealed_plan_value
     assert outcome.plan_payload.active_field_requirements == current.active_field_requirements
     assert outcome.plan_payload.ordered_operations == current.ordered_operations
-    assert outcome.plan_payload.execution_basis.template == current.exact_template_execution_basis
+    assert outcome.plan_payload.execution_basis.template == current.execution_basis.template
 
 
 def test_product_contract_vocabulary_is_closed() -> None:
