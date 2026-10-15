@@ -57,7 +57,7 @@ const FACTORY_SERVICES = {
     "onPush", "hostReady", "initial", "call", "pickDataFile", "loadDataSheet",
     "importTemplateFile", "copyClipboard", "pickOutputFolder", "pickTemplatesRoot",
     "generate", "openJobInEditor", "newJobFromData",
-    "revealCorruptJob", "pickPoolDataFile", "pickTemplatePath", "openPath", "revealPath",
+    "revealCorruptJob", "pickPoolDataFile", "pickTemplatePath", "pickWorkPackagePath", "openPath", "revealPath",
     "copyPath", "saveArtifactAs", "setTheme", "setFontScale", "setMasterWidth", "setAuthoringWidth",
     "confirmWindowClose", "cancelWindowClose",
   ],
