@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "f221d8fdd09140bd0e4520c532f9ed27bfc26e300827d6cfe9f845eccc809168"
+source_sha256 = "73c03124122a29d5da0e78d2262a57185a89a22ed569ea26ed47a9a6e74c3cfe"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/workspace_*.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/host/native/dialogs.py", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_native_positive.py"]
-source_sha256 = "426b326a692caf61699ea03af5bdd051742dcef17d10c790988319595204a39f"
+source_sha256 = "9c3d7dfea1319ef276fa88766a93d20dd2a2049158dab043894e9436c34f5f7d"
 body_sha256 = "f2c2b9aaed88e78b656aac38de3b1a1e2cf090191d3e8c7bd591a2c351d34637"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/application/execution_composition.py", "src/hwpxfiller/application/execution_contract_set.py", "src/hwpxfiller/application/seal_execution_plan.py", "src/hwpxfiller/application/record_validation.py", "src/hwpxfiller/application/generation_delivery.py", "src/hwpxfiller/webapp/action_registry.py"]
 tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py", "tests/test_execution_composition.py", "tests/test_execution_contract_set.py"]
-source_sha256 = "27d014257aa51ffdee6b2f3502630bb5f7301291abbc8520b7eb260169e2ad46"
+source_sha256 = "07aac0b76143835594c940bcab36e904319452b6d83db8027dc7bbae04caa8e7"
 body_sha256 = "15274c7d47244e6e0538b3f66c15f6df2fa241c3a003b2208094f82c94449056"
 
 [[topic]]
@@ -193,7 +193,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/external/template_change.py", "src/hwpxfiller/external/applied_template_asset.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring*.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js", "tests/js/txt_name_tags.test.js", "tests/test_authoring.py", "tests/test_webapp_template_change.py"]
-source_sha256 = "b09dccfb1961a3023f140cff1378229b933b94eb46971b4c87f79c7330e7d27b"
+source_sha256 = "f51f3803728d78bc21a2110274deefdc818f3a19e8180d2a5ee351bcaa9378d2"
 body_sha256 = "cba066448aa8422a2395d1eb2c73b1c3fe637752b1b112603a27238f36f6631f"
 
 [[topic]]
@@ -209,7 +209,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/create_request.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/external/managed_generation.py", "src/hwpxfiller/external/materialization_start_gate.py", "src/hwpxfiller/external/materialization_runner.py", "src/hwpxfiller/external/delivery_coordinator.py", "src/hwpxfiller/domain/output_name.py"]
 tests = ["tests/test_webapp_job.py", "tests/test_webapp_job_concurrency.py", "tests/test_work_slot_configuration.py", "tests/test_generation_delivery.py", "tests/test_materialization_runner.py", "tests/test_materialization_start_gate.py"]
-source_sha256 = "3179a1531298ef8b6810d29becfeba0c88b5c7801b58fb07a19b2fd173c9e2aa"
+source_sha256 = "59afd78fd53680a285819e037e4212adc1f69f6bb24651770a235f3e1f669c23"
 body_sha256 = "05784bbc3d7bc77013c7a6819a7b4c2cd3f03cf42507b6dfbd440dcc0e7072f0"
 
 [[topic]]
@@ -223,10 +223,10 @@ body_sha256 = "74338865f1b57ecb80c0d0210e73c4a585b368a7ceeefc0bc217b0f336a92e5c"
 [[topic]]
 id = "workflow-storage"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/external/tutorial_workspace.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts"]
-tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_tutorial_walk.py"]
-source_sha256 = "ebe25e4e1e977406051d28ca6bc135050ce10a7249ded16e913ccf80daacbd24"
-body_sha256 = "8b22c957c227183353a85861b3b1a0f3a2348dec43ad93fb5eb89fa6bb8a68fa"
+sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/external/tutorial_workspace.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts", "src/hwpxfiller/domain/work_package.py", "src/hwpxfiller/domain/copy_name.py", "src/hwpxfiller/application/work_package_*.py", "src/hwpxfiller/external/work_package_*.py", "src/hwpxfiller/webapp/work_package_panel.py"]
+tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_tutorial_walk.py", "tests/test_work_package.py", "tests/test_work_package_io.py", "tests/test_work_package_transfer.py", "tests/test_work_package_install.py", "tests/test_webapp_work_package.py"]
+source_sha256 = "46ad325c344f7e276f96cae429e6aa21f0e9195d1de9e0e21c96c5754416be24"
+body_sha256 = "afe3eac18be8eccb40211df95ac291bf4dae66a50b92211499b8edfdd1dbc6d7"
 
 [[topic]]
 id = "ui-terms"

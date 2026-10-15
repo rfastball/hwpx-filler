@@ -139,6 +139,9 @@ export const SCREEN_ACTIONS = {
     relink_template: { required: ["name"], optional: ["confirm", "path"] },
     refresh: { required: [], optional: ["select"] },
     delete_corrupt: { required: ["path"], optional: ["confirm"] },
+    export_work_package: { required: ["names", "path"], optional: ["confirm"] },
+    inspect_work_package: { required: ["path"], optional: [] },
+    import_work_package: { required: ["basis", "path"], optional: [] },
   },
   editor: {
     use_library_template: { required: ["path"], optional: [] },

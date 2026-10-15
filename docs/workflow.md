@@ -208,16 +208,16 @@ TXT 작업대는 진입 때 고정 사본(이후 선택과 무관)을 한 건씩
 <a id="workflow-storage"></a>
 ## 라이브러리·폴더·설정
 
-라이브러리는 작업 찾기·선택·복제·삭제·복원을 소유한다. 상세 패널은 템플릿·데이터·연결을
-설명하고 편집·생성으로 연결한다. 열린 세션 identity의 이름 변경은 그 세션 소유자가 처리한다.
+라이브러리는 작업 찾기·선택·복제·삭제·복원과 작업 꾸러미(`.narumi`) 내보내기·불러오기를 소유한다.
+상세 패널은 템플릿·데이터·연결을 설명하고 편집·생성으로 연결한다. 열린 세션 identity의 이름 변경은 그 세션 소유자가 처리한다.
 손상 작업·끊긴 참조는 숨기지 않고 이유와 복구 동사를 제공한다. 태그·그룹은
 [비노출 범위](product.md#product-scope)다. 표시 이름과 풀의 안정 key를 혼동하지 않는다.
+꾸러미는 데이터 없이 적용 판본·연결·파일명 규칙·선택 프리셋·계약만 싣고, 불러오기는 확인 지문이 같을 때만
+덮어쓰지 않고 전부 설치해 데이터 연결 필요로 착지한다.
 
-앱 홈은 `HWPXFILLER_HOME` 또는 `~/.hwpxfiller`이며 [locations.py](../src/hwpxfiller/host/locations.py)가
-해석한다. 레지스트리·설정·원장은 external/domain 소유자를 통해 접근하며 UI가 임의 경로로
+앱 홈은 `HWPXFILLER_HOME` 또는 `~/.hwpxfiller`이며 `host/locations.py`가 해석한다. 레지스트리·설정·원장은 external/domain 소유자를 통해 접근하며 UI가 임의 경로로
 우회하지 않는다. 풀은 행 사본 저장소가 아니라 참조다. 명시 로드·새로고침과 기동 시 기억 데이터·등록 계약목록 복원으로 세션을 만든다.
-테스트의 autouse 앱 홈 격리를 끄지 않는다.
-앱 저장 형식은 현행 형식만 지원한다. 구버전 연결·구조 판본·학습 기록·템플릿 폴더의 자동 이관은 제공하지 않는다.
+앱 저장 형식은 현행만 지원하고 구버전 연결·구조 판본·학습 기록·템플릿 폴더를 자동 이관하지 않는다.
 
 튜토리얼은 HWPX·TXT 생성, 데이터 교체·빈 칸 확인, 저작·변경 적용의 여덟 과정이다. 과정마다 독립 진입하고 연습 자원의 확인된 결과만 진행을 올린다.
 공고서 연습은 계약담당자·전화번호·팩스번호를 고정값으로 연결하고 게시일과 입찰 일시의 표시형을 구별한다.
@@ -228,21 +228,19 @@ TXT 작업대는 진입 때 고정 사본(이후 선택과 무관)을 한 건씩
 일시정지·건너뛰기·앱 종료는 연습 위치와 홈을 보존하고 재시작에는 안내를 자동 재개하지 않는다.
 연습 파일 정리는 이전 버전이 사용자 서식 폴더에 남긴 사본만 다룬다. 영향 확인 뒤 작업·등록 데이터가 참조하거나 수정된 파일과 결과를 보존하고, 읽을 수 없는 작업·등록 데이터가 있으면 중단한다. 삭제 실패는 알리고 지웠거나 없는 사본의 기록만 뺀다. 학습 기록 전체 초기화는 별도 확인이며 일반 앱 설정 초기화와 섞지 않는다.
 
-출력 위치는 설정 모달의 전역 `last_output_directory` 하나다. 편집기·작업 화면은 공용 해석
-결과를 읽기 전용으로 보여 준다. 유효 설정 폴더, 템플릿 옆 `Results` 순서로 해석하며 둘 다
-불가하면 `OUTPUT_DIRECTORY_REQUIRED`로 막는다. 순수 판정은
-[output_folder_default.py](../src/hwpxfiller/domain/output_folder_default.py), 투영은
-[output_folder_zone.py](../src/hwpxfiller/webapp/output_folder_zone.py)가 맡는다.
+출력 위치는 설정 모달의 전역 `last_output_directory` 하나이며 편집기·작업 화면은 공용 해석
+결과를 읽기 전용으로 보인다. 유효 설정 폴더, 템플릿 옆 `Results` 순서로 해석하고 둘 다
+불가하면 `OUTPUT_DIRECTORY_REQUIRED`로 막는다. 순수 판정은 `domain/output_folder_default.py`,
+투영은 `webapp/output_folder_zone.py`가 맡는다.
 
 템플릿 풀은 가져올 서식을 찾는 사용자 폴더다. 작업의 앱 소유 적용본과 별개이며 누름틀 변환은 제자리에서 한다.
 사용자 폴더용 앱 휴지통은 없다. 명시 루트가 사라졌으면
 출력 폴더와 달리 임의 fallback 없이 실패를 알린다. 루트 소속은 경로 해석기로 판정하고
 문자열 prefix로 인정하지 않는다. 폴더 교체·재연결은 관련 세션을 갱신한다.
-[template_root.py](../src/hwpxfiller/external/template_root.py)와
-[template_root_default.py](../src/hwpxfiller/domain/template_root_default.py)가 원천이다.
+`external/template_root.py`와 `domain/template_root_default.py`가 원천이다.
 
 설정은 테마·글자 크기·폴더·튜토리얼 버튼 표시를 제공한다. 생성 중에는 관련 폴더 변경만 이유와 함께
 잠근다. 공유 FolderRow와 기존 설정 경계를 사용한다.
-화면 좌표 변경은 [live101](../scripts/live101/scenario.py)·selftest·실렌더와 함께 검증한다.
-헤드리스 `tests/test_webapp_*.py`와 [프런트 테스트](../tests/js),
-[실앱 검사](../tests/test_web_selftest_gate.py)를 정적 계약의 대리인 없이 함께 사용한다.
+화면 좌표 변경은 [live101](../scripts/live101/scenario.py)·selftest·실렌더로 검증하고 헤드리스
+`tests/test_webapp_*.py`·[프런트 테스트](../tests/js)·[실앱 검사](../tests/test_web_selftest_gate.py)를
+정적 계약으로 대신하지 않는다.

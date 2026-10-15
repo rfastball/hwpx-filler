@@ -46,19 +46,24 @@ class AppliedTemplateAsset:
             / Path(template_path).name
         )
 
-    def _write_blob(self, path: Path, exact) -> None:
+    def _exact_bytes(self, exact) -> bytes:
         blob = self._candidates.get_blob(exact.exact_content_digest)
         if blob.media != exact.media:
             raise ValueError("적용된 템플릿의 형식을 확인할 수 없습니다")
+        return blob.exact_bytes
+
+    def _write_blob(self, path: Path, exact) -> None:
+        exact_bytes = self._exact_bytes(exact)
         path.parent.mkdir(parents=True, exist_ok=True)
         pending = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            pending.write_bytes(blob.exact_bytes)
+            pending.write_bytes(exact_bytes)
             os.replace(pending, path)
         finally:
             pending.unlink(missing_ok=True)
 
-    def _materialize(self, job, path: Path, *, replace: bool) -> None:
+    def _current_exact(self, job):
+        """작업의 current Application 이 가리키는 검증된 적용 판본 참조 — 형식까지 대조한다."""
         work_id = job.authority_id
         aggregate = self._works.load(work_id)
         exact = resolve_exact_applied_template_input(
@@ -67,6 +72,20 @@ class AppliedTemplateAsset:
         )
         if exact.media != job.media:
             raise ValueError("적용된 템플릿의 형식을 확인할 수 없습니다")
+        return exact
+
+    def current_bytes(self, job) -> "bytes | None":
+        """작업이 지금 생성에 쓰는 적용 판본 bytes — 적용 이력이 없는 작업은 ``None``.
+
+        작업 꾸러미 내보내기가 읽는 자리다(#1188 WP-03). 앱 안 편집 파일(``template_path``)이 아니라
+        생성이 실제로 쓰는 Candidate blob 을 digest 재검증해 낸다. 손상·형식 불일치는 시끄럽게 오른다.
+        """
+        if not job.authority_id or not self._works.exists(job.authority_id):
+            return None
+        return self._exact_bytes(self._current_exact(job))
+
+    def _materialize(self, job, path: Path, *, replace: bool) -> None:
+        exact = self._current_exact(job)
         if job.template_path == str(path) and not path.is_file():
             raise FileNotFoundError(f"적용된 템플릿 파일을 찾을 수 없습니다: {path}")
         if (replace and job.template_path != str(path)) or not path.is_file():

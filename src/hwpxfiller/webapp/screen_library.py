@@ -77,6 +77,7 @@ from ..viewmodel.mapping_state import (
     source_cell_label,
 )
 from ..viewmodel.work_mode import work_mode_label, work_mode_of_filter_value
+from .work_package_panel import WorkPackagePanel
 from .screens import (
     NO_ROWS_TEXT,
     PushSink,
@@ -279,7 +280,8 @@ class LibraryController:
                  template_root: TemplateRoot,
                  clock: "Callable[[], datetime]" = datetime.now,
                  first_row_runner: "Callable[[Callable[[], None]], None]"
-                 = run_in_worker_thread) -> None:
+                 = run_in_worker_thread,
+                 work_packages: "WorkPackagePanel | None" = None) -> None:
         # pool_registry 는 손상 등록 데이터 경보(#45) 용 — composition root(webapp.app)가
         # 주입한다(자기 생성 폴백은 #570 에서 제거 — locator 뒷문 금지).
         # text_registry 는 VM 이 보는 txt 트랙 판정에 쓰인다.
@@ -332,6 +334,9 @@ class LibraryController:
         # 타 화면 무장 세션 가드 조회 함수들(#268 리뷰) — app.py 가 작업·기안 컨트롤러의
         # ``session_guard_for`` 를 배선한다(생성 순서상 이 화면이 먼저라 사후 배선).
         self.session_guards: "list" = []
+        # 작업 꾸러미 세 동사(#1188 WP-03·WP-04) — 목록 관리 동사지만 몸통은 패널이 진다
+        # (`authoring` 의 ProposalPanel 선례). 미주입이면 그 액션은 이 화면에 없다(시끄럽게 거절).
+        self._work_packages = work_packages
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -586,10 +591,13 @@ class LibraryController:
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
-        handler = getattr(self, f"_do_{action}", None)
+        packages = self._work_packages.handlers() if self._work_packages is not None else {}
+        handler = getattr(self, f"_do_{action}", None) or packages.get(action)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 library 액션: {action!r}")
         result = handler(payload)
+        if action in packages:  # 불러온 작업이 목록에 서도록 — 내보내기에도 무해한 재조회다
+            self.vm.refresh()
         self._push()
         return result
 
