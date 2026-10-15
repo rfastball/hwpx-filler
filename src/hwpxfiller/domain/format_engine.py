@@ -15,8 +15,26 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
+
+
+@dataclass(frozen=True)
+class RenderOutcome:
+    """표시형 한 번의 결과 — 낸 글자와 **해석기가 값을 읽었는가**.
+
+    렌더는 실패해도 예외가 아니라 원본을 낸다(degrade). 그 글자만으로는 「읽고 같은 모양으로
+    냈다」와 「못 읽어 원문을 냈다」가 구별되지 않으므로(``2026-06-15`` 에 ``%Y-%m-%d``) 판정을
+    낸 자리가 사실을 함께 돌려준다. ``text`` 는 :func:`render` 가 내는 글자와 언제나 같다.
+    """
+
+    text: str
+    readable: bool = True
+
+
+def _degraded(value: str) -> RenderOutcome:
+    return RenderOutcome(value, False)
 
 
 class FormatEngine(Protocol):
@@ -24,6 +42,10 @@ class FormatEngine(Protocol):
 
     def render(self, kind: str, code: str, value: str) -> str:
         """``kind`` 해석기로 ``code`` 를 ``value`` 에 적용. 실패 시 ``value`` 그대로(degrade)."""
+        ...
+
+    def render_outcome(self, kind: str, code: str, value: str) -> RenderOutcome:
+        """:meth:`render` 와 같은 글자 + 값을 읽었는가(못 읽어 degrade 하면 ``readable=False``)."""
         ...
 
     def presets(self, kind: str) -> "list[tuple[str, str]]":
@@ -120,8 +142,8 @@ def _dot_ym(value: str) -> str:
 
 
 # ---- 마스크(자릿수 그룹) — stdlib 서식 스펙으로 안 되는 전화/사업자번호 등 ----
-def _mask_phone(value: str) -> str:
-    """전화번호 자릿수 마스크. 자릿수가 안 맞으면 원본(degrade)."""
+def _mask_phone(value: str) -> "str | None":
+    """전화번호 자릿수 마스크. 자릿수가 안 맞으면 ``None``(호출자가 원본으로 degrade)."""
     d = re.sub(r"\D", "", value)
     n = len(d)
     if n == 11:
@@ -132,18 +154,30 @@ def _mask_phone(value: str) -> str:
         return f"{d[:3]}-{d[3:6]}-{d[6:]}"       # 031-123-4567
     if n == 9 and d.startswith("02"):
         return f"{d[:2]}-{d[2:5]}-{d[5:]}"       # 02-123-4567
-    return value
+    return None
 
 
-def _mask_biz(value: str) -> str:
-    """사업자등록번호 10자리 → ``123-45-67890``. 아니면 원본(degrade)."""
+def _mask_biz(value: str) -> "str | None":
+    """사업자등록번호 10자리 → ``123-45-67890``. 아니면 ``None``(호출자가 원본으로 degrade)."""
     d = re.sub(r"\D", "", value)
     if len(d) == 10:
         return f"{d[:3]}-{d[3:5]}-{d[5:]}"
-    return value
+    return None
 
 
 _MASKS = {"phone": _mask_phone, "biz": _mask_biz}
+
+#: 날짜 예약코드 → 렌더(공문서 표준·약식·연월·한글, 시간 포함 여부). 예약코드가 아닌 코드는
+#: strftime 이다. 모두 :func:`parse_dt` 가 읽은 값에서만 서고 못 읽으면 원본이다(degrade).
+_RESERVED_DATE = {
+    "": lambda v: _dot_dt(v, include_time=False),
+    "datetime": lambda v: _dot_dt(v, include_time=True),
+    "y2": lambda v: _dot_dt(v, short=True, include_time=True),
+    "y2_date": lambda v: _dot_dt(v, short=True, include_time=False),
+    "ym": _dot_ym,
+    "kor": lambda v: _korean_dt(v, include_time=True),
+    "kor_date": lambda v: _korean_dt(v, include_time=False),
+}
 
 
 class StdlibFormatEngine:
@@ -187,52 +221,55 @@ class StdlibFormatEngine:
     _PRESETS["today"] = _PRESETS["date"]
 
     def render(self, kind: str, code: str, value: str) -> str:
+        return self.render_outcome(kind, code, value).text
+
+    def render_outcome(self, kind: str, code: str, value: str) -> RenderOutcome:
+        """:meth:`render` 의 단일 출처 — 글자와 함께 값을 읽었는가를 낸다(글자는 같다)."""
         if kind == "amount":
             return self._amount(code, value)
         if kind == "date":
             return self._date(code, value)
         if kind == "text":
             return self._text(code, value)
-        return value  # 표시형 없는 kind(const)
+        return RenderOutcome(value)  # 표시형 없는 kind(const)
 
     def presets(self, kind: str) -> "list[tuple[str, str]]":
         return list(self._PRESETS.get(kind, []))
 
-    def _amount(self, code: str, value: str) -> str:
+    def _amount(self, code: str, value: str) -> RenderOutcome:
         num = parse_number(value)
         if num is None:
-            return value  # 수가 아니면 원본(degrade)
+            return _degraded(value)  # 수가 아니면 원본(degrade)
         try:
-            return (code or "{:,}원").format(num)
+            return RenderOutcome((code or "{:,}원").format(num))
         except (ValueError, KeyError, IndexError):
-            return value  # 잘못된 서식 코드도 degrade
+            return _degraded(value)  # 잘못된 서식 코드도 degrade
 
-    def _date(self, code: str, value: str) -> str:
-        if code in ("", "datetime"):
-            return _dot_dt(value, include_time=bool(code))
-        if code in ("y2", "y2_date"):
-            return _dot_dt(value, short=True, include_time=code == "y2")
-        if code == "ym":
-            return _dot_ym(value)  # 예약코드: 연·월(2026. 7.)
-        if code in ("kor", "kor_date"):
-            return _korean_dt(value, include_time=code == "kor")
+    def _date(self, code: str, value: str) -> RenderOutcome:
+        reserved = _RESERVED_DATE.get(code)
+        if reserved is not None:
+            # 예약코드는 전부 parse_dt 가 읽은 값에서만 선다 — 못 읽으면 각 렌더가 원본을 낸다.
+            if parse_dt(value) is None:
+                return _degraded(value)
+            return RenderOutcome(reserved(value))
         dt = parse_dt(value)
         if dt is None:
             # 날짜가 없으면 시각 단독값('1400'·'18:00')으로 재시도 — 시각 서식용.
             t = _parse_time(value)
             if t is None:
-                return value
+                return _degraded(value)
             dt = datetime(1900, 1, 1, t[0], t[1])
         try:
-            return dt.strftime(code)
+            return RenderOutcome(dt.strftime(code))
         except (ValueError, TypeError):
-            return value
+            return _degraded(value)
 
-    def _text(self, code: str, value: str) -> str:
+    def _text(self, code: str, value: str) -> RenderOutcome:
         if not code:
-            return value  # 원문 그대로
+            return RenderOutcome(value)  # 원문 그대로
         fn = _MASKS.get(code)
-        return fn(value) if fn else value  # 미지 마스크 코드 → 원본(degrade)
+        masked = fn(value) if fn else None  # 미지 마스크 코드 → 원본(degrade)
+        return _degraded(value) if masked is None else RenderOutcome(masked)
 
 
 # ---------------------------------------------------- 어댑터 (교체 지점) --
@@ -243,6 +280,11 @@ ENGINE: FormatEngine = StdlibFormatEngine()
 def render(kind: str, code: str, value: str) -> str:
     """활성 엔진으로 표시형 적용(어댑터). 표시형 없는 kind 는 값 그대로."""
     return ENGINE.render(kind, code, value)
+
+
+def render_outcome(kind: str, code: str, value: str) -> RenderOutcome:
+    """활성 엔진의 :meth:`FormatEngine.render_outcome` — 글자는 :func:`render` 와 같다."""
+    return ENGINE.render_outcome(kind, code, value)
 
 
 def presets(kind: str) -> "list[tuple[str, str]]":

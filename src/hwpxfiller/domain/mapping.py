@@ -28,7 +28,7 @@ from datetime import datetime
 from . import format_engine as _fe
 from .field_binding import render_runtime_date
 from .lint import similarity
-from .text_slice import TextSlice, apply_text_slice, text_slice_from_payload
+from .text_slice import TextSlice, text_slice_from_payload
 
 # 소스별 어휘(소스 키 → 한글 라벨)는 **코어가 소유하지 않는다**. 각 DataSource 가
 # ``field_labels()`` 로 자기 어휘를 선언하고(예: ``data/nara.py`` 의 나라장터 36쌍),
@@ -55,6 +55,36 @@ SOURCE_CARRIER_TYPES = tuple(t for t in TYPES if t not in _NON_CARRIER_TYPES)
 
 
 # ------------------------------------------------------------------ 변환
+@dataclass(frozen=True)
+class SourceValueOutcome:
+    """소스 값 하나를 공백 정리 → 가공 → 표시형으로 렌더한 글자와 그 길의 사실들.
+
+    ``text`` 는 :func:`apply_transform` 이 내는 글자 그대로다(이 함수가 그 렌더의 단일 출처).
+    ``sliced`` 는 표시형에 들어간 글자(공백 정리·가공 뒤), ``slice_missed`` 는 가공의 기준(글자·
+    조각·범위)이 이 값에 없었는가(``on_missing`` 이 무엇이든), ``readable`` 은 표시형 해석기가
+    값을 읽었는가(못 읽으면 원문을 낸다 — :class:`~hwpxfiller.domain.format_engine.RenderOutcome`).
+    """
+
+    text: str
+    sliced: str
+    slice_missed: bool
+    readable: bool
+
+
+def source_value_outcome(
+    kind: str, value: str, fmt: str = "", text_slice: "TextSlice | None" = None
+) -> SourceValueOutcome:
+    """소스 carrier 유형(text/date/amount)의 값 하나를 렌더하고 길의 사실을 함께 낸다."""
+    stripped = value.strip()
+    if text_slice is None:
+        sliced, missed = stripped, False
+    else:
+        outcome = text_slice.evaluate(stripped)
+        sliced, missed = outcome.text, outcome.missed
+    rendered = _fe.render_outcome(kind, fmt, sliced)
+    return SourceValueOutcome(rendered.text, sliced, missed, rendered.readable)
+
+
 def apply_transform(
     kind: str, value: str = "", const: str = "", fmt: str = "",
     *, now: "datetime | None" = None, text_slice: "TextSlice | None" = None,
@@ -83,7 +113,7 @@ def apply_transform(
         # 「오늘 날짜」(RUNTIME_DATE, #950)와 **같은 함수**다 — 미리보기와 생성 문서가 한 글자다.
         return render_runtime_date(fmt, now or datetime.now())
     if kind in ("text", "date", "amount"):
-        return _fe.render(kind, fmt, apply_text_slice(text_slice, value.strip()))
+        return source_value_outcome(kind, value, fmt, text_slice).text
     # 미지 유형을 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)
     # — 조용한 추측 대신 시끄럽게 실패한다(확인-또는-경보).
     raise ValueError(f"지원하지 않는 유형: {kind!r} (지원: {TYPES})")

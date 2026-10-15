@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TypedDict
 
+from ..domain.data_contract import DataContract
 from ..domain.job import Job
 from ..domain.mapping import MappingProfile
 from .mapping_state import profile_source_vocabulary
@@ -28,6 +29,8 @@ class PreservedMeta(TypedDict):
     favorited_at: str
     reviewed_rules: dict[str, str]
     authority_id: str
+    #: 데이터 계약(#1188) — 편집기가 편집하지 않는 불변 값이라 사본 없이 되싣는다.
+    data_contract: DataContract | None
 
 
 EMPTY_PRESERVED: PreservedMeta = {
@@ -37,6 +40,7 @@ EMPTY_PRESERVED: PreservedMeta = {
     "favorited_at": "",
     "reviewed_rules": {},
     "authority_id": "",
+    "data_contract": None,
 }
 
 
@@ -49,6 +53,7 @@ def preserved_meta(job: Job) -> PreservedMeta:
         "favorited_at": job.favorited_at,
         "reviewed_rules": dict(job.reviewed_rules),
         "authority_id": job.authority_id,
+        "data_contract": job.data_contract,
     }
 
 

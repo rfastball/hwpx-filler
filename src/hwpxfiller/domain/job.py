@@ -23,6 +23,7 @@ import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from .data_contract import DataContract
 from .dataset_reference import excel_identity
 from .mapping import FieldMapping, MappingProfile
 from ..domain.validation import ValidationReport, validate
@@ -313,6 +314,13 @@ class Job:
     # 날 증거가 조용히 거짓말한다. 1세대만 두는 이유: 계약에 판본 이력 표면이 없다 —
     # 요구 없는 무한 누적을 durable 파일에 지불하지 않는다. 형상은 :func:`rules_values`.
     previous_rules: "dict" = field(default_factory=dict)
+    # **데이터 계약**(#1188 WP-02) — 작업 꾸러미가 보낸 쪽 데이터에서 계산해 싣는 값 없는
+    # 연결별 통계(:mod:`~hwpxfiller.domain.data_contract`). ``None`` = 계약 없음(일반 작업).
+    # 있으면 편집기가 데이터를 바꿀 때 계약을 통과한 연결만 자동확정한다(일반 작업은 C1 그대로).
+    # **규칙 축이 아니다**: :func:`rules_values` 에 들지 않는다 — 계약은 데이터에 대한 관찰
+    # 증거이지 문서를 만드는 규칙이 아니라, 넣으면 같은 연결에 검토 요구·``binding_revision``
+    # 상승이 선다. 편집기 저장이 되싣는 메타라 내용 지문에서도 빠진다(``reviewed_rules`` 와 같은 줄).
+    data_contract: "DataContract | None" = None
 
     @property
     def media(self) -> str:

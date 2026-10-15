@@ -38,6 +38,7 @@ from hwpxfiller.domain.job import (
     load_isolated,
     template_media,
 )
+from hwpxfiller.domain.data_contract import decode_data_contract, encode_data_contract
 from hwpxfiller.domain.mapping import MappingProfile
 from hwpxfiller.host.job_writer_lease import job_write_lock
 from .template_root import TemplateRoot, same_file_identity
@@ -262,6 +263,13 @@ def encode_job(job: Job, *, root: "Path | None" = None) -> dict:
         "template_revision": job.template_revision,
         "binding_revision": job.binding_revision,
         "previous_rules": copy_rules_values(job.previous_rules),
+        # 데이터 계약(#1188) — **가산** 키라 있을 때만 적는다(``template_key``·``data_kind`` 와 같은
+        # 규율, 판은 그대로 2). 계약 없는 작업의 저장 bytes 는 이 키 도입 전과 같다.
+        **(
+            {}
+            if job.data_contract is None
+            else {"data_contract": encode_data_contract(job.data_contract)}
+        ),
     }
 
 
@@ -368,6 +376,10 @@ def decode_job(d: dict, *, root: "Path | None" = None) -> Job:
         template_revision=_revision("template_revision"),
         binding_revision=_revision("binding_revision"),
         previous_rules=_rules_values_or_raise(d.get("previous_rules", {})),
+        # 가산 키 — 없으면 계약 없음, 있으면 엄격 해독(모르는 판·키·모양은 로드 실패로 드러난다).
+        data_contract=(
+            decode_data_contract(d["data_contract"]) if "data_contract" in d else None
+        ),
     )
 
 
@@ -399,23 +411,21 @@ def content_fingerprint(job: Job, *, root: "Path | None" = None) -> str:
     변경'으로 확인을 요구해야 한다(무확인 파괴 금지). 에디터·「기안」 저장 두 표면이 같은
     지문을 쓰도록 한 곳에 둔다(복붙하면 한쪽만 고쳐지는 드리프트가 곧 조용한 파괴다)."""
     d = encode_job(job, root=root)
-    d.pop("tags", None)
-    d.pop("last_run_at", None)
-    d.pop("favorited_at", None)
-    d.pop("group", None)
+    # 태그·마지막 실행·즐겨찾기·그룹은 위 docstring 의 보존 메타다.
     # 권위 identity 도 뺀다(S3-09) — 첫 [변경사항 확인]의 발급이 열어 둔 편집 세션에
     # 「외부 변경」 거짓 파괴 확인을 띄우지 않게. 위 넷과 같은 순수 메타 부류.
-    d.pop("authority_id", None)
     # 검토 기준선도 뺀다(재작성 F5 판정 B) — 완주 스탬프가 갱신하는 사용 메타라 위 넷과
     # 같은 부류다. 남기면 실행 한 번이 열어 둔 편집 세션에 거짓 파괴 확인을 띄운다.
-    d.pop("reviewed_rules", None)
     # 판본 3필드도 뺀다(재작성 F7 판정 G) — 저장이 **계산해서 다시 쓰는 파생 메타**라 위
     # 다섯과 같은 부류다. 남기면 실행 한 번(스탬프)이나 다른 표면의 저장이 열어 둔 편집
     # 세션에 「외부 변경을 덮어씁니다」라는 거짓 파괴 확인을 띄우고, 더 나쁘게는 세션이
     # 든 옛 판본 번호를 지문 대조의 근거로 만든다(판본은 편집의 대상이 아니다).
-    d.pop("template_revision", None)
-    d.pop("binding_revision", None)
-    d.pop("previous_rules", None)
+    # 데이터 계약도 뺀다(#1188) — 편집기가 편집하지 않고 저장이 디스크 값을 되싣는 메타다.
+    for key in (
+        "tags", "last_run_at", "favorited_at", "group", "authority_id", "reviewed_rules",
+        "template_revision", "binding_revision", "previous_rules", "data_contract",
+    ):
+        d.pop(key, None)
     # 데이터 결속 세 성분은 **뺴지 않는다**(U4 §2.4): 위 제외 목록은 저장이 되싣거나
     # 계산하는 메타이고, 결속은 편집기가 세션 값으로 **덮어쓰는** 편집 대상이다. 빼면
     # 열어 둔 편집 세션이 다른 자리에서 갈린 결속을 조용히 덮어쓴다(무확인 파괴).

@@ -88,7 +88,7 @@ title = "시각 부품 갤러리"
 max_lines = 600
 sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
 tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "0e32c689366b0015f4fd5b182a598a9fa5f75b37a63cd1949f0ebe55f5a2cbad"
+source_sha256 = "384804fc70d9be8e570a281db07a8f484f47468819cdc41e0eb29dab4688454a"
 body_sha256 = "0220fd674f2a5d6d0add5e6b4afeff8006c181a517aff07e7aa6f1cbba9b0fea"
 
 [[document]]
@@ -183,10 +183,10 @@ body_sha256 = "15274c7d47244e6e0538b3f66c15f6df2fa241c3a003b2208094f82c94449056"
 [[topic]]
 id = "workflow-definition"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/viewmodel/edit_session.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py", "src/hwpxfiller/external/job_store.py", "src/hwpxfiller/external/job_binding_projection.py", "src/hwpxfiller/external/seal_execution_plan_service.py", "src/hwpxfiller/external/seal_execution_capture_runner.py", "src/hwpxfiller/domain/format_engine.py", "src/hwpxfiller/domain/field_induction/transforms.py"]
-tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py", "tests/test_seal_execution_plan_service.py", "tests/test_webapp_binding_confirm_journey.py", "tests/test_format_engine.py", "tests/test_value_format_matrix.py"]
-source_sha256 = "3eee41f9c8dd446c893c9390958248118096465a58e557afb0914290c1af34d3"
-body_sha256 = "e56d5b9743b62c4240f135346af556b288489fcae7dabc700eb4db485389a635"
+sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/viewmodel/edit_session.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py", "src/hwpxfiller/external/job_store.py", "src/hwpxfiller/external/job_binding_projection.py", "src/hwpxfiller/external/seal_execution_plan_service.py", "src/hwpxfiller/external/seal_execution_capture_runner.py", "src/hwpxfiller/domain/format_engine.py", "src/hwpxfiller/domain/field_induction/transforms.py", "src/hwpxfiller/domain/data_contract*.py", "src/hwpxfiller/viewmodel/contract_confirm.py"]
+tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py", "tests/test_seal_execution_plan_service.py", "tests/test_webapp_binding_confirm_journey.py", "tests/test_format_engine.py", "tests/test_value_format_matrix.py", "tests/test_data_contract.py", "tests/test_editor_data_contract.py", "tests/js/editor_contract_reason.test.js"]
+source_sha256 = "ae5259639a5c0d3c03e8e50fc709475045d31728748430b81e9d017a4b949f90"
+body_sha256 = "fcd0738518a41126d974ca36c3e4edc137d6573d0dc11b9c6a0dead951b1c1c4"
 
 [[topic]]
 id = "workflow-template"
@@ -233,7 +233,7 @@ id = "ui-terms"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/file_filters.py", "src/hwpxfiller/viewmodel/work_mode.py", "src/hwpxfiller/domain/identity_summary.py", "src/hwpxfiller/domain/job.py", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts", "tests/fixtures/identity_summary_nara.json"]
 tests = ["tests/repo_contract/test_ui_copy_census.py", "tests/test_identity_summary.py"]
-source_sha256 = "8eee15bcf366b36acd1cc60ec7b2d3d4b18cbcbd0b1572dae2c6aa54f5a1201f"
+source_sha256 = "37787dccc0d56111e537fcd93f85e63ef3b95dfb194717b1e49a441ec27d6402"
 body_sha256 = "892b434a55938108ec8d363c2115014fbe346066f22c455be1a5e7cb3a724d69"
 
 [[topic]]
@@ -249,7 +249,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css", "frontend/src/screens/authoring_layout.ts", "frontend/src/screens/authoring_proposal_view.ts", "frontend/src/tutorial/panel.ts", "frontend/src/tutorial/spotlight.ts", "vendor/rhwp/patches/authoring.patch"]
 tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py", "tests/js/authoring_layout.test.js", "tests/js/authoring_render.test.js", "tests/js/tutorial_panel.test.js"]
-source_sha256 = "83e8bc5094f00e2a70ce9a9f9c736c35acd987d3b349433d101cb5570734223b"
+source_sha256 = "7c4fa93345d610da08136051cb5a52cad4d0eb81f000b224afbce42f32ddbb27"
 body_sha256 = "5f244e9993763d552793453e08569cc1837ac50955cd472c73d6878b51f8bf02"
 
 [[topic]]

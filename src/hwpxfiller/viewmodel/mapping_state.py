@@ -2,7 +2,8 @@
 
 ``suggest_mappings`` 초안과 확정 사이를 잇는 계층. 현재 활성 데이터의 원본 키가 템플릿
 필드명과 정확히 같을 때만 자동확정한다. 근사·별칭 제안은 사람이 확인해야 하며, 위저드는
-전 행이 확정되어야 다음(저장) 단계로 넘어간다.
+전 행이 확정되어야 다음(저장) 단계로 넘어간다. 유일한 다른 자동확정은 데이터 계약을 든 작업의
+데이터 재조립이다(:mod:`~hwpxfiller.viewmodel.contract_confirm`).
 
 행 편집(소스/유형/상수 변경)은 확정을 해제한다 — 확정 후 바뀐 행은
 다시 사람의 눈을 거쳐야 한다. 저장된 프로파일의 로드(``apply_profile``)만 예외로
@@ -32,12 +33,15 @@ from ..domain.mapping import (
     suggest_mappings,
 )
 from ..domain.text_slice import TextSlice, text_slice_from_payload
+from .contract_confirm import contract_reason, contract_state_label
 from .slice_assist import slice_label, slice_methods
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..domain.template_status import CompileState, TemplateStatus, compile_status
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+    from ..domain.data_contract_check import ContractVerdict
 
 # inferred_type → 기본 값 유형. 명시 없는 타입은 text(그대로).
 _DEFAULT_TYPE = {"date": "date", "amount": "amount"}
@@ -232,6 +236,13 @@ def display_options(row: "RowState", source_kind: str) -> "list[dict]":
     return groups
 
 
+def row_state_label(row: "RowState", state: str) -> str:
+    """배지 문안 — 자동확정 근거(이름 일치·꾸러미 조건 일치)가 있으면 그것, 아니면 상태 문안."""
+    if row.auto_confirmed_exact:
+        return AUTO_CONFIRM_EXACT_LABEL
+    return contract_state_label(row) or ROW_STATUS_LABEL[state]
+
+
 def row_projection(
     row: "RowState",
     record: "dict",
@@ -320,7 +331,9 @@ def row_projection(
         "preview_empty": empty,
         "preview_error": preview_error,
         "row_state": state,
-        "state_label": AUTO_CONFIRM_EXACT_LABEL if row.auto_confirmed_exact else ROW_STATUS_LABEL[state],
+        "state_label": row_state_label(row, state),
+        # 데이터 계약을 통과하지 못해 미확정으로 남은 사유(#1188) — 문장은 Python 이 짓는다.
+        "contract_reason": contract_reason(row),
         "source_kind": source_kind,
         "source_value": source_option_value(row, source_kind),
         # 결속 열이 지금 데이터에 없다 — 「(비움)」으로 오표시하지 않고 명시 항목으로
@@ -395,6 +408,15 @@ class RowState:
     touched: bool = False  # 사람이 소스/내용을 직접 정함(수동=사람 소유). 미접촉=시스템 소유.
     auto_confirmed_exact: bool = False  # 현재 활성 데이터의 원본 키와 정확히 일치한 자동확정.
     manual_unconfirmed: bool = False  # 사람이 확인을 푼 행은 재제안·재마운트로 재확정하지 않는다.
+    #: 데이터 계약 판정(#1188) — 판정한 연결 지문과 함께 남고, 지금 연결이 같을 때만 투영된다
+    #: (:mod:`~hwpxfiller.viewmodel.contract_confirm`). 계약을 든 작업의 데이터 재조립만 세운다.
+    contract_verdict: "ContractVerdict | None" = None
+
+    def mark_edited(self) -> None:
+        """사람의 편집 한 번 — 확정을 풀고 사람 소유로 두며 자동확정 근거를 걷는다(행 편집 API 공용)."""
+        self.confirmed = False
+        self.touched = True
+        self.auto_confirmed_exact = False
 
     def is_system_owned(self) -> bool:
         """시스템 소유 행 — 미확정·미접촉이라 활성 헤더 따라 라이브 재제안 대상(결정 12)."""
@@ -626,9 +648,7 @@ class MappingModel:
             row.const = ""
             row.fmt = ""
         row.source = source
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def set_type(self, index: int, type_: str) -> None:
         if type_ not in TYPES:
@@ -642,17 +662,13 @@ class MappingModel:
             # 상수·오늘 날짜다(``set_source`` 의 짝 규칙). 되돌리기용 소스 기억이 필요한
             # 자리는 ``set_manual`` 이고 그쪽은 이 관문을 지나지 않는다.
             row.source = ""
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def set_fmt(self, index: int, fmt: str) -> None:
         """표시형(유형 내 프리셋) 변경 — 편집이므로 확정 해제."""
         row = self.rows[index]
         row.fmt = fmt
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def set_slice(self, index: int, spec: object) -> None:
         """가공(일부만 쓰기·글자 고치기) 설정·해제 — 편집이므로 확정 해제(:meth:`set_fmt` 과 같다).
@@ -667,9 +683,7 @@ class MappingModel:
         if parsed is not None and not row.slice_enabled():
             raise ValueError(f"가공은 데이터 열 값에만 둘 수 있음: {row.template_field!r}")
         row.slice = parsed
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def set_slice_for(self, template_field: str, spec: object) -> None:
         """이름 API — 작업대 동사(`set_map_slice`)가 토큰 이름으로 부른다(:meth:`set_fmt_for` 짝)."""
@@ -678,9 +692,7 @@ class MappingModel:
     def set_const(self, index: int, const: str) -> None:
         row = self.rows[index]
         row.const = const
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def set_display(self, index: int, type_: str, fmt: str) -> None:
         """**(유형, 표시형) 한 쌍을 원자적으로** 세운다(U6-C 리뷰 1) — 표시형 select 의 단일 관문.
@@ -702,9 +714,7 @@ class MappingModel:
             row.slice = None
         if type_ != "const":
             row.const = ""
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def revert_to_auto(self, index: int) -> None:
         """사람 소유(touched) 행을 시스템 소유로 **완전** 되돌린다 — 자동 제안에 다시 맡김(칩-라이브).
@@ -723,6 +733,7 @@ class MappingModel:
         row = self.rows[index]
         row.confirmed = confirmed
         row.auto_confirmed_exact = False
+        row.contract_verdict = None  # 사람의 확인·해제는 계약 판정이 아니라 사람의 답이다
         if not confirmed:
             row.touched = True  # 명시 해제는 활성 헤더 재제안이 되돌릴 수 없다.
         row.manual_unconfirmed = not confirmed
@@ -1057,9 +1068,7 @@ class MappingModel:
         row.const = ""
         row.fmt = ""
         row.slice = None  # 새 결속은 새 칸 — 옛 칸 모양에 맞춘 가공을 이어 가지 않는다.
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def set_manual(self, index: int, value: str) -> None:
         """직접 입력(man) — 상수 강등. **결속 소스는 기억**한다(되돌리기로 복귀, 사용자 결정).
@@ -1071,9 +1080,7 @@ class MappingModel:
         row.type = "const"
         row.const = value
         row.slice = None  # 고정값에는 가공할 원본 칸이 없다.
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def freeze_to_const(self, index: int, value: str) -> None:
         """데이터 해제 시 결속 값 **평문 동결**(R-flow 결정 30) — 소스도 뗀다(``set_manual`` 과 차이).
@@ -1087,9 +1094,7 @@ class MappingModel:
         row.source = ""
         row.fmt = ""
         row.slice = None
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
 
     def revert_binding(self, index: int, kind: str = "") -> bool:
         """man→auto 되돌리기 — 기억한 결속 소스 복귀(상수 청소·유형 재유도). 소스 없으면 무동작.
@@ -1104,9 +1109,7 @@ class MappingModel:
         row.const = ""
         row.fmt = ""
         row.slice = None
-        row.confirmed = False
-        row.touched = True
-        row.auto_confirmed_exact = False
+        row.mark_edited()
         return True
 
     def unbind(self, index: int) -> None:

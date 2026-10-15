@@ -583,7 +583,17 @@ function DataColumnCell(props: {
       className: "btn icon", "data-act": "revert-source", "data-index": index,
       title: "자동 제안으로 되돌리기", "aria-label": "이 행 자동 제안 다시 받기",
       onClick: () => controller.guarded(() => controller.sendEdit("revert_source", { index })),
-    }, "↻") : null);
+    }, "↻") : null,
+    contractReason(row, index));
+}
+
+/** 데이터 계약을 통과하지 못해 미확정으로 남은 사유(#1188) — 판정·문장은 Python 이 낸다.
+ *  빈 문장이면 서지 않는다(일반 작업·통과 행). */
+export function contractReason(row: Obj, index: number): ReactNode {
+  if (!row.contract_reason) return null;
+  return h("span", {
+    className: "contract-why", "data-act": "row-contract-reason", "data-index": index,
+  }, String(row.contract_reason));
 }
 
 function MapRow(props: {
