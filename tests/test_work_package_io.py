@@ -275,6 +275,27 @@ def test_duplicate_entry_name_is_rejected() -> None:
     _rejects(blob, "겹칩니다")
 
 
+def test_nameless_entry_is_rejected() -> None:
+    _rejects(_raw_zip([("", b"x"), *_valid_entries()]), "이름 없는 항목")
+
+
+def test_unsupported_compression_is_rejected() -> None:
+    entry = zipfile.ZipInfo(f"templates/{TXT_DIGEST}.txt")
+    entry.compress_type = zipfile.ZIP_BZIP2
+    _rejects(_raw_zip([*_valid_entries()[:2], (entry, TXT_BYTES)]), "압축 방식")
+
+
+def test_entry_shorter_than_its_declared_size_is_rejected() -> None:
+    """central directory 가 실제보다 큰 크기를 말하면 읽은 bytes 와 대조해 거절한다."""
+    stored = zipfile.ZipInfo(MANIFEST_NAME)
+    stored.compress_type = zipfile.ZIP_STORED
+    blob = bytearray(_raw_zip([(stored, _manifest_bytes()), *_valid_entries()[1:]]))
+    central = blob.index(b"PK\x01\x02")
+    declared = int.from_bytes(blob[central + 24:central + 28], "little")
+    blob[central + 24:central + 28] = (declared + 1).to_bytes(4, "little")
+    _rejects(bytes(blob), "실제 크기가 선언과 다릅니다")
+
+
 def test_encrypted_entry_is_rejected() -> None:
     blob = bytearray(_raw_zip(_valid_entries()))
     central = blob.index(b"PK\x01\x02")
