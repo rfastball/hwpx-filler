@@ -19,7 +19,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const SURFACE = [
   "init", "model", "axis",
   "toggleFavorite", "runPrimary", "newWork", "editWork", "editTemplate", "renameJob",
-  "cloneJob", "removeJob", "relink", "revealCorrupt", "deleteCorrupt",
+  "cloneJob", "removeJob", "exportJob", "importPackage", "relink", "revealCorrupt", "deleteCorrupt",
   "doc", "client", "popover", "notify",
 ];
 
@@ -462,5 +462,27 @@ test("표의 행 클릭 — 편집기 2단계의 그 행을 겨눈 `target` 이 
       entry_reason: "library", evidence: { "여기서 할 것": "확인" },
       return_context: { surface: "library" }, target: "binding/공고명",
     }],
+  ]);
+});
+
+test("작업 꾸러미 — 「작업 불러오기…」는 머리에, 「작업 내보내기…」는 상세 관리 동사에 선다", async () => {
+  /* 불러오기는 고른 작업이 없어도(빈 목록 포함) 서는 화면 동사라 머리, 내보내기는 고른 작업
+     하나의 관리 동사라 이름 변경·복제 옆이다(목록은 단일 선택이다). 판정은 Python 이 진다. */
+  const empty = build({ snapshot: { is_empty: true, sections: [], detail: null } });
+  const blank = renderToStaticMarkup(createElement(LibraryScreen, { controller: empty.controller }));
+  assert.ok(blank.includes('id="libraryImportWork"') && blank.includes("작업 불러오기…"));
+  assert.ok(!blank.includes("작업 내보내기…"));
+
+  const h = build({
+    snapshot: detailSnapshot(BOUND_DETAIL),
+    invoke: async () => "C:/out/작업A.narumi",
+    dispatch: async (_screen, action) => action === "export_work_package" ? { ok: true } : {},
+  });
+  const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
+  assert.ok(markup.includes('data-export-work="작업A"') && markup.includes("작업 내보내기…"));
+  await h.controller.exportJob("작업A");
+  assert.deepEqual(h.invokes, [["pick_work_package_path", "export", "작업A"]]);
+  assert.deepEqual(h.dispatchCalls, [
+    ["library", "export_work_package", { names: ["작업A"], path: "C:/out/작업A.narumi" }],
   ]);
 });

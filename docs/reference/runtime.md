@@ -58,6 +58,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `pick_pool_data_file` | `` |
 | `pick_template_path` | `` |
 | `pick_templates_root` | `screen: str` |
+| `pick_work_package_path` | `action: str, name: str=''` |
 | `reveal_corrupt_job` | `path: str` |
 | `reveal_path` | `path: str` |
 | `save_artifact_as` | `ordinal: object` |

@@ -20,6 +20,7 @@ import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
 import { poolGlyph } from "./pool_column.ts";
 import { BLANK_MARK, PreviewCell } from "./preview_cell.ts";
+import { createWorkPackageActions } from "./work_package.ts";
 
 type Obj = Record<string, any>;
 
@@ -105,6 +106,12 @@ export function createLibraryController(deps: LibraryControllerDeps) {
       },
     });
   }
+
+  /* 작업 꾸러미(#1188) 흐름은 자기 모듈이 진다 — 불러온 뒤 목록은 이 화면의 refresh 로 다시 읽는다. */
+  const workPackage = createWorkPackageActions({
+    client: deps.client, modal: deps.modal, notify: deps.notify,
+    refresh: (select: string) => dispatch("library", "refresh", select ? { select } : {}),
+  });
 
   async function removeJob(name: string, returnFocus: HTMLElement): Promise<void> {
     let result = await dispatch("library", "delete_job", { name });
@@ -198,6 +205,8 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     renameJob,
     cloneJob: (name: string) => dispatch("library", "clone_job", { name }),
     removeJob,
+    exportJob: (name: string, returnFocus?: HTMLElement) => workPackage.exportJobs([name], returnFocus),
+    importPackage: workPackage.importPackage,
     relink(name: string): Promise<boolean> {
       return deps.services.relink.current().relinkTemplate("library", name, (message, kind) => {
         if (kind === "ok") deps.notify(message);
@@ -481,6 +490,8 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
         onClick: (event: Obj) => { void controller.renameJob(detail.name, event.currentTarget); } }, "이름 변경"),
       h("button", { className: "btn sm", "data-clone": detail.name,
         onClick: () => { void controller.cloneJob(detail.name); } }, "복제"),
+      h("button", { className: "btn sm", "data-export-work": detail.name, "data-busy-lock": true,
+        onClick: (event: Obj) => { void controller.exportJob(detail.name, event.currentTarget); } }, "작업 내보내기…"),
       h("button", { className: "btn sm lib-del", "data-delete": detail.name,
         onClick: (event: Obj) => { void controller.removeJob(detail.name, event.currentTarget); } }, "삭제")));
   return h(LibraryDetailRoot as any, null, scroll, actions);
@@ -559,8 +570,11 @@ export function LibraryScreen(props: { controller: LibraryController }): ReactNo
   return h("div", { className: "library-react-surface" },
     h("header", { className: "scr-head" }, h("div", null, h("h1", null, "문서 작업"),
       h("p", { className: "sub" }, "저장된 문서 작업을 찾고 상태를 확인합니다.")),
-    h("div", { className: "scr-head-actions" }, h("button", { className: "btn primary sm", id: "libraryNewWork",
-      onClick: controller.newWork }, "＋ 새 작업"))),
+    h("div", { className: "scr-head-actions" },
+      h("button", { className: "btn sm", id: "libraryImportWork", "data-busy-lock": true,
+        onClick: (event: Obj) => { void controller.importPackage(event.currentTarget); } }, "작업 불러오기…"),
+      h("button", { className: "btn primary sm", id: "libraryNewWork",
+        onClick: controller.newWork }, "＋ 새 작업"))),
     h("div", { id: "libraryAlerts" },
       alerts.missing_template_count > 0 ? h("div", { className: "note warnbox" }, `템플릿이 연결되지 않은 작업 ${alerts.missing_template_count}건이 있습니다. 「확인 필요」 보기에서 조치하세요.`) : null,
       alerts.pool_corrupted > 0 ? h("div", { className: "note dangerbox" }, `손상된 등록 데이터 ${alerts.pool_corrupted}건이 있습니다. 「문서 만들기」의 [데이터 선택…]에서 확인하세요.`) : null),

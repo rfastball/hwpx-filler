@@ -22,7 +22,9 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.preset_store import PresetRegistry
 from hwpxfiller.external.work_package_io import read_work_package
 from hwpxfiller.host.locations import default_jobs_dir, default_preset_dir, home_dir
-from hwpxfiller.webapp.work_package_panel import DATA_NOTICE, EXPORT_WITHOUT_CONTRACT
+from hwpxfiller.webapp.work_package_panel import (
+    DATA_NOTICE, EXPORT_WITHOUT_CONTRACT, PACKAGE_FILTERS, pick_package_path,
+)
 
 CONTRACT_LABEL = "자동확정 · 꾸러미 조건 일치"
 SHARED_TEMPLATE = "계약체결안내.hwpx"
@@ -130,6 +132,9 @@ def test_exported_jobs_land_in_an_empty_home_and_generate_with_auto_confirmed_bi
     assert view["title"] == "작업 2개를 불러옵니다"
     assert [job["final_name"] for job in view["jobs"]] == ["계약A", "계약B"]
     assert all(job["note"] == "" and job["has_contract"] for job in view["jobs"])
+    assert [(job["template"], job["template_label"]) for job in view["jobs"]] == [
+        (SHARED_TEMPLATE, "새로 추가"), (SHARED_TEMPLATE, "새로 추가"),
+    ], "작업 줄마다 그 작업이 쓰는 템플릿의 처리 표지가 실린다(웹은 짝을 맞추지 않는다)"
     assert [(t["display_name"], t["action"], t["label"]) for t in view["templates"]] == [
         (SHARED_TEMPLATE, "new", "새로 추가"),
     ]
@@ -220,6 +225,7 @@ def test_same_template_bytes_are_reused_and_name_collision_imports_as_numbered_c
         "display_name": SHARED_TEMPLATE, "action": "reuse", "label": "이미 있는 파일 사용",
         "target": str(existing),
     }]
+    assert {job["template_label"] for job in first["view"]["jobs"]} == {"이미 있는 파일 사용"}
     before = sorted(p.name for p in _templates_root().rglob("*.hwpx"))
     assert _import(app, path, first["basis"])["ok"] is True
     assert sorted(p.name for p in _templates_root().rglob("*.hwpx")) == before
@@ -358,3 +364,36 @@ def test_selection_preset_travels_with_the_job_and_collides_like_jobs(monkeypatc
         assert _import(receiver, path, plan["basis"])["ok"] is True
     names = sorted(p.name for _key, p in PresetRegistry(default_preset_dir()).list_entries())
     assert names == ["공고작업", "공고작업 (2)"]
+
+
+def test_package_file_picker_routes_through_the_host_dialog_seams(monkeypatch, tmp_path):
+    """「작업 내보내기…」·「작업 불러오기…」의 선택 창 — 호스트 단일 입구를 지나 경로만 돌려준다(WP-05)."""
+    from hwpxfiller.webapp import app as app_mod
+
+    _use_home(monkeypatch, tmp_path / "home-pick")
+    asked: list = []
+    monkeypatch.setattr(app_mod, "_save_dialog", lambda *args: asked.append(("save", *args)) or "C:/out/a.narumi")
+    monkeypatch.setattr(app_mod, "_file_dialog", lambda *args: asked.append(("open", *args)) or None)
+    app = _frontend()
+
+    assert app.pick_work_package_path("export", "계약/안내") == "C:/out/a.narumi"
+    assert app.pick_work_package_path("import") is None, "취소는 None 그대로다"
+    assert asked == [
+        ("save", "계약_안내.narumi", PACKAGE_FILTERS, "narumi"),
+        ("open", PACKAGE_FILTERS),
+    ]
+    assert PACKAGE_FILTERS == [("작업 꾸러미 (*.narumi)", "*.narumi")]
+
+
+def test_package_file_picker_refuses_an_unknown_action_and_names_blank_jobs():
+    def save_file(name, filters, ext):
+        return name
+
+    def open_file(filters):
+        raise AssertionError("열기 창을 열면 안 된다")
+
+    assert pick_package_path("export", "  ", open_file=open_file, save_file=save_file) == "작업.narumi"
+    with pytest.raises(ValueError, match="export·import"):
+        pick_package_path("delete", "x", open_file=open_file, save_file=save_file)
+    with pytest.raises(ValueError, match="작업 이름 문자열"):
+        pick_package_path("export", None, open_file=open_file, save_file=save_file)  # type: ignore[arg-type]
