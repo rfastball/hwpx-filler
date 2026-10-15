@@ -126,7 +126,7 @@ def test_missing_column_is_named_as_the_reason(tmp_path):
     ctrl.load_data_path(_csv(tmp_path, "청소용역,5000000", header="공고명,추정가격"))
 
     row = _rows(ctrl)["계약일"]
-    assert row["confirmed"] is False and row["contract_reason"] == "열 없음"
+    assert row["confirmed"] is False and row["contract_reason"] == "데이터에 없음"
 
 
 def test_editing_a_contract_row_clears_its_label_and_never_re_auto_confirms(tmp_path):

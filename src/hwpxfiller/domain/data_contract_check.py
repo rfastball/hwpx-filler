@@ -59,7 +59,7 @@ _NUMBER_RE = re.compile(r"[-+]?\d[\d,]*(\.\d+)?\s*원?")
 
 #: 판정 사유 문장 — 화면은 이 문장을 그대로 보인다.
 REASON_BINDING_CHANGED = "꾸러미와 연결이 다름"
-REASON_COLUMN_MISSING = "열 없음"
+REASON_COLUMN_MISSING = "데이터에 없음"
 REASON_ALL_BLANK = "값이 모두 비어 있음"
 REASON_SHAPE_CHANGED = "값 모양이 다름"
 _FORMAT_FAILURE_REASON = {

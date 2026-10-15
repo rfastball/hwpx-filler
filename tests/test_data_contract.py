@@ -251,7 +251,7 @@ def test_missing_slice_anchor_fails_with_the_anchor_named():
 
 def test_missing_column_fails():
     columns = [c for c in COLUMNS if c != "계약일자"]
-    assert _judge(DATE, columns=columns).reason == "열 없음"
+    assert _judge(DATE, columns=columns).reason == "데이터에 없음"
 
 
 def test_edited_binding_never_auto_confirms():

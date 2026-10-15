@@ -185,7 +185,7 @@ id = "workflow-definition"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/viewmodel/edit_session.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py", "src/hwpxfiller/external/job_store.py", "src/hwpxfiller/external/job_binding_projection.py", "src/hwpxfiller/external/seal_execution_plan_service.py", "src/hwpxfiller/external/seal_execution_capture_runner.py", "src/hwpxfiller/domain/format_engine.py", "src/hwpxfiller/domain/field_induction/transforms.py", "src/hwpxfiller/domain/data_contract*.py", "src/hwpxfiller/viewmodel/contract_confirm.py"]
 tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py", "tests/test_seal_execution_plan_service.py", "tests/test_webapp_binding_confirm_journey.py", "tests/test_format_engine.py", "tests/test_value_format_matrix.py", "tests/test_data_contract.py", "tests/test_editor_data_contract.py", "tests/js/editor_contract_reason.test.js"]
-source_sha256 = "ae5259639a5c0d3c03e8e50fc709475045d31728748430b81e9d017a4b949f90"
+source_sha256 = "b07517aae8af5e24cdb4238a49cba07684acf527b1fa5a93e3f292d7f1566ee6"
 body_sha256 = "fcd0738518a41126d974ca36c3e4edc137d6573d0dc11b9c6a0dead951b1c1c4"
 
 [[topic]]
