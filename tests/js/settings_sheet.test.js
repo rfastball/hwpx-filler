@@ -40,8 +40,14 @@ const ROOT = Object.freeze({
   busy: false,
 });
 
-function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT, entryVisible = true) {
-  const calls = { theme: [], scale: [], closed: [], picked: 0, pickedRoot: 0, refreshed: 0, entryVisible: [] };
+function ports(
+  theme = "system", scale = "normal", folder = FOLDER, root = ROOT, entryVisible = true,
+  exportEnabled = true,
+) {
+  const calls = {
+    theme: [], scale: [], closed: [], picked: 0, pickedRoot: 0, refreshed: 0, entryVisible: [],
+    exported: [], imported: [],
+  };
   return {
     calls,
     props: {
@@ -72,18 +78,25 @@ function ports(theme = "system", scale = "normal", folder = FOLDER, root = ROOT,
         setEntryVisible: (value) => { calls.entryVisible.push(value); },
         notify: () => {},
       },
+      workPackage: {
+        subscribe: () => () => {},
+        getSnapshot: () => ({ export_all_enabled: exportEnabled }),
+        exportAll: (returnFocus) => { calls.exported.push(returnFocus); },
+        importPackage: (returnFocus) => { calls.imported.push(returnFocus); },
+      },
       currentTheme: theme,
       currentScale: scale,
       outputFolder: folder,
       templatesRoot: root,
       entryVisible,
+      exportEnabled,
     },
   };
 }
 
-function markup(theme, scale, folder, root, entryVisible) {
+function markup(theme, scale, folder, root, entryVisible, exportEnabled) {
   return renderToStaticMarkup(
-    createElement(SettingsSheetView, ports(theme, scale, folder, root, entryVisible).props),
+    createElement(SettingsSheetView, ports(theme, scale, folder, root, entryVisible, exportEnabled).props),
   );
 }
 
@@ -116,11 +129,11 @@ function sheetProps(props) {
   return found;
 }
 
-test("설정 모달은 테마·글자 크기·저장 폴더·서식 폴더·튜토리얼 버튼 표시 다섯 행을 편다", () => {
+test("설정 모달은 테마·글자 크기·저장 폴더·서식 폴더·작업 꾸러미·튜토리얼 버튼 표시 여섯 행을 편다", () => {
   const html = markup();
   assert.match(html, /<h3 id="settingsTitle">설정<\/h3>/);
   assert.match(html, /id="settingsClose"/);
-  assert.equal(html.split('class="settings-row').length - 1, 5, "설정 행이 다섯이 아닙니다.");
+  assert.equal(html.split('class="settings-row').length - 1, 6, "설정 행이 여섯이 아닙니다.");
 
   assert.deepEqual(pressedPairs(html, "data-set-theme").map((p) => p[0]),
     ["system", "light", "dark"]);
@@ -144,11 +157,15 @@ test("지금 값만 aria-pressed 로 말한다 — 양극 대조", () => {
 
 test("세그먼트 버튼은 생성 잠금을 타지 않는다 — 전역 설정이라 실행 상태와 무관하다", () => {
   const html = markup();
-  assert.ok(!html.includes("data-busy-lock"), "설정 세그먼트에 생성 잠금이 걸렸습니다.");
   const segments = html.split('class="settings-seg"').slice(1)
     .map((chunk) => chunk.split("</div>")[0]);
   assert.equal(segments.length, 2);
-  for (const seg of segments) assert.ok(!seg.includes("disabled"), seg);
+  for (const seg of segments) {
+    assert.ok(!seg.includes("disabled"), seg);
+    /* 작업 꾸러미 행(내보내기·불러오기)은 파일·잡을 쓰므로 생성 잠금을 그대로 진다 — 이
+       부정은 세그먼트 둘에만 국한한다(전체 문서에 걸면 그 행과 충돌한다). */
+    assert.ok(!seg.includes("data-busy-lock"), "설정 세그먼트에 생성 잠금이 걸렸습니다.");
+  }
 });
 
 test("저장 폴더 행은 backend 도출을 그대로 그린다 — 경로·출처·사유", () => {
@@ -240,6 +257,33 @@ test("서식 폴더 행의 경로 어포던스는 **자기 포트**의 client·n
   assert.equal(rows.length, 1, "서식 폴더 행이 팩토리로 서지 않았습니다.");
   assert.equal(rows[0].client, props.templates.client, "남의 컨트롤러 client 를 빌렸습니다.");
   assert.equal(rows[0].notify, props.templates.notify);
+});
+
+/* 작업 꾸러미 행(#1188 이동) — 「문서 작업」 머리에서 설정 모달로 옮겼다. 내보내기 가부는
+ * library 스냅샷의 `export_all_enabled` 를 그대로 받는다(판정은 Python). */
+test("작업 꾸러미 행은 두 버튼을 편다 — 내보내기 가부는 스냅샷 값을 그대로 받는다", () => {
+  const on = markup(undefined, undefined, undefined, undefined, undefined, true);
+  assert.match(on, /id="settingsWorkPackageLabel">작업 꾸러미</);
+  assert.match(on, /<button[^>]*id="settingsExportWork"[^>]*>작업 내보내기…<\/button>/);
+  assert.doesNotMatch(on, /id="settingsExportWork"[^>]*disabled/);
+  assert.match(on, /<button[^>]*id="settingsImportWork"[^>]*>작업 불러오기…<\/button>/);
+
+  const off = markup(undefined, undefined, undefined, undefined, undefined, false);
+  assert.match(off, /<button[^>]*id="settingsExportWork"[^>]*disabled=""[^>]*>작업 내보내기…<\/button>/);
+});
+
+test("작업 꾸러미 버튼은 포트의 exportAll·importPackage 를 클릭한 버튼과 함께 부른다", () => {
+  const { calls, props } = ports("system", "normal", FOLDER, ROOT, true, true);
+  const buttons = sheetProps(props).filter((p) => p.id === "settingsExportWork" || p.id === "settingsImportWork");
+  const exportBtn = buttons.find((p) => p.id === "settingsExportWork");
+  const importBtn = buttons.find((p) => p.id === "settingsImportWork");
+  assert.ok(exportBtn, "작업 내보내기 버튼이 없습니다.");
+  assert.ok(importBtn, "작업 불러오기 버튼이 없습니다.");
+  const fakeTarget = { tagName: "BUTTON" };
+  exportBtn.onClick({ currentTarget: fakeTarget });
+  importBtn.onClick({ currentTarget: fakeTarget });
+  assert.deepEqual(calls.exported, [fakeTarget]);
+  assert.deepEqual(calls.imported, [fakeTarget]);
 });
 
 /* 튜토리얼 버튼 표시 토글(#1147) — 판정·영속은 백엔드다. 이 면은 `tutorial` 채널 스냅샷의

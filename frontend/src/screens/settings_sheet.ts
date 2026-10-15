@@ -111,6 +111,17 @@ export type SettingsTutorialPort = {
   notify(message: string): void;
 };
 
+/** 작업 꾸러미 행이 쓰는 **구조적** 포트(#1188 이동) — library 채널 모델을 그대로 구독해
+ *  `export_all_enabled` 하나만 읽는다(내보낼 작업이 있는가는 Python 판정, 여기서 다시
+ *  세지 않는다). 흐름(`exportAll`·`importPackage`)은 `work_package.ts` 가 그대로 지고
+ *  이 포트는 그 둘을 그대로 전달한다 — 같은 구현이 두 번 서지 않는다. */
+export type SettingsWorkPackagePort = {
+  subscribe(listener: () => void): () => void;
+  getSnapshot(): Obj | null;
+  exportAll(returnFocus?: HTMLElement): unknown;
+  importPackage(returnFocus?: HTMLElement): unknown;
+};
+
 /** 모달 DOM id — 여는 쪽(shell/app.ts)과 닫는 쪽(이 파일)이 같은 상수를 쓴다. */
 export const SETTINGS_MODAL_ID = "settingsModal";
 
@@ -233,6 +244,28 @@ function FolderRow(props: {
         : null));
 }
 
+/** 작업 꾸러미 행 — 내보내기·불러오기 두 동사만 편다. 내보내기 가부(`exportEnabled`)는
+ *  library 스냅샷의 `export_all_enabled` 를 그대로 받은 것이다(판정은 Python, 스냅샷이
+ *  없으면 — 아직 못 읽었으면 — 비활성). 흐름은 호출자(`SettingsWorkPackagePort`)가 진다. */
+function WorkPackageRow(props: {
+  exportEnabled: boolean;
+  onExport(returnFocus?: HTMLElement): unknown;
+  onImport(returnFocus?: HTMLElement): unknown;
+}): ReactNode {
+  return h("div", { className: "settings-row" },
+    h("span", { className: "settings-label", id: "settingsWorkPackageLabel" }, "작업 꾸러미"),
+    h("div", { className: "settings-folder-row", role: "group", "aria-labelledby": "settingsWorkPackageLabel" },
+      h("button", {
+        className: "btn sm", id: "settingsExportWork", type: "button", "data-busy-lock": true,
+        disabled: !props.exportEnabled,
+        onClick: (event: Obj) => { void props.onExport(event.currentTarget); },
+      }, "작업 내보내기…"),
+      h("button", {
+        className: "btn sm", id: "settingsImportWork", type: "button", "data-busy-lock": true,
+        onClick: (event: Obj) => { void props.onImport(event.currentTarget); },
+      }, "작업 불러오기…")));
+}
+
 /** 저장 폴더 행이 그리는 값 — 전부 Python 도출의 투영이다(여기서 판정하지 않는다). */
 export type OutputFolderView = {
   directory: string;
@@ -262,8 +295,9 @@ export function SettingsSheet(props: {
   job: SettingsOutputFolderPort;
   templates: SettingsTemplatesRootPort;
   tutorial: SettingsTutorialPort;
+  workPackage: SettingsWorkPackagePort;
 }): ReactNode {
-  const { theme, personalization, job, templates, tutorial } = props;
+  const { theme, personalization, job, templates, tutorial, workPackage } = props;
   const currentTheme = useShellValue("hwpx:themechange", () => theme.current());
   const currentScale = useShellValue(
     "hwpx:personalizationchange", () => personalization.currentFontScale(),
@@ -286,8 +320,15 @@ export function SettingsSheet(props: {
     tutorial.subscribe, tutorial.getSnapshot, tutorial.getSnapshot,
   );
   const entryVisible = ((tutorialState || {}).entry || {}).visible !== false;
+  /* 작업 꾸러미 행 — library 스냅샷의 `export_all_enabled` 를 그대로 받는다. 스냅샷이
+     아직 없으면(부팅 경합) 비활성이 안전측이다 — Python 판정을 흉내 내 「있다」고 말하지
+     않는다. */
+  const workPackageSnapshot = useSyncExternalStore(
+    workPackage.subscribe, workPackage.getSnapshot, workPackage.getSnapshot,
+  );
+  const exportEnabled = (workPackageSnapshot || {}).export_all_enabled === true;
   return createElement(SettingsSheetView as any, {
-    ...props, currentTheme, currentScale, outputFolder, templatesRoot, entryVisible,
+    ...props, currentTheme, currentScale, outputFolder, templatesRoot, entryVisible, exportEnabled,
   });
 }
 
@@ -303,13 +344,17 @@ export function SettingsSheetView(props: {
   job: SettingsOutputFolderPort;
   templates: SettingsTemplatesRootPort;
   tutorial: SettingsTutorialPort;
+  workPackage: SettingsWorkPackagePort;
   currentTheme: string;
   currentScale: string;
   outputFolder: OutputFolderView;
   templatesRoot: TemplatesRootView;
   entryVisible: boolean;
+  exportEnabled: boolean;
 }): ReactNode {
-  const { theme, personalization, modal, job, templates, tutorial, currentTheme, currentScale } = props;
+  const {
+    theme, personalization, modal, job, templates, tutorial, workPackage, currentTheme, currentScale,
+  } = props;
   const folder = props.outputFolder;
   const root = props.templatesRoot;
 
@@ -369,6 +414,11 @@ export function SettingsSheetView(props: {
         busyReason: TEMPLATES_ROOT_BUSY_REASON,
         onPick: () => { void pickRoot(); },
         client: templates.client, notify: templates.notify,
+      }),
+      createElement(WorkPackageRow as any, {
+        exportEnabled: props.exportEnabled,
+        onExport: (returnFocus?: HTMLElement) => workPackage.exportAll(returnFocus),
+        onImport: (returnFocus?: HTMLElement) => workPackage.importPackage(returnFocus),
       }),
       h("div", { className: "settings-row" },
         h("span", { className: "settings-label", id: "settingsTutorialEntryLabel" }, "튜토리얼 버튼 표시"),

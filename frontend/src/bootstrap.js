@@ -577,6 +577,14 @@ export function bootProduct() {
                 .then((result) => expectHostValue(result, "tutorial set_entry_visible")),
               notify: (message) => window.alert(message),
             },
+            /* 작업 꾸러미 행(#1188 이동) — library 모델의 `export_all_enabled` 하나만 읽고
+               흐름(내보내기·불러오기)은 LibraryController 가 이미 가진 것을 그대로 쓴다. */
+            workPackage: {
+              subscribe: (listener) => LibraryController.model.subscribe(listener),
+              getSnapshot: () => LibraryController.model.getSnapshot(),
+              exportAll: (returnFocus) => LibraryController.exportAll(returnFocus),
+              importPackage: (returnFocus) => LibraryController.importPackage(returnFocus),
+            },
           }),
       ],
     },

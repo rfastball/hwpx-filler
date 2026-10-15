@@ -465,13 +465,16 @@ test("표의 행 클릭 — 편집기 2단계의 그 행을 겨눈 `target` 이 
   ]);
 });
 
-test("작업 꾸러미 — 「작업 내보내기…」·「작업 불러오기…」는 머리에만 서고, 내보내기 가부는 Python 이 낸다", async () => {
-  /* 같은 라벨이 두 곳에서 다른 뜻(한 작업 / 모든 작업)을 갖지 않게 머리 한 곳에 모은다. 내보내기는
-     이 작업 공간의 모든 작업이고, 실을 작업이 있는가(`export_all_enabled`)는 Python 판정이다. */
+test("작업 꾸러미 — 「작업 내보내기…」·「작업 불러오기…」는 머리에 서지 않는다(설정 모달로 이동)", async () => {
+  /* 내보내기·불러오기 버튼은 설정 모달의 「작업 꾸러미」 행으로 옮겼다(settings_sheet.test.js) —
+     「문서 작업」 머리는 이 화면의 동사(새 작업)만 진다. 컨트롤러의 흐름(`exportAll`·
+     `importPackage`)은 그대로 남아 설정 모달 포트가 호출한다. */
   const empty = build({ snapshot: { is_empty: true, export_all_enabled: false, sections: [], detail: null } });
   const blank = renderToStaticMarkup(createElement(LibraryScreen, { controller: empty.controller }));
-  assert.ok(blank.includes('id="libraryImportWork"') && blank.includes("작업 불러오기…"));
-  assert.match(blank, /<button[^>]*id="libraryExportAll"[^>]*disabled=""[^>]*>작업 내보내기…<\/button>/);
+  assert.ok(!blank.includes("libraryExportAll"));
+  assert.ok(!blank.includes("libraryImportWork"));
+  assert.ok(!blank.includes("작업 내보내기…"));
+  assert.ok(!blank.includes("작업 불러오기…"));
 
   const h = build({
     snapshot: { ...detailSnapshot(BOUND_DETAIL), export_all_enabled: true },
@@ -479,10 +482,8 @@ test("작업 꾸러미 — 「작업 내보내기…」·「작업 불러오기�
     dispatch: async (_screen, action) => action === "export_work_package" ? { ok: true } : {},
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.match(markup, /<button[^>]*id="libraryExportAll"[^>]*>작업 내보내기…<\/button>/);
-  assert.doesNotMatch(markup, /id="libraryExportAll"[^>]*disabled/);
-  assert.equal(markup.split("작업 내보내기…").length - 1, 1, "상세 패널에는 작업별 내보내기가 없다");
-  assert.ok(!markup.includes("data-export-work"));
+  assert.ok(!markup.includes("작업 내보내기…"));
+  assert.ok(!markup.includes("작업 불러오기…"));
   await h.controller.exportAll();
   assert.deepEqual(h.invokes, [["pick_work_package_path", "export"]]);
   assert.deepEqual(h.dispatchCalls, [
