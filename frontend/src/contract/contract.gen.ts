@@ -139,7 +139,7 @@ export const SCREEN_ACTIONS = {
     relink_template: { required: ["name"], optional: ["confirm", "path"] },
     refresh: { required: [], optional: ["select"] },
     delete_corrupt: { required: ["path"], optional: ["confirm"] },
-    export_work_package: { required: ["names", "path"], optional: ["confirm"] },
+    export_work_package: { required: ["path"], optional: ["confirm", "names"] },
     inspect_work_package: { required: ["path"], optional: [] },
     import_work_package: { required: ["basis", "path"], optional: [] },
   },
@@ -348,7 +348,7 @@ export interface HostApi {
   cancel_window_close(): unknown;
   pick_pool_data_file(): unknown;
   pick_template_path(): unknown;
-  pick_work_package_path(action: unknown, name?: unknown): unknown;
+  pick_work_package_path(action: unknown): unknown;
   open_authoring_document(path?: unknown, as_template?: unknown): unknown;
   save_authoring_document(session_id: unknown, revision: unknown): unknown;
   authoring_cases_file(session_id: unknown, action: unknown): unknown;

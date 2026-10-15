@@ -205,7 +205,7 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     renameJob,
     cloneJob: (name: string) => dispatch("library", "clone_job", { name }),
     removeJob,
-    exportJob: (name: string, returnFocus?: HTMLElement) => workPackage.exportJobs([name], returnFocus),
+    exportAll: workPackage.exportAll,
     importPackage: workPackage.importPackage,
     relink(name: string): Promise<boolean> {
       return deps.services.relink.current().relinkTemplate("library", name, (message, kind) => {
@@ -490,8 +490,6 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
         onClick: (event: Obj) => { void controller.renameJob(detail.name, event.currentTarget); } }, "이름 변경"),
       h("button", { className: "btn sm", "data-clone": detail.name,
         onClick: () => { void controller.cloneJob(detail.name); } }, "복제"),
-      h("button", { className: "btn sm", "data-export-work": detail.name, "data-busy-lock": true,
-        onClick: (event: Obj) => { void controller.exportJob(detail.name, event.currentTarget); } }, "작업 내보내기…"),
       h("button", { className: "btn sm lib-del", "data-delete": detail.name,
         onClick: (event: Obj) => { void controller.removeJob(detail.name, event.currentTarget); } }, "삭제")));
   return h(LibraryDetailRoot as any, null, scroll, actions);
@@ -571,6 +569,11 @@ export function LibraryScreen(props: { controller: LibraryController }): ReactNo
     h("header", { className: "scr-head" }, h("div", null, h("h1", null, "문서 작업"),
       h("p", { className: "sub" }, "저장된 문서 작업을 찾고 상태를 확인합니다.")),
     h("div", { className: "scr-head-actions" },
+      /* 작업 꾸러미(#1188) — 내보내기는 이 작업 공간의 모든 작업을 한 꾸러미로 싣는다. 실을 작업이
+         있는가는 Python 이 판정한다(`export_all_enabled`). */
+      h("button", { className: "btn sm", id: "libraryExportAll", "data-busy-lock": true,
+        disabled: !snapshot.export_all_enabled,
+        onClick: (event: Obj) => { void controller.exportAll(event.currentTarget); } }, "작업 내보내기…"),
       h("button", { className: "btn sm", id: "libraryImportWork", "data-busy-lock": true,
         onClick: (event: Obj) => { void controller.importPackage(event.currentTarget); } }, "작업 불러오기…"),
       h("button", { className: "btn primary sm", id: "libraryNewWork",

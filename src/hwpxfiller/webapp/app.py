@@ -694,8 +694,8 @@ class WebFrontend:
 
     # 작업 꾸러미 「작업 내보내기…」(``export``)·「작업 불러오기…」(``import``) → **경로만** 반환(#1188).
     # 읽기·쓰기는 ``library`` 의 꾸러미 액션이 진다(``pick_template_path`` 와 같은 결). None = 취소.
-    def pick_work_package_path(self, action: str, name: str = "") -> "str | None":
-        return pick_package_path(action, name, open_file=_file_dialog, save_file=_save_dialog)
+    def pick_work_package_path(self, action: str) -> "str | None":
+        return pick_package_path(action, open_file=_file_dialog, save_file=_save_dialog)
 
     def open_authoring_document(self, path: str = "", as_template: bool = False) -> "dict | None":
         """라이브러리의 검증된 경로 또는 native 선택 결과만 저작 세션에 연다."""

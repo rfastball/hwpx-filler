@@ -4472,6 +4472,10 @@ text = "‘{}’ 이름으로 불러옵니다"
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/work_package_panel.py"
+text = "내보낼 수 있는 작업이 없습니다."
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/work_package_panel.py"
 text = "데이터 연결이 필요합니다."
 
 [[sentence]]
@@ -4485,3 +4489,7 @@ text = "데이터를 읽을 수 없어 확인 조건 없이 내보냅니다. 받
 [[sentence]]
 file = "src/hwpxfiller/webapp/work_package_panel.py"
 text = "작업 {}개를 불러옵니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/work_package_panel.py"
+text = "템플릿을 읽을 수 없는 작업은 빠집니다"

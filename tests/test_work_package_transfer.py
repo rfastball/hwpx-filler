@@ -14,6 +14,8 @@ import pytest
 
 from hwpxfiller.application.work_package_export import (
     ExportDataUnavailable,
+    ExportTemplateUnavailable,
+    NothingToExport,
     draft_work_package,
 )
 from hwpxfiller.application.work_package_import import (
@@ -201,6 +203,38 @@ def test_jobs_whose_data_cannot_be_read_ship_without_contract_and_are_named():
     assert draft.without_contract == ("가", "나")
     assert all(job.data_contract is None and job.selection_presets == ()
                for job in draft.manifest.jobs)
+
+
+class BrokenSources(Sources):
+    """``broken`` 에 든 작업의 템플릿만 읽을 수 없다."""
+
+    def __init__(self, broken: set, **kw) -> None:
+        super().__init__(**kw)
+        self.broken = broken
+
+    def template_bytes(self, job: Job) -> bytes:
+        if job.name in self.broken:
+            raise ExportTemplateUnavailable(job.name)
+        return BLOB
+
+
+def test_jobs_whose_template_cannot_be_read_are_skipped_and_named():
+    """한 작업의 템플릿이 꾸러미 전체를 깨지 않는다 — 그 작업만 빠지고 이름이 남는다."""
+    draft = draft_work_package(
+        [_sender_job("가"), _sender_job("나"), _sender_job("다")],
+        BrokenSources({"나"}, rows=[{"공고명": "전산장비"}]), created_at=NOW,
+    )
+    assert [job.name for job in draft.manifest.jobs] == ["가", "다"]
+    assert draft.skipped == ("나",) and draft.without_contract == ()
+
+
+def test_nothing_to_export_carries_the_skipped_names():
+    with pytest.raises(NothingToExport) as refused:
+        draft_work_package([_sender_job("가")], BrokenSources({"가"}), created_at=NOW)
+    assert refused.value.skipped == ("가",)
+    with pytest.raises(NothingToExport) as empty:
+        draft_work_package([], Sources(), created_at=NOW)
+    assert empty.value.skipped == ()
 
 
 def test_add_bytes_never_overwrites_an_existing_library_file(tmp_path: Path):

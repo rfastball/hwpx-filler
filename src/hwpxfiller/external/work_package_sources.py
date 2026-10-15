@@ -16,12 +16,12 @@ from collections.abc import Mapping, Sequence
 from hashlib import sha256
 from pathlib import Path
 
-from ..application.work_package_export import ExportDataUnavailable
+from ..application.work_package_export import ExportDataUnavailable, ExportTemplateUnavailable
 from ..application.work_slot_configuration import has_declared_selection
 from ..data.factory import source_for_binding
 from ..domain.job import Job, data_binding_of, has_data_binding
 from ..domain.slot_selection import SlotSelectionSet
-from ..domain.work_package import TEMPLATE_MEDIA, PackagedTemplate, WorkPackageError
+from ..domain.work_package import TEMPLATE_MEDIA, PackagedTemplate
 from .applied_template_asset import AppliedTemplateAsset
 from .candidate_store import CandidateObjectStore
 from .job_store import JobRegistry
@@ -45,15 +45,24 @@ class WorkPackageSources:
         )
 
     def template_bytes(self, job: Job) -> bytes:
-        applied = self._applied.current_bytes(job)
+        """읽지 못하는 갈래(적용 판본 손상 포함)는 전부 :class:`ExportTemplateUnavailable` 로 모은다.
+
+        한 작업의 템플릿이 꾸러미 전체를 깨지 않게 그 작업만 빠지는 근거다 — 빠짐은 쓰기 전에 사람에게 묻는다.
+        """
+        try:
+            applied = self._applied.current_bytes(job)
+        except Exception as exc:  # noqa: BLE001 — 적용 판본 손상·형식 불일치도 「읽을 수 없음」이다
+            raise ExportTemplateUnavailable(
+                f"작업 {job.name!r}의 적용 템플릿을 읽을 수 없습니다: {exc}"
+            ) from exc
         if applied is not None:
             return applied
         if not job.template_path:
-            raise WorkPackageError(f"작업 {job.name!r}에 연결된 템플릿이 없습니다")
+            raise ExportTemplateUnavailable(f"작업 {job.name!r}에 연결된 템플릿이 없습니다")
         try:
             return Path(job.template_path).read_bytes()
         except OSError as exc:
-            raise WorkPackageError(
+            raise ExportTemplateUnavailable(
                 f"작업 {job.name!r}의 템플릿 파일을 읽을 수 없습니다: {exc}"
             ) from exc
 
