@@ -4468,7 +4468,11 @@ text = "이 작업의 실행 권위를 확인할 수 없습니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/work_package_panel.py"
-text = "‘{}’로 불러옵니다"
+text = "‘{}’ 이름으로 불러옵니다"
+
+[[sentence]]
+file = "src/hwpxfiller/webapp/work_package_panel.py"
+text = "데이터 연결이 필요합니다."
 
 [[sentence]]
 file = "src/hwpxfiller/webapp/work_package_panel.py"
@@ -4481,8 +4485,3 @@ text = "데이터를 읽을 수 없어 확인 조건 없이 내보냅니다. 받
 [[sentence]]
 file = "src/hwpxfiller/webapp/work_package_panel.py"
 text = "작업 {}개를 불러옵니다"
-
-[[sentence]]
-file = "src/hwpxfiller/webapp/work_package_panel.py"
-text = "작업 {}개를 불러왔습니다. 데이터 연결이 필요합니다."
-legacy = true

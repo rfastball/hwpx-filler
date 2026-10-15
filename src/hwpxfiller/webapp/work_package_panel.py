@@ -33,6 +33,8 @@ EXPORT_WITHOUT_CONTRACT = (
 )
 #: 불러오기 확인의 데이터 안내(#1188 확정 문구).
 DATA_NOTICE = "데이터는 들어 있지 않습니다. 불러온 뒤 작업마다 데이터를 연결하세요."
+#: 불러오기 뒤 할 일(#1188 확정 문구) — 들어온 작업은 목록이 보이므로 완료는 낭독하지 않는다.
+IMPORTED_NEXT_STEP = "데이터 연결이 필요합니다."
 #: 템플릿 처리 표지(#1188 확정 문구).
 TEMPLATE_LABELS = {TEMPLATE_NEW: "새로 추가", TEMPLATE_REUSE: "이미 있는 파일 사용"}
 
@@ -50,7 +52,7 @@ def _names_of(raw: object) -> list[str]:
 
 
 def _renamed_note(name: str) -> str:
-    return f"‘{name}’로 불러옵니다"
+    return f"‘{name}’ 이름으로 불러옵니다"
 
 
 def plan_view(plan: ImportPlan) -> dict:
@@ -165,8 +167,10 @@ class WorkPackagePanel:
         return {
             "ok": True,
             "imported": [item.final_name for item in plan.jobs],
-            "message": f"작업 {len(plan.jobs)}개를 불러왔습니다. 데이터 연결이 필요합니다.",
+            "message": IMPORTED_NEXT_STEP,
         }
 
 
-__all__ = ["DATA_NOTICE", "EXPORT_WITHOUT_CONTRACT", "WorkPackagePanel", "plan_view"]
+__all__ = [
+    "DATA_NOTICE", "EXPORT_WITHOUT_CONTRACT", "IMPORTED_NEXT_STEP", "WorkPackagePanel", "plan_view",
+]

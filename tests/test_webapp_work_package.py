@@ -138,7 +138,7 @@ def test_exported_jobs_land_in_an_empty_home_and_generate_with_auto_confirmed_bi
     imported = _import(app, path, inspected["basis"])
     assert imported == {
         "ok": True, "imported": ["계약A", "계약B"],
-        "message": "작업 2개를 불러왔습니다. 데이터 연결이 필요합니다.",
+        "message": "데이터 연결이 필요합니다.",
     }
     registry = JobRegistry(default_jobs_dir())
     jobs = [registry.load(name) for name in ("계약A", "계약B")]
@@ -227,8 +227,8 @@ def test_same_template_bytes_are_reused_and_name_collision_imports_as_numbered_c
 
     second = _inspect(app, path)
     assert [(j["final_name"], j["note"]) for j in second["view"]["jobs"]] == [
-        ("계약A (2)", "‘계약A (2)’로 불러옵니다"),
-        ("계약B (2)", "‘계약B (2)’로 불러옵니다"),
+        ("계약A (2)", "‘계약A (2)’ 이름으로 불러옵니다"),
+        ("계약B (2)", "‘계약B (2)’ 이름으로 불러옵니다"),
     ]
     assert _import(app, path, second["basis"])["imported"] == ["계약A (2)", "계약B (2)"]
     assert JobRegistry(default_jobs_dir()).load("계약A").data_contract is not None
