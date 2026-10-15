@@ -1,7 +1,8 @@
 """「문서 작업」의 작업 꾸러미 동사 — 내보내기·불러오기 확인·불러오기(#1188 WP-03·WP-04).
 
 라이브러리 채널(``library``)이 액션 셋을 이 패널에 위임한다(:meth:`WorkPackagePanel.handlers`). 파일
-경로는 웹이 실어 보낸다 — 파일 선택 창·메뉴·끌어 놓기는 화면 슬라이스(WP-05)의 몫이다. 무엇이 들어오는지,
+경로는 웹이 실어 보낸다 — 웹은 직접 브리지 ``pick_work_package_path`` 로 고른 경로를 받고, 그 선택 창의
+필터·기본 이름은 :func:`pick_package_path` 가 정한다(WP-05). 무엇이 들어오는지,
 어떤 이름이 되는지, 그대로 내보내도 되는지는 전부 여기서 Python 이 판정하고 문장도 여기서 짓는다 —
 웹은 판정하지 않고 보여 주기만 한다.
 
@@ -19,7 +20,8 @@ from pathlib import Path
 
 from ..application.jobs import load_job
 from ..application.work_package_export import draft_work_package
-from ..application.work_package_import import TEMPLATE_NEW, TEMPLATE_REUSE, ImportPlan
+from ..application.work_package_import import TEMPLATE_NEW, TEMPLATE_REUSE, ImportPlan, PlannedJob
+from ..domain.output_name import clean_filename
 from ..external.job_store import JobRegistry
 from ..external.preset_store import PresetRegistry
 from ..external.template_files import TemplateFileStore
@@ -37,6 +39,31 @@ DATA_NOTICE = "데이터는 들어 있지 않습니다. 불러온 뒤 작업마�
 IMPORTED_NEXT_STEP = "데이터 연결이 필요합니다."
 #: 템플릿 처리 표지(#1188 확정 문구).
 TEMPLATE_LABELS = {TEMPLATE_NEW: "새로 추가", TEMPLATE_REUSE: "이미 있는 파일 사용"}
+#: 꾸러미 파일의 확장자와 선택 창 필터(#1188 확정 기능 이름·확장자).
+PACKAGE_EXTENSION = "narumi"
+PACKAGE_FILTERS = [(f"작업 꾸러미 (*.{PACKAGE_EXTENSION})", f"*.{PACKAGE_EXTENSION}")]
+
+
+def pick_package_path(
+    action: str,
+    name: str,
+    *,
+    open_file: Callable[[list[tuple[str, str]]], "str | None"],
+    save_file: Callable[[str, list[tuple[str, str]], str], "str | None"],
+) -> "str | None":
+    """꾸러미 파일 선택 — ``export`` 는 저장 창(기본 이름 ``<작업 이름>.narumi``), ``import`` 는 열기 창.
+
+    선택 창 자체는 호스트의 단일 입구(``app._file_dialog``·``app._save_dialog``)가 주입된다 — 라이브
+    실행의 대체가 이 자리를 비껴가지 않는다. ``None`` 은 취소다.
+    """
+    if not isinstance(name, str):
+        raise ValueError(f"꾸러미 파일 이름은 작업 이름 문자열이어야 한다: {name!r}")
+    if action == "export":
+        stem = clean_filename(name).strip() or "작업"
+        return save_file(f"{stem}.{PACKAGE_EXTENSION}", PACKAGE_FILTERS, PACKAGE_EXTENSION)
+    if action == "import":
+        return open_file(PACKAGE_FILTERS)
+    raise ValueError(f"꾸러미 파일 선택 action 은 export·import 중 하나여야 한다: {action!r}")
 
 
 def _path_of(raw: object) -> Path:
@@ -55,20 +82,24 @@ def _renamed_note(name: str) -> str:
     return f"‘{name}’ 이름으로 불러옵니다"
 
 
+def _job_row(plan: ImportPlan, item: PlannedJob) -> dict:
+    """확인 창의 작업 한 줄 — 그 작업이 쓰는 템플릿의 처리 표지까지 싣는다(웹은 짝을 맞추지 않는다)."""
+    template = plan.template_for(item.source.template_digest)
+    return {
+        "name": item.source.name,
+        "final_name": item.final_name,
+        "note": _renamed_note(item.final_name) if item.renamed else "",
+        "template": template.template.display_name,
+        "template_label": TEMPLATE_LABELS[template.action],
+        "has_contract": item.contract is not None,
+    }
+
+
 def plan_view(plan: ImportPlan) -> dict:
     """불러오기 확인 창의 재료 — 문장·표지까지 Python 이 짓는다."""
     return {
         "title": f"작업 {len(plan.jobs)}개를 불러옵니다",
-        "jobs": [
-            {
-                "name": item.source.name,
-                "final_name": item.final_name,
-                "note": _renamed_note(item.final_name) if item.renamed else "",
-                "template": plan.template_for(item.source.template_digest).template.display_name,
-                "has_contract": item.contract is not None,
-            }
-            for item in plan.jobs
-        ],
+        "jobs": [_job_row(plan, item) for item in plan.jobs],
         "templates": [
             {
                 "display_name": item.template.display_name,
@@ -172,5 +203,6 @@ class WorkPackagePanel:
 
 
 __all__ = [
-    "DATA_NOTICE", "EXPORT_WITHOUT_CONTRACT", "IMPORTED_NEXT_STEP", "WorkPackagePanel", "plan_view",
+    "DATA_NOTICE", "EXPORT_WITHOUT_CONTRACT", "IMPORTED_NEXT_STEP", "PACKAGE_FILTERS",
+    "WorkPackagePanel", "pick_package_path", "plan_view",
 ]

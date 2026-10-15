@@ -69,6 +69,7 @@ from .artifact_view_session import ARTIFACT_NOT_IN_SESSION
 from .onboarding import OnboardingController, first_launch_candidate
 from ..external.tutorial_practice import PracticeFiles
 from ..external.tutorial_workspace import TutorialWorkspace
+from .work_package_panel import pick_package_path
 from .workspace_graph import build_graph
 from .workspace_switch import WorkspaceGraph, WorkspaceSwitch
 from .screens import (
@@ -397,16 +398,6 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return path
 
-    def _mount_descriptor(self, screen: str, path: str, sheet: str = "") -> dict:
-        """마운트 성사 descriptor(U2 §2.7 3행) — ``label·path·sheet·rows``.
-
-        마운트한 **그 호출이 결과를 말한다**: 종전엔 파일명 문자열만 돌려줘 「이 데이터
-        고정」이 서는 데 필요한 path 를 웹이 다음 pool/job 푸시 도착에서 주워야 했다 —
-        발신 순서에 기대는 배선([[bridge-call-ordering-contract]] 결함류). label 은
-        :func:`~hwpxfiller.webapp.screens.source_label` 합성 그대로(링2 재조립 금지).
-        """
-        return self._controller(screen).mounted_data_descriptor(path, sheet)
-
     def pick_data_file(self, screen: str) -> "str | dict | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
 
@@ -449,7 +440,7 @@ class WebFrontend:
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return self._observe_tutorial(screen, "pick_data_file", {"path": path},
-                                      self._mount_descriptor(screen, path), token=tutorial_token)
+                                      self._controller(screen).mounted_data_descriptor(path), token=tutorial_token)
 
     def load_data_sheet(
         self, screen: str, path: str, sheet: str | list[str], confirmation: dict | None = None,
@@ -484,7 +475,7 @@ class WebFrontend:
             self._controller(screen).load_data_path(path, sheet=sheet)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        mounted = self._mount_descriptor(screen, path, sheet)
+        mounted = self._controller(screen).mounted_data_descriptor(path, sheet)
         self._observe_tutorial(
             screen, "load_data_sheet", {"path": path, "sheet": sheet}, mounted, token=tutorial_token,
         )
@@ -547,7 +538,7 @@ class WebFrontend:
             result = self._controller(screen).dispatch(action, {"key": key})
             if not result.get("ok"):
                 raise ValueError(result["error"])
-            mount = self._mount_descriptor(screen, path, selected[0])
+            mount = self._controller(screen).mounted_data_descriptor(path, selected[0])
             mount["label"] = result["label"] if screen == "job" else source_label("pool", result["label"])
         except Exception as exc:  # noqa: BLE001 — 등록과 활성화 결과를 구분한다
             error = str(exc)
@@ -700,6 +691,11 @@ class WebFrontend:
         검증·확정은 dispatch(``relink_template``)의 confirm 게이트가 담당. None = 취소.
         """
         return _file_dialog(_TEMPLATE_FILTERS)
+
+    # 작업 꾸러미 「작업 내보내기…」(``export``)·「작업 불러오기…」(``import``) → **경로만** 반환(#1188).
+    # 읽기·쓰기는 ``library`` 의 꾸러미 액션이 진다(``pick_template_path`` 와 같은 결). None = 취소.
+    def pick_work_package_path(self, action: str, name: str = "") -> "str | None":
+        return pick_package_path(action, name, open_file=_file_dialog, save_file=_save_dialog)
 
     def open_authoring_document(self, path: str = "", as_template: bool = False) -> "dict | None":
         """라이브러리의 검증된 경로 또는 native 선택 결과만 저작 세션에 연다."""
@@ -908,28 +904,16 @@ class WebFrontend:
                 evidence=ctx.get("evidence"),
                 return_context=ctx.get("return_context"),
                 target=str(ctx.get("target") or ""),
-                source_ref=self._mounted_data_handoff(entry_reason),
+                # 인계 가부는 두 판정의 합이다(#878): 사유는 링1 목록(`DATA_ANCHORED_ENTRY_REASONS`),
+                # 참조는 「문서 만들기」의 단일 판정(`new_work_handoff` — 버튼의 가부와 같은 술어).
+                # 다시 열 수 없는 마운트는 인계 없이 빈 데이터 관문으로 선다(이 진입은 데이터를
+                # 약속하지 않았다). 약속한 진입(「이 데이터로 새 작업」)은 같은 거절을 `ERROR:` 로 낸다.
+                source_ref=(self._controller("job").new_work_handoff()[0]
+                            if entry_reason in DATA_ANCHORED_ENTRY_REASONS else {}),
             )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return self._observe_tutorial("editor", "open_job_in_editor", {"name": name}, name, token=tutorial_token)
-
-    def _mounted_data_handoff(self, entry_reason: str) -> dict:
-        """이 진입이 들고 갈 「문서 만들기」의 데이터 참조 — 인계가 없으면 빈 사전(#878).
-
-        가부는 **두 판정의 합**이고 둘 다 이미 있는 것을 읽는다: 사유는 링1 의 목록
-        (:data:`~hwpxfiller.viewmodel.edit_session.DATA_ANCHORED_ENTRY_REASONS`), 참조는 「문서
-        만들기」의 단일 판정(``new_work_handoff`` — 버튼의 가부와 같은 술어). 여기서 `data_path`
-        를 따로 보고 판정하지 않는 이유는 :meth:`new_job_from_data` 와 같다.
-
-        마운트가 없거나 파일로 다시 열 수 없는 마운트(조립 파이프라인 등)면 인계 없이 종전
-        거동(빈 데이터 관문)으로 선다 — 이 진입은 데이터를 약속한 적이 없으므로 거절로
-        막지 않는다. 약속한 진입(「이 데이터로 새 작업」)은 같은 거절을 ``ERROR:`` 로 낸다.
-        """
-        if entry_reason not in DATA_ANCHORED_ENTRY_REASONS:
-            return {}
-        source_ref, _blocked = self._controller("job").new_work_handoff()
-        return source_ref
 
     def new_job_from_data(self, context: "dict | None" = None) -> "str | None":
         """「문서 만들기」의 **마운트 데이터를 든 채** 신규 작업 마법사를 연다(U2 §2.4·§4 E).

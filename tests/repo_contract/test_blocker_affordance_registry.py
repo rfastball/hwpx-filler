@@ -217,12 +217,6 @@ def test_declared_affordance_actions_and_selectors_exist() -> None:
 NO_FRONTEND_CONSUMER: "set[tuple[str, str]]" = {
     ("tpl", "install_examples"),
     ("tpl", "remove_examples"),
-    # 작업 꾸러미(#1188) — WP-03·WP-04 는 backend 동사와 헤드리스 게이트
-    # (`tests/test_webapp_work_package.py`)만 세웠고, 메뉴·파일 선택·확인 대화상자는 WP-05 가
-    # 같은 이슈에서 붙인다. 표면을 붙이는 변경이 이 세 줄을 지운다.
-    ("library", "export_work_package"),
-    ("library", "inspect_work_package"),
-    ("library", "import_work_package"),
 }
 
 

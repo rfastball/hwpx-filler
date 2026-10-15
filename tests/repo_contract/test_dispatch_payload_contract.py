@@ -53,6 +53,8 @@ SCREEN_OF_FILE = {
     "src/screens/editor.ts": "editor",
     "src/screens/workbench.ts": "workbench",
     "src/screens/library.ts": "library",
+    # 작업 꾸러미(#1188 WP-05) 흐름 — 「문서 작업」 화면이 위임한 library 액션을 지역 헬퍼 `send` 로 보낸다.
+    "src/screens/work_package.ts": "library",
     "src/screens/data_picker.ts": "pool",
     "src/screens/job_read.ts": "job",
     "src/screens/data_zone.ts": "job",
@@ -64,6 +66,7 @@ SCREEN_OF_FILE = {
 
 LOCAL_SCREEN = {
     "src/screens/library.ts": {"axis": "library", "jobDispatch": "job"},
+    "src/screens/work_package.ts": {"send": "library"},
     "src/screens/editor.ts": {"sendEdit": "editor", "commit": "editor"},
     "src/screens/workbench.ts": {"sendWb": "workbench", "commit": "workbench"},
     "src/screens/job_read.ts": {"zone": "job"},

@@ -307,6 +307,7 @@ export const HOST_METHODS = [
   "cancel_window_close",
   "pick_pool_data_file",
   "pick_template_path",
+  "pick_work_package_path",
   "open_authoring_document",
   "save_authoring_document",
   "authoring_cases_file",
@@ -347,6 +348,7 @@ export interface HostApi {
   cancel_window_close(): unknown;
   pick_pool_data_file(): unknown;
   pick_template_path(): unknown;
+  pick_work_package_path(action: unknown, name?: unknown): unknown;
   open_authoring_document(path?: unknown, as_template?: unknown): unknown;
   save_authoring_document(session_id: unknown, revision: unknown): unknown;
   authoring_cases_file(session_id: unknown, action: unknown): unknown;

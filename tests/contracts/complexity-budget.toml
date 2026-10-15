@@ -900,7 +900,7 @@ function_complexity = 18
 function_complexity = 11
 
 [budget."src/hwpxfiller/external/job_store.py"]
-module_statements = 341
+module_statements = 335
 
 [budget."src/hwpxfiller/external/job_store.py::JobRegistry"]
 class_methods = 32
@@ -1034,13 +1034,13 @@ function_complexity = 14
 function_complexity = 15
 
 [budget."src/hwpxfiller/viewmodel/mapping_state.py"]
-module_statements = 499
+module_statements = 491
 
 [budget."src/hwpxfiller/viewmodel/mapping_state.py::MappingModel"]
 class_methods = 45
 
 [budget."src/hwpxfiller/viewmodel/mapping_state.py::row_projection"]
-function_complexity = 19
+function_complexity = 18
 
 [budget."src/hwpxfiller/viewmodel/review_state.py::review_requirement"]
 function_complexity = 21
@@ -1094,10 +1094,10 @@ class_methods = 21
 function_complexity = 22
 
 [budget."src/hwpxfiller/webapp/app.py"]
-module_statements = 679
+module_statements = 675
 
 [budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
-class_methods = 39
+class_methods = 38
 
 [budget."src/hwpxfiller/webapp/app.py::WebFrontend._register_data_sheets"]
 function_complexity = 31
