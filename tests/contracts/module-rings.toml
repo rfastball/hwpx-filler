@@ -155,6 +155,11 @@ target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/job_editor_state.py"]
 
 [[unit]]
+module = "hwpxfiller.viewmodel.contract_confirm"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/viewmodel/contract_confirm.py"]
+
+[[unit]]
 module = "hwpxfiller.viewmodel.mapping_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/viewmodel/mapping_state.py"]
