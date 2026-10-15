@@ -236,6 +236,8 @@ _EDITOR_REBUILDS = {
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
 _EDITOR_PRESERVES = {
     "tags", "last_run_at", "group", "favorited_at", "reviewed_rules", "authority_id",
+    # 데이터 계약(#1188) — 편집기가 편집하지 않는 데이터 근거라 저장이 되싣는다.
+    "data_contract",
 }
 #: 레지스트리가 **계산해 쓰는** 파생 메타(재작성 F7) — 어느 편집 표면도 값을 싣지 않고
 #: :func:`~hwpxfiller.domain.job.advance_revisions` 가 저장 잠금 안에서 정산한다. 세 번째

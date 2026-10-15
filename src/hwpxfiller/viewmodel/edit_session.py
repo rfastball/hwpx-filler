@@ -681,6 +681,8 @@ class EditSaveOperation:
             **EMPTY_PRESERVED,
             "tags": dict(origin["tags"]),
             "group": origin["group"],
+            # 계약은 이력이 아니라 이 연결의 데이터 근거라 새 이름 저장에도 따라간다(#1188).
+            "data_contract": origin["data_contract"],
         }
 
     def save(self, p: dict) -> dict:
@@ -789,6 +791,7 @@ class EditSaveOperation:
             favorited_at=str(preserved["favorited_at"]),
             reviewed_rules=dict(preserved["reviewed_rules"]),
             authority_id=str(preserved["authority_id"]),
+            data_contract=preserved["data_contract"],
         )
         previous = self.store.load(job.name) if self.store.exists(job.name) else None
         if previous is not None and previous.template_path == job.template_path:

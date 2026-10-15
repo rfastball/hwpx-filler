@@ -12,7 +12,8 @@
 - 매핑 초안: 템플릿이나 데이터가 바뀌면 다시 짓고(사람이 손댄 행은 값만 이월하고 미확정으로),
   저장본으로 되돌리면 그 연결을 다시 세운다. 재조립의 판정(정확 일치 재판정·값 이월)은
   :func:`ensure_model` 하나가 진다. 통지 문장도 같은 자리에서 낸다 — 무엇을 이월했고 무엇이
-  빠졌는지는 재조립한 쪽만 안다.
+  빠졌는지는 재조립한 쪽만 안다. 데이터 계약을 든 작업(#1188)만 이월 행 중 계약을 통과한 행을
+  확정으로 착지시킨다(:mod:`~hwpxfiller.viewmodel.contract_confirm`).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Callable
 
 from ..data.factory import pclm_reference, source_for_binding, source_for_path, source_from_pool_item
 from ..domain.job import Job, data_binding_of, has_data_binding
+from ..viewmodel.contract_confirm import apply_data_contract
 from ..viewmodel.edit_session import DATA_ANCHORED_ENTRY_REASONS, EditSession
 from ..viewmodel.mapping_state import MappingModel, profile_source_vocabulary
 from .screens import NO_ROWS_TEXT, pool_reference_quad
@@ -59,16 +61,47 @@ def ensure_model(edit: EditSession) -> None:
     edit.model = MappingModel.from_suggestions(edit.schema, edit.source_fields)
     edit.unconfirm_undo = []
     carried = edit.model.apply_profile(prior, confirm=False) if prior is not None else 0
-    if prior is not None or lost_auto_source:
-        set_notice(
-            edit,
-            f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 직접 확인하거나 편집한 {carried}개 행의 소스·유형·서식은 이월했습니다. 확인이 필요한 행을 다시 확정하세요.",
-            "warn",
-        )
     for index, row in enumerate(edit.model.rows):
         if row.template_field in unconfirmed_fields:
             edit.model.set_confirmed(index, False)
+    # 계약 판정은 사람이 명시로 푼 행을 되세운 **뒤**다 — 그 행은 판정하지 않는다.
+    auto = _contract_confirmed(edit) if prior is not None else None
+    if prior is not None or lost_auto_source:
+        set_notice(edit, *rebuild_notice(carried, auto, complete=edit.model.is_complete()))
     edit.model_key = key
+
+
+def _contract_confirmed(edit: EditSession) -> "int | None":
+    """데이터 계약을 든 작업이면 이월 행에 계약을 대고 자동확정한 행 수를 낸다 — 계약이 없으면 ``None``.
+
+    계약은 저장본(``base``)의 것이다. 고정값·오늘 날짜 행의 기준도 저장본의 연결이다
+    (:func:`~hwpxfiller.domain.data_contract_check.judge_job_binding`).
+    """
+    base, model = edit.base, edit.model
+    if base is None or base.data_contract is None or model is None:
+        return None
+    return apply_data_contract(model, base.data_contract, base.mapping, edit.records)
+
+
+def rebuild_notice(carried: int, auto: "int | None", *, complete: bool) -> "tuple[str, str]":
+    """재조립 통지 ``(문장, 단계)`` — 계약이 없으면(``auto is None``) 일반 규칙(C1)의 문장이다.
+
+    계약을 든 작업은 자동확정한 수를 그대로 말하고, 남은 확인이 없으면 재확정을 요구하지 않는다.
+    """
+    if auto is None:
+        return (
+            f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 직접 확인하거나 편집한 {carried}개 행의 소스·유형·서식은 이월했습니다. 확인이 필요한 행을 다시 확정하세요.",
+            "warn",
+        )
+    if complete:
+        return (
+            f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 이월한 {carried}개 행 중 {auto}개 행은 꾸러미 조건과 일치해 자동확정했습니다.",
+            "ok",
+        )
+    return (
+        f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 이월한 {carried}개 행 중 {auto}개 행은 꾸러미 조건과 일치해 자동확정했습니다. 확인이 필요한 행을 다시 확정하세요.",
+        "warn",
+    )
 
 
 def revert_binding(edit: EditSession, base: Job) -> None:
@@ -323,6 +356,7 @@ __all__ = [
     "binding_source_ref",
     "discard_data_line",
     "ensure_model",
+    "rebuild_notice",
     "restore_job_mapping",
     "restore_report_lines",
     "revert_binding",
