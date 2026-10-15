@@ -126,9 +126,9 @@ export function createBridge() {
     /** 템플릿 다시 연결(#67) '찾아보기' → 경로만 반환(로드 없음). null=취소. */
     pickTemplatePath() { return window.pywebview.api.pick_template_path(); },
 
-    /** 작업 꾸러미(#1188) 저장(`export`, 기본 이름 = 작업 이름)·열기(`import`) 선택 → 경로만
+    /** 작업 꾸러미(#1188) 저장(`export`, 기본 이름 `작업 꾸러미.narumi`)·열기(`import`) 선택 → 경로만
      *  반환(읽기·쓰기 없음). 꾸러미 판정·설치는 `library` dispatch 가 진다. null=취소. */
-    pickWorkPackagePath(action, name) { return window.pywebview.api.pick_work_package_path(action, name || ""); },
+    pickWorkPackagePath(action) { return window.pywebview.api.pick_work_package_path(action); },
 
     /** 추적성 로케이트(#53-B) — 소유 경로 검증 후 열기/폴더보기/복사. null·"ERROR:…". */
     openPath(path) { return window.pywebview.api.open_path(path); },

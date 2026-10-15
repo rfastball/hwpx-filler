@@ -56,23 +56,24 @@ test("확인 본문 — 작업 줄 아래 템플릿 표지, 이름이 바뀐 작
 
 test("내보내기 — 저장 창 취소는 아무 액션도 보내지 않는다", async () => {
   const h = build({ picked: null });
-  await h.actions.exportJobs(["계약A"]);
-  assert.deepEqual(h.invokes, [["pick_work_package_path", "export", "계약A"]]);
+  await h.actions.exportAll();
+  assert.deepEqual(h.invokes, [["pick_work_package_path", "export"]]);
   assert.deepEqual(h.calls, []);
 });
 
-test("내보내기 — 확인 조건 없이 실릴 작업이 있으면 Python 문장으로 묻고 확정만 다시 보낸다", async () => {
-  const text = "데이터를 읽을 수 없어 확인 조건 없이 내보냅니다. 받는 쪽에서 연결을 직접 확정해야 합니다.";
+test("내보내기 — 빠질 작업·계약 없이 실릴 작업은 Python 이 지은 한 확인 문장으로 묻고 확정만 다시 보낸다", async () => {
+  const text = "템플릿을 읽을 수 없는 작업은 빠집니다: 계약C, 기안\n\n"
+    +"데이터를 읽을 수 없어 확인 조건 없이 내보냅니다. 받는 쪽에서 연결을 직접 확정해야 합니다.";
   const h = build({
     replies: { export_work_package: [{ ok: true, needs_confirm: true, confirm_text: text }, { ok: true }] },
     confirms: [true],
   });
-  await h.actions.exportJobs(["계약A"]);
+  await h.actions.exportAll();
   assert.equal(h.confirmsSeen[0].body, text);
   assert.equal(h.confirmsSeen[0].confirmLabel, "내보내기");
   assert.deepEqual(h.calls.map((row) => row[2]), [
-    { names: ["계약A"], path: "C:/pkg/보낸작업.narumi" },
-    { names: ["계약A"], path: "C:/pkg/보낸작업.narumi", confirm: true },
+    { path: "C:/pkg/보낸작업.narumi" },
+    { path: "C:/pkg/보낸작업.narumi", confirm: true },
   ]);
   assert.deepEqual(h.notes, []);                      // 정상 경로는 무음
 });
@@ -81,19 +82,19 @@ test("내보내기 — 확인을 거절하면 쓰지 않고, 실패는 Python �
   const declined = build({
     replies: { export_work_package: [{ ok: true, needs_confirm: true, confirm_text: "x" }] },
   });
-  await declined.actions.exportJobs(["계약A"]);
+  await declined.actions.exportAll();
   assert.equal(declined.calls.length, 1);
   const failed = build({
-    replies: { export_work_package: [{ ok: false, error: "작업 꾸러미를 만들 수 없습니다: 템플릿 없음" }] },
+    replies: { export_work_package: [{ ok: false, error: "작업 꾸러미를 만들 수 없습니다: 내보낼 수 있는 작업이 없습니다." }] },
   });
-  await failed.actions.exportJobs(["계약A"]);
-  assert.deepEqual(failed.notes, ["작업 꾸러미를 만들 수 없습니다: 템플릿 없음"]);
+  await failed.actions.exportAll();
+  assert.deepEqual(failed.notes, ["작업 꾸러미를 만들 수 없습니다: 내보낼 수 있는 작업이 없습니다."]);
 });
 
 test("불러오기 — 열기 창 취소·읽기 실패는 설치를 부르지 않는다", async () => {
   const cancelled = build({ picked: "" });
   await cancelled.actions.importPackage();
-  assert.deepEqual(cancelled.invokes, [["pick_work_package_path", "import", ""]]);
+  assert.deepEqual(cancelled.invokes, [["pick_work_package_path", "import"]]);
   assert.deepEqual(cancelled.calls, []);
   const broken = build({
     replies: { inspect_work_package: [{ ok: false, error: "작업 꾸러미를 읽을 수 없습니다: digest 불일치" }] },

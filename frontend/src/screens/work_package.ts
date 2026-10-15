@@ -42,24 +42,26 @@ export function createWorkPackageActions(deps: WorkPackageDeps) {
   };
 
   /** 파일 선택 — 취소(null·빈 값)는 아무것도 바꾸지 않았으므로 조용히 끝난다. */
-  async function pick(action: "export" | "import", name = ""): Promise<string> {
+  async function pick(action: "export" | "import"): Promise<string> {
     const picked = expectHostValue(
-      await deps.client.invoke("pick_work_package_path", action, name), "pick_work_package_path",
+      await deps.client.invoke("pick_work_package_path", action), "pick_work_package_path",
     );
     return picked === null || picked === undefined ? "" : String(picked);
   }
 
-  async function exportJobs(names: string[], returnFocus?: HTMLElement): Promise<void> {
-    const path = await pick("export", names[0] ?? "");
+  /** 이 작업 공간의 모든 작업을 한 꾸러미로 — 무엇이 빠지고 무엇이 계약 없이 실리는지는 Python 이
+   *  한 확인 문장으로 돌려준다(`confirm_text`). 실을 작업이 없으면 Python 이 쓰지 않고 거절한다. */
+  async function exportAll(returnFocus?: HTMLElement): Promise<void> {
+    const path = await pick("export");
     if (!path) return;
-    let result = await send("export_work_package", { names, path });
+    let result = await send("export_work_package", { path });
     if (result.needs_confirm) {
       const accepted = await deps.modal.confirm({
         title: "작업 내보내기", body: String(result.confirm_text || ""),
         confirmLabel: "내보내기", cancelLabel: "취소", returnFocus,
       });
       if (!accepted) return;
-      result = await send("export_work_package", { names, path, confirm: true });
+      result = await send("export_work_package", { path, confirm: true });
     }
     if (result.ok === false) deps.notify(String(result.error));
   }
@@ -93,7 +95,7 @@ export function createWorkPackageActions(deps: WorkPackageDeps) {
     if (result.message) deps.notify(String(result.message));
   }
 
-  return { exportJobs, importPackage };
+  return { exportAll, importPackage };
 }
 
 export type WorkPackageActions = ReturnType<typeof createWorkPackageActions>;

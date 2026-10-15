@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "73c03124122a29d5da0e78d2262a57185a89a22ed569ea26ed47a9a6e74c3cfe"
+source_sha256 = "ddd3583d057c1769065392f3dd4e6412bae961b77cff53745cd25f662e844ce0"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/workspace_*.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/host/native/dialogs.py", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_native_positive.py"]
-source_sha256 = "f4be7e70456e343935a361b17998c38378d44f5e35d72e10e3b71f13154838b8"
+source_sha256 = "5580751651faf6f425d106859e6b6c7a2b4b5801dffb45cfba2a99be82e665c4"
 body_sha256 = "f2c2b9aaed88e78b656aac38de3b1a1e2cf090191d3e8c7bd591a2c351d34637"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/application/execution_composition.py", "src/hwpxfiller/application/execution_contract_set.py", "src/hwpxfiller/application/seal_execution_plan.py", "src/hwpxfiller/application/record_validation.py", "src/hwpxfiller/application/generation_delivery.py", "src/hwpxfiller/webapp/action_registry.py"]
 tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py", "tests/test_execution_composition.py", "tests/test_execution_contract_set.py"]
-source_sha256 = "07aac0b76143835594c940bcab36e904319452b6d83db8027dc7bbae04caa8e7"
+source_sha256 = "fc9f94a3c6d8522ceb75f6a0aeccec1a7cded728fabc06e920ffc2bc0d509d5d"
 body_sha256 = "15274c7d47244e6e0538b3f66c15f6df2fa241c3a003b2208094f82c94449056"
 
 [[topic]]
@@ -225,8 +225,8 @@ id = "workflow-storage"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/external/tutorial_workspace.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts", "src/hwpxfiller/domain/work_package.py", "src/hwpxfiller/domain/copy_name.py", "src/hwpxfiller/application/work_package_*.py", "src/hwpxfiller/external/work_package_*.py", "src/hwpxfiller/webapp/work_package_panel.py", "frontend/src/screens/work_package.ts"]
 tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_tutorial_walk.py", "tests/test_work_package.py", "tests/test_work_package_io.py", "tests/test_work_package_transfer.py", "tests/test_work_package_install.py", "tests/test_webapp_work_package.py", "tests/js/work_package.test.js"]
-source_sha256 = "99fe2ec3792f59aaeeb6e728747cb5c9768720019af797cc5d349f6639511099"
-body_sha256 = "2ad655af3b842b0707f024ee51387346cb301245c60902d760baef625a74d6f7"
+source_sha256 = "771ef32df5df943ab2d866b120403ed2070297291757f6a425089836ad1920ab"
+body_sha256 = "e21a7bac6e1337de933f61d38264eb1eed3144ebbc6dcb98c906c3aef9faf3fc"
 
 [[topic]]
 id = "ui-terms"

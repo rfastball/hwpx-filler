@@ -10,6 +10,8 @@
 - 데이터 계약은 작업이 쓰는 데이터를 같은 해석기로 돌린 값 없는 통계다. 데이터를 읽지 못했거나
   결속이 없는 작업은 계약 없이 실리고 :attr:`WorkPackageDraft.without_contract` 에 이름이 남는다 —
   그대로 내보낼지는 호출자가 사람에게 묻는다.
+- 템플릿을 읽을 수 없는 작업은 꾸러미 전체를 깨지 않고 빠진다 — :attr:`WorkPackageDraft.skipped` 에
+  이름이 남고, 그대로 내보낼지는 역시 호출자가 묻는다. 남는 작업이 없으면 :class:`NothingToExport`.
 
 데이터 결속·권위 id·검토 기준선·판본·즐겨찾기·그룹·태그·최근 실행·필터 프리셋·시험 자료는
 manifest 에 자리가 없어 실리지 않는다. 이 모듈은 Domain 만 안다 — 파일·저장소는 포트 뒤에 있다.
@@ -32,6 +34,7 @@ from ..domain.slot_selection import SlotSelectionSet
 from ..domain.work_package import (
     PackagedJob,
     PackagedTemplate,
+    WorkPackageError,
     WorkPackageManifest,
 )
 
@@ -40,11 +43,23 @@ class ExportDataUnavailable(Exception):
     """작업의 데이터를 읽을 수 없다 — 계약 없이 내보낼지 사람에게 물을 사유(실패가 아니다)."""
 
 
+class ExportTemplateUnavailable(WorkPackageError):
+    """작업의 템플릿 bytes 를 읽을 수 없다 — 그 작업만 빠지고 꾸러미는 계속된다(사유는 메시지)."""
+
+
+class NothingToExport(WorkPackageError):
+    """실을 수 있는 작업이 하나도 없다 — ``skipped`` 는 템플릿을 읽지 못해 빠진 작업 이름."""
+
+    def __init__(self, skipped: Sequence[str]) -> None:
+        super().__init__(", ".join(skipped))
+        self.skipped = tuple(skipped)
+
+
 class ExportSourcePort(Protocol):
     """내보내기가 읽는 사실 — External(:mod:`hwpxfiller.external.work_package_sources`)이 구현한다."""
 
     def template_bytes(self, job: Job) -> bytes:
-        """작업이 생성에 쓰는 템플릿 bytes. 읽을 수 없으면 사유가 담긴 예외(내보내기 중단)."""
+        """작업이 생성에 쓰는 템플릿 bytes. 읽을 수 없으면 :class:`ExportTemplateUnavailable`."""
         ...
 
     def declared_selection(self, job: Job) -> "SlotSelectionSet | None":
@@ -58,11 +73,12 @@ class ExportSourcePort(Protocol):
 
 @dataclass(frozen=True)
 class WorkPackageDraft:
-    """쓰기 직전의 꾸러미 — manifest·``{digest: bytes}``·계약 없이 실린 작업 이름."""
+    """쓰기 직전의 꾸러미 — manifest·``{digest: bytes}``·계약 없이 실린 작업·빠진 작업 이름."""
 
     manifest: WorkPackageManifest
     templates: Mapping[str, bytes]
     without_contract: tuple[str, ...]
+    skipped: tuple[str, ...] = ()
 
 
 def portable_mapping(profile: MappingProfile) -> MappingProfile:
@@ -106,8 +122,13 @@ def draft_work_package(
     blobs: dict[str, bytes] = {}
     packaged: list[PackagedJob] = []
     without: list[str] = []
+    skipped: list[str] = []
     for job in jobs:
-        blob = sources.template_bytes(job)
+        try:
+            blob = sources.template_bytes(job)
+        except ExportTemplateUnavailable:
+            skipped.append(job.name)
+            continue
         digest = sha256(blob).hexdigest()
         if digest not in declared:
             declared[digest] = PackagedTemplate(
@@ -127,15 +148,21 @@ def draft_work_package(
             selection_presets=_presets_of(job, sources, created_at),
             data_contract=contract,
         ))
+    if not packaged:
+        raise NothingToExport(skipped)
     manifest = WorkPackageManifest(
         created_at=created_at, templates=tuple(declared.values()), jobs=tuple(packaged)
     )
-    return WorkPackageDraft(manifest=manifest, templates=blobs, without_contract=tuple(without))
+    return WorkPackageDraft(
+        manifest=manifest, templates=blobs, without_contract=tuple(without), skipped=tuple(skipped),
+    )
 
 
 __all__ = [
     "ExportDataUnavailable",
     "ExportSourcePort",
+    "ExportTemplateUnavailable",
+    "NothingToExport",
     "WorkPackageDraft",
     "draft_work_package",
     "portable_mapping",

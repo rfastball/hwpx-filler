@@ -19,7 +19,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const SURFACE = [
   "init", "model", "axis",
   "toggleFavorite", "runPrimary", "newWork", "editWork", "editTemplate", "renameJob",
-  "cloneJob", "removeJob", "exportJob", "importPackage", "relink", "revealCorrupt", "deleteCorrupt",
+  "cloneJob", "removeJob", "exportAll", "importPackage", "relink", "revealCorrupt", "deleteCorrupt",
   "doc", "client", "popover", "notify",
 ];
 
@@ -465,24 +465,27 @@ test("표의 행 클릭 — 편집기 2단계의 그 행을 겨눈 `target` 이 
   ]);
 });
 
-test("작업 꾸러미 — 「작업 불러오기…」는 머리에, 「작업 내보내기…」는 상세 관리 동사에 선다", async () => {
-  /* 불러오기는 고른 작업이 없어도(빈 목록 포함) 서는 화면 동사라 머리, 내보내기는 고른 작업
-     하나의 관리 동사라 이름 변경·복제 옆이다(목록은 단일 선택이다). 판정은 Python 이 진다. */
-  const empty = build({ snapshot: { is_empty: true, sections: [], detail: null } });
+test("작업 꾸러미 — 「작업 내보내기…」·「작업 불러오기…」는 머리에만 서고, 내보내기 가부는 Python 이 낸다", async () => {
+  /* 같은 라벨이 두 곳에서 다른 뜻(한 작업 / 모든 작업)을 갖지 않게 머리 한 곳에 모은다. 내보내기는
+     이 작업 공간의 모든 작업이고, 실을 작업이 있는가(`export_all_enabled`)는 Python 판정이다. */
+  const empty = build({ snapshot: { is_empty: true, export_all_enabled: false, sections: [], detail: null } });
   const blank = renderToStaticMarkup(createElement(LibraryScreen, { controller: empty.controller }));
   assert.ok(blank.includes('id="libraryImportWork"') && blank.includes("작업 불러오기…"));
-  assert.ok(!blank.includes("작업 내보내기…"));
+  assert.match(blank, /<button[^>]*id="libraryExportAll"[^>]*disabled=""[^>]*>작업 내보내기…<\/button>/);
 
   const h = build({
-    snapshot: detailSnapshot(BOUND_DETAIL),
-    invoke: async () => "C:/out/작업A.narumi",
+    snapshot: { ...detailSnapshot(BOUND_DETAIL), export_all_enabled: true },
+    invoke: async () => "C:/out/작업 꾸러미.narumi",
     dispatch: async (_screen, action) => action === "export_work_package" ? { ok: true } : {},
   });
   const markup = renderToStaticMarkup(createElement(LibraryScreen, { controller: h.controller }));
-  assert.ok(markup.includes('data-export-work="작업A"') && markup.includes("작업 내보내기…"));
-  await h.controller.exportJob("작업A");
-  assert.deepEqual(h.invokes, [["pick_work_package_path", "export", "작업A"]]);
+  assert.match(markup, /<button[^>]*id="libraryExportAll"[^>]*>작업 내보내기…<\/button>/);
+  assert.doesNotMatch(markup, /id="libraryExportAll"[^>]*disabled/);
+  assert.equal(markup.split("작업 내보내기…").length - 1, 1, "상세 패널에는 작업별 내보내기가 없다");
+  assert.ok(!markup.includes("data-export-work"));
+  await h.controller.exportAll();
+  assert.deepEqual(h.invokes, [["pick_work_package_path", "export"]]);
   assert.deepEqual(h.dispatchCalls, [
-    ["library", "export_work_package", { names: ["작업A"], path: "C:/out/작업A.narumi" }],
+    ["library", "export_work_package", { path: "C:/out/작업 꾸러미.narumi" }],
   ]);
 });

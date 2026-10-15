@@ -566,6 +566,9 @@ class LibraryController:
                 "pool_corrupted": kpi.pool_corrupted,
             },
             "is_empty": self.vm.is_empty(),
+            # 「작업 내보내기…」(#1188)는 이 작업 공간의 모든 작업을 싣는다 — 실을 작업이 있는가는
+            # 여기서 판정한다(손상 파일만 있는 갈래는 `is_empty` 가 거짓이어도 실을 작업이 없다).
+            "export_all_enabled": bool(self.vm.rows()),
             # 저장된 작업이 없는 갈래의 두 번째 출구(#891 · §4.1) — 「예제로 시작하기」의
             # 라벨·설치 여부는 tpl 스냅샷과 **같은 단일 출처**를 읽는다(프런트 발명 금지).
             # 실행 자체는 tpl 채널의 `install_examples` 를 교차 화면 dispatch 로 부른다:

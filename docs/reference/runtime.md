@@ -58,7 +58,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `pick_pool_data_file` | `` |
 | `pick_template_path` | `` |
 | `pick_templates_root` | `screen: str` |
-| `pick_work_package_path` | `action: str, name: str=''` |
+| `pick_work_package_path` | `action: str` |
 | `reveal_corrupt_job` | `path: str` |
 | `reveal_path` | `path: str` |
 | `save_artifact_as` | `ordinal: object` |
@@ -221,7 +221,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `clone_job` | `name` | — |
 | `delete_corrupt` | `path` | `confirm` |
 | `delete_job` | `name` | `confirm` |
-| `export_work_package` | `names`, `path` | `confirm` |
+| `export_work_package` | `path` | `names`, `confirm` |
 | `import_work_package` | `path`, `basis` | — |
 | `inspect_work_package` | `path` | — |
 | `refresh` | — | `select` |

@@ -23,7 +23,8 @@ from hwpxfiller.external.preset_store import PresetRegistry
 from hwpxfiller.external.work_package_io import read_work_package
 from hwpxfiller.host.locations import default_jobs_dir, default_preset_dir, home_dir
 from hwpxfiller.webapp.work_package_panel import (
-    DATA_NOTICE, EXPORT_WITHOUT_CONTRACT, PACKAGE_FILTERS, pick_package_path,
+    DATA_NOTICE, EXPORT_WITHOUT_CONTRACT, NOTHING_TO_EXPORT, PACKAGE_FILTERS,
+    pick_package_path, skipped_line,
 )
 
 CONTRACT_LABEL = "자동확정 · 꾸러미 조건 일치"
@@ -113,7 +114,8 @@ def package(monkeypatch, tmp_path):
     path = tmp_path / "보낸작업.narumi"
     result = _export(app, ["계약A", "계약B"], path)
     assert result == {
-        "ok": True, "path": str(path), "jobs": 2, "templates": 1, "without_contract": [],
+        "ok": True, "path": str(path), "jobs": 2, "templates": 1, "skipped": [],
+        "without_contract": [],
     }
     return path, data
 
@@ -314,7 +316,7 @@ def test_export_without_readable_data_asks_first_then_exports_without_contract(
     asked = _export(app, ["계약A"], path)
     assert asked == {
         "ok": True, "needs_confirm": True,
-        "confirm_text": EXPORT_WITHOUT_CONTRACT, "without_contract": ["계약A"],
+        "confirm_text": EXPORT_WITHOUT_CONTRACT, "skipped": [], "without_contract": ["계약A"],
     }
     assert not path.exists()
 
@@ -367,7 +369,7 @@ def test_selection_preset_travels_with_the_job_and_collides_like_jobs(monkeypatc
 
 
 def test_package_file_picker_routes_through_the_host_dialog_seams(monkeypatch, tmp_path):
-    """「작업 내보내기…」·「작업 불러오기…」의 선택 창 — 호스트 단일 입구를 지나 경로만 돌려준다(WP-05)."""
+    """「작업 내보내기…」·「작업 불러오기…」의 선택 창 — 호스트 단일 입구를 지나 경로만 돌려준다."""
     from hwpxfiller.webapp import app as app_mod
 
     _use_home(monkeypatch, tmp_path / "home-pick")
@@ -376,24 +378,132 @@ def test_package_file_picker_routes_through_the_host_dialog_seams(monkeypatch, t
     monkeypatch.setattr(app_mod, "_file_dialog", lambda *args: asked.append(("open", *args)) or None)
     app = _frontend()
 
-    assert app.pick_work_package_path("export", "계약/안내") == "C:/out/a.narumi"
+    assert app.pick_work_package_path("export") == "C:/out/a.narumi"
     assert app.pick_work_package_path("import") is None, "취소는 None 그대로다"
     assert asked == [
-        ("save", "계약_안내.narumi", PACKAGE_FILTERS, "narumi"),
+        ("save", "작업 꾸러미.narumi", PACKAGE_FILTERS, "narumi"),
         ("open", PACKAGE_FILTERS),
     ]
     assert PACKAGE_FILTERS == [("작업 꾸러미 (*.narumi)", "*.narumi")]
 
 
-def test_package_file_picker_refuses_an_unknown_action_and_names_blank_jobs():
-    def save_file(name, filters, ext):
-        return name
+def test_package_file_picker_refuses_an_unknown_action():
+    def never(*_args):
+        raise AssertionError("선택 창을 열면 안 된다")
 
-    def open_file(filters):
-        raise AssertionError("열기 창을 열면 안 된다")
-
-    assert pick_package_path("export", "  ", open_file=open_file, save_file=save_file) == "작업.narumi"
     with pytest.raises(ValueError, match="export·import"):
-        pick_package_path("delete", "x", open_file=open_file, save_file=save_file)
-    with pytest.raises(ValueError, match="작업 이름 문자열"):
-        pick_package_path("export", None, open_file=open_file, save_file=save_file)  # type: ignore[arg-type]
+        pick_package_path("delete", open_file=never, save_file=never)
+
+
+# ───────────────────────────────────── 모든 작업 내보내기(#1188 후속) ──
+
+TXT_TEMPLATE = "계약안내_기안.txt"
+
+
+def _save_draft_job(app, name: str, template: str, data: Path) -> None:
+    """착석 없이 저장만 — 적용 이력이 없으니 내보내기는 연결된 템플릿 파일 bytes 를 읽는다."""
+    _save_new_work(app, name, template, data)
+
+
+def _break_template(name: str, tmp_path: Path) -> None:
+    """작업이 가리키는 템플릿을 없는 파일로 돌린다(적용 이력 없는 작업이라 그 파일이 곧 원천)."""
+    from dataclasses import replace
+
+    registry = JobRegistry(default_jobs_dir())
+    job = registry.load(name)
+    registry.save(replace(job, template_path=str(tmp_path / "사라진" / Path(job.template_path).name)))
+
+
+def test_export_all_carries_every_job_and_round_trips_with_shared_and_txt_templates(
+    monkeypatch, tmp_path,
+):
+    """이름 없이 부르면 이 작업 공간의 모든 작업(HWPX·TXT)이 한 꾸러미로 가고, 빈 홈이 전부 받는다."""
+    app, data = _sender_home(monkeypatch, tmp_path, "계약A", "계약B")
+    _save_draft_job(app, "구매안내", "구매추진안내.hwpx", data)
+    _save_draft_job(app, "기안A", TXT_TEMPLATE, data)
+    _save_draft_job(app, "기안B", TXT_TEMPLATE, data)
+    names = ["계약A", "계약B", "구매안내", "기안A", "기안B"]
+    media = {job.name: job.media for job in JobRegistry(default_jobs_dir()).list_jobs()}
+    assert sorted(media) == sorted(names) and media["기안A"] == media["기안B"] == "txt"
+    app.dispatch("library", "refresh", {})
+    assert app.controllers["library"].snapshot()["export_all_enabled"] is True
+
+    path = tmp_path / "모든작업.narumi"
+    result = app.dispatch("library", "export_work_package", {"path": str(path)})
+    assert result == {
+        "ok": True, "path": str(path), "jobs": 5, "templates": 3, "skipped": [],
+        "without_contract": [],
+    }
+    manifest = read_work_package(path).manifest
+    assert sorted(job.name for job in manifest.jobs) == sorted(names)
+    assert sorted(t.media for t in manifest.templates) == ["hwpx", "hwpx", "txt"]
+
+    _use_home(monkeypatch, tmp_path / "home-b")
+    receiver = _frontend()
+    receiver.dispatch("library", "refresh", {})
+    assert receiver.controllers["library"].snapshot()["export_all_enabled"] is False
+    inspected = _inspect(receiver, path)
+    assert inspected["view"]["title"] == "작업 5개를 불러옵니다"
+    assert sorted(job["final_name"] for job in inspected["view"]["jobs"]) == sorted(names)
+    assert {job["template_label"] for job in inspected["view"]["jobs"]} == {"새로 추가"}
+    assert len(inspected["view"]["templates"]) == 3
+    imported = _import(receiver, path, inspected["basis"])
+    assert imported["ok"] is True and sorted(imported["imported"]) == sorted(names)
+    landed = {job.name: job for job in JobRegistry(default_jobs_dir()).list_jobs()}
+    assert sorted(landed) == sorted(names)
+    assert landed["기안A"].media == "txt" and landed["기안A"].template_path == landed["기안B"].template_path
+    assert all(job.data_path == "" for job in landed.values())
+
+
+def test_export_all_skips_jobs_whose_template_cannot_be_read_after_one_confirm(
+    monkeypatch, tmp_path,
+):
+    """템플릿을 못 읽는 작업은 꾸러미를 깨지 않고 빠진다 — 쓰기 전에 한 번 묻고, 계약 없음 확인과 한 창이다."""
+    app, data = _sender_home(monkeypatch, tmp_path, "계약A")
+    _save_draft_job(app, "깨진작업", "구매추진안내.hwpx", data)
+    _break_template("깨진작업", tmp_path)
+    path = tmp_path / "빠짐.narumi"
+
+    asked = app.dispatch("library", "export_work_package", {"path": str(path)})
+    assert asked == {
+        "ok": True, "needs_confirm": True,
+        "confirm_text": skipped_line(["깨진작업"]),
+        "skipped": ["깨진작업"], "without_contract": [],
+    }
+    assert skipped_line(["깨진작업"]) == "템플릿을 읽을 수 없는 작업은 빠집니다: 깨진작업"
+    assert not path.exists()
+
+    data.unlink()  # 데이터도 못 읽으면 두 사실이 한 확인 창에 함께 선다
+    both = app.dispatch("library", "export_work_package", {"path": str(path)})
+    assert both["confirm_text"] == (
+        f"{skipped_line(['깨진작업'])}\n\n{EXPORT_WITHOUT_CONTRACT}"
+    )
+    assert not path.exists()
+
+    done = app.dispatch("library", "export_work_package", {"path": str(path), "confirm": True})
+    assert done["ok"] is True and done["skipped"] == ["깨진작업"] and done["jobs"] == 1
+    assert [job.name for job in read_work_package(path).manifest.jobs] == ["계약A"]
+
+
+def test_export_all_refuses_without_writing_when_nothing_can_be_carried(monkeypatch, tmp_path):
+    """실을 작업이 하나도 없으면(빈 작업 공간·전부 템플릿을 못 읽음) 확인을 받아도 쓰지 않는다."""
+    _use_home(monkeypatch, tmp_path / "home-empty")
+    empty = _frontend()
+    path = tmp_path / "빈.narumi"
+    refused = empty.dispatch("library", "export_work_package", {"path": str(path), "confirm": True})
+    assert refused == {
+        "ok": False, "error": f"작업 꾸러미를 만들 수 없습니다: {NOTHING_TO_EXPORT}", "skipped": [],
+    }
+
+    app, data = _sender_home(monkeypatch, tmp_path, "계약A")
+    _save_draft_job(app, "깨진작업", "구매추진안내.hwpx", data)
+    _break_template("깨진작업", tmp_path)
+    for name in ("계약A",):
+        assert app.dispatch("library", "delete_job", {"name": name, "confirm": True})["ok"] is not False
+    refused = app.dispatch("library", "export_work_package", {"path": str(path), "confirm": True})
+    assert refused["ok"] is False and refused["skipped"] == ["깨진작업"]
+    assert refused["error"] == (
+        f"작업 꾸러미를 만들 수 없습니다: {NOTHING_TO_EXPORT}\n"
+        f"{skipped_line(['깨진작업'])}"
+    )
+    assert not path.exists()
