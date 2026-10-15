@@ -16,7 +16,7 @@ const VIEW = {
   ],
   templates: [{ display_name: "안내.hwpx", action: "new", label: "새로 추가", target: "안내.hwpx" }],
   presets: [],
-  data_notice: "데이터는 들어 있지 않습니다. 불러온 뒤 작업마다 데이터를 연결하세요.",
+  data_notice: "데이터는 들어 있지 않습니다.",
 };
 
 function build({ picked = "C:/pkg/보낸작업.narumi", replies = {}, confirms = [] } = {}) {
@@ -50,7 +50,7 @@ test("확인 본문 — 작업 줄 아래 템플릿 표지, 이름이 바뀐 작
     "  안내.hwpx · 새로 추가",
     "  ‘계약B (2)’ 이름으로 불러옵니다",
     "",
-    "데이터는 들어 있지 않습니다. 불러온 뒤 작업마다 데이터를 연결하세요.",
+    "데이터는 들어 있지 않습니다.",
   ].join("\n"));
 });
 
