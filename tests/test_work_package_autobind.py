@@ -138,9 +138,32 @@ def test_import_binds_to_the_single_registered_data_that_passes_and_generates_wi
             "결속은 규칙 축이 아니라 판본·검토 기준선이 움직이지 않는다"
         )
 
+    app.dispatch("job", "select_job", {"name": "계약A"})
+    assert app.controllers["job"].snapshot()["data_notice"] is None, (
+        "빈 세션에 결속 데이터를 세운 첫 마운트는 버린 것이 없어 낭독하지 않는다"
+    )
     for index, name in enumerate(NAMES):
         outcome = _generate(app, name, tmp_path / f"out-{index}")
         assert outcome["ok"] is True and outcome["succeeded"] == 3 and outcome["failed"] == 0
+
+
+def test_switching_to_bound_data_names_only_a_selection_it_discarded(package, monkeypatch, tmp_path):
+    """고른 행이 있는 세션을 작업의 결속 데이터로 갈 때만 「항목 선택은 초기화됐습니다」가 선다."""
+    path, sender_data = package
+    app = _receiver(monkeypatch, tmp_path)
+    mine = _copy(sender_data, tmp_path / "b-data" / "우리계약.csv")
+    _register(app, mine, "우리 계약")
+    _import_all(app, path)
+    job = app.controllers["job"]
+    job.load_data_path(str(_copy(sender_data, tmp_path / "c-data" / "다른데이터.csv")))
+    app.dispatch("job", "set_all", {})
+
+    app.dispatch("job", "select_job", {"name": "계약A"})
+
+    assert job.data.path == str(mine) and job.snapshot()["selected_count"] == 0
+    assert job.snapshot()["data_notice"]["text"] == (
+        "이 작업에 연결된 데이터 '우리계약.csv' 을(를) 불러왔습니다. 항목 선택은 초기화됐습니다."
+    )
 
 
 def test_two_passing_registered_data_leave_the_jobs_unbound(package, monkeypatch, tmp_path):

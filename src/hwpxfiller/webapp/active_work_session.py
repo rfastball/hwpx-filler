@@ -87,6 +87,9 @@ class WorkDataBinding:
     header_row: int = 0
     kind: str = ""
     notice: str = ""
+    #: 마운트가 지금 데이터 세션에서 사람이 쌓은 선택(행 선택·범위 초안)을 버리는가 — 그때만
+    #: 무엇이 초기화됐는지 알린다. 빈 세션의 첫 마운트·버릴 것이 없는 전환은 무음이다(#1193).
+    discards: bool = False
 
 
 class ActiveWorkSession:
@@ -192,6 +195,8 @@ class ActiveWorkSession:
     def data_binding_mount(
         job: Job,
         current: tuple[str, str, int, str],
+        *,
+        discards: bool = False,
     ) -> WorkDataBinding:
         """선택 작업의 durable 데이터 결속을 현재 마운트와 대조한다."""
         if not has_data_binding(job):
@@ -213,7 +218,7 @@ class ActiveWorkSession:
                     "데이터를 다시 고른 뒤 작업을 저장하세요."
                 ),
             )
-        return WorkDataBinding("mount", path, sheet, header_row, kind)
+        return WorkDataBinding("mount", path, sheet, header_row, kind, discards=discards)
 
     def reload(self) -> ActiveWorkReload:
         """durable Work와 seat를 대조하고 달라진 부분만 다시 앉힌다."""

@@ -1279,6 +1279,9 @@ class JobController:
         decision = self.work.data_binding_mount(
             job,
             (self.data.path, self.data.sheet, self.data.header_row, self.data.kind),
+            # 마운트가 버리는 것은 사람이 고른 행·열린 범위 초안이다(필터 정의는 직전 슬롯에
+            # 남아 다시 적용할 수 있다). 버릴 것이 없으면 결과를 낭독하지 않는다(#1193).
+            discards=self.data.selection.selected_count() > 0 or self.data.range_draft is not None,
         )
         if decision.action != "mount":
             return decision.notice
@@ -1294,6 +1297,8 @@ class JobController:
         return (
             f"이 작업에 연결된 데이터 '{self.data.label}' 을(를) 불러왔습니다. "
             "항목 선택은 초기화됐습니다."
+            if decision.discards
+            else ""
         )
 
     def _do_select_job(self, p: dict) -> "dict | None":
