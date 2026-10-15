@@ -27,6 +27,7 @@ from ..viewmodel.work_candidates import (
     preferred_promotion,
     rank_available,
 )
+from .contract_binding import ContractDataBinding
 from .screens import reference_missing, relink_job_template
 
 
@@ -97,8 +98,11 @@ class ActiveWorkSession:
         template_change=None,
         engine: HwpxEngine | None = None,
         on_work_changed: Callable[[], None] = lambda: None,
+        contract: ContractDataBinding | None = None,
     ) -> None:
         self._registry = registry
+        # 데이터 계약을 든 미결속 작업의 후보·선택 결속(#1193) — 미주입이면 계약 후보가 없다.
+        self.contract = contract if contract is not None else ContractDataBinding()
         self._template_change = template_change
         self._engine = engine
         self._on_work_changed = on_work_changed

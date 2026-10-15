@@ -92,7 +92,7 @@ test("고른 시트는 확인 질의 뒤 use_pool_data 에 시트를 실어 보�
   for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 
   assert.deepEqual(trace.filter((row) => row[0] === "editor"), [
-    ["editor", "mapping_reset_stakes", {}],
+    ["editor", "mapping_reset_stakes", { cause: "data" }],
     ["editor", "use_pool_data", { key: "book", sheet: "낙찰현황" }],
   ]);
   /* 우 열의 등록 행 고르기는 종전 그대로 키 하나만 싣는다(기본 시트). */

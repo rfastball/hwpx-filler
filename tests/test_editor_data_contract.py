@@ -182,3 +182,48 @@ def test_contract_survives_editor_save_and_reload(tmp_path):
     assert saved.data_path.endswith("받은데이터.csv")
     # 계약은 규칙이 아니다 — 연결이 그대로면 판본이 오르지 않는다.
     assert saved.binding_revision == 1
+
+
+# ------------------------------------------------- 데이터 교체 확인의 수(#1193)
+
+
+def _stakes(ctrl: EditorController, cause: str) -> int:
+    return ctrl.dispatch("mapping_reset_stakes", {"cause": cause})["human"]
+
+
+def test_data_swap_confirm_does_not_count_untouched_contract_rows(tmp_path):
+    """계약이 다시 판정할 행은 사람이 만든 것을 잃지 않는다 — 확인이 그 행을 세지 않는다."""
+    _save_job(tmp_path, with_contract=True)
+    ctrl = _controller(tmp_path)
+    ctrl.load_job("받은작업")
+    assert len(_rows(ctrl)) == 4 and all(row["confirmed"] for row in _rows(ctrl).values())
+    assert _stakes(ctrl, "data") == 0
+
+    ctrl.load_data_path(_csv(tmp_path, "청소용역,5000000,2026-09-01"))
+    assert _stakes(ctrl, "data") == 0, "자동확정 뒤에도 같은 연결은 다시 판정된다"
+
+
+def test_data_swap_confirm_counts_only_rows_edited_after_import(tmp_path):
+    _save_job(tmp_path, with_contract=True)
+    ctrl = _controller(tmp_path)
+    ctrl.load_job("받은작업")
+    ctrl.load_data_path(_csv(tmp_path, "청소용역,5000000,2026-09-01"))
+    ctrl.dispatch("set_display", {"index": _rows(ctrl)["계약일"]["index"], "type": "date", "fmt": "kor"})
+    assert _stakes(ctrl, "data") == 1
+    ctrl.dispatch("set_const", {"index": _rows(ctrl)["담당"]["index"], "const": "김철수"})
+    assert _stakes(ctrl, "data") == 2, "데이터를 읽지 않는 연결도 저장본과 달라지면 센다"
+
+
+def test_template_swap_without_data_still_counts_contract_rows(tmp_path):
+    """판정할 데이터가 없는 재조립은 계약이 다시 확정하지 못한다 — 이월 행 전부를 센다(C1)."""
+    _save_job(tmp_path, with_contract=True)
+    ctrl = _controller(tmp_path)
+    ctrl.load_job("받은작업")
+    assert _stakes(ctrl, "template") == 4
+
+
+def test_job_without_contract_counts_every_carried_row(tmp_path):
+    _save_job(tmp_path, with_contract=False)
+    ctrl = _controller(tmp_path)
+    ctrl.load_job("받은작업")
+    assert _stakes(ctrl, "data") == 4

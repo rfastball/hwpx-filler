@@ -17,6 +17,18 @@ from pathlib import Path
 import pytest
 
 from _output_folder_pick import pick_output_folder
+from _work_package_homes import (
+    DATA,
+    SHARED_TEMPLATE,
+    asset as _asset,
+    export as _export,
+    frontend as _frontend,
+    import_package as _import,
+    inspect as _inspect,
+    save_new_work as _save_new_work,
+    sender_home as _sender_home,
+    use_home as _use_home,
+)
 
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.preset_store import PresetRegistry
@@ -28,63 +40,6 @@ from hwpxfiller.webapp.work_package_panel import (
 )
 
 CONTRACT_LABEL = "자동확정 · 꾸러미 조건 일치"
-SHARED_TEMPLATE = "계약체결안내.hwpx"
-DATA = "계약목록.csv"
-
-
-def _frontend():
-    from hwpxfiller.webapp.app import WebFrontend
-
-    return WebFrontend()
-
-
-def _use_home(monkeypatch, path: Path) -> None:
-    monkeypatch.setenv("HWPXFILLER_HOME", str(path))
-
-
-def _asset(name: str) -> Path:
-    return next(home_dir().rglob(name))
-
-
-def _save_new_work(app, name: str, template: str, data: Path) -> None:
-    """편집기 새 작업 한 바퀴 — 자동 제안을 확정하고 저장한다(표면이 밟는 동선 그대로)."""
-    editor = app.controllers["editor"]
-    app.dispatch("editor", "new_session", {})
-    app.dispatch("editor", "use_library_template", {"path": str(_asset(template))})
-    editor.load_data_path(str(data))
-    app.dispatch("editor", "goto_section", {"section": "binding"})
-    app.dispatch("editor", "confirm_suggested", {})
-    app.dispatch("editor", "set_name", {"name": name})
-    assert app.dispatch("editor", "save", {}) == {"ok": True, "saved_name": name}
-
-
-def _sender_home(monkeypatch, tmp_path: Path, *names: str):
-    """홈 A — 예제를 설치하고 같은 템플릿을 쓰는 작업들을 만든 뒤 착석시켜 적용 판본을 세운다."""
-    _use_home(monkeypatch, tmp_path / "home-a")
-    app = _frontend()
-    assert app.dispatch("tpl", "install_examples", {"confirm": True})["ok"] is True
-    data = tmp_path / "a-data" / DATA
-    data.parent.mkdir()
-    shutil.copy2(_asset(DATA), data)
-    for name in names:
-        _save_new_work(app, name, SHARED_TEMPLATE, data)
-        app.dispatch("job", "select_job", {"name": name})
-        assert JobRegistry(default_jobs_dir()).load(name).authority_id, "전제: 착석이 적용 판본을 세운다"
-    return app, data
-
-
-def _export(app, names, path: Path, **extra) -> dict:
-    return app.dispatch(
-        "library", "export_work_package", {"names": list(names), "path": str(path), **extra}
-    )
-
-
-def _inspect(app, path: Path) -> dict:
-    return app.dispatch("library", "inspect_work_package", {"path": str(path)})
-
-
-def _import(app, path: Path, basis: str) -> dict:
-    return app.dispatch("library", "import_work_package", {"path": str(path), "basis": basis})
 
 
 def _rows(editor) -> "dict[str, dict]":
@@ -144,9 +99,10 @@ def test_exported_jobs_land_in_an_empty_home_and_generate_with_auto_confirmed_bi
 
     imported = _import(app, path, inspected["basis"])
     assert imported == {
-        "ok": True, "imported": ["계약A", "계약B"],
+        "ok": True, "imported": ["계약A", "계약B"], "bound": [],
+        "outcomes": [{"name": "계약A", "status": "no_match"}, {"name": "계약B", "status": "no_match"}],
         "message": "데이터 연결이 필요합니다.",
-    }
+    }, "받는 홈에 등록 데이터가 없으면 결속하지 않고 「데이터 연결 필요」로 착지한다(#1193)"
     registry = JobRegistry(default_jobs_dir())
     jobs = [registry.load(name) for name in ("계약A", "계약B")]
     assert jobs[0].template_path == jobs[1].template_path == str(_templates_root() / SHARED_TEMPLATE)

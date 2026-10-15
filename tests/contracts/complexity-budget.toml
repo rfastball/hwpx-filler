@@ -970,7 +970,7 @@ function_complexity = 13
 function_complexity = 15
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py"]
-module_statements = 394
+module_statements = 393
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation._save_locked"]
 function_complexity = 17
@@ -979,8 +979,8 @@ function_complexity = 17
 function_complexity = 12
 
 [budget."src/hwpxfiller/viewmodel/edit_session.py::EditSession.apply_mapping_action"]
-function_complexity = 30
-function_statements = 68
+function_complexity = 29
+function_statements = 66
 
 [budget."src/hwpxfiller/viewmodel/filter_state.py"]
 module_statements = 649

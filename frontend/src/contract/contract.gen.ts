@@ -152,7 +152,7 @@ export const SCREEN_ACTIONS = {
     ack_gate: { required: [], optional: [] },
     dismiss_notice: { required: [], optional: [] },
     use_pool_data: { required: ["key"], optional: ["sheet"] },
-    mapping_reset_stakes: { required: [], optional: [] },
+    mapping_reset_stakes: { required: [], optional: ["cause"] },
     set_source: { required: ["index", "source"], optional: [] },
     revert_source: { required: ["index"], optional: [] },
     resuggest_all: { required: [], optional: [] },

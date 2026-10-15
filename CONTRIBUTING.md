@@ -84,8 +84,7 @@ registry·프런트 라우팅·DOM 루트·blocker 복구·selftest·live101·�
 
 리뷰는 계획 일치뿐 아니라 기존 busy/disabled 열거, 트리거↔액션 양방향 존재, 공유 팩토리·
 상수·헬퍼의 중복 구현, docstring에 명시한 seam·접근 경계 우회를 확인한다.
-사용자 새 문장은 기본 0이며 필요한 전문과 사유를 변경 범위에 먼저 열거한다.
-열거 밖 문장과 화면이 이미 보이는 결과의 낭독은 넣지 않는다.
+사용자 새 문장은 [문안 규칙](docs/ui-style.md#ui-copy)대로 기본 0이고 먼저 열거한다.
 
 모듈 문장 수·클래스 메서드 수·함수 분기와 문장 수는 [복잡도 예산](scripts/complexity_measure.py)의
 등급별 상한을 넘지 않는다. 제품·scripts는 목표 품질 값, 테스트·selftest 하니스는 느슨한 값이다.
