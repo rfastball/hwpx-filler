@@ -200,8 +200,8 @@ body_sha256 = "cba066448aa8422a2395d1eb2c73b1c3fe637752b1b112603a27238f36f6631f"
 id = "workflow-data"
 document = "docs/workflow.md"
 sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/job_presentation.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py", "src/hwpxfiller/webapp/registered_data.py", "src/hwpxfiller/host/pclm_registration.py", "src/hwpxfiller/data/pclm.py", "src/hwpxfiller/external/dataset_store.py", "frontend/src/screens/sheet_tabs.ts", "frontend/src/screens/registration_sheets.ts", "frontend/src/screens/registration_dialog.ts", "src/hwpxfiller/webapp/contract_binding.py", "src/hwpxfiller/external/contract_data_binding.py"]
-tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py", "tests/test_data_pclm.py", "tests/test_webapp_pool.py", "tests/test_webapp_editor_sheet_tabs.py", "tests/js/editor_sheet_tabs.test.js", "tests/test_work_package_autobind.py"]
-source_sha256 = "d8761ba6a1a5dea3f3edbd42032a4c6254e64fd7b722af161ffe7283b26131da"
+tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py", "tests/test_data_pclm.py", "tests/test_webapp_pool.py", "tests/test_webapp_editor_sheet_tabs.py", "tests/js/editor_sheet_tabs.test.js", "tests/test_work_package_autobind.py", "tests/test_contract_binding.py"]
+source_sha256 = "b5def6de6406d3de975aa78d256349ad501201a09b40ae81413a10b4b24a32a9"
 body_sha256 = "c7dde3a408276e98ebc187850a3a1325685c2a8c4459eb4c470f9b7ac31df885"
 
 [[topic]]

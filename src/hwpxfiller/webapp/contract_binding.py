@@ -145,11 +145,9 @@ def _item_bindings(item) -> "list[Binding]":
     """등록 항목 하나가 선언한 시트마다의 결속 한 벌 — 파일 참조(엑셀·계약 목록)만."""
     if item.kind not in ("excel", "pclm"):
         return []
-    try:
-        sheets = reference_sheets(item)
-    except ValueError:  # 시트 선언이 깨진 항목은 기본 시트만 본다
-        sheets = []
-    return [pool_reference_quad(reference_for_sheet(item, sheet)) for sheet in sheets or [None]]
+    # 시트 선언은 읽기 때 검증된다 — 깨진 선언은 손상 항목으로 목록에서 이미 빠졌다.
+    sheets = reference_sheets(item) or [None]
+    return [pool_reference_quad(reference_for_sheet(item, sheet)) for sheet in sheets]
 
 
 def registered_bindings(pool_registry: "DatasetPoolRegistry") -> "list[Binding]":
@@ -209,6 +207,13 @@ class ImportAutobinder:
         self._read = read
 
     def bind_imported(self, names: "Sequence[str]") -> "list[AutobindOutcome]":
+        """불러온 작업마다의 결과 — 예외를 올리지 않는다(설치는 이미 성사됐다)."""
+        try:
+            return self._bind_all(names)
+        except Exception:  # noqa: BLE001 — 목록·작업 읽기 실패도 미결속 착지로 남는다
+            return [AutobindOutcome(name, AUTOBIND_REFUSED) for name in names]
+
+    def _bind_all(self, names: "Sequence[str]") -> "list[AutobindOutcome]":
         jobs = [self._registry.load(name) for name in names]
         if not any(job.data_contract is not None for job in jobs):
             return [AutobindOutcome(job.name, AUTOBIND_NO_CONTRACT) for job in jobs]
