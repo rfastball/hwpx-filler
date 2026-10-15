@@ -220,6 +220,9 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `clone_job` | `name` | — |
 | `delete_corrupt` | `path` | `confirm` |
 | `delete_job` | `name` | `confirm` |
+| `export_work_package` | `names`, `path` | `confirm` |
+| `import_work_package` | `path`, `basis` | — |
+| `inspect_work_package` | `path` | — |
 | `refresh` | — | `select` |
 | `relink_template` | `name` | `path`, `confirm` |
 | `select_work` | — | `name` |

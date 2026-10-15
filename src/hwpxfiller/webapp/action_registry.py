@@ -141,6 +141,12 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # `select` = 정체가 바뀌는 관리 동사(이름 변경)가 새 이름을 실어 선택을 승계하는 자리.
         "refresh": _schema(optional="select"),
         "delete_corrupt": _schema("path", "confirm"),
+        # 작업 꾸러미(#1188 WP-03·WP-04) — 경로는 웹이 실어 보낸다(파일 선택 창은 화면 슬라이스).
+        # 내보내기는 계약 없이 실릴 작업이 있으면 `confirm` 2차에만 쓰고, 불러오기는 확인이 준
+        # 계획 지문(`basis`)이 지금 계획과 같을 때만 설치한다.
+        "export_work_package": _schema("names path", "confirm"),
+        "inspect_work_package": _schema("path"),
+        "import_work_package": _schema("path basis"),
     },
     "editor": {
         "use_library_template": _schema("path"),

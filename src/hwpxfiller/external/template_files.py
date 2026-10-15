@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import threading
+import uuid
 from pathlib import Path
 from typing import Callable
 
+from ..domain.copy_name import first_free, numbered_file_name
 from .text_registry import TextTemplateRegistry
 
 
@@ -30,25 +33,47 @@ class TemplateFileStore:
             return self._root()
         raise ValueError("가져올 수 있는 형식은 .hwpx 또는 .txt 입니다.")
 
+    def _writer(self, suffix: str):
+        return self.text_registry.write_lock() if suffix == ".txt" else self.hwpx_write_lock
+
+    @staticmethod
+    def _free_destination(root: Path, name: str) -> Path:
+        """``name`` 이 비었으면 그대로, 있으면 ``이름 (2).ext``… — 덮어쓰지 않는다."""
+        return root / first_free(
+            lambda number: numbered_file_name(name, number),
+            lambda candidate: (root / candidate).exists(),
+        )
+
     def copy_into_library(self, src: Path) -> Path:
         root = self._root_for(src.suffix.lower())
         root.mkdir(parents=True, exist_ok=True)
-        writer = (
-            self.text_registry.write_lock()
-            if src.suffix.lower() == ".txt"
-            else self.hwpx_write_lock
-        )
-        with self.import_lock, writer:
-            dest = root / src.name
-            number = 2
-            while dest.exists():
-                dest = root / f"{src.stem} ({number}){src.suffix}"
-                number += 1
+        with self.import_lock, self._writer(src.suffix.lower()):
+            dest = self._free_destination(root, src.name)
             try:
                 shutil.copy2(src, dest)
             except Exception:
                 dest.unlink(missing_ok=True)
                 raise
+        return dest
+
+    def add_bytes(self, name: str, blob: bytes) -> Path:
+        """bytes 를 서식 폴더에 **새 파일**로 들인다 — 이름이 있으면 사본 이름으로 비켜 간다.
+
+        작업 꾸러미 불러오기의 몸통이다. 임시 파일에 다 쓴 뒤 이름을 붙이므로 중간 실패가 반쪽
+        파일을 남기지 않는다. 이름 붙이기는 :func:`os.rename` 이라 Windows 에서 같은 이름이 그사이
+        생겼으면 덮지 않고 실패한다(잠금 안의 존재 확인과 이중으로 막는다).
+        """
+        suffix = Path(name).suffix.lower()
+        root = self._root_for(suffix)
+        root.mkdir(parents=True, exist_ok=True)
+        with self.import_lock, self._writer(suffix):
+            dest = self._free_destination(root, name)
+            pending = root / f".{dest.name}.{uuid.uuid4().hex}.tmp"
+            try:
+                pending.write_bytes(blob)
+                os.rename(pending, dest)
+            finally:
+                pending.unlink(missing_ok=True)
         return dest
 
     @staticmethod

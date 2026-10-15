@@ -25,6 +25,7 @@ from hwpxfiller.webapp.editor_session import EditorLoader
 from hwpxfiller.webapp.data_zone import JobDataSession
 from hwpxfiller.webapp.artifact_view_session import ArtifactViewSession
 from hwpxfiller.webapp.authoring_proposal import ProposalPanel
+from hwpxfiller.webapp.work_package_panel import WorkPackagePanel
 
 
 CONTROLLERS = {
@@ -102,6 +103,9 @@ def _controller_actions(controller: type) -> set[str]:
     if controller is AuthoringController:
         # 「데이터로 필드 찾기」(#1156) 패널이 propose_* 액션을 소유한다(`ProposalPanel.handlers`).
         owners = (*owners, ProposalPanel)
+    if controller is LibraryController:
+        # 작업 꾸러미(#1188) 패널이 *_work_package 액션을 소유한다(`WorkPackagePanel.handlers`).
+        owners = (*owners, WorkPackagePanel)
     return {
         name.removeprefix("_do_")
         for cls in owners

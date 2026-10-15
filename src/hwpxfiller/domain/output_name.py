@@ -264,6 +264,15 @@ def render_output_name(
 
 
 # ─── 최종 이름 안전 판정 ─────────────────────────────────────────────────────────
+def is_reserved_device_name(name: str) -> bool:
+    """첫 점 앞 이름(끝 공백·점 제거)이 Windows 예약 장치 이름인가 — 대소문자 무관.
+
+    ``CON.hwpx``·``nul.txt`` 는 파일이 아니라 장치를 연다. 산출 이름 판정과 작업 꾸러미의
+    템플릿 파일 이름 짓기가 같은 술어를 쓴다.
+    """
+    return name.split(".", 1)[0].rstrip(" .").upper() in _RESERVED_DEVICE_NAMES
+
+
 def guard_output_name(name: str) -> None:
     """최종 이름이 출력 폴더 안의 평평한 Windows 파일 이름인지 판정한다(위반은 거절).
 
@@ -289,8 +298,7 @@ def guard_output_name(name: str) -> None:
     if stem == "":
         # 확장자만 남는(빈 stem) 이름은 조용한 빈 파일명이라 막는다.
         raise OutputNameError(OUTPUT_PATH_ESCAPE_DETECTED, "resolved path 의 stem 이 비어 있다")
-    device = name.split(".", 1)[0].rstrip(" .").upper()
-    if device in _RESERVED_DEVICE_NAMES:
+    if is_reserved_device_name(name):
         raise OutputNameError(
             OUTPUT_PATH_ESCAPE_DETECTED,
             f"resolved path 가 Windows 예약 장치 이름이다: {name!r}",

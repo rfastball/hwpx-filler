@@ -17,12 +17,18 @@ from typing import Callable
 from ..data.factory import source_for_path, source_from_pool_item
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
+from ..external.preset_store import PresetRegistry
 from ..external.seal_execution_plan_service import SealExecutionPlanService
 from ..external.template_change import TemplateChangeCoordinator
 from ..external.template_files import TemplateFileStore
 from ..external.template_root import TemplateRoot
 from ..external.text_registry import TextTemplateRegistry
-from ..host.locations import default_dataset_pool_dir, default_jobs_dir, default_template_authority_dir
+from ..host.locations import (
+    default_dataset_pool_dir,
+    default_jobs_dir,
+    default_preset_dir,
+    default_template_authority_dir,
+)
 from .authoring_proposal import PoolProposalData, pool_source_of
 from .onboarding import OnboardingController
 from .screen_authoring import AuthoringController
@@ -39,6 +45,7 @@ from .txt_materialization import (
     TxtMaterializationService,
     materialized_text,
 )
+from .work_package_panel import WorkPackagePanel
 from .workbench_observation_product import WorkbenchObservationProduct
 from .workspace_switch import WorkspaceGraph
 
@@ -196,7 +203,16 @@ def build_graph(
                           # 서식 폴더 권위는 **같은 홀더**다(U6-A #975) — 상세 연결 카드의
                           # 템플릿 표시명이 목록·편집기와 같은 이름이어야 한다.
                           template_root=template_root,
-                          clock=datetime.now),
+                          clock=datetime.now,
+                          # 작업 꾸러미(#1188) — 서식 폴더 가져오기와 **같은** 파일 저장소(같은
+                          # 잠금)와 같은 권위 루트·프리셋 위치를 쓴다.
+                          work_packages=WorkPackagePanel(
+                              job_registry, template_files=template_files,
+                              template_root=template_root.path,
+                              presets=PresetRegistry(default_preset_dir()),
+                              authority_root=default_template_authority_dir(),
+                              clock=datetime.now,
+                          )),
         job_ctrl,
         # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
         TemplateController(
