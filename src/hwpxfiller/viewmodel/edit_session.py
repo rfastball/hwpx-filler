@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Callable, ContextManager, Protocol
 
 from ..domain.job import DEFAULT_FILENAME_PATTERN, Job, rules_values, template_media
 from ..domain.mapping import MappingProfile
+from .contract_confirm import reset_stakes_view
 from .job_editor_state import (
     EMPTY_PRESERVED,
     PreservedMeta,
@@ -456,18 +457,10 @@ class EditSession:
         publish the tutorial milestone without owning the mapping transition.
         """
         if action == "mapping_reset_stakes":
-            if self.model is None:
-                return True, {"human": 0, "resuggest_manual": 0, "confirmed": 0}, False
-            targets = self._resuggest_targets()
-            return (
-                True,
-                {
-                    "human": len(self.model.carry_profile().mappings),
-                    "resuggest_manual": sum(self.model.rows[i].touched for i in targets),
-                    "confirmed": self.model.confirmed_count(),
-                },
-                False,
-            )
+            # 계약을 든 작업은 계약이 다시 판정할 행을 세지 않는다(#1193) — 데이터 교체이거나
+            # 지금 데이터가 서 있으면 재조립 뒤 그 행은 계약 판정을 다시 받는다.
+            rejudge = payload.get("cause") == "data" or bool(self.records)
+            return True, reset_stakes_view(self.model, self.base, self._resuggest_targets(), rejudge=rejudge), False
         if action == "step_preview":
             if self.records:
                 self.preview_index = (self.preview_index + int(payload["delta"])) % len(

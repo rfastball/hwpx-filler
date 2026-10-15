@@ -234,6 +234,7 @@ class JobController:
         seal_execution=None,
         tutorial: TutorialSink = unwired_tutorial,
         registered_data: Callable[[], dict | None] | None = None,
+        contract_binding=None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -258,6 +259,7 @@ class JobController:
             template_change,
             engine,
             self.execution.invalidate,
+            contract_binding,
         )
         self.data = JobDataSession(pool_registry)
         self.runs = DocumentRunCoordinator(generation_lock)
@@ -450,7 +452,8 @@ class JobController:
             if self.data.datasource is not None and self.data.records
             else None
         )
-        bound = self.data.bound_jobs(jobs) if fields is not None else []
+        # 결속된 작업 + 데이터 계약을 통과하는 미결속 작업(#1193) — 판정은 마운트마다 한 번이다.
+        bound = self.work.contract.candidates(self.data, jobs) if fields is not None else []
         txt_template_count = 0
         if (
             fields is not None
@@ -1276,6 +1279,9 @@ class JobController:
         decision = self.work.data_binding_mount(
             job,
             (self.data.path, self.data.sheet, self.data.header_row, self.data.kind),
+            # 마운트가 버리는 것은 사람이 고른 행·열린 범위 초안이다(필터 정의는 직전 슬롯에
+            # 남아 다시 적용할 수 있다). 버릴 것이 없으면 결과를 낭독하지 않는다(#1193).
+            discards=self.data.selection.selected_count() > 0 or self.data.range_draft is not None,
         )
         if decision.action != "mount":
             return decision.notice
@@ -1291,6 +1297,8 @@ class JobController:
         return (
             f"이 작업에 연결된 데이터 '{self.data.label}' 을(를) 불러왔습니다. "
             "항목 선택은 초기화됐습니다."
+            if decision.discards
+            else ""
         )
 
     def _do_select_job(self, p: dict) -> "dict | None":
@@ -1321,10 +1329,12 @@ class JobController:
             self._release_active_work()
             return
         self.runs.invalidate_work_results()
-        job = self.work.load(name)
+        # 데이터 계약을 든 미결속 작업은 지금 데이터가 계약을 통과하면 여기서 결속된다(#1193).
+        # 통과하지 못하면 결속 없이 사유 줄만 남고 아래 「연결된 데이터 없음」 안내와 함께 선다.
+        job, contract_notice = self.work.contract.bind_for_selection(self.work.load(name), self.data)
         # 결속 데이터를 먼저 세운다. 뒤에 마운트하면 방금 앉힌 작업이 데이터 전이 판정에
         # 걸려 스스로 해제되므로 작업 착석 전에 coherent data state를 확정한다.
-        mount_notice = self._mount_job_binding(job)
+        mount_notice = " ".join(filter(None, (self._mount_job_binding(job), contract_notice)))
         # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
         # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는

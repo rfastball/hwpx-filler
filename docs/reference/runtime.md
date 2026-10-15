@@ -134,7 +134,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `discard_session` | — | — |
 | `dismiss_notice` | — | — |
 | `goto_section` | `section` | — |
-| `mapping_reset_stakes` | — | — |
+| `mapping_reset_stakes` | — | `cause` |
 | `new_session` | — | — |
 | `preview_slice` | `index` | `sample` |
 | `propose_slice` | `index`, `sample`, `start`, `end` | — |

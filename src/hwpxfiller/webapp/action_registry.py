@@ -176,7 +176,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # (구 `use_all_headers`·`use_none`·`toggle_source_active` 는 U6-C(#977 · U6 §2.5)
         #  에서 사슬째 퇴역 — 「사용할 데이터 열」 선별의 전제(스키마 재활용)가 사라졌고,
         #  매핑되지 않은 열은 자연히 쓰이지 않는다.)
-        "mapping_reset_stakes": _schema(),
+        # `cause` = 확인을 부르는 교체(`data`·`template`) — 계약을 든 작업은 데이터 교체 뒤 계약이
+        # 다시 판정할 행을 세지 않는다(#1193). 판정은 Python 이 하고 웹은 무엇을 바꾸려는지만 싣는다.
+        "mapping_reset_stakes": _schema(optional="cause"),
         "set_source": _schema("index source"),
         "revert_source": _schema("index"),
         "resuggest_all": _schema(),

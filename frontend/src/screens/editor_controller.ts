@@ -779,9 +779,13 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /* ---- 확인 관문 ---- */
 
-  /** 확정·수동 매핑 보호 — 수치는 Python 이 **지금** 판정한다(stale 우회 차단). */
-  async function confirmMappingResetIfConfirmed(verbPhrase: string): Promise<boolean> {
-    const stakes = await sendEdit("mapping_reset_stakes", {});
+  /** 확정·수동 매핑 보호 — 수치는 Python 이 **지금** 판정한다(stale 우회 차단).
+   *  `cause` 는 무엇을 바꾸려는지만 싣는다 — 데이터 계약을 든 작업에서 계약이 다시 판정할 행을
+   *  셈에서 빼는 것은 Python 이다(#1193). */
+  async function confirmMappingResetIfConfirmed(
+    verbPhrase: string, cause: "data" | "template",
+  ): Promise<boolean> {
+    const stakes = await sendEdit("mapping_reset_stakes", { cause });
     const human = Number(stakes.human || 0);
     if (!human) return true;
     return deps.modal.confirm({
@@ -999,7 +1003,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   async function useLibraryTemplate(path: string): Promise<boolean> {
     if (path === String(snapshot().template_path || "")) return true;
     if (snapshot().template_path
-      && !(await confirmMappingResetIfConfirmed("템플릿을 바꾸면"))) return false;
+      && !(await confirmMappingResetIfConfirmed("템플릿을 바꾸면", "template"))) return false;
     await sendEdit("use_library_template", { path });
     return true;
   }
@@ -1014,7 +1018,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   async function pickData(): Promise<void> {
-    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) return;
+    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면", "data"))) return;
     /* 응답 해석은 데이터 선택 면과 한 벌이다. 시트 확정 취소는 중단(첫 시트 강등 없음),
        계약 목록 파일(.db·.pclm)은 데이터 선택 컨트롤러의 등록 폼으로 넘긴다(포트 위임). */
     const picked = await pickDataFile(invoke, SCREEN, {
@@ -1031,7 +1035,7 @@ export function createEditorController(deps: EditorControllerDeps) {
    *  기다리는 사이 더 새 선택이 오면 앞 선택은 변이를 보내지 않고 `false` 로 끝난다. */
   async function usePoolData(key: string, sheet?: string): Promise<boolean> {
     return poolSwitches.run(async (isCurrent) => {
-      if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면")) || !isCurrent()) return false;
+      if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면", "data")) || !isCurrent()) return false;
       const result = await sendEdit("use_pool_data", sheet === undefined ? { key } : { key, sheet });
       if (result.ok === false) noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
       return result.ok !== false;

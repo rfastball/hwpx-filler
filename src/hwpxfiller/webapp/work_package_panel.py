@@ -13,6 +13,10 @@
 - ``inspect_work_package`` — 꾸러미를 읽어 들어올 것·이름·템플릿 처리를 보이고 계획 지문(``basis``)을
   준다. 아무것도 쓰지 않는다.
 - ``import_work_package`` — 지문이 지금 계획과 같을 때만 전부 설치한다. 다르면 새 계획을 돌려준다.
+  설치가 성사된 **뒤** 데이터 계약을 든 작업을 받는 쪽 등록 데이터에 자동 결속한다
+  (:class:`~hwpxfiller.webapp.contract_binding.ImportAutobinder`, #1193). 결속은 설치의 전부 아니면
+  전무 밖이다 — 등록 데이터 읽기(바깥 파일 I/O)를 계획 대조와 설치 사이에 끼우지 않고, 결속이 실패해도
+  설치한 작업은 문서에 적힌 착지(「데이터 연결 필요」)로 남는다. 결과는 작업별 판정 이름으로 싣는다.
 """
 from __future__ import annotations
 
@@ -24,12 +28,14 @@ from ..application.jobs import load_job
 from ..application.work_package_export import NothingToExport, WorkPackageDraft, draft_work_package
 from ..domain.job import Job
 from ..application.work_package_import import TEMPLATE_NEW, TEMPLATE_REUSE, ImportPlan, PlannedJob
+from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.preset_store import PresetRegistry
 from ..external.template_files import TemplateFileStore
 from ..external.work_package_install import StaleImportPlan, WorkPackageInstaller
 from ..external.work_package_io import write_work_package
 from ..external.work_package_sources import WorkPackageSources
+from .contract_binding import AUTOBIND_BOUND, ImportAutobinder
 
 #: 계약 없이 실릴 작업이 있을 때의 확인 문장(#1188 확정 문구).
 EXPORT_WITHOUT_CONTRACT = (
@@ -41,9 +47,10 @@ EXPORT_SKIPPED = "템플릿을 읽을 수 없는 작업은 빠집니다"
 NOTHING_TO_EXPORT = "내보낼 수 있는 작업이 없습니다."
 #: 모든 작업을 담는 꾸러미의 저장 창 기본 이름.
 PACKAGE_DEFAULT_NAME = "작업 꾸러미"
-#: 불러오기 확인의 데이터 안내(#1188 확정 문구).
-DATA_NOTICE = "데이터는 들어 있지 않습니다. 불러온 뒤 작업마다 데이터를 연결하세요."
+#: 불러오기 확인의 데이터 안내(#1188 확정 문구, #1193 축소 — 자동 결속되면 연결 지시가 거짓이 된다).
+DATA_NOTICE = "데이터는 들어 있지 않습니다."
 #: 불러오기 뒤 할 일(#1188 확정 문구) — 들어온 작업은 목록이 보이므로 완료는 낭독하지 않는다.
+#: 자동 결속(#1193)으로 모든 작업이 결속됐으면 할 일이 없으므로 싣지 않는다.
 IMPORTED_NEXT_STEP = "데이터 연결이 필요합니다."
 #: 템플릿 처리 표지(#1188 확정 문구).
 TEMPLATE_LABELS = {TEMPLATE_NEW: "새로 추가", TEMPLATE_REUSE: "이미 있는 파일 사용"}
@@ -162,8 +169,10 @@ class WorkPackagePanel:
         presets: PresetRegistry,
         authority_root: Path,
         clock: Callable[[], datetime],
+        pool_registry: DatasetPoolRegistry,
     ) -> None:
         self._registry = registry
+        self._autobind = ImportAutobinder(registry, pool_registry)
         self._sources = WorkPackageSources(registry, authority_root=authority_root)
         self._installer = WorkPackageInstaller(
             registry, template_files=template_files, template_root=template_root, presets=presets,
@@ -233,10 +242,14 @@ class WorkPackagePanel:
             }
         except Exception as exc:  # noqa: BLE001 — 설치 실패는 되돌린 뒤 사유와 함께 loud
             return {"ok": False, "error": f"작업 꾸러미를 읽을 수 없습니다: {exc}"}
+        outcomes = self._autobind.bind_imported([item.final_name for item in plan.jobs])
+        bound = [outcome.name for outcome in outcomes if outcome.status == AUTOBIND_BOUND]
         return {
             "ok": True,
             "imported": [item.final_name for item in plan.jobs],
-            "message": IMPORTED_NEXT_STEP,
+            "bound": bound,
+            "outcomes": [{"name": outcome.name, "status": outcome.status} for outcome in outcomes],
+            "message": IMPORTED_NEXT_STEP if len(bound) < len(outcomes) else "",
         }
 
 

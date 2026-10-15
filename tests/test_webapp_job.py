@@ -6097,10 +6097,8 @@ def test_selecting_a_pclm_bound_job_mounts_its_view_and_then_stands_still(tmp_pa
     ctrl.dispatch("select_job", {"name": "공고서"})
 
     assert ctrl.data.kind == "pclm" and ctrl.data.records[0]["bidNtceNm"] == "전산장비"
-    assert ctrl.snapshot()["data_notice"]["text"] == (
-        f"이 작업에 연결된 데이터 'pclm.db · {_PCLM_TITLE}' 을(를) 불러왔습니다. "
-        "항목 선택은 초기화됐습니다."
-    )
+    # 빈 세션의 첫 마운트는 버린 것이 없다 — 결과를 낭독하지 않는다(#1193).
+    assert ctrl.snapshot()["data_notice"] is None
     ctrl.dispatch("set_all", {})
     ctrl.dispatch("select_job", {"name": ""})
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -6108,6 +6106,7 @@ def test_selecting_a_pclm_bound_job_mounts_its_view_and_then_stands_still(tmp_pa
     # 그 자체가 조용한 파기다.
     assert ctrl.snapshot()["selected_count"] == 2
     assert ctrl.snapshot()["data_notice"] is None
+
 
 
 def test_selecting_a_pclm_bound_job_with_a_missing_db_reuses_the_missing_text(tmp_path):

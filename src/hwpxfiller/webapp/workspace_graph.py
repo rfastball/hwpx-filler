@@ -11,10 +11,12 @@ from .registered_data import registered_data_source
 
 import threading
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Callable
 
 from ..data.factory import source_for_path, source_from_pool_item
+from ..external.contract_data_binding import bind_contract_data
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.preset_store import PresetRegistry
@@ -45,6 +47,7 @@ from .txt_materialization import (
     TxtMaterializationService,
     materialized_text,
 )
+from .contract_binding import ContractDataBinding
 from .work_package_panel import WorkPackagePanel
 from .workbench_observation_product import WorkbenchObservationProduct
 from .workspace_switch import WorkspaceGraph
@@ -185,6 +188,8 @@ def build_graph(
         # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
         # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
         workbench_observation=WorkbenchObservationProduct(),
+        # 데이터 계약을 든 미결속 작업의 후보·선택 결속(#1193) — 쓰기는 이 레지스트리의 잠금 안이다.
+        contract_binding=ContractDataBinding(partial(bind_contract_data, job_registry)),
         tutorial=tutorial_ctrl.notify)
 
     # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
@@ -212,6 +217,8 @@ def build_graph(
                               presets=PresetRegistry(default_preset_dir()),
                               authority_root=default_template_authority_dir(),
                               clock=datetime.now,
+                              # 불러온 작업의 자동 결속(#1193)은 같은 등록 데이터 풀을 본다.
+                              pool_registry=pool_registry,
                           )),
         job_ctrl,
         # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).

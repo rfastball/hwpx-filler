@@ -569,13 +569,8 @@ export function LibraryScreen(props: { controller: LibraryController }): ReactNo
     h("header", { className: "scr-head" }, h("div", null, h("h1", null, "문서 작업"),
       h("p", { className: "sub" }, "저장된 문서 작업을 찾고 상태를 확인합니다.")),
     h("div", { className: "scr-head-actions" },
-      /* 작업 꾸러미(#1188) — 내보내기는 이 작업 공간의 모든 작업을 한 꾸러미로 싣는다. 실을 작업이
-         있는가는 Python 이 판정한다(`export_all_enabled`). */
-      h("button", { className: "btn sm", id: "libraryExportAll", "data-busy-lock": true,
-        disabled: !snapshot.export_all_enabled,
-        onClick: (event: Obj) => { void controller.exportAll(event.currentTarget); } }, "작업 내보내기…"),
-      h("button", { className: "btn sm", id: "libraryImportWork", "data-busy-lock": true,
-        onClick: (event: Obj) => { void controller.importPackage(event.currentTarget); } }, "작업 불러오기…"),
+      /* 작업 꾸러미(#1188) 내보내기·불러오기는 설정 모달로 옮겼다(「작업 꾸러미」 행) —
+         머리는 이 화면의 동사(새 작업)만 진다. */
       h("button", { className: "btn primary sm", id: "libraryNewWork",
         onClick: controller.newWork }, "＋ 새 작업"))),
     h("div", { id: "libraryAlerts" },

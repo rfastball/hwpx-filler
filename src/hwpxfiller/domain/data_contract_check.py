@@ -246,8 +246,45 @@ def judge_job_binding(
     return judge_binding(entry, mapping, columns, records)
 
 
+@dataclass(frozen=True)
+class JobContractFit:
+    """작업 하나의 연결 전부를 한 데이터에 댄 판정 — 모두 통과해야 ``passed``.
+
+    ``failures`` 는 통과하지 못한 연결의 ``(필드, 사유)`` 다(문서순). 열에서 값을 받는 연결이
+    하나도 없으면 어느 데이터와도 짝지을 근거가 없으므로 ``passed`` 가 아니다(사유도 없다).
+    """
+
+    passed: bool
+    failures: "tuple[tuple[str, str], ...]" = ()
+
+
+def judge_job_contract(
+    contract: DataContract,
+    profile: MappingProfile,
+    columns: "Collection[str]",
+    records: "Sequence[Mapping[str, object]]",
+) -> JobContractFit:
+    """저장된 연결 전부를 받은 데이터에 댄다 — 편집기를 거치지 않는 결속의 판정(#1193).
+
+    연결마다 :func:`judge_job_binding` 을 그대로 쓴다(저장본이 곧 판정 대상이라 고정값·오늘 날짜는
+    같은 연결로 통과한다). 계약 항목이 없는 열 연결은 계약이 말하지 않으므로 「꾸러미와 연결이
+    다름」으로 실패한다(근거 없는 결속 금지).
+    """
+    if not any(contract_target(mapping) for mapping in profile.mappings):
+        return JobContractFit(False)
+    failures = []
+    for mapping in profile.mappings:
+        verdict = judge_job_binding(contract, profile, mapping, columns, records)
+        if verdict is None:
+            failures.append((mapping.template_field, REASON_BINDING_CHANGED))
+        elif not verdict.passed:
+            failures.append((mapping.template_field, verdict.reason))
+    return JobContractFit(not failures, tuple(failures))
+
+
 __all__ = [
     "BindingObservation",
+    "JobContractFit",
     "ContractVerdict",
     "REASON_ALL_BLANK",
     "REASON_BINDING_CHANGED",
@@ -257,6 +294,7 @@ __all__ = [
     "judge_binding",
     "judge_fixed_binding",
     "judge_job_binding",
+    "judge_job_contract",
     "observe_binding",
     "profile_data_contract",
     "value_shape",
