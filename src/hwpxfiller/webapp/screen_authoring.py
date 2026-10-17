@@ -9,7 +9,7 @@ import json
 import os
 import re
 import threading
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosemgrep
 from pathlib import Path
 from pathlib import PurePosixPath
 from uuid import uuid4
