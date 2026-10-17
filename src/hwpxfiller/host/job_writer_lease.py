@@ -55,7 +55,7 @@ class _RegistryWriteState:
         kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
         kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         kernel32.CloseHandle.restype = wintypes.BOOL
-        digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]
+        digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]  # nosemgrep
         handle = kernel32.CreateMutexW(None, False, f"hwpx-job-registry-writer-{digest}")
         error = ctypes.get_last_error()
         if not handle:
@@ -75,7 +75,7 @@ class _RegistryWriteState:
 
         lock_root = Path(tempfile.gettempdir()) / "hwpx-tools-job-locks"
         lock_root.mkdir(parents=True, exist_ok=True)
-        digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]
+        digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]  # nosemgrep
         stream = (lock_root / f"{digest}.lock").open("a+b")
         try:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # pyright: ignore[reportAttributeAccessIssue] # POSIX-only fcntl API absent from Windows stubs.

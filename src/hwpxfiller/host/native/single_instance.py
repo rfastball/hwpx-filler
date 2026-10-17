@@ -35,7 +35,7 @@ def _mutex_name(home: Path) -> str:
         key = str(home.resolve())
     except OSError:
         key = str(home)
-    return "hwpx-filler-single-instance-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    return "hwpx-filler-single-instance-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]  # nosemgrep
 
 
 def acquire(home: Path) -> "object | None":

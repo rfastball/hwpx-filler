@@ -18,7 +18,7 @@ const CODES = SELFTEST_ERROR_CODES;
 const STATES = SELFTEST_STATES;
 
 /** 호스트가 낸 것과 같은 급의 토큰(45자). 깊은 훑기의 바늘이므로 다른 문자열과 겹치지 않는다. */
-const TOKEN = "hwpxselftest-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6";
+const TOKEN = "hwpxselftest-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6";  // gitleaks:allow (테스트용 가짜 토큰)
 
 /* ────────────────────────── 대역 ────────────────────────── */
 

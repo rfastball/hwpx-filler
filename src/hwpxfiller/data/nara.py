@@ -117,7 +117,7 @@ class NaraStdDataSource:
         try:
             if self._fetcher is not None:
                 return self._fetcher(url)
-            with urllib.request.urlopen(url, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(url, timeout=self.timeout) as resp:  # nosemgrep
                 return resp.read()
         except Exception as exc:
             raise NaraFetchError(redact(str(exc), self.service_key)) from None
