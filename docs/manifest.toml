@@ -161,7 +161,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
 tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "5fb8fb33130ac87286264242bed1248730d5acac8d38cdd3d19a83f6d22255a7"
+source_sha256 = "120c9dd61d9901bfb3e19c0f30874e5b2805a5f6ec9b718aaeb651074989a8d9"
 body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
 
 [[topic]]

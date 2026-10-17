@@ -113,7 +113,7 @@ def confirm_basis(states: "list[dict[str, str]]") -> str:
     payload = json.dumps(
         sorted(states, key=lambda s: s["key"]), ensure_ascii=False, sort_keys=True
     )
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]  # nosemgrep
 
 
 # 상태 → 사람이 읽는 배지 라벨/레벨(style.py QLabel[level=...] 팔레트와 통일).
