@@ -51,8 +51,11 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Prepare pinned Rust web verifier
-        run: cargo --version
+      - name: Prepare pinned Rust web verifier and contract parser
+        # `read_toml.mjs --prepare` 는 --offline 으로 짓는다 — 깨끗한 러너에서는 여기서 잠금 의존을 받아 둔다.
+        run: |
+          cargo --version
+          cargo build --locked -p hwpx-artifact --example read_toml
       - name: Install, build, seal and verify the frontend
         shell: pwsh
         # Node/npm/Vite 핀 확인은 스크립트가 진다 — 워크플로가 같은 수치를 따로 들고 있으면
