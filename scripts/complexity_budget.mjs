@@ -1,6 +1,6 @@
-// Closed complexity budget for owned JavaScript and Rust source during Python retirement.
+// Closed complexity budget for owned JavaScript and Rust source.
 import { spawnSync } from 'node:child_process';
-import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs';
+import { globSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseTomlText, readToml } from './read_toml.mjs';
@@ -128,12 +128,10 @@ function readingProblems(found, now, unitTiers) {
   return problems;
 }
 
-function staleProblems(found, now, pythonExists) {
+function staleProblems(found, now) {
   const problems = [];
   for (const key of now.keys()) {
     if (found.has(key)) continue;
-    const rel = key.split('\0')[0].split('::')[0];
-    if (rel.endsWith('.py') && pythonExists(rel)) continue;
     problems.push(`${key.replace('\0', ' — ')}: stale frozen entry`);
   }
   return problems;
@@ -145,24 +143,23 @@ function explicitTiers(units) {
   ]));
 }
 
-export function judge(units, ledger, base = null, { pythonExists = () => false } = {}) {
+export function judge(units, ledger, base = null) {
   const found = merge(units);
   const unitTiers = explicitTiers(units);
   const now = entries(ledger);
   const problems = closedLedger(now, base && entries(base), found);
-  problems.push(...readingProblems(found, now, unitTiers), ...staleProblems(found, now, pythonExists));
+  problems.push(...readingProblems(found, now, unitTiers), ...staleProblems(found, now));
   return problems;
 }
 
-function tightenValue(raw, current, ceiling, retainMissing) {
-  if (current === undefined && retainMissing) return raw;
+function tightenValue(raw, current, ceiling) {
   if (current === undefined || current <= ceiling) return undefined;
   const entry = typeof raw === 'number' ? raw : raw.value;
   if (current >= entry) return raw;
   return typeof raw === 'number' ? current : { ...raw, value: current };
 }
 
-export function tightened(units, ledger, { pythonExists = () => false } = {}) {
+export function tightened(units, ledger) {
   const found = merge(units);
   const unitTiers = explicitTiers(units);
   const next = structuredClone(ledger);
@@ -172,8 +169,7 @@ export function tightened(units, ledger, { pythonExists = () => false } = {}) {
     for (const [metric, raw] of Object.entries(values)) {
       const key = `${ident}\0${metric}`;
       const current = found.get(key);
-      const value = tightenValue(raw, current, ceilings[unitTiers.get(ident) ?? tier(rel)][metric],
-        rel.endsWith('.py') && pythonExists(rel));
+      const value = tightenValue(raw, current, ceilings[unitTiers.get(ident) ?? tier(rel)][metric]);
       if (value === undefined) delete values[metric];
       else values[metric] = value;
     }
@@ -208,8 +204,7 @@ export function checkRepository() {
   const { files, units } = survey();
   const ledger = readToml(ledgerPath);
   const before = baseEntries();
-  const problems = judge(units, ledger, before,
-    { pythonExists: rel => existsSync(path.join(root, rel)) });
+  const problems = judge(units, ledger, before);
   return { files: files.length, rust: units.filter(unit => unit.path.endsWith('.rs')).length, problems };
 }
 
@@ -219,7 +214,7 @@ function tightenRepository() {
   const source = readFileSync(file, 'utf8');
   const ledger = readToml(ledgerPath);
   const before = Object.keys(ledger.budget).length;
-  const next = tightened(units, ledger, { pythonExists: rel => existsSync(path.join(root, rel)) });
+  const next = tightened(units, ledger);
   const header = source.slice(0, source.indexOf('schema ='));
   if (!header || !source.includes('schema =')) throw new Error('complexity ledger header missing');
   writeFileSync(file, renderLedger(next, header), 'utf8');

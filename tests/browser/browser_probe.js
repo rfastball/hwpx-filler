@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve, relative, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomInt } from "node:crypto";
 
 export const repo = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 export const corpus = resolve(repo, "tests/corpus");
@@ -14,6 +15,35 @@ function inside(root, part) {
   const target = resolve(root, part);
   const path = relative(root, target);
   return path === "" || (!path.startsWith("..") && !path.startsWith("/") && !path.includes(":"));
+}
+
+// Chrome 은 「안전하지 않은 포트」(최대 10080)를 ERR_UNSAFE_PORT 로 막는다. OS 동적 범위가 바뀐
+// 기계에서도 그런 포트를 받지 않도록 port 0 대신 IANA 동적 범위에서 직접 고르고, 점유면 다시 고른다.
+export const CHROME_SAFE_PORT_BASE = 49152;
+export const CHROME_SAFE_PORT_SPAN = 16384;
+export const CHROME_SAFE_PORT_ATTEMPTS = 32;
+
+function listenOnce(server, port, host) {
+  return new Promise((done, fail) => {
+    const failed = (error) => { server.off("listening", listening); fail(error); };
+    const listening = () => { server.off("error", failed); done(); };
+    server.once("error", failed);
+    server.once("listening", listening);
+    server.listen(port, host);
+  });
+}
+
+export async function listenChromeSafe(server, { random = randomInt, host = "127.0.0.1" } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < CHROME_SAFE_PORT_ATTEMPTS; attempt += 1) {
+    const port = CHROME_SAFE_PORT_BASE + random(CHROME_SAFE_PORT_SPAN);
+    try {
+      await listenOnce(server, port, host);
+      return port;
+    } catch (error) { lastError = error; }
+  }
+  throw new Error(`Chrome-safe loopback port was not allocated after ${CHROME_SAFE_PORT_ATTEMPTS} attempts`,
+    { cause: lastError });
 }
 
 export async function browserServer(generated = null) {
@@ -51,8 +81,7 @@ export async function browserServer(generated = null) {
       response.end();
     }
   });
-  await new Promise((done) => server.listen(0, "127.0.0.1", done));
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const base = `http://127.0.0.1:${await listenChromeSafe(server)}`;
   return { base, css: css[0].file, setProbe: (html) => { probe = html; },
     close: () => new Promise((done) => server.close(done)) };
 }

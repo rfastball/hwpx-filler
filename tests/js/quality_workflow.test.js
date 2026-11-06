@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { globSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parse } from 'yaml';
 import { OUTER_MS } from '../../scripts/live101_native/run_budget.mjs';
@@ -17,9 +17,15 @@ const text = job => JSON.stringify(job);
 const downloads = job => uses(job, 'actions/download-artifact').some(step => step.with.name === 'sealed-web');
 const buildTokens = ['npm run build', 'npm.cmd run build', '-Mode Build'];
 const axes = { native: 'HWPX_SKIP_NATIVE_TESTS', browser: 'HWPX_SKIP_MOTION_TESTS', live: 'HWPX_SKIP_GUI_TESTS' };
-const contract = 'not native and not browser and not live';
-const runsAxis = (job, axis) => commands(job).some(command => axis === 'live'
-  ? command.includes('run_native_live101.ps1') : new RegExp(`-m ${axis}\\b`, 'u').test(command));
+const axisCommand = { native: '-- --ignored --exact', browser: 'node --test --test-concurrency=1 "tests/browser/*.test.js"',
+  live: 'run_native_live101.ps1' };
+const runsAxis = (job, axis) => commands(job).some(command => command.includes(axisCommand[axis]));
+const retiredTooling = /\b(?:python|pytest|uv|ruff|pyright|pyinstaller|pyproject)\b|setup-uv|uv\.lock/iu;
+// 실 Win32 자원이 있어야 도는 Rust 테스트 — 소스의 `#[ignore]` 전체가 곧 native 축이다.
+const ignoredRustTests = () => globSync('crates/*/{src,tests}/**/*.rs', { cwd: new URL('../../', import.meta.url) })
+  .flatMap(file => [...read(file.replaceAll('\\', '/')).matchAll(/#\[ignore[^\]]*\]\s*fn\s+([A-Za-z0-9_]+)/gu)]
+    .map(match => match[1])).sort();
+const nativeNames = command => [...command.matchAll(/((?:[a-z_]+::)+(windows_[a-z0-9_]+))/gu)].map(match => match[1]);
 const releaseStep = fragment => {
   const matches = release.filter(step => step.name?.includes(fragment));
   assert.equal(matches.length, 1, fragment);
@@ -45,23 +51,17 @@ test('aggregate covers every job and accepts only success while preserving non-P
   }
 });
 
-test('locked dependencies have one real cache writer and artifact downloads reject corruption', () => {
-  const setups = Object.entries(jobs).flatMap(([name, job]) => uses(job, 'astral-sh/setup-uv')
-    .map(step => ({ name, condition: step.with['save-cache'] })));
-  assert.ok(setups.length);
-  assert.equal(new Set(setups.map(step => step.condition)).size, 1);
-  const writers = setups.filter(({ name, condition }) => condition.match(/github\.job == '([^']+)'/u)?.[1] === name);
-  assert.equal(writers.length, 1, 'the selected cache writer must actually run setup-uv');
+test('no workflow or local runner installs Python tooling and artifact downloads reject corruption', () => {
+  for (const [name, source] of [['quality.yml', qualityText], ['release.yml', releaseText],
+    ['test.ps1', read('test.ps1')], ['test-rust.ps1', read('test-rust.ps1')]]) {
+    assert.doesNotMatch(source, retiredTooling, name);
+  }
+  for (const probe of ['uv sync --locked', 'uv run --no-sync pytest', 'astral-sh/setup-uv@v6', 'python -c 1', 'ruff check']) {
+    assert.match(probe, retiredTooling, probe);
+  }
   const transfers = Object.values(jobs).flatMap(job => uses(job, 'actions/download-artifact'));
   assert.ok(transfers.length);
   for (const step of transfers) assert.equal(step.with['digest-mismatch'], 'error');
-  const conjured = command => command.replace(/[`\\]\r?\n\s*/gu, ' ').split(/\r?\n/u)
-    .some(line => /\buv run\b[^\n]*\s(?:--with|-w)\b/u.test(line));
-  for (const command of Object.values(jobs).flatMap(commands)) assert.equal(conjured(command), false, command);
-  for (const command of ['uv run --with pillow pytest', 'uv run -w pillow pytest',
-    'uv run --with-editable . pytest', 'uv run --no-sync `\n --with pillow pytest']) assert.ok(conjured(command));
-  for (const command of ['uv run --no-sync pytest', 'uv run --no-sync pytest --workers 2',
-    'uv run --no-sync pytest\nsome-tool --with foo']) assert.equal(conjured(command), false);
 });
 
 test('one sealed frontend producer supplies verified bytes to every consumer before Node setup', () => {
@@ -106,22 +106,40 @@ test('Rust and product copy gates run locally and CI resource responsibilities d
     assert.ok(commands(jobs.static).includes(command));
   }
   for (const axis of Object.keys(axes)) assert.equal(Object.values(jobs).filter(job => runsAxis(job, axis)).length, 1, axis);
-  assert.equal(Object.values(jobs).filter(job => text(job).includes(contract)).length, 1);
-  const repository = commands(jobs.static).find(command => command.includes('pytest'));
-  const product = commands(jobs['pytest-contract']).find(command => command.includes('pytest'));
-  assert.ok(repository.includes('tests/repo_contract'));
-  assert.ok(!repository.includes('--cov=') && !repository.includes(' -m '));
-  contains(product, ['--ignore=tests/repo_contract', contract, '--cov=hwpxfiller']);
+  for (const command of [...commands(jobs.static), ...commands(jobs['rust-kernel'])]) {
+    assert.ok(!command.includes('--ignored') && !command.includes('tests/browser'), command);
+  }
   const producer = text(jobs['sealed-web']);
   assert.ok(producer.indexOf('-Mode Build') < producer.indexOf('npm.cmd test'));
-  assert.equal(uses(jobs['sealed-web'], 'astral-sh/setup-uv').length, 0);
-  assert.ok(!/python|pytest|\buv\b/iu.test(producer));
-  assert.ok(!needs(jobs['pytest-contract']).has('sealed-web'));
-  assert.equal(downloads(jobs['pytest-contract']), false);
-  assert.equal(uses(jobs['pytest-contract'], 'actions/setup-node').length, 0);
-  assert.deepEqual(Object.entries(jobs).filter(([, job]) => text(job).includes('--coverage-xml'))
-    .map(([name]) => name), ['pytest-contract']);
-  contains(text(jobs['pytest-contract']), ['cargo run --locked', '--no-default-features', '--example check_rust_coverage', '--markdown-output package-coverage.md']);
+
+  // 커버리지 하한은 한 job 이 계측 빌드로 혼자 소유한다 — 산출물도 Node 도 쓰지 않는다.
+  const coverage = jobs['rust-coverage'];
+  assert.deepEqual(Object.entries(jobs).filter(([, job]) => /coverage/iu.test(commands(job).join('\n')))
+    .map(([name]) => name), ['rust-coverage']);
+  assert.ok(commands(coverage).some(command => command.includes('scripts\\rust_coverage.ps1')));
+  assert.ok(coverage.steps.some(step => step.name === 'Rust LLVM coverage floors'));
+  assert.ok(uses(coverage, 'actions/upload-artifact').some(step => step.if === 'always()'
+    && step.with.path.includes('package-coverage.md')));
+  assert.equal(needs(coverage).size, 0);
+  assert.equal(downloads(coverage), false);
+  assert.equal(uses(coverage, 'actions/setup-node').length, 0);
+});
+
+test('real Win32 axis runs exactly the ignored Rust tests in CI and locally, and counts them', () => {
+  const ignored = ignoredRustTests();
+  assert.ok(ignored.length >= 3, ignored.join(', '));
+  const native = Object.entries(jobs).filter(([, job]) => runsAxis(job, 'native'));
+  assert.deepEqual(native.map(([name]) => name), ['windows-native']);
+  const [command] = commands(native[0][1]).filter(item => item.includes('--ignored'));
+  contains(command, ['cargo test -p hwpx-desktop --lib', '--locked', '-- --ignored --exact',
+    `test result: ok\\. ${ignored.length} passed;`]);
+  const names = nativeNames(command);
+  assert.deepEqual(names.map(name => name.split('::').at(-1)).sort(), ignored);
+  assert.equal(downloads(native[0][1]), false);
+  assert.equal(uses(native[0][1], 'actions/setup-node').length, 0);
+  const local = read('test.ps1');
+  contains(local, ['test -p hwpx-desktop --lib --locked -- --ignored --exact', ...names,
+    `test result: ok\\. ${ignored.length} passed;`, 'HWPX_SKIP_NATIVE_TESTS']);
 });
 
 test('Chrome and native WebView2 keep distinct evidence, full scope and failure uploads', () => {
@@ -140,7 +158,18 @@ test('Chrome and native WebView2 keep distinct evidence, full scope and failure 
     assert.ok(evidence.length);
     evidence.forEach(step => assert.equal(step.if, 'always()'));
   }
-  contains(text(chrome), ['Press-geometry browser precondition', 'HWPX_SKIP_MOTION_TESTS', "channel='chrome'"]);
+  contains(text(chrome), ['Press-geometry browser precondition', 'HWPX_SKIP_MOTION_TESTS', "channel: 'chrome'"]);
+  // Node 드라이버와 rhwp 왕복 fixture 를 갖춘 뒤, 방금 검증한 봉인 트리로 Chrome suite 를 돈다.
+  const step = fragment => chrome.steps.findIndex(item => (item.run ?? '').includes(fragment));
+  const order = [step('VerifyExisting'), step('npm.cmd ci'), step('--example browser_fixture'),
+    step("channel: 'chrome'"), step('tests/browser/*.test.js')];
+  assert.ok(order.every((at, index) => at >= 0 && (index === 0 || order[index - 1] < at)), order.join(','));
+  const suite = chrome.steps[order.at(-1)];
+  assert.equal(suite.env.HWPX_WEB_ARTIFACT_ROOT, 'build/web');
+  assert.equal(suite.env.HWPX_BROWSER_FIXTURE_BIN, 'target/debug/examples/browser_fixture.exe');
+  contains(read('test.ps1'), ["'tests/browser/*.test.js'", '--example browser_fixture', 'HWPX_WEB_ARTIFACT_ROOT',
+    'HWPX_BROWSER_FIXTURE_BIN', 'HWPX_SKIP_MOTION_TESTS']);
+  assert.ok(globSync('tests/browser/*.test.js', { cwd: new URL('../../', import.meta.url) }).length > 0);
   for (const variable of Object.values(axes)) {
     for (const token of [`${variable}:`, `${variable}=1`, `${variable} = "1"`]) assert.ok(!qualityText.includes(token));
   }
@@ -167,8 +196,8 @@ test('distribution and release consume the verified tree before native journey a
   assert.equal(releaseStep('Prepare pinned Rust web verifier').run, 'cargo --version');
   const setup = release.find(step => step.uses?.startsWith('actions/setup-node@'));
   assert.equal(setup.with['node-version-file'], '.node-version');
-  assert.equal(tests.run, '.\\test.ps1 -m "not live"');
-  contains(read('test.ps1'), ["& (Join-Path $PSScriptRoot 'build-web.ps1')"]);
+  assert.equal(tests.run, '.\\test.ps1 -SkipLive');
+  contains(read('test.ps1'), ["& (Join-Path $PSScriptRoot 'build-web.ps1')", "$word -ieq '-SkipLive'"]);
   assert.ok(read('build-web.ps1').includes("[string]$Mode = 'Build'"));
   contains(packageStep.run, ['.\\packaging\\build_native.ps1 -Target all -SkipCheck -WebMode VerifyExisting', 'release-evidence']);
   assert.ok(!releaseText.includes('npm.cmd ci') && !releaseText.includes('npm.cmd run build'));

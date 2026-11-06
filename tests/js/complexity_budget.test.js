@@ -32,12 +32,11 @@ test('Rust and JS complexity cannot escape a closed ledger', () => {
   ]);
   const old = { schema: 'complexity-budget/v1', budget: {
     'crates/hwpx-core/src/old.rs::large': { function_complexity: 19 },
-    'src/legacy.py::large': { function_complexity: 16 },
+    'crates/hwpx-core/src/gone.rs::large': { function_complexity: 16 },
   } };
-  const lower = tightened([unit('crates/hwpx-core/src/old.rs', 'large', 12)], old,
-    { pythonExists: rel => rel === 'src/legacy.py' });
+  const lower = tightened([unit('crates/hwpx-core/src/old.rs', 'large', 12)], old);
   assert.equal(lower.budget['crates/hwpx-core/src/old.rs::large'].function_complexity, 12);
-  assert.equal(lower.budget['src/legacy.py::large'].function_complexity, 16);
+  assert.equal(lower.budget['crates/hwpx-core/src/gone.rs::large'], undefined);
   assert.match(renderLedger(lower, '# existing header\n'), /function_complexity = 12/u);
   assert.deepEqual(tightened([], old).budget, {});
   for (const name of ['frontend/src/selftest/probes/a.js', 'tests/js/a.js', 'tests/browser/a.mjs', 'crates/example/tests/a.rs']) {

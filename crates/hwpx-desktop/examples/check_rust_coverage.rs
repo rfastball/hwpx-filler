@@ -1,20 +1,19 @@
 //! Enforce the existing exact-package floors against production-only LLVM coverage JSON.
+//!
+//! `scripts/rust_coverage.ps1` produces the `llvm-cov export -summary-only` JSON with the test
+//! modules compiled out of the measurement (`coverage(off)` under `--cfg coverage_nightly`).
 
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-#[path = "check_rust_coverage/xml.rs"]
-mod xml;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Policy {
-    #[serde(default)]
-    unmatched_allow: Vec<String>,
     packages: BTreeMap<String, Floor>,
     #[serde(default)]
     rust: RustExceptions,
@@ -23,7 +22,6 @@ struct Policy {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Floor {
-    path: String,
     #[serde(default)]
     rust_files: Vec<String>,
     line: f64,
@@ -36,12 +34,43 @@ struct RustExceptions {
     unmeasured_allow: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 struct Counts {
     lines: u64,
     covered_lines: u64,
     branches: u64,
     covered_branches: u64,
+}
+
+impl Counts {
+    fn add(&mut self, other: Counts) {
+        self.lines += other.lines;
+        self.covered_lines += other.covered_lines;
+        self.branches += other.branches;
+        self.covered_branches += other.covered_branches;
+    }
+    fn line_rate(self) -> f64 {
+        100.0 * self.covered_lines as f64 / self.lines as f64
+    }
+    fn branch_rate(self) -> f64 {
+        100.0 * self.covered_branches as f64 / self.branches as f64
+    }
+    fn missed(self) -> u64 {
+        (self.lines - self.covered_lines) + (self.branches - self.covered_branches)
+    }
+}
+
+struct Row<'a> {
+    name: &'a str,
+    floor: &'a Floor,
+    total: Counts,
+    files: Vec<(&'a str, Counts)>,
+}
+
+impl Row<'_> {
+    fn passed(&self) -> bool {
+        self.total.line_rate() >= self.floor.line && self.total.branch_rate() >= self.floor.branch
+    }
 }
 
 // These contain only module exports or data struct declarations, so LLVM emits no file record.
@@ -91,13 +120,12 @@ fn assignments(
     policy: &Policy,
     sources: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
-    if policy.packages.is_empty() || !policy.unmatched_allow.iter().all(|path| !path.is_empty()) {
-        return Err("coverage policy package/legacy allowlist is malformed".into());
+    if policy.packages.is_empty() {
+        return Err("coverage policy has no [packages.*] entries".into());
     }
     let mut assigned = BTreeMap::new();
     for (name, floor) in &policy.packages {
-        if floor.path.is_empty()
-            || floor.rust_files.is_empty()
+        if floor.rust_files.is_empty()
             || !floor.line.is_finite()
             || !floor.branch.is_finite()
             || floor.line <= 0.0
@@ -177,21 +205,21 @@ fn measured_counts(
     Ok(result)
 }
 
-fn run(policy_path: &Path, report_path: &Path) -> Result<(), Box<dyn Error>> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or("crate has no workspace parent")?
-        .parent()
-        .ok_or("workspace has no parent")?
-        .to_path_buf();
-    let policy: Policy = toml::from_str(&fs::read_to_string(policy_path)?)?;
-    let sources = source_files(&root)?;
-    let assigned = assignments(&policy, &sources)?;
-    let report: Value = serde_json::from_slice(&fs::read(report_path)?)?;
-    let mut measured = measured_counts(&report, &root)?;
-    let mut failed = Vec::new();
+fn evaluate<'a>(
+    policy: &'a Policy,
+    root: &Path,
+    report: &Value,
+) -> Result<Vec<Row<'a>>, Box<dyn Error>> {
+    let assigned = assignments(policy, &source_files(root)?)?;
+    let mut measured = measured_counts(report, root)?;
+    let mut rows = Vec::new();
     for (name, floor) in &policy.packages {
-        let mut total = Counts::default();
+        let mut row = Row {
+            name,
+            floor,
+            total: Counts::default(),
+            files: Vec::new(),
+        };
         for file in &floor.rust_files {
             let count = match measured.remove(file) {
                 Some(count) => count,
@@ -212,136 +240,182 @@ fn run(policy_path: &Path, report_path: &Path) -> Result<(), Box<dyn Error>> {
                 }
                 None => return Err(format!("{name}: no LLVM evidence for {file}").into()),
             };
-            total.lines += count.lines;
-            total.covered_lines += count.covered_lines;
-            total.branches += count.branches;
-            total.covered_branches += count.covered_branches;
+            row.total.add(count);
+            row.files.push((file, count));
         }
-        if total.lines == 0 || total.branches == 0 {
+        if row.total.lines == 0 || row.total.branches == 0 {
             return Err(format!("{name}: empty line or branch evidence").into());
         }
-        let line = 100.0 * total.covered_lines as f64 / total.lines as f64;
-        let branch = 100.0 * total.covered_branches as f64 / total.branches as f64;
-        println!(
-            "{name}: lines {line:.1}% (floor {}%), branches {branch:.1}% (floor {}%)",
-            floor.line, floor.branch
-        );
-        if line < floor.line || branch < floor.branch {
-            failed.push(name.as_str());
-        }
+        rows.push(row);
     }
-    for file in measured.keys() {
-        if !assigned.contains_key(file) {
-            return Err(format!("{file}: LLVM source outside Rust coverage inventory").into());
-        }
+    if let Some(file) = measured.keys().find(|file| !assigned.contains_key(*file)) {
+        return Err(format!("{file}: LLVM source outside Rust coverage inventory").into());
     }
-    if !failed.is_empty() {
-        return Err(format!(
-            "Rust package coverage below existing floors: {}",
-            failed.join(", ")
+    Ok(rows)
+}
+
+fn render(rows: &[Row<'_>]) -> String {
+    let mut output = "# Package coverage gate\n\nProduction-only LLVM coverage of each package's `rust_files` (test modules excluded).\n\n| Package | Line | Floor | Branch | Floor | Result |\n|---|---:|---:|---:|---:|:---:|\n".to_owned();
+    for row in rows {
+        let total = row.total;
+        writeln!(
+            output,
+            "| `{}` | {:.2}% ({}/{}) | {}% | {:.2}% ({}/{}) | {}% | {} |",
+            row.name,
+            total.line_rate(),
+            total.covered_lines,
+            total.lines,
+            row.floor.line,
+            total.branch_rate(),
+            total.covered_branches,
+            total.branches,
+            row.floor.branch,
+            if row.passed() { "PASS" } else { "FAIL" }
         )
-        .into());
+        .unwrap();
     }
-    Ok(())
+    if rows.iter().any(|row| !row.passed()) {
+        output.push_str("\n## Regressions\n");
+        for row in rows.iter().filter(|row| !row.passed()) {
+            writeln!(
+                output,
+                "\n### `{}`\n\nFiles by missed lines + branches:\n\n| File | Missed lines | Missed branches | Line | Branch |\n|---|---:|---:|---:|---:|",
+                row.name
+            )
+            .unwrap();
+            let mut files = row
+                .files
+                .iter()
+                .filter(|(_, count)| count.missed() > 0)
+                .collect::<Vec<_>>();
+            files.sort_by(|a, b| b.1.missed().cmp(&a.1.missed()).then(a.0.cmp(b.0)));
+            for (file, count) in files {
+                let branch = if count.branches == 0 {
+                    "-".to_owned()
+                } else {
+                    format!("{:.1}%", count.branch_rate())
+                };
+                writeln!(
+                    output,
+                    "| `{file}` | {} | {} | {:.1}% | {branch} |",
+                    count.lines - count.covered_lines,
+                    count.branches - count.covered_branches,
+                    count.line_rate(),
+                )
+                .unwrap();
+            }
+        }
+    }
+    output
+}
+
+/// Exit 0 when every floor holds, 1 when a floor is missed, 2 when evidence or inventory is invalid.
+fn run(root: &Path, args: &[String]) -> Result<i32, Box<dyn Error>> {
+    if args.len() != 2 && !(args.len() == 4 && args[2] == "--markdown-output") {
+        return Err(
+            "usage: check_rust_coverage POLICY.toml LLVM.json [--markdown-output REPORT.md]".into(),
+        );
+    }
+    let policy: Policy = toml::from_str(&fs::read_to_string(&args[0])?)?;
+    let report: Value = serde_json::from_slice(&fs::read(&args[1])?)?;
+    let rows = evaluate(&policy, root, &report)?;
+    let markdown = render(&rows);
+    if let Some(path) = args.get(3) {
+        fs::write(path, &markdown)?;
+    }
+    print!("{markdown}");
+    let failed = rows
+        .iter()
+        .filter(|row| !row.passed())
+        .map(|row| row.name)
+        .collect::<Vec<_>>();
+    if failed.is_empty() {
+        return Ok(0);
+    }
+    eprintln!(
+        "Rust package coverage below existing floors: {}",
+        failed.join(", ")
+    );
+    Ok(1)
+}
+
+fn workspace_root() -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest
+        .parent()
+        .and_then(Path::parent)
+        .expect("hwpx-desktop sits two levels below the workspace root")
+        .to_path_buf()
 }
 
 fn main() {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.first().is_some_and(|arg| arg == "--coverage-xml") {
-        std::process::exit(xml::main(&args[1..]));
-    }
-    if args.len() != 2 {
-        eprintln!("usage: check_rust_coverage POLICY.toml LLVM.json");
-        std::process::exit(2);
-    }
-    if let Err(error) = run(Path::new(&args[0]), Path::new(&args[1])) {
-        eprintln!("Rust coverage gate: {error}");
-        std::process::exit(1);
-    }
+    let code = match run(&workspace_root(), &args) {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("Rust coverage gate: {error}");
+            2
+        }
+    };
+    std::process::exit(code);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const XML: &str = r#"<coverage><packages><package><classes>
-      <class filename="src/hwpxcore/api.py"><lines>
-        <line number="10" hits="1" branch="true" condition-coverage="50% (1/2)"/>
-        <line number="11" hits="0"/>
-      </lines></class>
-      <class filename="src/hwpxfiller/host/native/dialogs.py"><lines>
-        <line number="20" hits="0" branch="true" condition-coverage="0% (0/8)"/>
-      </lines></class>
-    </classes></package></packages></coverage>"#;
-
-    fn xml_policy() -> Policy {
-        toml::from_str("unmatched_allow = ['src/hwpxfiller/host/native']\n[packages.hwpxcore]\npath = 'src/hwpxcore'\nline = 50\nbranch = 50\n").unwrap()
+    fn report(root: &Path, files: &[(&str, [u64; 4])]) -> String {
+        let root = root.to_string_lossy().replace('\\', "/");
+        let files = files
+            .iter()
+            .map(|(file, [lines, covered, branches, covered_branches])| {
+                serde_json::json!({
+                    "filename": format!("{root}/{file}"),
+                    "summary": {
+                        "lines": {"count": lines, "covered": covered},
+                        "branches": {"count": branches, "covered": covered_branches},
+                    },
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({"data": [{"files": files}]}).to_string()
     }
 
     #[test]
-    fn xml_exact_package_gate_reports_regressions_without_hiding_missing_evidence() {
-        let mut policy = xml_policy();
-        let rows = xml::evaluate(XML.as_bytes(), &policy).unwrap();
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].passed());
-        let report = xml::render(&rows);
-        assert!(report.contains("50.00% (1/2) | 50% | 50.00% (1/2) | 50% | PASS"));
-        policy.packages.get_mut("hwpxcore").unwrap().line = 80.0;
-        policy.packages.get_mut("hwpxcore").unwrap().branch = 80.0;
-        let rows = xml::evaluate(XML.as_bytes(), &policy).unwrap();
-        assert!(!rows[0].passed());
-        let report = xml::render(&rows);
-        assert!(report.contains("FAIL"));
-        assert!(report.contains("Missing lines: src/hwpxcore/api.py:11"));
-        assert!(report.contains("branch lines: src/hwpxcore/api.py:10"));
-        for (source, phrase) in [
-            (
-                "<coverage><packages/></coverage>".into(),
-                "no coverage evidence",
-            ),
-            (XML.replace(" branch=\"true\"", ""), "no branch evidence"),
-            (
-                XML.replace(" condition-coverage=\"50% (1/2)\"", ""),
-                "condition counts",
-            ),
-            (
-                XML.replace("50% (1/2)", "150% (3/2)"),
-                "invalid branch evidence",
-            ),
+    fn rejects_duplicate_and_missing_source_assignments() {
+        let policy: Policy = toml::from_str(
+            "[packages.one]\nrust_files = ['crates/a/src/lib.rs']\nline = 90\nbranch = 80\n[rust]\nunmeasured_allow = []\n",
+        ).unwrap();
+        let mut sources = BTreeSet::from(["crates/a/src/lib.rs".into()]);
+        assert!(assignments(&policy, &sources).is_ok());
+        sources.insert("crates/a/src/new.rs".into());
+        assert!(assignments(&policy, &sources).is_err());
+        for broken in [
+            // A floor key in the wrong table is a schema error, not a silently absent floor.
+            "[packages.one]\nrust_files = ['x']\nline = 90\n[rust]\nbranch = 80\nunmeasured_allow = []\n",
+            // The retired coverage.py keys must not come back unnoticed.
+            "unmatched_allow = []\n[packages.one]\nrust_files = ['x']\nline = 90\nbranch = 80\n",
+            "[packages.one]\npath = 'src/x'\nrust_files = ['x']\nline = 90\nbranch = 80\n",
         ] {
-            assert!(
-                xml::evaluate(source.as_bytes(), &policy)
-                    .err()
-                    .unwrap()
-                    .to_string()
-                    .contains(phrase)
-            );
+            assert!(toml::from_str::<Policy>(broken).is_err());
         }
-        assert!(xml::evaluate(b"<coverage>", &policy).is_err());
-        policy.unmatched_allow.clear();
-        assert!(
-            xml::evaluate(XML.as_bytes(), &policy)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("without a configured floor")
-        );
-        policy
-            .unmatched_allow
-            .push("src/hwpxfiller/host/native".into());
-        let floor = policy.packages.get_mut("hwpxcore").unwrap();
-        floor.path = "src/hwpxfiller/host/native".into();
-        assert!(
-            xml::evaluate(XML.as_bytes(), &policy)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("separate native scenario")
-        );
+        let duplicate: Policy = toml::from_str(
+            "[packages.one]\nrust_files = ['crates/a/src/lib.rs']\nline = 90\nbranch = 80\n[rust]\nunmeasured_allow = ['crates/a/src/lib.rs']\n",
+        ).unwrap();
+        assert!(assignments(&duplicate, &sources).is_err());
+        let zero: Policy =
+            toml::from_str("[packages.one]\nrust_files = ['x']\nline = 0\nbranch = 80\n").unwrap();
+        assert!(assignments(&zero, &sources).is_err());
+    }
+
+    #[test]
+    fn ledger_covers_the_workspace_inventory_with_unchanged_package_keys() {
+        let root = workspace_root();
         let policy: Policy = toml::from_str(include_str!(
             "../../../tests/contracts/package-coverage-floors.toml"
         ))
         .unwrap();
+        assignments(&policy, &source_files(&root).unwrap()).unwrap();
         assert_eq!(
             policy
                 .packages
@@ -361,55 +435,108 @@ mod tests {
                 "hwpxfiller.webapp",
             ])
         );
-        assert_eq!(policy.unmatched_allow, ["src/hwpxfiller/host/native"]);
     }
 
     #[test]
-    fn xml_command_writes_report_and_keeps_failure_distinct_from_missing_input() {
-        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap();
-        let root = repo.join(format!(".cache/xml-coverage-owner-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+    fn command_reports_floor_misses_apart_from_invalid_evidence() {
+        let root =
+            workspace_root().join(format!(".cache/rust-coverage-owner-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("crates/a/src")).unwrap();
+        fs::write(root.join("crates/a/Cargo.toml"), "").unwrap();
+        fs::write(root.join("crates/a/src/lib.rs"), "pub fn a() {}\n").unwrap();
+        fs::write(root.join("crates/a/src/b.rs"), "pub fn b() {}\n").unwrap();
         let policy = root.join("policy.toml");
-        let coverage = root.join("coverage.xml");
-        let report = root.join("report.md");
-        fs::write(&policy, "unmatched_allow = ['src/hwpxfiller/host/native']\n[packages.hwpxcore]\npath = 'src/hwpxcore'\nline = 80\nbranch = 80\n").unwrap();
-        fs::write(&coverage, XML).unwrap();
-        let args = vec![
-            policy.to_str().unwrap().into(),
-            coverage.to_str().unwrap().into(),
-            "--markdown-output".into(),
-            report.to_str().unwrap().into(),
-        ];
-        assert_eq!(xml::main(&args), 1);
-        assert!(fs::read_to_string(&report).unwrap().contains("FAIL"));
-        fs::write(
+        let llvm = root.join("llvm.json");
+        let markdown = root.join("report.md");
+        let args = [
             &policy,
-            fs::read_to_string(&policy).unwrap().replace("80", "50"),
-        )
-        .unwrap();
-        assert_eq!(xml::main(&args), 0);
-        assert!(fs::read_to_string(&report).unwrap().contains("PASS"));
-        fs::remove_file(coverage).unwrap();
-        assert_eq!(xml::main(&args), 2);
-        assert_eq!(xml::main(&[]), 2);
-        assert!(root.canonicalize().unwrap().starts_with(&repo));
+            &llvm,
+            &PathBuf::from("--markdown-output"),
+            &markdown,
+        ]
+        .map(|path| path.to_string_lossy().into_owned());
+        let write_policy = |line: u32| {
+            fs::write(
+                &policy,
+                format!("[packages.one]\nrust_files = ['crates/a/src/lib.rs', 'crates/a/src/b.rs']\nline = {line}\nbranch = 50\n"),
+            )
+            .unwrap();
+        };
+        write_policy(75);
+        let good = report(
+            &root,
+            &[
+                ("crates/a/src/lib.rs", [4, 4, 2, 1]),
+                ("crates/a/src/b.rs", [4, 2, 2, 1]),
+            ],
+        );
+        fs::write(&llvm, &good).unwrap();
+        assert_eq!(run(&root, &args).unwrap(), 0);
+        let text = fs::read_to_string(&markdown).unwrap();
+        assert!(text.contains("| `one` | 75.00% (6/8) | 75% | 50.00% (2/4) | 50% | PASS |"));
+        assert!(!text.contains("Regressions"));
+        write_policy(80);
+        assert_eq!(run(&root, &args).unwrap(), 1);
+        let text = fs::read_to_string(&markdown).unwrap();
+        assert!(text.contains("FAIL"));
+        assert!(text.contains("| `crates/a/src/b.rs` | 2 | 1 | 50.0% | 50.0% |"));
+        assert!(
+            text.find("crates/a/src/b.rs").unwrap() < text.find("crates/a/src/lib.rs").unwrap()
+        );
+        write_policy(75);
+        for (evidence, phrase) in [
+            (
+                report(&root, &[("crates/a/src/lib.rs", [4, 4, 2, 1])]),
+                "no LLVM evidence for crates/a/src/b.rs",
+            ),
+            (
+                report(
+                    &root,
+                    &[
+                        ("crates/a/src/lib.rs", [4, 4, 0, 0]),
+                        ("crates/a/src/b.rs", [4, 2, 0, 0]),
+                    ],
+                ),
+                "empty line or branch evidence",
+            ),
+            (
+                report(
+                    &root,
+                    &[
+                        ("crates/a/src/lib.rs", [4, 5, 2, 1]),
+                        ("crates/a/src/b.rs", [4, 2, 2, 1]),
+                    ],
+                ),
+                "invalid or duplicate LLVM evidence",
+            ),
+            (
+                report(
+                    &root,
+                    &[
+                        ("crates/a/src/lib.rs", [4, 4, 2, 1]),
+                        ("crates/a/src/b.rs", [4, 2, 2, 1]),
+                        ("crates/a/tests/it.rs", [1, 1, 0, 0]),
+                    ],
+                ),
+                "outside Rust coverage inventory",
+            ),
+            ("{}".into(), "LLVM report has no data"),
+        ] {
+            fs::write(&llvm, evidence).unwrap();
+            let error = run(&root, &args).unwrap_err().to_string();
+            assert!(error.contains(phrase), "{error}");
+        }
+        fs::write(&llvm, &good).unwrap();
+        fs::write(root.join("crates/a/src/new.rs"), "pub fn c() {}\n").unwrap();
+        let error = run(&root, &args).unwrap_err().to_string();
+        assert!(error.contains("inventory drift"), "{error}");
+        assert!(
+            run(&root, &args[..1])
+                .unwrap_err()
+                .to_string()
+                .contains("usage")
+        );
         fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
-    fn rejects_duplicate_and_missing_source_assignments() {
-        let policy: Policy = toml::from_str(
-            "unmatched_allow = []\n[packages.one]\npath = 'old'\nrust_files = ['crates/a/src/lib.rs']\nline = 90\nbranch = 80\n[rust]\nunmeasured_allow = []\n",
-        ).unwrap();
-        let mut sources = BTreeSet::from(["crates/a/src/lib.rs".into()]);
-        assert!(assignments(&policy, &sources).is_ok());
-        sources.insert("crates/a/src/new.rs".into());
-        assert!(assignments(&policy, &sources).is_err());
-        assert!(toml::from_str::<Policy>(
-            "unmatched_allow = []\n[packages.one]\npath = 'old'\nrust_files = ['x']\nline = 90\n[rust]\nbranch = 80\nunmeasured_allow = []\n",
-        ).is_err());
     }
 }

@@ -2,40 +2,55 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { decide, loadProbeGraph, loadScopeMap, probeClosure, resolveScope,
   validateScopeMap, verifySelectionReceipt } from '../../scripts/live_scope_native.mjs';
 
-test('local runner preserves full native coverage with execution options and rejects CI opt-out', () => {
+test('local runner accepts only its declared arguments and rejects CI opt-outs', () => {
   // Execute the real argument/environment selection before any build or window starts.
   const runner = readFileSync(new URL('../../test.ps1', import.meta.url), 'utf8').replace(/^\uFEFF/u, '');
-  const boundary = runner.indexOf('$uv = Get-Command');
+  const boundary = runner.indexOf('# --- 인자·환경 판정 끝');
   assert.ok(boundary > 0);
   const cases = [
-    { args: [], scope: 'full' },
-    { args: ['-x', '-q'], scope: 'full' },
-    { args: ['--durations', '10', '--maxfail', '2'], scope: 'full' },
-    { args: ['tests/selected_case.py'], scope: null },
-    { args: ['-k', 'engine'], scope: null },
-    { args: ['-kengine'], scope: null },
-    { args: ['-m', 'not live'], scope: null },
+    { args: [], scope: 'full', motion: false, native: false },
     { args: ['-LiveScope', 'settings'], scope: 'settings' },
+    { args: ['-livescope', 'job,data'], scope: 'job,data' },
+    { args: ['-SkipLive'], scope: null },
+    { args: ['-SkipLive'], ci: '1', scope: null },
+    { args: ['-LiveScope', 'full'], ci: '1', scope: 'full' },
+    { args: ['-SkipLive', '-LiveScope', 'auto'], error: true },
+    { args: ['-SkipLive', '-SkipLive'], error: true },
+    { args: ['-LiveScope', 'job', '-LiveScope', 'data'], error: true },
+    { args: ['-LiveScope'], error: true },
+    { args: ['-LiveScope', '-SkipLive'], error: true },
+    { args: ['-x'], error: true },
+    { args: ['-m', 'not live'], error: true },
+    { args: ['tests/selected_case.rs'], error: true },
+    { args: ['-Live', 'auto'], error: true },
     { args: [], skip: '1', scope: null },
     { args: [], skip: '0', scope: 'full' },
     { args: [], skip: '1', ci: '1', error: true },
     { args: ['-LiveScope', 'full'], skip: '1', error: true },
+    { args: [], motion: '1', scope: 'full', skipMotion: true },
+    { args: [], motion: '1', ci: '1', error: true },
+    { args: [], native: '1', scope: 'full', skipNative: true },
+    { args: [], native: '1', ci: '1', error: true },
+    { args: [], native: 'false', ci: '1', scope: 'full', skipNative: false },
   ];
   const input = JSON.stringify(cases).replaceAll("'", "''");
   const script = `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $cases = ConvertFrom-Json '${input}'
 $results = foreach ($case in $cases) {
   $env:HWPX_SKIP_GUI_TESTS = $case.skip
+  $env:HWPX_SKIP_MOTION_TESTS = $case.motion
+  $env:HWPX_SKIP_NATIVE_TESTS = $case.native
   $env:CI = $case.ci
   $env:GITHUB_ACTIONS = $null
   $caseArgs = @($case.args)
   try {
     & {
 ${runner.slice(0, boundary)}
-      @{ scope = $nativeScope; error = $false }
+      @{ scope = $nativeScope; motion = $skipMotion; native = $skipNative; error = $false }
     } @caseArgs
   } catch { @{ scope = $null; error = $true; detail = $_.ToString() } }
 }
@@ -49,7 +64,10 @@ ConvertTo-Json -InputObject @($results) -Compress`;
   for (const [index, expected] of cases.entries()) {
     assert.equal(observed[index].error, !!expected.error,
       JSON.stringify({ expected, observed: observed[index] }));
-    if (!expected.error) assert.equal(observed[index].scope, expected.scope, JSON.stringify(expected));
+    if (expected.error) continue;
+    assert.equal(observed[index].scope, expected.scope, JSON.stringify(expected));
+    if ('skipMotion' in expected) assert.equal(observed[index].motion, expected.skipMotion, JSON.stringify(expected));
+    if ('skipNative' in expected) assert.equal(observed[index].native, expected.skipNative, JSON.stringify(expected));
   }
 });
 
@@ -83,11 +101,24 @@ test('native local scope keeps full fallback, probe closure, and CI refusal', ()
     environ: { HWPX_SELFTEST_PROBES: 'job_mirror' } }), /HWPX_SELFTEST_PROBES/);
   assert.equal(resolveScope('full', { map, graph, environ: { CI: 'true' } }).mode, 'full');
   const malformed = structuredClone(map);
-  malformed.scopes.job.tests = ['tests/foo.py::test_bar[param]'];
-  assert.throws(() => validateScopeMap(malformed), /parameterized node/);
   malformed.scopes.job.tests = [];
-  malformed.scopes.job.unknown = true;
   assert.throws(() => validateScopeMap(malformed), /invalid live scope fields/);
+  delete malformed.scopes.job.tests;
+  malformed.scopes.job.probes = [];
+  assert.throws(() => validateScopeMap(malformed), /no resource owner/);
+  assert.throws(() => validateScopeMap({ ...structuredClone(map), version: 1 }), /version/);
+
+  // 낡은 glob(지운 구현의 경로)은 조용히 아무것도 고르지 않는다 — 소유 경로는 실제 추적 파일을 가리켜야 한다.
+  const tracked = spawnSync('git', ['ls-files'], { encoding: 'utf8', cwd: new URL('../../', import.meta.url) });
+  assert.equal(tracked.status, 0, tracked.stderr);
+  const files = tracked.stdout.split(/\r?\n/u).filter(Boolean);
+  const owned = [['shared', map.shared],
+    ...Object.entries(map.scopes).map(([name, scope]) => [`scopes.${name}.paths`, scope.paths])];
+  for (const [label, globs] of owned) {
+    for (const glob of globs) {
+      assert.ok(files.some(file => path.matchesGlob(file, glob)), `${label}: ${glob} matches no tracked file`);
+    }
+  }
 
   const selected = resolveScope('settings', { map, graph, environ: {} });
   const included = new Set(selected.closure);

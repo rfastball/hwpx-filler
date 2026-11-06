@@ -1,10 +1,5 @@
-# Python
+# 빌드 산출물
 /target/
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.pytest-tmp/
 build/
 dist/
 
@@ -12,12 +7,6 @@ dist/
 node_modules/
 build/web/
 npm-debug.log*
-
-# venv
-.venv/
-venv/
-.uv-cache/
-.uv-python/
 
 # 생성 산출물 / 임시 데이터
 out/
@@ -36,13 +25,7 @@ sample_bid_data.csv
 .claude/worktrees/
 
 # Tool caches / reports
-.coverage
-coverage.xml
-pytest.xml
 web-artifact-identity.json
-.ruff_cache/
-.pyright/
-.pytest-codex/
 error.log
 
 # 에이전트 도구 자산(제품 아님 — 머신 고정이라 커밋 금지)
@@ -86,5 +69,21 @@ assets/branding/document-narmi-abstract-icon-concepts-*.png
 .cache/
 # 로컬 설정 백업본
 .claude/*.bak-*
-# 권한이 잠긴 로컬 pytest 캐시
+# 퇴역한 Python 도구의 로컬 잔재 — 제품·검증은 더 쓰지 않지만, 예전 clone 에 남은 캐시·가상환경·
+# 보고서(권한이 잠긴 것 포함)가 커밋 후보로 떠오르지 않도록 무시 목록만 남긴다.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.uv-cache/
+.uv-python/
+.pytest_cache/
+.pytest-tmp/
+.pytest-codex/
 .pytest-codex-cache*/
+.ruff_cache/
+.pyright/
+.coverage
+coverage.xml
+pytest.xml

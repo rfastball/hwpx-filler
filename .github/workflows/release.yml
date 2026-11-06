@@ -27,13 +27,6 @@ jobs:
           # `test.ps1` 의 복잡도 예산이 `origin/master` merge-base 원장과 견준다 — 얕은
           # checkout 에는 그 기준이 없다.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v6
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev --group build
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -52,7 +45,8 @@ jobs:
           "IS_PRERELEASE=$flag" | Out-File $env:GITHUB_ENV -Append
       - name: Quality and tests
         shell: pwsh
-        run: .\test.ps1 -m "not live"
+        # 실창은 아래 Quickstart 101 실주행이 배포본으로 소유한다. 설치 Chrome·실 Win32 검사는 여기서 돈다.
+        run: .\test.ps1 -SkipLive
       - name: Build portable applications
         shell: pwsh
         run: |

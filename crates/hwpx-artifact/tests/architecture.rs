@@ -266,12 +266,24 @@ fn dependency_names(manifest: &toml::Value, names: &mut Vec<String>) {
 
 #[test]
 fn cargo_dependencies_point_inward() {
+    // 퇴역한 module ring 지도의 「안쪽은 host(창·OS 셸)를 모른다」를 crate 의존으로 잇는다.
+    const HOST: [&str; 6] = [
+        "tauri",
+        "tauri-build",
+        "wry",
+        "webview2-com",
+        "windows",
+        "windows-sys",
+    ];
+    let core_forbidden = [
+        &["hwpx-filler", "hwpx-desktop", "hwpx-artifact"][..],
+        &HOST[..],
+    ]
+    .concat();
+    let filler_forbidden = [&["hwpx-desktop", "hwpx-artifact"][..], &HOST[..]].concat();
     for (source, forbidden) in [
-        (
-            "hwpx-core",
-            &["hwpx-filler", "hwpx-desktop", "hwpx-artifact"][..],
-        ),
-        ("hwpx-filler", &["hwpx-desktop", "hwpx-artifact"][..]),
+        ("hwpx-core", core_forbidden.as_slice()),
+        ("hwpx-filler", filler_forbidden.as_slice()),
     ] {
         let file = root().join(format!("crates/{source}/Cargo.toml"));
         let document: toml::Value =

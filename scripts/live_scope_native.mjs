@@ -8,7 +8,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MAP = 'tests/contracts/live-scopes.toml';
 const GRAPH = 'tests/contracts/selftest-probe-graph.json';
 const truthy = value => !['', '0', 'false'].includes(String(value ?? '').trim().toLowerCase());
-const fields = ['description', 'paths', 'probes', 'tests'];
+const fields = ['description', 'paths', 'probes'];
 const plain = value => value !== null && typeof value === 'object' &&
   !Array.isArray(value);
 
@@ -26,7 +26,7 @@ export function loadScopeMap(root = ROOT) {
 }
 
 export function validateScopeMap(map) {
-  if (!plain(map) || map.version !== 1 || !plain(map.scopes) ||
+  if (!plain(map) || map.version !== 2 || !plain(map.scopes) ||
       Object.keys(map).sort().join(',') !==
         ['full_only', 'no_live', 'scopes', 'shared', 'version'].join(',')) {
     throw new Error('live scope map version or scopes are invalid');
@@ -53,12 +53,8 @@ function validateScope(name, scope) {
     throw new Error(`missing live scope description: ${name}`);
   }
   stringList(scope.probes, `${name}.probes`);
-  stringList(scope.tests, `${name}.tests`);
   stringList(scope.paths, `${name}.paths`);
-  if (scope.tests.some(node => node.includes('['))) {
-    throw new Error(`parameterized node in ${name}.tests`);
-  }
-  if (!scope.probes.length && !scope.tests.length && name !== 'journey101') {
+  if (!scope.probes.length && name !== 'journey101') {
     throw new Error(`live scope has no resource owner: ${name}`);
   }
 }

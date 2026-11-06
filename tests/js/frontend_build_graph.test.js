@@ -14,17 +14,29 @@ const packageJson = JSON.parse(read('package.json'));
 const relative = value => path.relative(root, value).replaceAll('\\', '/');
 const inRoot = (file, allowed) => allowed.some(entry => file === entry || file.startsWith(`${entry}/`));
 
+const sourceLang = file => file.endsWith('.tsx') ? 'tsx' : /\.[mc]?ts$/u.test(file) ? 'ts' : 'js';
+const literal = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value : null;
+
 function frontendImports(file, source) {
-  const syntax = parseAst(source, { lang: file.endsWith('.tsx') ? 'tsx' : file.endsWith('.ts') ? 'ts' : 'js' });
-  const imports = [];
+  const syntax = parseAst(source, { lang: sourceLang(file) });
+  // `/// <reference types>` 도 vendor 타입을 끌어들이는 의존 간선이다.
+  const imports = [...source.matchAll(/^\s*\/\/\/\s*<reference\s+types\s*=\s*["']([^"']+)["']\s*\/>/gmu)]
+    .map(match => match[1]);
   const visit = node => {
     if (['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration'].includes(node.type)
       && typeof node.source?.value === 'string') imports.push(node.source.value);
-    if (node.type === 'ImportExpression' && typeof node.source?.value === 'string')
-      imports.push(node.source.value);
-    if (node.type === 'CallExpression' && node.callee?.name === 'require'
-      && node.arguments.length === 1 && typeof node.arguments[0].value === 'string')
-      imports.push(node.arguments[0].value);
+    if (node.type === 'TSImportEqualsDeclaration' && node.moduleReference?.type === 'TSExternalModuleReference')
+      imports.push(literal(node.moduleReference.expression));
+    const required = node.type === 'CallExpression' && (node.callee?.name === 'require'
+      || node.callee?.type === 'MemberExpression' && !node.callee.computed
+        && node.callee.object?.name === 'module' && node.callee.property?.name === 'require');
+    if (node.type === 'ImportExpression' || required) {
+      // 문자열 literal 이 아닌 지정자는 정적으로 판정할 수 없으므로 통과가 아니라 거절이다.
+      const specifier = literal(node.type === 'ImportExpression' ? node.source : node.arguments?.[0]);
+      assert.ok(specifier !== null && (node.type === 'ImportExpression' || node.arguments.length === 1),
+        `${file}: dynamic import()/require() specifier must be a string literal`);
+      imports.push(specifier);
+    }
     for (const value of Object.values(node)) {
       if (Array.isArray(value)) value.forEach(child => child?.type && visit(child));
       else if (value?.type) visit(value);
@@ -53,7 +65,7 @@ function declaredOwner(file, symbol) {
 function resolveFrontendImport(file, specifier, sources) {
   const target = specifier.startsWith('.')
     ? path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier))
-    : specifier.startsWith('/src/') ? specifier.slice(1) : null;
+    : specifier.startsWith('/src/') || specifier.startsWith('/js/') ? specifier.slice(1) : null;
   if (!target || target.startsWith('../')) return null;
   return [target, `${target}.ts`, `${target}.tsx`, `${target}.js`, `${target}.mjs`,
     `${target}/index.ts`, `${target}/index.js`].find(candidate => sources.has(candidate)) ?? null;
@@ -225,13 +237,17 @@ test('production imports form a closed acyclic graph with pinned bare dependenci
 });
 
 test('frontend vendors remain inside their owned adapters and cannot enter product contracts', () => {
-  const integrations = readToml('tests/architecture_contract.toml').vendor_integration;
+  const contract = readToml('tests/architecture_contract.toml');
+  assert.deepEqual(Object.keys(contract).sort(), ['schema', 'vendor_integration']);
+  const integrations = contract.vendor_integration;
+  assert.deepEqual(Object.keys(integrations), Object.keys(integrations).sort());
   const approved = new Map();
   for (const [name, record] of Object.entries(integrations)) {
     assert.deepEqual(Object.keys(record).sort(),
       ['allowed_source_roots', 'dispose_owner', 'mount_owner', 'packages', 'update_owner'], name);
     for (const key of ['packages', 'allowed_source_roots']) {
       assert.deepEqual(record[key], [...new Set(record[key])].sort(), `${name}.${key}`);
+      assert.ok(record[key].every(value => !/[*?[\]\\]|\.\./u.test(value)), `${name}.${key}: wildcard or unsafe path`);
     }
     for (const entry of record.allowed_source_roots) {
       assert.ok(entry.startsWith('frontend/src/') && existsSync(path.join(root, entry)), entry);
@@ -248,8 +264,9 @@ test('frontend vendors remain inside their owned adapters and cannot enter produ
   }
   assert.deepEqual([...approved.keys()].sort(), Object.keys(packageJson.dependencies).sort());
 
-  const sources = new Map(globSync('frontend/src/**/*.{js,mjs,ts,tsx}', { cwd: root })
+  const sources = new Map(globSync('frontend/{src,js}/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}', { cwd: root })
     .map(file => [file.replaceAll('\\', '/').replace(/^frontend\//u, ''), read(file)]));
+  assert.ok(sources.has('js/bridge.js') && sources.has('src/main.js'), 'vendor scan covers frontend/src and frontend/js');
   assert.deepEqual(vendorScan(sources, approved), []);
   const bad = new Map([
     ['src/contract/reexport.ts', 'export { thing } from "../editorview/owned.ts";'],
@@ -258,6 +275,27 @@ test('frontend vendors remain inside their owned adapters and cannot enter produ
   ]);
   assert.deepEqual(vendorScan(bad, new Map([['@codemirror/view', ['frontend/src/editorview/owned.ts']]])),
     ['src/contract/reexport.ts -> vendor adapter', 'src/screens/stray.ts -> @codemirror/view']);
+  // 우회 형태: 고전 스크립트·CommonJS·import-equals·triple-slash·module.require·절대 경로.
+  const evasive = new Map([
+    ['js/vendor_probe.js', 'import "react";'],
+    ['src/screens/require_probe.cjs', 'require("react");'],
+    ['src/screens/equals_probe.ts', 'import React = require("react");'],
+    ['src/screens/reference_probe.d.ts', '/// <reference types="react" />\nexport {};'],
+    ['src/screens/module_probe.mts', 'module.require("react-dom/client");'],
+    ['src/contract/absolute.ts', 'export { x } from "/src/react/owned.ts";'],
+    ['src/react/owned.ts', 'import "react";'],
+  ]);
+  assert.deepEqual(vendorScan(evasive, new Map([['react', ['frontend/src/react']], ['react-dom', ['frontend/src/react']]])), [
+    'js/vendor_probe.js -> react',
+    'src/contract/absolute.ts -> vendor adapter',
+    'src/screens/equals_probe.ts -> react',
+    'src/screens/module_probe.mts -> react-dom/client',
+    'src/screens/reference_probe.d.ts -> react',
+    'src/screens/require_probe.cjs -> react',
+  ]);
+  for (const source of ['require(name);', 'import(name);', 'module.require(name);']) {
+    assert.throws(() => vendorScan(new Map([['src/screens/dynamic.js', source]]), new Map()), /string literal/u);
+  }
 });
 
 test('production frontend does not import or recompute domain semantics', () => {

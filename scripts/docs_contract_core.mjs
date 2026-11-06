@@ -17,7 +17,6 @@ export const SLOTS = Object.freeze({
   navigation: ['generated', INDEX], 'runtime-reference': ['generated', REFERENCE],
   'product-adapter': ['generated', PRODUCT], 'user-entry': ['current', 'README.md'],
   'agents-entry': ['current', 'AGENTS.md'], 'ui-gallery': ['current', 'docs/reference/ui-gallery.html'],
-  'module-rings': ['machine', 'tests/contracts/module-rings.toml'],
   'coverage-floors': ['machine', 'tests/contracts/package-coverage-floors.toml'],
   'ui-copy-census': ['machine', 'tests/contracts/ui-copy-census.toml'],
   'architecture-contract': ['machine', 'tests/architecture_contract.toml'],
