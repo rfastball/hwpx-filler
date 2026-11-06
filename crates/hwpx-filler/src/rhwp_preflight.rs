@@ -18,56 +18,64 @@ enum Canonical {
     Comment(String),
     Pi(String),
 }
-fn canonical_node(view: &XmlView, id: NodeId) -> Canonical {
-    let node = view.node(id).expect("view node");
-    let mut attrs: Vec<_> = node
-        .attributes
+/// One `(prefix, uri)` declaration. Scopes list them innermost last; a missing default reads as "".
+type Binding = (String, String);
+
+fn bound<'a>(scope: &'a [Binding], prefix: &str) -> &'a str {
+    scope
         .iter()
-        .filter(|attribute| {
-            let value = attribute.value.as_str();
-            if node.name.is(HP_NS, "p")
-                && matches!(
-                    (attribute.name.local.as_str(), value),
-                    ("pageBreak" | "columnBreak" | "merged", "0") | ("id", "4294967295")
-                )
-            {
-                return false;
-            }
-            if node.name.is(HP_NS, "lineShape")
-                && attribute.name.local == "endCap"
-                && value == "FLAT"
-            {
-                return false;
-            }
-            if node.name.is(HP_NS, "fieldBegin")
-                && view.attr(id, "type") == Some("BOOKMARK")
-                && matches!(attribute.name.local.as_str(), "editable" | "dirty")
-                && value == "0"
-            {
-                return false;
-            }
-            true
-        })
-        .map(|attribute| (attribute.name.raw.clone(), attribute.value.clone()))
+        .rev()
+        .find(|(name, _)| name == prefix)
+        .map_or("", |(_, uri)| uri.as_str())
+}
+
+/// Inclusive C14N 1.0 (the Python contract, `etree.tostring(method="c14n")`) renders a
+/// declaration only where it changes the binding inherited from the parent element, so a
+/// redundant `xmlns:hp` on a nested element is invisible while a moved or rebound one is not.
+fn rendered_namespaces(parent: &[Binding], declared: &[Binding]) -> Vec<Binding> {
+    let mut rendered: Vec<_> = declared
+        .iter()
+        .filter(|(prefix, uri)| bound(parent, prefix) != uri)
+        .cloned()
         .collect();
-    attrs.sort();
-    let mut namespaces = node.namespaces.clone();
-    namespaces.sort();
+    rendered.sort();
+    rendered
+}
+
+/// Hancom's own unset defaults and rhwp's false BOOKMARK flags; every other value is compared.
+fn unset_default(view: &XmlView, id: NodeId, local: &str, value: &str) -> bool {
+    let node = view.node(id).expect("view node");
+    if node.name.is(HP_NS, "p") {
+        return matches!(
+            (local, value),
+            ("pageBreak" | "columnBreak" | "merged", "0") | ("id", "4294967295")
+        );
+    }
+    if node.name.is(HP_NS, "lineShape") {
+        return local == "endCap" && value == "FLAT";
+    }
+    node.name.local == "fieldBegin"
+        && view.attr(id, "type") == Some("BOOKMARK")
+        && matches!(local, "editable" | "dirty")
+        && value == "0"
+}
+
+/// An `hp:t` holding no characters, attributes, children or tail cannot change a run.
+fn empty_text(view: &XmlView, child: NodeId, next: Option<&Content>) -> bool {
+    let node = view.node(child).expect("child");
+    let tail = next.is_some_and(
+        |next| matches!(next, Content::Text(value) | Content::CData(value) if !value.is_empty()),
+    );
+    node.name.is(HP_NS, "t") && node.attributes.is_empty() && node.children.is_empty() && !tail
+}
+
+fn canonical_children(view: &XmlView, id: NodeId, scope: &[Binding]) -> Vec<Canonical> {
+    let parts = &view.node(id).expect("view node").children;
     let mut children = Vec::new();
-    for (index, content) in node.children.iter().enumerate() {
+    for (index, content) in parts.iter().enumerate() {
         match content {
-            Content::Element(child) => {
-                let descendant = view.node(*child).expect("child");
-                let tail=node.children.get(index+1).is_some_and(|next|matches!(next,Content::Text(value)|Content::CData(value) if !value.is_empty()));
-                if descendant.name.is(HP_NS, "t")
-                    && descendant.attributes.is_empty()
-                    && descendant.children.is_empty()
-                    && !tail
-                {
-                    continue;
-                }
-                children.push(canonical_node(view, *child));
-            }
+            Content::Element(child) if empty_text(view, *child, parts.get(index + 1)) => {}
+            Content::Element(child) => children.push(canonical_node(view, *child, scope)),
             Content::Text(value) | Content::CData(value) => {
                 if let Some(Canonical::Text(previous)) = children.last_mut() {
                     previous.push_str(value)
@@ -79,18 +87,38 @@ fn canonical_node(view: &XmlView, id: NodeId) -> Canonical {
             Content::ProcessingInstruction(value) => children.push(Canonical::Pi(value.clone())),
         }
     }
+    children
+}
+
+fn canonical_node(view: &XmlView, id: NodeId, parent: &[Binding]) -> Canonical {
+    let node = view.node(id).expect("view node");
+    let mut attrs: Vec<_> = node
+        .attributes
+        .iter()
+        .filter(|attribute| !unset_default(view, id, &attribute.name.local, &attribute.value))
+        .map(|attribute| (attribute.name.raw.clone(), attribute.value.clone()))
+        .collect();
+    attrs.sort();
+    let namespaces = rendered_namespaces(parent, &node.namespaces);
+    let extended;
+    let scope = if node.namespaces.is_empty() {
+        parent
+    } else {
+        extended = [parent, node.namespaces.as_slice()].concat();
+        extended.as_slice()
+    };
     Canonical::Element {
         name: node.name.raw.clone(),
         attrs,
         namespaces,
-        children,
+        children: canonical_children(view, id, scope),
     }
 }
 fn same_xml(left: &[u8], right: &[u8]) -> bool {
     let (Ok(left), Ok(right)) = (XmlView::parse(left), XmlView::parse(right)) else {
         return false;
     };
-    canonical_node(&left, left.root()) == canonical_node(&right, right.root())
+    canonical_node(&left, left.root(), &[]) == canonical_node(&right, right.root(), &[])
 }
 pub fn compare_rhwp_roundtrip(original: &[u8], exported: &[u8]) -> Value {
     let parsed = (|| -> Result<(HwpxPackage, HwpxPackage), String> {
@@ -368,6 +396,103 @@ mod tests {
             let result = compare_rhwp_roundtrip(&original, &package.to_bytes().unwrap());
             assert_eq!(result["diagnostics"][0]["kind"], "xml_changed", "{name}");
             assert_eq!(result["diagnostics"][0]["entry"], name);
+        }
+    }
+
+    fn section_editable(source: &str, exported: &str) -> bool {
+        let section = |body: &str| {
+            format!(
+                "<hs:sec xmlns:hs='http://www.hancom.co.kr/hwpml/2011/section' xmlns:hp='{HP_NS}'>{body}</hs:sec>"
+            )
+            .into_bytes()
+        };
+        let mut package = HwpxPackage {
+            entries: vec![
+                PackageEntry {
+                    name: MIMETYPE_NAME.into(),
+                    data: MIMETYPE_VALUE.into(),
+                    stored: true,
+                },
+                PackageEntry {
+                    name: "Contents/section0.xml".into(),
+                    data: section(source),
+                    stored: false,
+                },
+            ],
+        };
+        let original = package.to_bytes().unwrap();
+        package.entries[1].data = section(exported);
+        let result = compare_rhwp_roundtrip(&original, &package.to_bytes().unwrap());
+        let editable = result["editable"].as_bool().unwrap();
+        assert_eq!(
+            result["diagnostics"].as_array().unwrap().is_empty(),
+            editable
+        );
+        editable
+    }
+
+    /// Namespace declarations follow inclusive C14N 1.0 like the Python comparator
+    /// (`lxml` `method="c14n"`): only a declaration that changes the inherited binding is
+    /// compared. Every expectation below was confirmed against that Python implementation.
+    #[test]
+    fn namespace_declarations_compare_by_inherited_binding_like_c14n() {
+        let begin = "id='7' type='CLICK_HERE' name='구분' editable='1' dirty='1' zorder='-1' fieldid='8' metaTag=''";
+        // The product's batch create_field output and rhwp's export of it (batch-fields.hwpx).
+        let product = format!(
+            "<hp:p><hp:run><hp:t>A</hp:t><hp:ctrl xmlns:hp='{HP_NS}'><hp:fieldBegin xmlns:hp='{HP_NS}' {begin}/></hp:ctrl><hp:t>:</hp:t><hp:ctrl xmlns:hp='{HP_NS}'><hp:fieldEnd xmlns:hp='{HP_NS}' beginIDRef='7' fieldid='8'/></hp:ctrl></hp:run></hp:p>"
+        );
+        let exported = format!(
+            "<hp:p><hp:run><hp:t>A</hp:t><hp:ctrl><hp:fieldBegin id='7' type='CLICK_HERE' name='구분' editable='1' dirty='1' fieldid='8' xmlns:hp='{HP_NS}' zorder='-1' metaTag=''/></hp:ctrl><hp:t>:</hp:t><hp:ctrl><hp:fieldEnd beginIDRef='7' fieldid='8'/></hp:ctrl></hp:run></hp:p>"
+        );
+        assert!(section_editable(&product, &exported));
+        assert!(section_editable(&exported, &product));
+        for (source, exported, editable) in [
+            (
+                "<hp:p xmlns:x='urn:x'><hp:run/></hp:p>",
+                "<hp:p><hp:run xmlns:x='urn:x'/></hp:p>",
+                false,
+            ),
+            (
+                "<hp:p xmlns:x='urn:x'><hp:run/></hp:p>",
+                "<hp:p><hp:run/></hp:p>",
+                false,
+            ),
+            (
+                "<hp:p><hp:run xmlns:hp='urn:other'/></hp:p>",
+                "<hp:p><hp:run/></hp:p>",
+                false,
+            ),
+            (
+                "<hp:p xmlns:x='urn:x'><hp:run xmlns:x='urn:y'><hp:ctrl xmlns:x='urn:x'/></hp:run></hp:p>",
+                "<hp:p xmlns:x='urn:x'><hp:run xmlns:x='urn:y'><hp:ctrl/></hp:run></hp:p>",
+                false,
+            ),
+            (
+                "<hp:p xmlns:x='urn:x'><hp:run xmlns:x='urn:x'><hp:ctrl/></hp:run></hp:p>",
+                "<hp:p xmlns:x='urn:x'><hp:run><hp:ctrl/></hp:run></hp:p>",
+                true,
+            ),
+            (
+                "<hp:p><hp:run xmlns=''/></hp:p>",
+                "<hp:p><hp:run/></hp:p>",
+                true,
+            ),
+            (
+                "<hp:p xmlns='urn:d'><hp:run xmlns=''/></hp:p>",
+                "<hp:p xmlns='urn:d'><hp:run/></hp:p>",
+                false,
+            ),
+            (
+                "<hp:p><hp:run><x:fieldBegin xmlns:x='urn:x' type='BOOKMARK'/></hp:run></hp:p>",
+                "<hp:p><hp:run><x:fieldBegin xmlns:x='urn:x' type='BOOKMARK' editable='0' dirty='0'/></hp:run></hp:p>",
+                true,
+            ),
+        ] {
+            assert_eq!(
+                section_editable(source, exported),
+                editable,
+                "{source} -> {exported}"
+            );
         }
     }
 }

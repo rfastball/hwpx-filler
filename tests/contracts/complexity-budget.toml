@@ -593,9 +593,6 @@ function_complexity = { value = 11, override = "#1200", reason = "Python→Rust�
 [budget."crates/hwpx-filler/src/output_name.rs::render_output_name"]
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."crates/hwpx-filler/src/rhwp_preflight.rs::canonical_node"]
-function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-filler/src/schema_drift.rs::longest_match"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
