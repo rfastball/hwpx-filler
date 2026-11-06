@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
 if (-not $SkipExe) {
-    & (Join-Path $root 'build.ps1') -App $App
+    & (Join-Path $root 'packaging\build_native.ps1') -Target filler
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

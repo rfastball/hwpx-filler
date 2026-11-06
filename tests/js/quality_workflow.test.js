@@ -1,0 +1,205 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { parse } from 'yaml';
+import { OUTER_MS } from '../../scripts/live101_native/run_budget.mjs';
+
+const read = name => readFileSync(new URL(`../../${name}`, import.meta.url), 'utf8').replace(/^\uFEFF/u, '');
+const qualityText = read('.github/workflows/quality.yml');
+const quality = parse(qualityText, { schema: 'failsafe' });
+const jobs = quality.jobs;
+const releaseText = read('.github/workflows/release.yml');
+const release = parse(releaseText, { schema: 'failsafe' }).jobs['build-release'].steps;
+const commands = job => (job.steps ?? []).filter(step => step.run).map(step => step.run);
+const needs = job => new Set(typeof job.needs === 'string' ? [job.needs] : job.needs ?? []);
+const uses = (job, action) => (job.steps ?? []).filter(step => step.uses?.startsWith(action));
+const text = job => JSON.stringify(job);
+const downloads = job => uses(job, 'actions/download-artifact').some(step => step.with.name === 'sealed-web');
+const buildTokens = ['npm run build', 'npm.cmd run build', '-Mode Build'];
+const axes = { native: 'HWPX_SKIP_NATIVE_TESTS', browser: 'HWPX_SKIP_MOTION_TESTS', live: 'HWPX_SKIP_GUI_TESTS' };
+const contract = 'not native and not browser and not live';
+const runsAxis = (job, axis) => commands(job).some(command => axis === 'live'
+  ? command.includes('run_native_live101.ps1') : new RegExp(`-m ${axis}\\b`, 'u').test(command));
+const releaseStep = fragment => {
+  const matches = release.filter(step => step.name?.includes(fragment));
+  assert.equal(matches.length, 1, fragment);
+  return matches[0];
+};
+const contains = (source, parts) => parts.forEach(part => assert.ok(source.includes(part), part));
+
+test('aggregate covers every job and accepts only success while preserving non-PR history', () => {
+  assert.deepEqual(needs(jobs['quality-gate']), new Set(Object.keys(jobs).filter(name => name !== 'quality-gate')));
+  contains(text(jobs['quality-gate']), ['always()', 'exit 1']);
+  assert.ok(commands(jobs['quality-gate']).some(command => command.includes('.value.result != "success"')));
+  contains(quality.concurrency.group, ['pull_request.number', 'github.sha']);
+  assert.ok(quality.concurrency['cancel-in-progress'].includes("github.event_name == 'pull_request'"));
+  assert.ok('merge_group' in quality.on);
+  const actions = [...qualityText.matchAll(/uses: (\S+)([^\n]*)/gu)];
+  assert.ok(actions.length);
+  for (const [, reference, trailer] of actions) {
+    assert.match(reference.split('@')[1], /^[0-9a-f]{40}$/u);
+    assert.match(trailer, /#\s*v\d/u);
+  }
+  for (const token of ['nick-fields/retry', 'continue-on-error: true', '--reruns']) {
+    assert.ok(!qualityText.includes(token), token);
+  }
+});
+
+test('locked dependencies have one real cache writer and artifact downloads reject corruption', () => {
+  const setups = Object.entries(jobs).flatMap(([name, job]) => uses(job, 'astral-sh/setup-uv')
+    .map(step => ({ name, condition: step.with['save-cache'] })));
+  assert.ok(setups.length);
+  assert.equal(new Set(setups.map(step => step.condition)).size, 1);
+  const writers = setups.filter(({ name, condition }) => condition.match(/github\.job == '([^']+)'/u)?.[1] === name);
+  assert.equal(writers.length, 1, 'the selected cache writer must actually run setup-uv');
+  const transfers = Object.values(jobs).flatMap(job => uses(job, 'actions/download-artifact'));
+  assert.ok(transfers.length);
+  for (const step of transfers) assert.equal(step.with['digest-mismatch'], 'error');
+  const conjured = command => command.replace(/[`\\]\r?\n\s*/gu, ' ').split(/\r?\n/u)
+    .some(line => /\buv run\b[^\n]*\s(?:--with|-w)\b/u.test(line));
+  for (const command of Object.values(jobs).flatMap(commands)) assert.equal(conjured(command), false, command);
+  for (const command of ['uv run --with pillow pytest', 'uv run -w pillow pytest',
+    'uv run --with-editable . pytest', 'uv run --no-sync `\n --with pillow pytest']) assert.ok(conjured(command));
+  for (const command of ['uv run --no-sync pytest', 'uv run --no-sync pytest --workers 2',
+    'uv run --no-sync pytest\nsome-tool --with foo']) assert.equal(conjured(command), false);
+});
+
+test('one sealed frontend producer supplies verified bytes to every consumer before Node setup', () => {
+  assert.deepEqual(Object.entries(jobs).filter(([, job]) => buildTokens.some(token => text(job).includes(token)))
+    .map(([name]) => name), ['sealed-web']);
+  const uploads = uses(jobs['sealed-web'], 'actions/upload-artifact');
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].with.name, 'sealed-web');
+  contains(uploads[0].with.path, ['build/web', 'web-artifact-identity.json']);
+  assert.equal(uploads[0].with['include-hidden-files'], 'true');
+  assert.equal(uploads[0].with['if-no-files-found'], 'error');
+  const consumers = Object.entries(jobs).filter(([, job]) => downloads(job));
+  assert.ok(consumers.length);
+  for (const [name, job] of Object.entries(jobs)) {
+    if (needs(job).has('sealed-web') && name !== 'quality-gate') assert.ok(downloads(job), name);
+    if (downloads(job)) {
+      assert.ok(needs(job).has('sealed-web'), name);
+      contains(text(job), ['VerifyExisting', 'web-artifact-identity.json']);
+      assert.ok(!buildTokens.some(token => text(job).includes(token)), name);
+    }
+    const verify = job.steps.findIndex(step => step.run?.includes('VerifyExisting'));
+    if (verify < 0) continue;
+    const rust = job.steps.findIndex(step => step.name === 'Prepare pinned Rust web verifier' && step.run === 'cargo --version');
+    assert.ok(rust >= 0 && rust < verify, name);
+    job.steps.forEach((step, index) => {
+      if (step.uses?.startsWith('actions/setup-node')) assert.ok(verify < index, name);
+    });
+  }
+  contains(read('build-web.ps1'), ["run_web_artifact.ps1') -Verify"]);
+  contains(read('scripts/run_web_artifact.ps1'), ['cargo run --quiet --locked -p hwpx-artifact', '$cargoCommand.Source -ieq $cachedCargo']);
+});
+
+test('Rust and product copy gates run locally and CI resource responsibilities do not overlap', () => {
+  const local = read('test.ps1');
+  const runner = read('test-rust.ps1');
+  assert.equal(jobs['rust-kernel']['runs-on'], 'windows-latest');
+  assert.deepEqual(commands(jobs['rust-kernel']), ['.\\test-rust.ps1']);
+  contains(local, ["'test-rust.ps1'", 'node scripts/complexity_budget.mjs --check', 'node scripts/ui_copy_census.mjs --check']);
+  contains(runner, ['cargo fmt --all --check', 'cargo clippy --workspace --all-targets --locked -- -D warnings',
+    'cargo test --workspace --all-targets --locked', 'cargo check -p hwpx-desktop --bin hwpxfiller --no-default-features --locked']);
+  for (const command of ['node scripts/complexity_budget.mjs --check', 'node scripts/ui_copy_census.mjs --check']) {
+    assert.ok(commands(jobs.static).includes(command));
+  }
+  for (const axis of Object.keys(axes)) assert.equal(Object.values(jobs).filter(job => runsAxis(job, axis)).length, 1, axis);
+  assert.equal(Object.values(jobs).filter(job => text(job).includes(contract)).length, 1);
+  const repository = commands(jobs.static).find(command => command.includes('pytest'));
+  const product = commands(jobs['pytest-contract']).find(command => command.includes('pytest'));
+  assert.ok(repository.includes('tests/repo_contract'));
+  assert.ok(!repository.includes('--cov=') && !repository.includes(' -m '));
+  contains(product, ['--ignore=tests/repo_contract', contract, '--cov=hwpxfiller']);
+  const producer = text(jobs['sealed-web']);
+  assert.ok(producer.indexOf('-Mode Build') < producer.indexOf('npm.cmd test'));
+  assert.equal(uses(jobs['sealed-web'], 'astral-sh/setup-uv').length, 0);
+  assert.ok(!/python|pytest|\buv\b/iu.test(producer));
+  assert.ok(!needs(jobs['pytest-contract']).has('sealed-web'));
+  assert.equal(downloads(jobs['pytest-contract']), false);
+  assert.equal(uses(jobs['pytest-contract'], 'actions/setup-node').length, 0);
+  assert.deepEqual(Object.entries(jobs).filter(([, job]) => text(job).includes('--coverage-xml'))
+    .map(([name]) => name), ['pytest-contract']);
+  contains(text(jobs['pytest-contract']), ['cargo run --locked', '--no-default-features', '--example check_rust_coverage', '--markdown-output package-coverage.md']);
+});
+
+test('Chrome and native WebView2 keep distinct evidence, full scope and failure uploads', () => {
+  const chrome = Object.values(jobs).find(job => runsAxis(job, 'browser'));
+  const live = jobs['live-webview2'];
+  assert.ok(chrome.name.includes('Chrome') && !text(chrome).includes('WebView2'));
+  assert.ok(live.name.includes('WebView2') && !text(live).toLowerCase().includes('chrome'));
+  assert.deepEqual(needs(live), new Set(['distribution-webview2']));
+  assert.ok(uses(live, 'actions/download-artifact').some(step => step.with.name === 'native-gui'));
+  assert.equal(commands(live).filter(command => command.includes('run_native_live101.ps1')).length, 1);
+  for (const token of ['--live-scope', '-LiveScope', 'HWPX_SELFTEST_PROBES']) {
+    assert.ok(!text(live).includes(token) && !text(release).includes(token), token);
+  }
+  for (const name of ['live-webview2', 'distribution-webview2']) {
+    const evidence = uses(jobs[name], 'actions/upload-artifact').filter(step => step.with.name.endsWith('-evidence'));
+    assert.ok(evidence.length);
+    evidence.forEach(step => assert.equal(step.if, 'always()'));
+  }
+  contains(text(chrome), ['Press-geometry browser precondition', 'HWPX_SKIP_MOTION_TESTS', "channel='chrome'"]);
+  for (const variable of Object.values(axes)) {
+    for (const token of [`${variable}:`, `${variable}=1`, `${variable} = "1"`]) assert.ok(!qualityText.includes(token));
+  }
+  assert.match(read('scripts/run_native_live101.ps1'), /foreach \(\$phase in @\('journey', 'restart'\)\)/u);
+  assert.equal(Number(live['timeout-minutes']), 60);
+  assert.ok(2 * OUTER_MS <= Number(live['timeout-minutes']) * 60_000 * 0.9);
+});
+
+test('distribution and release consume the verified tree before native journey and recovery evidence', () => {
+  const distribution = commands(jobs['distribution-webview2']);
+  const packaging = distribution.filter(command => command.includes('packaging'));
+  assert.equal(packaging.length, 1);
+  contains(packaging[0], ['-Target all', '-WebMode VerifyExisting']);
+  for (const script of ['verify_native_restart.ps1', 'verify_native_capability.ps1']) {
+    const checks = distribution.filter(command => command.includes(script));
+    assert.equal(checks.length, 1);
+    assert.ok(checks[0].includes('dist/hwpx-filler-web/hwpx-filler-web.exe'));
+  }
+  const tests = releaseStep('Quality and tests');
+  const packageStep = releaseStep('Build portable applications');
+  const native = releaseStep('Native Quickstart 101 journey and restart');
+  const upload = releaseStep('Upload live evidence');
+  assert.equal(releaseStep('Validate release version').run, 'node scripts/check_release_version.mjs $env:RELEASE_TAG');
+  assert.equal(releaseStep('Prepare pinned Rust web verifier').run, 'cargo --version');
+  const setup = release.find(step => step.uses?.startsWith('actions/setup-node@'));
+  assert.equal(setup.with['node-version-file'], '.node-version');
+  assert.equal(tests.run, '.\\test.ps1 -m "not live"');
+  contains(read('test.ps1'), ["& (Join-Path $PSScriptRoot 'build-web.ps1')"]);
+  assert.ok(read('build-web.ps1').includes("[string]$Mode = 'Build'"));
+  contains(packageStep.run, ['.\\packaging\\build_native.ps1 -Target all -SkipCheck -WebMode VerifyExisting', 'release-evidence']);
+  assert.ok(!releaseText.includes('npm.cmd ci') && !releaseText.includes('npm.cmd run build'));
+  contains(native.run, ['run_native_live101.ps1', 'dist/hwpx-filler-web/hwpx-filler-web.exe']);
+  assert.equal(upload.if, 'always()');
+  contains(upload.with.path, ['live-evidence/journey/**', 'live-evidence/restart/**', '!live-evidence/home/**']);
+  const order = [setup, tests, packageStep, native, upload].map(step => release.indexOf(step));
+  assert.ok(order.every((at, index) => index === 0 || order[index - 1] < at));
+});
+
+test('release reconciles installed and portable identities before cleanup and publishes complete evidence', () => {
+  const reconcile = releaseStep('Reconcile web artifact identity').run;
+  contains(reconcile, ['run_web_artifact.ps1 --reconcile', "--expect 'source,dist,installed,portable'",
+    '--build-metadata build\\version\\build-metadata.json', 'throw', 'release-evidence.json']);
+  for (const name of ['dist', 'installed', 'portable']) assert.ok(reconcile.includes(`--copy ('${name}=`));
+  assert.ok(!reconcile.includes('Sort-Object -Unique'));
+  const smoke = releaseStep('Smoke test install and uninstall').run;
+  assert.ok(smoke.indexOf('run_web_artifact.ps1') >= 0 && smoke.indexOf('run_web_artifact.ps1') < smoke.indexOf('Uninstall-Product $fillerDir'));
+  assert.ok(smoke.includes('installed.json'));
+  const portable = releaseStep('Package portable bundles').run;
+  assert.ok(portable.indexOf('Compress-Archive') >= 0 && portable.indexOf('Compress-Archive') < portable.indexOf('Expand-Archive'));
+  assert.ok(portable.indexOf('Expand-Archive') < portable.indexOf('run_web_artifact.ps1'));
+  assert.ok(portable.includes('portable.json'));
+  for (const glob of ['*.exe', '*.zip', '*.json']) assert.ok(releaseStep('Create checksums').run.includes(`installer-dist\\${glob}`));
+  contains(releaseText, ['installer-dist/release-evidence.json', 'installer-dist/build-metadata.json', 'runtime_packages',
+    '-Target all', 'dist\\hwpx-cli\\hwpx-cli.exe', 'HWPX-CLI-$version-portable.zip', 'verify_cli_bundle.mjs']);
+  assert.ok(qualityText.includes('-Target all'));
+  assert.ok(read('packaging/installers/hwpx-filler.iss').includes('Source: "..\\..\\dist\\hwpx-filler-web\\*"'));
+  assert.ok(read('package-installer.ps1').includes("[ValidateSet('all', 'filler')]"));
+  assert.ok(read('packaging/build_native.ps1').includes("[ValidateSet('all', 'filler', 'cli')]"));
+  for (const token of ['package-installer.ps1', 'WINDOWS_CERTIFICATE_BASE64', 'Install Inno Setup']) {
+    assert.ok(!qualityText.includes(token) && releaseText.includes(token));
+  }
+});

@@ -1,0 +1,549 @@
+[
+  {
+    "name": "fragments_across_multiple_runs_join",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:t>계약</hp:t></hp:run>\n      <hp:run><hp:t>명은 </hp:t></hp:run>\n      <hp:run><hp:t>홍길동</hp:t></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "계약명은 홍길동",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "계약명은 홍길동"
+    ]
+  },
+  {
+    "name": "linebreak_and_tab_run_level",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:t>A</hp:t><hp:tab/><hp:t>B</hp:t><hp:lineBreak/><hp:t>C</hp:t></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "A\tB\nC",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "A\tB\nC"
+    ]
+  },
+  {
+    "name": "empty_paragraph_preserved",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run/></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      ""
+    ]
+  },
+  {
+    "name": "cell_with_multiple_paragraphs_and_nested_table",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run>\n        <hp:tbl>\n          <hp:tr>\n            <hp:tc>\n              <hp:subList>\n                <hp:p><hp:run><hp:t>첫째 문단</hp:t></hp:run></hp:p>\n                <hp:p><hp:run><hp:t>둘째 문단</hp:t></hp:run></hp:p>\n              </hp:subList>\n            </hp:tc>\n            <hp:tc>\n              <hp:subList>\n                <hp:p><hp:run>\n                  <hp:tbl>\n                    <hp:tr>\n                      <hp:tc><hp:subList>\n                        <hp:p><hp:run><hp:t>중첩셀</hp:t></hp:run></hp:p>\n                      </hp:subList></hp:tc>\n                    </hp:tr>\n                  </hp:tbl>\n                </hp:run></hp:p>\n              </hp:subList>\n            </hp:tc>\n          </hp:tr>\n        </hp:tbl>\n      </hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "table",
+        "rows": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "첫째 문단",
+                  "fields": []
+                },
+                {
+                  "type": "paragraph",
+                  "text": "둘째 문단",
+                  "fields": []
+                }
+              ],
+              "span": {},
+              "addr": {}
+            },
+            {
+              "blocks": [
+                {
+                  "type": "table",
+                  "rows": [
+                    [
+                      {
+                        "blocks": [
+                          {
+                            "type": "paragraph",
+                            "text": "중첩셀",
+                            "fields": []
+                          }
+                        ],
+                        "span": {},
+                        "addr": {}
+                      }
+                    ]
+                  ]
+                }
+              ],
+              "span": {},
+              "addr": {}
+            }
+          ]
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "첫째 문단",
+      "둘째 문단",
+      "중첩셀"
+    ]
+  },
+  {
+    "name": "field_region_text_captured_and_recorded",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:ctrl><hp:fieldBegin name=\"계약명\"/></hp:ctrl></hp:run>\n      <hp:run><hp:t>정보시스템 구축</hp:t></hp:run>\n      <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "정보시스템 구축",
+        "fields": [
+          "계약명"
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "정보시스템 구축"
+    ]
+  },
+  {
+    "name": "text_before_table_splits_into_separate_blocks",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:t>표 앞 문구</hp:t></hp:run>\n      <hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>\n        <hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p>\n      </hp:subList></hp:tc></hp:tr></hp:tbl></hp:run>\n      <hp:run><hp:t>표 뒤 문구</hp:t></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "표 앞 문구",
+        "fields": []
+      },
+      {
+        "type": "table",
+        "rows": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "셀",
+                  "fields": []
+                }
+              ],
+              "span": {},
+              "addr": {}
+            }
+          ]
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": "표 뒤 문구",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "표 앞 문구",
+      "셀",
+      "표 뒤 문구"
+    ]
+  },
+  {
+    "name": "random_ids_absent_from_output",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p id=\"3121190098\" paraPrIDRef=\"7\" styleIDRef=\"2\">\n      <hp:run charPrIDRef=\"99\">\n        <hp:ctrl><hp:fieldBegin id=\"2073595120\" fieldid=\"627272811\" name=\"금액\"/></hp:ctrl>\n      </hp:run>\n      <hp:run charPrIDRef=\"12\"><hp:t>1,000,000원</hp:t></hp:run>\n      <hp:run><hp:ctrl><hp:fieldEnd instId=\"55\"/></hp:ctrl></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "1,000,000원",
+        "fields": [
+          "금액"
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "1,000,000원"
+    ]
+  },
+  {
+    "name": "merged_cell_span_metadata_captured",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p><hp:run>\n      <hp:tbl>\n        <hp:tr>\n          <hp:tc>\n            <hp:cellAddr colAddr=\"0\" rowAddr=\"0\"/>\n            <hp:cellSpan colSpan=\"3\" rowSpan=\"1\"/>\n            <hp:cellSz width=\"1000\" height=\"500\"/>\n            <hp:subList><hp:p><hp:run><hp:t>병합 헤더</hp:t></hp:run></hp:p></hp:subList>\n          </hp:tc>\n        </hp:tr>\n        <hp:tr>\n          <hp:tc>\n            <hp:cellAddr colAddr=\"0\" rowAddr=\"1\"/>\n            <hp:cellSpan colSpan=\"1\" rowSpan=\"2\"/>\n            <hp:subList><hp:p><hp:run><hp:t>세로병합</hp:t></hp:run></hp:p></hp:subList>\n          </hp:tc>\n        </hp:tr>\n      </hp:tbl>\n    </hp:run></hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "table",
+        "rows": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "병합 헤더",
+                  "fields": []
+                }
+              ],
+              "span": {
+                "colSpan": 3,
+                "rowSpan": 1
+              },
+              "addr": {
+                "colAddr": 0,
+                "rowAddr": 0
+              }
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "세로병합",
+                  "fields": []
+                }
+              ],
+              "span": {
+                "colSpan": 1,
+                "rowSpan": 2
+              },
+              "addr": {
+                "colAddr": 0,
+                "rowAddr": 1
+              }
+            }
+          ]
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "병합 헤더",
+      "세로병합"
+    ]
+  },
+  {
+    "name": "coverage_ledger_records_unknown_child",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:t>정상</hp:t></hp:run>\n      <hp:someNewThing/>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "정상",
+        "fields": []
+      }
+    ],
+    "unhandled": {
+      "someNewThing": 1
+    },
+    "unhandled_examples": {
+      "someNewThing": "sec/p/someNewThing"
+    },
+    "texts": [
+      "정상"
+    ]
+  },
+  {
+    "name": "coverage_ledger_clean_for_known_structure",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:t>가</hp:t><hp:secPr/></hp:run>\n      <hp:linesegarray><hp:lineseg/></hp:linesegarray>\n      <hp:run><hp:tbl>\n        <hp:sz/><hp:pos/>\n        <hp:tr><hp:tc>\n          <hp:cellSpan colSpan=\"1\" rowSpan=\"1\"/><hp:cellMargin/>\n          <hp:subList><hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p></hp:subList>\n        </hp:tc></hp:tr>\n      </hp:tbl></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "가",
+        "fields": []
+      },
+      {
+        "type": "table",
+        "rows": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "셀",
+                  "fields": []
+                }
+              ],
+              "span": {
+                "colSpan": 1,
+                "rowSpan": 1
+              },
+              "addr": {}
+            }
+          ]
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "가",
+      "셀"
+    ]
+  },
+  {
+    "name": "table_caption_text_extracted",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p><hp:run>\n      <hp:tbl>\n        <hp:sz/><hp:pos/>\n        <hp:caption>\n          <hp:subList>\n            <hp:p><hp:run><hp:t>&lt;표 1&gt; 유압식 잭(30톤) 주요제원</hp:t></hp:run></hp:p>\n          </hp:subList>\n        </hp:caption>\n        <hp:tr><hp:tc><hp:subList>\n          <hp:p><hp:run><hp:t>항목</hp:t></hp:run></hp:p>\n        </hp:subList></hp:tc></hp:tr>\n      </hp:tbl>\n    </hp:run></hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "<표 1> 유압식 잭(30톤) 주요제원",
+        "fields": []
+      },
+      {
+        "type": "table",
+        "rows": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "text": "항목",
+                  "fields": []
+                }
+              ],
+              "span": {},
+              "addr": {}
+            }
+          ]
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "<표 1> 유압식 잭(30톤) 주요제원",
+      "항목"
+    ]
+  },
+  {
+    "name": "pic_object_no_text_keeps_ledger_clean",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\">\n    <hp:p>\n      <hp:run><hp:t>본문 문구</hp:t></hp:run>\n      <hp:run><hp:pic><hp:img/><hp:sz/><hp:pos/><hp:shapeComment/></hp:pic></hp:run>\n    </hp:p>\n    </sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "본문 문구",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "본문 문구"
+    ]
+  },
+  {
+    "name": "textbox_paragraphs_field_and_table_extracted_in_anchor_order",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run><hp:t>앞 문구(</hp:t><hp:rect><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hp:lineShape/><hp:shadow/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>첫 줄</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin type=\"CLICK_HERE\" name=\"담당자\"/></hp:ctrl></hp:run><hp:run><hp:t>홍길동</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>상자 속 셀</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hp:subList><hp:textMargin/></hp:drawText><hc:pt0/><hc:pt1/><hc:pt2/><hc:pt3/><hp:sz/><hp:pos/><hp:outMargin/></hp:rect><hp:t>) 뒤 문구</hp:t></hp:run></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "앞 문구(",
+        "fields": []
+      },
+      {
+        "type": "textbox",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "첫 줄",
+            "fields": []
+          },
+          {
+            "type": "paragraph",
+            "text": "홍길동",
+            "fields": [
+              "담당자"
+            ]
+          },
+          {
+            "type": "table",
+            "rows": [
+              [
+                {
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "text": "상자 속 셀",
+                      "fields": []
+                    }
+                  ],
+                  "span": {},
+                  "addr": {}
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": ") 뒤 문구",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "앞 문구(",
+      "첫 줄",
+      "홍길동",
+      "상자 속 셀",
+      ") 뒤 문구"
+    ]
+  },
+  {
+    "name": "container_children_keep_document_order_and_textless_shape_emits_nothing",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run><hp:t>가</hp:t><hp:container><hp:offset/><hp:sz/><hp:pos/><hp:rect><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hp:lineShape/><hp:shadow/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>첫째 상자</hp:t></hp:run></hp:p></hp:subList><hp:textMargin/></hp:drawText><hc:pt0/><hc:pt1/><hc:pt2/><hc:pt3/><hp:sz/><hp:pos/><hp:outMargin/></hp:rect><hp:ellipse><hp:offset/><hc:center/><hc:ax1/><hc:ax2/></hp:ellipse><hp:polygon><hc:pt/><hc:pt/><hp:shapeComment/></hp:polygon><hp:ellipse><hc:center/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>둘째 상자</hp:t></hp:run></hp:p></hp:subList><hp:textMargin/></hp:drawText></hp:ellipse></hp:container><hp:t>나</hp:t></hp:run></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "가",
+        "fields": []
+      },
+      {
+        "type": "textbox",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "첫째 상자",
+            "fields": []
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "둘째 상자",
+            "fields": []
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "text": "나",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "가",
+      "첫째 상자",
+      "둘째 상자",
+      "나"
+    ]
+  },
+  {
+    "name": "shape_caption_precedes_textbox",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run><hp:rect><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hp:lineShape/><hp:shadow/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>상자 본문</hp:t></hp:run></hp:p></hp:subList><hp:textMargin/></hp:drawText><hp:caption><hp:subList><hp:p><hp:run><hp:t>[그림 1] 처리 흐름</hp:t></hp:run></hp:p></hp:subList></hp:caption><hc:pt0/><hc:pt1/><hc:pt2/><hc:pt3/><hp:sz/><hp:pos/><hp:outMargin/></hp:rect></hp:run></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "[그림 1] 처리 흐름",
+        "fields": []
+      },
+      {
+        "type": "textbox",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "상자 본문",
+            "fields": []
+          }
+        ]
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "[그림 1] 처리 흐름",
+      "상자 본문"
+    ]
+  },
+  {
+    "name": "polygon_without_text_emits_no_block_and_does_not_split_paragraph",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run><hp:t>앞</hp:t><hp:polygon><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hp:lineShape/><hp:shadow/><hc:pt/><hc:pt/><hc:pt/><hp:sz/><hp:pos/><hp:outMargin/><hp:shapeComment>다각형입니다.</hp:shapeComment><hp:metaTag>{}</hp:metaTag></hp:polygon><hp:t>뒤</hp:t></hp:run></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "앞뒤",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "앞뒤"
+    ]
+  },
+  {
+    "name": "unknown_shape_children_are_recorded_loudly",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run><hp:rect><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hp:lineShape/><hp:shadow/><hp:futureShapePart/><hc:futurePoint/><hp:drawText><hp:futureTextPart/><hp:subList><hp:p><hp:run><hp:t>상자</hp:t></hp:run></hp:p></hp:subList></hp:drawText><hc:pt0/><hc:pt1/><hc:pt2/><hc:pt3/><hp:sz/><hp:pos/><hp:outMargin/></hp:rect></hp:run></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "textbox",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "상자",
+            "fields": []
+          }
+        ]
+      }
+    ],
+    "unhandled": {
+      "futureShapePart": 1,
+      "{http://www.hancom.co.kr/hwpml/2011/core}futurePoint": 1,
+      "futureTextPart": 1
+    },
+    "unhandled_examples": {
+      "futureShapePart": "sec/p/run/rect/futureShapePart",
+      "{http://www.hancom.co.kr/hwpml/2011/core}futurePoint": "sec/p/run/rect/futurePoint",
+      "futureTextPart": "sec/p/run/rect/drawText/futureTextPart"
+    },
+    "texts": [
+      "상자"
+    ]
+  },
+  {
+    "name": "pic_caption_text_preserved",
+    "xml": "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\"><hp:p><hp:run><hp:t>본문 문구</hp:t><hp:pic><hp:offset/><hp:orgSz/><hp:curSz/><hp:flip/><hp:rotationInfo/><hp:renderingInfo/><hc:img/><hp:imgRect/><hp:imgClip/><hp:inMargin/><hp:imgDim/><hp:effects/><hp:sz/><hp:pos/><hp:outMargin/><hp:shapeComment/><hp:caption><hp:subList><hp:p><hp:run><hp:t>[사진 1] 현장 전경</hp:t></hp:run></hp:p></hp:subList></hp:caption></hp:pic></hp:run></hp:p></sec>",
+    "blocks": [
+      {
+        "type": "paragraph",
+        "text": "본문 문구",
+        "fields": []
+      },
+      {
+        "type": "paragraph",
+        "text": "[사진 1] 현장 전경",
+        "fields": []
+      }
+    ],
+    "unhandled": {},
+    "unhandled_examples": {},
+    "texts": [
+      "본문 문구",
+      "[사진 1] 현장 전경"
+    ]
+  }
+]

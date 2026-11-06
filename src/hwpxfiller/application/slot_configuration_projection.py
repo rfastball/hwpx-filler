@@ -226,7 +226,7 @@ def content_selection_zone_actionable(
 
     ``configuration_status`` 를 함께 묻는 이유는 **지시가 겨누는 자리**를 술어가 지게 하기
     위해서다. ``CHOOSE_CONTENT`` blocker 의 복구 동사가 이 구획 안의 라디오(``.cs-option-input``,
-    :mod:`~hwpxfiller.webapp.blocker_affordance`)라, 그 blocker 가 서는 두 상태에서 구획이 사라지면
+    ``tests/js/bridge_contract.test.js``)라, 그 blocker 가 서는 두 상태에서 구획이 사라지면
     **없는 자리를 가리키는 지시**가 된다(#912 가 이름 붙인 결함류). 오늘 그 두 상태는 slot ≥ 1
     을 함의하므로 이 갈래는 결과를 바꾸지 않지만, 함의가 깨지는 날 조용히 사라지는 것이 하필
     지시가 겨눈 자리다 — 그래서 결과가 아니라 **술어의 입력**으로 못박는다.
@@ -252,7 +252,7 @@ def slot_settled(
     접지 **않는** 갈래를 먼저 못박는다 — 순서가 계약이다.
 
     - ``_BLOCKING_STATUSES`` — ``CHOOSE_CONTENT`` blocker 의 복구 동사가 이 슬롯 안의 라디오
-      (``.cs-option-input``, :mod:`~hwpxfiller.webapp.blocker_affordance`)다. 접으면 **없는 자리를
+      (``.cs-option-input``, ``tests/js/bridge_contract.test.js``)다. 접으면 **없는 자리를
       가리키는 지시**가 된다(#912 결함류). ``RESOLVED`` 판정이 이미 이들을 배제하지만, 배제를
       **결과가 아니라 술어의 입력**으로 적어 둔다: 함의가 깨지는 날 조용히 접히는 것이 하필
       지시가 겨눈 자리다(13번이 구획 술어에 같은 이유로 같은 장치를 뒀다).

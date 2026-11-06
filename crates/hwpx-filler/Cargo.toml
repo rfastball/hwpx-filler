@@ -1,0 +1,28 @@
+[package]
+name = "hwpx-filler"
+version = "0.15.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
+[dependencies]
+hwpx-core = { path = "../hwpx-core" }
+regex = "=1.13.1"
+rustpython-format = { version = "=0.4.0", default-features = false, features = ["num-bigint"] }
+num-bigint = "=0.4.6"
+chrono = { version = "=0.4.45", default-features = false, features = ["std", "clock"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["arbitrary_precision", "preserve_order"] }
+sha2 = "=0.11.0"
+sha1 = "=0.11.0"
+indexmap = "=2.14.0"
+calamine = { version = "=0.38.0", features = ["chrono"] }
+rusqlite = { version = "=0.41.1", features = ["bundled"] }
+zip = { version = "=9.3.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+quick-xml = "=0.42.0"
+
+[dev-dependencies]
+libz-sys = { version = "=1.1.30", features = ["static"] }
+

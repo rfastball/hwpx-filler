@@ -8,14 +8,13 @@
 
 웹 컨트롤러(:class:`~hwpxfiller.webapp.screen_library.LibraryController`)는 이 뷰모델의
 ``library_sections()``·``library_counts()``·``facets()``·``rows()`` 결과를 렌더한다.
-레지스트리 접근, 행 메타 문자열, 최근실행 포맷, 선택 상태가 여기 산다 — 변경 통지는 순수
+레지스트리 접근, 행 메타 문자열, 실행 시각이 여기 산다 — 변경 통지는 순수
 옵저버 콜백(``subscribe``)이라 창 없이 테스트된다(링1 규율: PySide6 임포트 금지).
 """
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
@@ -92,14 +91,6 @@ def _derive_compile(
         n = st.skipped_n + st.stray_n + st.compilable_n + st.structure_marker_n
         return st.state, _partial_badge(n)
     return st.state, BADGE_READY              # COMPILED(잔존 토큰 0)
-
-
-def _fmt_iso(ts: str) -> str:
-    """ISO-8601 → 'YYYY-MM-DD HH:MM' (파싱 실패 시 원문)."""
-    try:
-        return datetime.fromisoformat(ts).strftime("%Y-%m-%d %H:%M")
-    except ValueError:
-        return ts
 
 
 @dataclass
@@ -296,23 +287,11 @@ class CorruptJobRow:
 
 
 @dataclass
-class TxtRow:
-    """txt 기안 템플릿 1건(대시보드 txt 트랙 목록)."""
-
-    name: str
-    field_count: int
-
-
-@dataclass
 class DashboardKpi:
-    """대시보드 요약 — 전부 실재 데이터(레지스트리·실행 이력·템플릿 상태·txt 루트)."""
+    """라이브러리가 실제로 표시하는 템플릿·데이터 손상 경보."""
 
-    job_count: int
-    recent_run: str            # "MM-DD · 작업명" 또는 "—"
     missing_template_count: int
-    txt_template_count: int
-    pool_count: int = 0        # 데이터 풀 활성 항목 수(durable 참조)
-    pool_corrupted: int = 0    # 데이터 풀 손상 파일 수 — 0 위장 금지, 병기 표시(C5)
+    pool_corrupted: int = 0
 
 
 # ── 작업 브라우저(패싯 탐색) — tag facet (JOB_BROWSER_DESIGN §4) ─────────────────
@@ -484,7 +463,6 @@ class HomeViewModel:
         self.pool_registry = pool_registry
         self._rows: "list[JobRow]" = []
         self._corrupt_rows: "list[CorruptJobRow]" = []
-        self._selected: "str | None" = None
         self._subs: "list" = []
         # facet 선택(D10 — facet 내 OR / facet 간 AND). {축 → 선택된 값 집합}, 빈 축은 제거.
         self.active_facets: "dict[str, set[str]]" = {}
@@ -506,7 +484,7 @@ class HomeViewModel:
 
     # ---------------------------------------------------------- 데이터
     def refresh(self) -> None:
-        """레지스트리에서 다시 읽어 행을 성형하고 통지(선택은 살아있으면 보존).
+        """레지스트리에서 다시 읽어 행을 성형하고 통지.
 
         손상 ``.job.json`` 은 격리 수집(RC-05)해 :meth:`corrupt_rows` 로 노출한다 —
         정상 작업은 계속 표시하되 손상 파일을 조용히 감추지 않는다.
@@ -522,8 +500,6 @@ class HomeViewModel:
             CorruptJobRow(file_name=e.file_name, path=e.token, error=e.error)
             for e in corrupt
         ]
-        if self._selected not in {r.name for r in self._rows}:
-            self._selected = None
         self._notify()
 
     def rows(self) -> "list[JobRow]":
@@ -540,66 +516,19 @@ class HomeViewModel:
     def count_label(self) -> str:
         return f"{len(self._rows)}건" if self._rows else ""
 
-    # ---------------------------------------------------------- 대시보드
     def kpi(self) -> DashboardKpi:
-        """대시보드 KPI — 실재 데이터만(가짜 지표 없음)."""
-        runs = [r for r in self._rows if r.last_run_at]
-        if runs:
-            latest = max(runs, key=lambda r: r.last_run_at)
-            recent = f"{_fmt_iso(latest.last_run_at)[5:10]} · {latest.name}"
-        else:
-            recent = "—"
-        pool_count, pool_corrupted = self._pool_counts()
+        """읽기 실패를 숨기지 않고 현재 라이브러리 경보를 반환한다."""
+        corrupted = []
+        if self.pool_registry is not None:
+            _active, corrupted = self.pool_registry.list_references(status=STATUS_ACTIVE)
         return DashboardKpi(
-            job_count=len(self._rows),
-            recent_run=recent,
-            missing_template_count=sum(1 for r in self._rows if r.template_missing),
-            txt_template_count=self.text_registry.count() if self.text_registry else 0,
-            pool_count=pool_count,
-            pool_corrupted=pool_corrupted,
+            missing_template_count=sum(1 for row in self._rows if row.template_missing),
+            pool_corrupted=len(corrupted),
         )
-
-    def _pool_counts(self) -> "tuple[int, int]":
-        """데이터 풀 ``(활성 항목 수, 손상 파일 수)``. 레지스트리 없으면 ``(0, 0)``.
-
-        손상 파일은 격리 수집해 **수를 병기**한다(C5) — 예전의 '읽기 실패 전부 0' 포괄
-        강등은 손상 데이터셋을 KPI 에서 무표시 증발시켰다(조용한 드롭 금지). 상세 조치는
-        관리 표면(데이터 선택 다이얼로그)이 노출하고, 여기는 요약 카운트만 나른다. 파일 단위
-        손상 밖의 실패(디렉터리 접근 불가 등)는 그대로 전파한다 — 0 으로 위장하지 않는다.
-        """
-        if self.pool_registry is None:
-            return (0, 0)
-
-        # 손상은 (Path, str) out-param 이 아니라 값 객체 목록으로 받는다(P2-22 #570 —
-        # CorruptDatasetEntry). 이 VM 은 건수만 나르므로 파일 좌표를 만지지 않는다.
-        active, corrupted = self.pool_registry.list_references(status=STATUS_ACTIVE)
-        return (len(active), len(corrupted))
-
-    def txt_rows(self) -> "list[TxtRow]":
-        """txt 기안 템플릿 목록(정해진 루트). 레지스트리 없으면 빈 목록."""
-        if self.text_registry is None:
-            return []
-        return [
-            TxtRow(t.name, len(t.fields())) for t in self.text_registry.list_templates()
-        ]
-
-    # ---------------------------------------------------------- 선택
-    @property
-    def selected_name(self) -> "str | None":
-        return self._selected
-
-    def select(self, name: "str | None") -> None:
-        """선택 갱신 — 값싸므로 재렌더 통지는 하지 않는다(표현 계층이 액션만 동기화)."""
-        self._selected = name if name in {r.name for r in self._rows} else None
-
-    def has_selection(self) -> bool:
-        return self._selected is not None
 
     def delete(self, name: str) -> None:
         """작업 삭제 후 목록 갱신(확인 UI 는 컨트롤러 몫)."""
         delete_job(self.registry, name)
-        if self._selected == name:
-            self._selected = None
         self.refresh()
 
     def delete_corrupt(self, path: str) -> None:

@@ -1,17 +1,17 @@
-# 부분 실창 범위 지도 — **로컬 전용**의 단일 출처(`scripts/live_scope.py` 가 읽는다).
+# 부분 실창 범위 지도 — **로컬 전용**의 단일 출처(`scripts/live_scope_native.mjs` 가 읽는다).
 #
-# `pytest --live-scope=<이름[,이름]>|auto|full` 이 이 지도로 live 테스트를 고른다. 기본(옵션
-# 없음)과 CI 는 언제나 전체다 — CI 환경에서 부분 옵션은 하드 실패하고, 병합 판정은 CI
-# `live-webview2` 의 전체 `pytest -m live` 가 진다. 부분 실행의 초록은 병합 판정이 아니다.
+# `test.ps1 -LiveScope <이름[,이름]>|auto|full` 이 이 지도로 native WebView를 고른다.
+# CI 환경에서 부분 옵션은 하드 실패하고, 병합 판정은 CI `live-webview2` 전체 실주행이 진다.
+# 부분 실행의 초록은 병합 판정이 아니다.
 #
 # 판정 순서(auto): `shared` 에 걸리면 **전체** → 범위 `paths` 에 걸리면 그 범위들 →
 # `no_live` 에 걸리면 실창 불필요 → 어디에도 안 걸리면 **전체**. 애매하면 전체가 기본이다.
-# glob 은 저장소 루트 기준 POSIX 경로에 `PurePosixPath.full_match` 로 맞춘다(`**` = 0개 이상 폴더).
+# glob 은 저장소 루트 기준 POSIX 경로에 `path.matchesGlob` 으로 맞춘다.
 #
 # 범위의 `probes` 는 `tests/contracts/selftest-probe-graph.json`(프로브 그래프 스냅숏)의 프로브
 # 이름 또는 묶음 id(B·C·D·E·R)다. 한 번의 `--selftest` 부팅이 그 선택과 `after` 닫힘만 돌고,
-# `TestWebSelftestGate` 는 그 닫힘이 내는 키만 읽는 테스트가 남는다(나머지는 deselect).
-# `tests` 는 그 밖의 live 테스트(콜드 부팅·101) 노드 id 다 — 파라미터 꼬리 `[...]` 없이 적는다.
+# 렌더 영수증은 native WebView 자원 게이트가 검사한다. `tests` 는 남은 live 테스트의
+# 노드 id 다 — 파라미터 꼬리 `[...]` 없이 적는다.
 
 version = 1
 
@@ -76,20 +76,19 @@ shared = [
   ".node-version",
   "packaging/**",
   "vendor/**",
-  "scripts/seal_web_artifact.py",
+  "scripts/run_web_artifact.ps1",
   "scripts/build_rhwp.ps1",
-  "scripts/gen_bridge_contract.py",
-  "scripts/gen_design_tokens.py",
+  "scripts/gen_bridge_contract.mjs",
+  "scripts/gen_design_tokens.mjs",
   ".github/**",
-  # 실창 하니스와 이 지도 자체
+  # 실창 범위 지도와 공용 시험 도구
   "conftest.py",
   "tests/conftest.py",
-  "tests/_live_budget.py",
   "tests/_web_source.py",
-  "tests/test_web_selftest_gate.py",
   "tests/contracts/live-scopes.toml",
   "tests/contracts/selftest-probe-graph.json",
-  "scripts/live_scope*.py",
+  "scripts/live_scope_native.mjs",
+  "scripts/run_native_live_scope.ps1",
   "scripts/selftest_probe_graph.mjs",
 ]
 
@@ -101,18 +100,19 @@ no_live = [
   ".codex/**",
   "research/**",
   "tests/**",
-  "scripts/docs_contract.py",
-  "scripts/ui_copy_census.py",
-  "scripts/check_package_coverage.py",
-  "scripts/check_release_version.py",
+  "crates/hwpx-desktop/tests/cli.rs",
+  "scripts/docs_contract*.mjs",
+  "scripts/docs_runtime.mjs",
+  "scripts/read_toml.mjs",
+  "scripts/ui_copy_census.mjs",
+  "crates/hwpx-artifact/examples/ui_copy_literals.rs",
+  "crates/hwpx-desktop/examples/check_rust_coverage.rs",
+  "crates/hwpx-desktop/examples/check_rust_coverage/**",
+  "scripts/check_release_version.mjs",
 ]
 
 # 어느 범위에도 넣지 않는 live 테스트 — 전체 실행에서만 돈다. 값은 그 이유다.
 [full_only]
-"tests/test_web_selftest_gate.py::test_completed_boot_stamps_the_home_and_narrows_the_budget" = "부팅 예산·완주 스탬프는 app.py·boot_budget.py(공유) 소관이다"
-"tests/test_web_selftest_gate.py::test_selftest_api_is_absent_without_the_capability_in_real_webview" = "시험 능력 비노출은 selftest 엔진·프로토콜(공유) 소관이다"
-"tests/test_web_selftest_gate.py::test_global_allowlist_gate_actually_catches_a_planted_leak" = "전역 allowlist 계측의 양성 대조 — selftest 엔진(공유) 소관이다"
-"tests/test_web_selftest_gate.py::test_selftest_run_adds_exactly_one_global_over_a_normal_run" = "전역 델타는 selftest 엔진·프로토콜(공유) 소관이다"
 
 [scopes.selftest]
 description = "selftest 부팅 한 번(전체 프로브) — 콜드 부팅·101 은 빼고 렌더 계약 전체를 본다"
@@ -207,13 +207,9 @@ paths = [
 ]
 
 [scopes.settings]
-description = "설정·개인화 — 설정 시트 프로브와 테마·배율·창 기하 재시작 콜드 부팅"
+description = "설정·개인화 — 설정 시트 프로브"
 probes = ["shell_settings", "personalization_persist"]
-tests = [
-  "tests/test_web_selftest_gate.py::test_theme_choice_persists_across_restart_without_flicker",
-  "tests/test_web_selftest_gate.py::test_font_scale_persists_across_restart_without_major_overflow",
-  "tests/test_web_selftest_gate.py::test_window_geometry_restores_or_falls_back_in_real_webview",
-]
+tests = []
 paths = [
   "frontend/src/screens/settings_sheet.ts",
   "src/hwpxfiller/external/settings.py",
@@ -234,15 +230,13 @@ paths = [
 [scopes.journey101]
 description = "Quickstart 101 실주행(완주·재시작·예제 홈 무오염)"
 probes = []
-tests = [
-  "tests/test_quickstart_101_live.py::test_check_mode_completes_the_101_journey_on_a_clean_home",
-  "tests/test_quickstart_101_live.py::test_a_healthy_run_reports_when_it_nears_the_live_budget",
-  "tests/test_quickstart_101_live.py::test_check_mode_leaves_the_example_home_untouched",
-]
+tests = [] # `run_native_live101.ps1` 자체가 이 범위의 실창 소유자다.
 paths = [
-  "scripts/live101/**",
-  "scripts/capture_101_screenshots.py",
-  "tests/test_quickstart_101_live.py",
+  "scripts/live101_native/**",
+  "scripts/run_native_live101.ps1",
+  "scripts/capture_101_screenshots.ps1",
+  "scripts/publish_101_screenshots.mjs",
+  "tests/js/live101*.test.js",
   "examples/quickstart-101/**",
   "frontend/src/screens/job_run*.ts",
   "frontend/src/screens/job_result.ts",

@@ -5,7 +5,6 @@
 함께 파생하므로 확장자 정책이 바뀌면(예: ``.xls`` 추가) 모든 파일 다이얼로그가
 함께 움직인다 — 화면 단위 하드코딩 사본이 새 형식을 조용히 숨기는 드리프트를 끊는다.
 
-재유입(필터 리터럴 하드코딩)은 tests/test_file_filters.py 의 grep 게이트가 막는다.
 """
 
 from __future__ import annotations

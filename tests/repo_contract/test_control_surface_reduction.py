@@ -1,10 +1,8 @@
-"""SG-03(#735) control-surface reduction 정적 게이트 — C1·C2·C3·C4·C6.
+"""SG-03(#735) control-surface reduction 정적 게이트 — C1·C2·C6.
 
 v1 제품 표면은 이미 **구성상** 축소돼 있다(census: `docs/architecture.md#architecture-authority`). 이 파일은
 그 사실들을 pin 해, 미래 변경이 조용히 표면을 재확장하지 못하게 한다. 순수 static 이라 무표
-contract lane 에 산다(실 런타임·브라우저 불요). frontend import-graph 는 `tests/_web_source.py`
-의 단일 스캐너(`_frontend_sources`·`_frontend_specifiers`·`_resolve_frontend_module`)를 쓴다 —
-`test_p3_forbidden_edges` 의 vendor 게이트와 같은 진실이다.
+contract lane 에 산다(실 런타임·브라우저 불요).
 
 각 negative probe 는 **실제 게이트 함수 자체**를 정확한 회피 표본에 대고 호출해 RED 됨을 보인다
 (병렬 재구현이 아니다). 회피표본에서 RED 를 못 내는 게이트는 무가치이고, 이 슬라이스의 산출물이
@@ -13,12 +11,12 @@ contract lane 에 산다(실 런타임·브라우저 불요). frontend import-gr
 - C1 shipping Qualification Profile census == :data:`SHIPPING_QUALIFICATION_PROFILES` (매체마다
   정확히 하나 · dynamic publication 0 · revoke 0).
 - C2 제품 Profile/qualification 관리 표면(action·bridge·screen) == 0.
-- C3 production frontend 의 `frontend/src/domain/` semantic module import == 0.
-- C4 production frontend 의 canonical digest 계산·재저작 == 0(retained codec 2개만 제외).
 - C6 durable aggregate 의 append-only record 필드가 pinned manifest 밖으로 늘면 RED.
 
-C5 는 `test_bridge_contract.py`(생성 계약 parity), C7/C8 은 `test_slot_configuration_product.py`,
-C9 는 `test_control_plane_evidence.py` 가 진다.
+C3/C4 는 Node `frontend_build_graph.test.js`, C5 는 `bridge_contract.test.js`(생성 계약 parity),
+C7/C8 은 Rust `slot_configuration_product` 테스트,
+C9 는 Rust `canonical_execution_encoding`·`slot_selection` golden 테스트,
+`template_qualification` manifest 테스트와 `hwpx_qualification` digest 테스트가 진다.
 """
 
 from __future__ import annotations
@@ -29,30 +27,13 @@ from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
-from _web_source import (
-    NAV_SCREENS,
-    _frontend_sources,
-    _frontend_specifiers,
-    _js_masks,
-    _resolve_frontend_module,
-)
+from _web_source import NAV_SCREENS
 
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
 from hwpxfiller.webapp.app import WebFrontend
 
 ROOT = Path(__file__).parents[2]
 SRC = ROOT / "src"
-FRONTEND_DOMAIN_PREFIX = "frontend/src/domain/"
-
-#: 유지되는 wire codec 모듈 **정확히 둘** — 이것들만 semantic-scan/​import-ban 에서 예외다.
-#: (제품 소비자 0 = census; test/codec 소비는 `tests/js/*` 이라 frontend 스캔 밖이다.)
-#: 디렉터리 전체를 예외로 두지 않는다: `frontend/src/domain/` 에 새 파일(예: currentness.ts)이
-#: 생기면 그것은 C3(import 금지)·C4(재계산 스캔) 양쪽의 **대상**이다.
-RETAINED_CODEC_MODULES = (
-    "frontend/src/domain/canonical_execution_encoding.ts",
-    "frontend/src/domain/slot_selection.ts",
-)
-
 #: shipping Qualification Profile 의 **정확한 census**(개수가 아니라 목록을 pin 한다).
 #:
 #: C1 이 막는 것은 **profile 을 고르는 제어면**이지 매체가 자기 자격 규칙을 갖는 것이 아니다 —
@@ -65,18 +46,6 @@ SHIPPING_QUALIFICATION_PROFILES = [
     "hwpxfiller/external/template_inspection.py|HWPX_QUALIFICATION_PROFILE",
     "hwpxfiller/external/text_template_inspection.py|TXT_QUALIFICATION_PROFILE",
 ]
-
-#: canonical semantic 을 재저작했다는 표식이 될 심볼·primitive. production frontend 이
-#: 이 이름들을 **정의하거나 참조하면** 두 번째 판정자가 생긴 것이다.
-CANONICAL_SEMANTIC_SYMBOLS = (
-    "canonicalExecutionBytes",
-    "canonicalExecutionDigest",
-    "canonicalizeSelectionSet",
-    "digestSelectionSet",
-    "semanticSelectionEqual",
-    "validateSelectionSet",
-    "declaredSelectionDigest",
-)
 
 #: profile/qualification 관리 표면을 겨누는 금지어. 영어 substring 이 아니라 **구조적 표면**
 #: (action registry·direct-bridge method·screen/route 상수)의 이름을 census 해 이 토큰을 본다 —
@@ -241,51 +210,6 @@ def _profile_management_surfaces(
     }
 
 
-# ─── C3/C4 helpers: frontend/src/domain 전체를 대상으로 ──────────────────────────────
-def _domain_semantic_importers(sources: dict[str, str]) -> set[str]:
-    """``frontend/src/domain/`` 모듈로 resolve 되는 production frontend import 를 census 한다.
-
-    retained codec 2개는 **importer 로서** 건너뛴다(서로를 codec-internal 로 참조할 수 있다).
-    그 외 어떤 모듈이든(새 domain 파일 포함) domain 을 import 하면 위반이다 — canonical/semantic
-    권위는 backend/application 단일이라 frontend 는 domain 을 import 하지 않는다.
-    """
-    domain_modules = {rel for rel in sources if rel.startswith(FRONTEND_DOMAIN_PREFIX)}
-    violations: set[str] = set()
-    for relative, source in sources.items():
-        if relative in RETAINED_CODEC_MODULES:
-            continue
-        for specifier in _frontend_specifiers(relative, source):
-            target = _resolve_frontend_module(relative, specifier, sources)
-            if target in domain_modules:
-                violations.add(f"{relative}|{specifier}")
-    return violations
-
-
-def _semantic_scan_code(sources: dict[str, str]) -> dict[str, str]:
-    """retained codec 2개만 뺀 production frontend 소스의 **code mask**(문자열/주석 제거).
-
-    ``frontend/src/domain/`` 디렉터리 전체가 아니라 **정확히 그 두 codec** 만 제외한다 — 새
-    domain 파일은 재계산 스캔 대상으로 남는다.
-    """
-    return {
-        relative: _js_masks(source)[1]
-        for relative, source in sources.items()
-        if relative not in RETAINED_CODEC_MODULES
-    }
-
-
-def _crypto_and_reauthored(code: dict[str, str]) -> tuple[list[str], list[str]]:
-    """code mask 집합에서 digest primitive 사용과 canonical 심볼 재저작을 census 한다."""
-    crypto = sorted(rel for rel, masked in code.items() if "crypto.subtle" in masked)
-    reauthored = sorted(
-        f"{rel}|{symbol}"
-        for rel, masked in code.items()
-        for symbol in CANONICAL_SEMANTIC_SYMBOLS
-        if symbol in masked
-    )
-    return crypto, reauthored
-
-
 # ─── C6 helpers: naming-independent durable record 필드 census ─────────────────────────
 def _is_frozen_dataclass(node: ast.ClassDef) -> bool:
     for decorator in node.decorator_list:
@@ -393,33 +317,6 @@ def test_no_profile_management_surface() -> None:
     )
 
 
-# ─── C3 ──────────────────────────────────────────────────────────────────────────
-def test_frontend_does_not_import_domain_semantics() -> None:
-    violations = _domain_semantic_importers(_frontend_sources())
-    assert not violations, (
-        f"production frontend 이 frontend/src/domain semantic 모듈을 import 한다: "
-        f"{sorted(violations)} — canonical bytes/digest/currentness 는 backend/application 단일 "
-        "권위다. offline/보안상 독립 digest 가 실제로 필요하면 #732/#620 으로 상향한다."
-    )
-
-
-# ─── C4 ──────────────────────────────────────────────────────────────────────────
-def test_frontend_recomputes_no_semantics() -> None:
-    code = _semantic_scan_code(_frontend_sources())
-    # retained codec 2개는 스캔에서 빠지되 그 밖의 domain 파일은 포함돼야 한다(스코프 계약).
-    assert all(module not in code for module in RETAINED_CODEC_MODULES)
-    crypto, reauthored = _crypto_and_reauthored(code)
-    assert not crypto, (
-        f"production frontend 이 digest primitive 를 직접 쓴다: {crypto} — currentness/Plan/record "
-        "digest 는 backend 판정이다."
-    )
-    assert not reauthored, (
-        f"production frontend 이 canonical semantic 심볼을 참조/재저작한다: {reauthored} — "
-        "frontend 는 projection/observation DTO 를 렌더할 뿐 Plan/currentness/record/delivery 를 "
-        "재계산하지 않는다."
-    )
-
-
 # ─── C6 ──────────────────────────────────────────────────────────────────────────
 def test_no_new_durable_ledger_outside_allowlist() -> None:
     discovered = _durable_ledger_fields()
@@ -495,49 +392,6 @@ def test_negative_probe_detects_profile_management_surface() -> None:
     assert _profile_management_surfaces(set(), set(), {"qualification"}) == {
         "screen:qualification"
     }
-
-
-def test_negative_probe_detects_domain_semantic_import() -> None:
-    # retained codec import 도, **새 domain 파일** import 도 모두 위반으로 잡힌다.
-    sources = {
-        "frontend/src/domain/canonical_execution_encoding.ts": "export const x = 1;\n",
-        "frontend/src/domain/slot_selection.ts": "export const y = 1;\n",
-        "frontend/src/domain/currentness.ts": "export const z = 1;\n",
-        "frontend/src/screens/probe.ts": (
-            'import { canonicalExecutionDigest } from "../domain/canonical_execution_encoding.ts";\n'
-        ),
-        "frontend/src/screens/dynamic_probe.ts": (
-            'const m = await import("../domain/slot_selection.ts");\n'
-        ),
-        "frontend/src/screens/new_probe.ts": (
-            'import { computeCurrentness } from "../domain/currentness.ts";\n'
-        ),
-    }
-    assert _domain_semantic_importers(sources) == {
-        "frontend/src/screens/probe.ts|../domain/canonical_execution_encoding.ts",
-        "frontend/src/screens/dynamic_probe.ts|../domain/slot_selection.ts",
-        "frontend/src/screens/new_probe.ts|../domain/currentness.ts",
-    }
-
-
-def test_negative_probe_detects_new_domain_recompute() -> None:
-    # 새 domain 파일이 digest 를 계산하면 재계산 스캔이 잡는다 — 디렉터리 예외가 아니라 codec
-    # 2개만 예외라서 currentness.ts 는 스캔 집합에 든다.
-    sources = {
-        "frontend/src/domain/canonical_execution_encoding.ts": (
-            "await crypto.subtle.digest('SHA-256', b);\n"
-        ),
-        "frontend/src/domain/currentness.ts": (
-            "export async function d(b){ return crypto.subtle.digest('SHA-256', b); }\n"
-        ),
-    }
-    code = _semantic_scan_code(sources)
-    assert "frontend/src/domain/currentness.ts" in code, "새 domain 파일은 스캔 대상이다"
-    assert "frontend/src/domain/canonical_execution_encoding.ts" not in code, (
-        "retained codec 은 스캔에서 제외된다"
-    )
-    crypto, _reauthored = _crypto_and_reauthored(code)
-    assert crypto == ["frontend/src/domain/currentness.ts"]
 
 
 def test_negative_probe_detects_new_ledger() -> None:

@@ -4,8 +4,8 @@ R2-05b: ``QualificationProfileAdmissionFence`` 를 제거했다. repository 전�
 ``PerWorkMutationFence → S3 WorkTemplateStateStore writer lease`` 2-rank 다. 이 게이트는 S3 public
 Apply 가 WorkFence 를 획득해 under-fence helper 를 호출하고, WorkFence·Store lease 가 shared
 lock-order ledger 에 참여하며, guard 를 host 정본 ``per_work_fence`` 모듈에서 쓴다(사본 registry
-금지)를 정적으로 증명한다. 런타임 거절(역순 LockOrderViolation)은 ``tests/test_per_work_fence.py``
-가, write-0 정책은 ``tests/test_template_apply.py`` 가 진다.
+금지)를 정적으로 증명한다. 런타임 거절(역순 LockOrderViolation)은 ``crates/hwpx-desktop/src/per_work_fence.rs``
+가, 적용 실패의 상태 보존은 ``crates/hwpx-desktop/src/template_stage_runner.rs`` 가 진다.
 """
 
 from __future__ import annotations

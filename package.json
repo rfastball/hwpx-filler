@@ -9,15 +9,17 @@
     "npm": "11.16.0"
   },
   "scripts": {
-    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_rhwp.ps1 && vite build && uv run python scripts/seal_web_artifact.py",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_rhwp.ps1 && vite build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_web_artifact.ps1",
     "test": "node --test --test-concurrency=4 --test-reporter=tap \"tests/js/*.test.js\"",
-    "verify:web": "uv run python scripts/seal_web_artifact.py --verify"
+    "verify:web": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_web_artifact.ps1 -Verify"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "playwright-core": "1.61.0",
     "typescript": "7.0.2",
-    "vite": "8.1.5"
+    "vite": "8.1.5",
+    "yaml": "2.9.1"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",

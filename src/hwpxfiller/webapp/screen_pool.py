@@ -38,14 +38,14 @@ loud 재진술한다(판정·수치는 Application·어댑터, 문안·확인 UI
 
 **스코프 경계(조용히 빠뜨리지 않고 명시)**: 나라장터 참조 **등록**은 웹에 노출하지 않는다
 (동결 결정 2026-07-16 — 내부망 API 미확인, ServiceKey 웹 표면 부재). 단 풀에 이미 있는
-nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register_nara`` 는 보존, 배선만 유보).
+nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``DatasetPoolCommands.register_nara`` 는 보존, 배선만 유보).
 **계약 목록(pclm) 은 동결이 아니다**(ADR N): 나라 동결의 근거는 실 API·비밀값이었고 pclm 은
 네트워크도 비밀도 없는 **로컬 파일 소비자**라 그 근거가 닿지 않는다 — 두 종류를 「외부
 소스」로 뭉뚱그려 같은 유보에 넣지 않는다. 이 화면이 지는 것은 **시트 나열**(사용자가 적은
 DB 자리의 시트 — ``inspect_sheets``)과 **등록 액션**(:meth:`PoolController._do_register_pclm`)이고,
 둘은 폼(파일 고르기의 계약 목록 갈래 → ``#poolRegModal`` pclm 모드)과 **한 계약 변경**으로 함께 섰다
 — 프런트 호출자 없는 액션 등록은 단방향 배선이라 저장소가 거절한다
-(``tests/repo_contract/test_blocker_affordance_registry.py``). 판정·문안은 링1
+(``tests/js/bridge_contract.test.js``). 판정·문안은 링1
 (:meth:`~hwpxfiller.application.dataset_pool.DatasetPoolViewModel.register_pclm`)이 소유하고
 여기는 그 거절을 재진술만 한다.
 """

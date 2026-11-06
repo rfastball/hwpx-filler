@@ -30,9 +30,10 @@ quickstart-101/
 ├─ data/                     채울 값(한글 헤더 = 필드 이름 → 직접 매칭)
 │   ├─ 발주목록.csv           3건. utf-8-sig — 트랙 A·B 가 같은 파일을 쓴다
 │   └─ 발주목록_2.csv         같은 헤더·다른 2건(102 용)
-├─ img/                      이 문서의 스크린샷(자동 생성 — 아래 참고)
-└─ make_template.py          위 템플릿·CSV 를 다시 만드는 스크립트(맨 아래 참고)
+└─ img/                      이 문서의 스크린샷(자동 생성 — 아래 참고)
 ```
+
+자산 생성기는 [`quickstart_fixture.rs`](../../crates/hwpx-filler/examples/quickstart_fixture.rs)에 있다.
 
 실습 중 앱이 만드는 것(작업·설정·산출물)은 이 폴더 밑에 생기고 `.gitignore` 로 커밋에서
 빠진다. **`reset-101.cmd`** 를 더블클릭하면 실습 생성물·설정만 지워져(예제 자산은 불가침)
@@ -55,11 +56,8 @@ quickstart-101/
 
 ## 준비 — 더블클릭으로 실행
 
-**최초 1회만** 저장소 루트에서 의존성을 받는다(CONTRIBUTING.md#development 참고):
-
-```powershell
-uv sync --locked --all-extras --group dev --group build
-```
+**최초 1회만** [기여 절차](../../CONTRIBUTING.md#development)의 Rust·Node 도구를 준비한다.
+런처가 웹 의존성을 잠금 파일대로 설치하고 봉인된 자산을 빌드한다.
 
 이후로는 이 폴더의 **[`start-101.cmd`](start-101.cmd) 를 더블클릭**하면 끝이다. 런처가
 자동으로 이 예제 폴더를 앱의 홈(`HWPXFILLER_HOME`)으로 잡아 준다 — 그래서 실제
@@ -73,10 +71,8 @@ uv sync --locked --all-extras --group dev --group build
 
 ```powershell
 $env:HWPXFILLER_HOME = "$PWD\examples\quickstart-101"
-uv run --extra gui python -m hwpxfiller.webapp
+.\run-filler.ps1
 ```
-
-macOS/Linux: `HWPXFILLER_HOME="$PWD/examples/quickstart-101" python -m hwpxfiller.webapp`
 </details>
 
 ## 화면 한눈에 — 위쪽 탭 두 개
@@ -300,12 +296,12 @@ macOS/Linux: `HWPXFILLER_HOME="$PWD/examples/quickstart-101" python -m hwpxfille
 
 ## (참고) 예제 자산·스크린샷 다시 만들기
 
-`templates/*.hwpx` 와 `data/*.csv` 는 손으로 편집하지 말고 스크립트에서 파생한다
-(같은 입력 → 같은 출력). 필드·데이터를 바꾸려면 `make_template.py` 안의
-`FIELDS`·`RECORDS`·`TEMPLATES` 를 고치고 다시 실행한다:
+`templates/*.hwpx` 와 `data/*.csv` 는 손으로 편집하지 말고
+[`quickstart_fixture.rs`](../../crates/hwpx-filler/examples/quickstart_fixture.rs)에서 파생한다.
+필드·데이터를 바꾸려면 그 파일의 `FIELDS`·`RECORDS`·본문 줄을 고치고 다시 실행한다:
 
 ```powershell
-uv run python examples/quickstart-101/make_template.py
+cargo run -p hwpx-filler --example quickstart_fixture --locked -- --out examples/quickstart-101
 ```
 
 `templates/*.txt` 는 평문이라 스크립트 없이 그냥 손으로 편집하면 된다
@@ -317,21 +313,25 @@ uv run python examples/quickstart-101/make_template.py
 임시 홈을 쓴다. 이 방식의 캡처에는 임시 홈 경로가 보일 수 있다.
 
 ```powershell
-uv run --extra gui python scripts/capture_101_screenshots.py capture --home temp --report build/101-capture-report.json
+.\scripts\capture_101_screenshots.ps1 `
+  -Exe dist/hwpx-filler-web/hwpx-filler-web.exe `
+  -EvidenceDir build/101-capture-evidence
 ```
 
 같은 실습을 **그림 없이 동작만** 검사할 수도 있다. 기본값이 임시 홈이라 실습 상태를
 건드리지 않는다:
 
 ```powershell
-uv run --extra gui python scripts/capture_101_screenshots.py check
+.\scripts\run_native_live101.ps1 `
+  -Exe dist/hwpx-filler-web/hwpx-filler-web.exe `
+  -EvidenceDir build/101-check-evidence
 ```
 
 두 명령 모두 실습을 **실제로** 완주하므로 OS 클립보드를 한 번 덮어쓴다(작업대의
 **[복사]** 를 진짜로 누른다). 지금 클립보드에 둔 것이 있으면 먼저 챙겨 두자.
 
-자산과 문서가 어긋나지 않게 저장소의 live101 게이트(`tests/test_quickstart_101_live.py`)가
+자산과 문서가 어긋나지 않게 저장소의 native live101 게이트(`scripts/run_native_live101.ps1`)가
 커밋된 자산으로 이 101 여정을 실제 완주하고 산출물·캡처 지점을 판정한다. 경계는 이렇다 — **학습 자산**
 (템플릿·CSV·txt)은 앱에서 열리는 데 이 폴더 밖 의존이 없지만, **런처·재생성 스크립트·
-테스트는 저장소 체크아웃 전제**다(`start-101.cmd` 는 저장소 루트의 uv 환경으로 실행한다).
+테스트는 저장소 체크아웃 전제**다(`start-101.cmd` 는 저장소 루트의 Rust 소스를 실행한다).
 그래서 이 실습은 저장소 안에서 한다.

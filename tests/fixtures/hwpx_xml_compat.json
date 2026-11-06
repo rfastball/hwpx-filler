@@ -1,0 +1,535 @@
+{
+  "schema": "hwpx-xml-compat/v1",
+  "cases": [
+    {
+      "id": "multiple_runs_and_value_fragments",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"5\" type=\"CLICK_HERE\" name=\"파편\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>정보</hp:t></hp:run><hp:run><hp:t>시스템</hp:t><hp:t> 구축</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"5\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": true,
+          "bookmark_topology_usable": true,
+          "events": [
+            {
+              "kind": "FieldBegin",
+              "pair": 0,
+              "order": 4,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "raw_name": "파편",
+              "field_type": "CLICK_HERE",
+              "text_preview": "정보시스템 구축"
+            },
+            {
+              "kind": "FieldEnd",
+              "pair": 0,
+              "order": 12,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            }
+          ],
+          "diagnostics": []
+        },
+        "admission": {
+          "fields": [
+            {
+              "pair": 0,
+              "effects": [
+                {
+                  "kind": "normalize-fragments",
+                  "detail": []
+                }
+              ],
+              "blockers": []
+            }
+          ],
+          "bookmarks": []
+        },
+        "fills": [
+          {
+            "value": "정보시스템 구축",
+            "filled": true,
+            "modified": false,
+            "structure_changed": false,
+            "effects": [],
+            "blockers": [],
+            "xml_tree_unchanged": true,
+            "after_field_text": "정보시스템 구축",
+            "after_text_nodes": [
+              "정보",
+              "시스템",
+              " 구축"
+            ],
+            "after_inline_children": [
+              [],
+              [],
+              []
+            ]
+          },
+          {
+            "value": "새값",
+            "filled": true,
+            "modified": true,
+            "structure_changed": false,
+            "effects": [
+              {
+                "kind": "normalize-fragments",
+                "detail": []
+              }
+            ],
+            "blockers": [],
+            "xml_tree_unchanged": false,
+            "after_field_text": "새값",
+            "after_text_nodes": [
+              "새값",
+              "",
+              ""
+            ],
+            "after_inline_children": [
+              [],
+              [],
+              []
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "table_cell_sublist_paragraph",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"4\" type=\"CLICK_HERE\" name=\"표셀\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"4\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": true,
+          "bookmark_topology_usable": true,
+          "events": [
+            {
+              "kind": "FieldBegin",
+              "pair": 0,
+              "order": 10,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "raw_name": "표셀",
+              "field_type": "CLICK_HERE",
+              "text_preview": "값"
+            },
+            {
+              "kind": "FieldEnd",
+              "pair": 0,
+              "order": 15,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            }
+          ],
+          "diagnostics": []
+        },
+        "admission": {
+          "fields": [
+            {
+              "pair": 0,
+              "effects": [],
+              "blockers": []
+            }
+          ],
+          "bookmarks": []
+        },
+        "fills": [
+          {
+            "value": "새셀값",
+            "filled": true,
+            "modified": true,
+            "structure_changed": false,
+            "effects": [],
+            "blockers": [],
+            "xml_tree_unchanged": false,
+            "after_field_text": "새셀값",
+            "after_text_nodes": [
+              "새셀값"
+            ],
+            "after_inline_children": [
+              []
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "empty_field",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"9\" type=\"CLICK_HERE\" name=\"빈필드\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"9\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": true,
+          "bookmark_topology_usable": true,
+          "events": [
+            {
+              "kind": "FieldBegin",
+              "pair": 0,
+              "order": 4,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "raw_name": "빈필드",
+              "field_type": "CLICK_HERE",
+              "text_preview": ""
+            },
+            {
+              "kind": "FieldEnd",
+              "pair": 0,
+              "order": 7,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            }
+          ],
+          "diagnostics": []
+        },
+        "admission": {
+          "fields": [
+            {
+              "pair": 0,
+              "effects": [
+                {
+                  "kind": "synthesize-slot",
+                  "detail": []
+                }
+              ],
+              "blockers": []
+            }
+          ],
+          "bookmarks": []
+        },
+        "fills": [
+          {
+            "value": "새값",
+            "filled": true,
+            "modified": true,
+            "structure_changed": true,
+            "effects": [
+              {
+                "kind": "synthesize-slot",
+                "detail": []
+              }
+            ],
+            "blockers": [],
+            "xml_tree_unchanged": false,
+            "after_field_text": "새값",
+            "after_text_nodes": [
+              "새값"
+            ],
+            "after_inline_children": [
+              []
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "safe_markpen",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"F\"/></hp:ctrl><hp:t>OLD<hp:markpenBegin/>X<hp:markpenEnd/></hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": true,
+          "bookmark_topology_usable": true,
+          "events": [
+            {
+              "kind": "FieldBegin",
+              "pair": 0,
+              "order": 4,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "raw_name": "F",
+              "field_type": null,
+              "text_preview": "OLDX"
+            },
+            {
+              "kind": "FieldEnd",
+              "pair": 0,
+              "order": 9,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            }
+          ],
+          "diagnostics": []
+        },
+        "admission": {
+          "fields": [
+            {
+              "pair": 0,
+              "effects": [
+                {
+                  "kind": "remove-inline",
+                  "detail": [
+                    "markpenBegin",
+                    "markpenEnd"
+                  ]
+                }
+              ],
+              "blockers": []
+            }
+          ],
+          "bookmarks": []
+        },
+        "fills": [
+          {
+            "value": "NEW",
+            "filled": true,
+            "modified": true,
+            "structure_changed": false,
+            "effects": [
+              {
+                "kind": "remove-inline",
+                "detail": [
+                  "markpenBegin",
+                  "markpenEnd"
+                ]
+              }
+            ],
+            "blockers": [],
+            "xml_tree_unchanged": false,
+            "after_field_text": "NEW",
+            "after_text_nodes": [
+              "NEW",
+              "OUT"
+            ],
+            "after_inline_children": [
+              [],
+              []
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "protected_range_crossing",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"F\"/></hp:ctrl><hp:t>OLD<hp:markpenBegin/></hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl><hp:t>OUT<hp:markpenEnd/></hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": true,
+          "bookmark_topology_usable": true,
+          "events": [
+            {
+              "kind": "FieldBegin",
+              "pair": 0,
+              "order": 4,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "raw_name": "F",
+              "field_type": null,
+              "text_preview": "OLD"
+            },
+            {
+              "kind": "FieldEnd",
+              "pair": 0,
+              "order": 8,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            }
+          ],
+          "diagnostics": []
+        },
+        "admission": {
+          "fields": [
+            {
+              "pair": 0,
+              "effects": [],
+              "blockers": [
+                {
+                  "kind": "protected-range-crossing",
+                  "detail": [
+                    "markpenBegin",
+                    "markpenEnd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "bookmarks": []
+        },
+        "fills": [
+          {
+            "value": "NEW",
+            "filled": false,
+            "modified": false,
+            "structure_changed": false,
+            "effects": [],
+            "blockers": [
+              {
+                "kind": "protected-range-crossing",
+                "detail": [
+                  "markpenBegin",
+                  "markpenEnd"
+                ]
+              }
+            ],
+            "xml_tree_unchanged": true,
+            "after_field_text": "OLD",
+            "after_text_nodes": [
+              "OLD",
+              "OUT",
+              "TAIL"
+            ],
+            "after_inline_children": [
+              [
+                "{http://www.hancom.co.kr/hwpml/2011/paragraph}markpenBegin"
+              ],
+              [
+                "{http://www.hancom.co.kr/hwpml/2011/paragraph}markpenEnd"
+              ],
+              []
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "nested_fields",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"22\" type=\"CLICK_HERE\" name=\"바깥\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"23\" type=\"CLICK_HERE\" name=\"안쪽\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"23\" fieldid=\"627272811\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"22\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": false,
+          "bookmark_topology_usable": true,
+          "events": [],
+          "diagnostics": [
+            {
+              "kind": "field-nested",
+              "order": 7
+            }
+          ]
+        },
+        "admission": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    {
+      "id": "mixed_pair_identity",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"27\" type=\"CLICK_HERE\" name=\"혼합ID\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": false,
+          "bookmark_topology_usable": false,
+          "events": [],
+          "diagnostics": [
+            {
+              "kind": "field-orphan-end",
+              "order": 7
+            }
+          ]
+        },
+        "admission": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    {
+      "id": "foreign_namespace",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><x:ctrl><x:fieldBegin id=\"25\" type=\"CLICK_HERE\" name=\"외부\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></x:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"25\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": false,
+          "bookmark_topology_usable": true,
+          "events": [],
+          "diagnostics": [
+            {
+              "kind": "field-non-native-control",
+              "order": 4
+            },
+            {
+              "kind": "field-orphan-end",
+              "order": 7
+            }
+          ]
+        },
+        "admission": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    {
+      "id": "field_bookmark_entity_order",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"F\"/></hp:ctrl><hp:t>A &amp; B</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"B\"/></hp:ctrl><hp:t>IN</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>",
+      "expected": {
+        "scan": {
+          "kind": "section",
+          "field_pairing_usable": true,
+          "bookmark_topology_usable": true,
+          "events": [
+            {
+              "kind": "FieldBegin",
+              "pair": 0,
+              "order": 4,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "raw_name": "F",
+              "field_type": null,
+              "text_preview": "A & B"
+            },
+            {
+              "kind": "FieldEnd",
+              "pair": 0,
+              "order": 7,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            },
+            {
+              "kind": "BookmarkBegin",
+              "pair": 1,
+              "order": 11,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldBegin",
+              "name": "B",
+              "meta_tags": []
+            },
+            {
+              "kind": "BookmarkEnd",
+              "pair": 1,
+              "order": 14,
+              "qname": "{http://www.hancom.co.kr/hwpml/2011/paragraph}fieldEnd"
+            }
+          ],
+          "diagnostics": []
+        },
+        "admission": {
+          "fields": [
+            {
+              "pair": 0,
+              "effects": [],
+              "blockers": []
+            }
+          ],
+          "bookmarks": [
+            {
+              "pair": 1,
+              "blockers": []
+            }
+          ]
+        },
+        "fills": [
+          {
+            "value": "NEW & <",
+            "filled": true,
+            "modified": true,
+            "structure_changed": false,
+            "effects": [],
+            "blockers": [],
+            "xml_tree_unchanged": false,
+            "after_field_text": "NEW & <",
+            "after_text_nodes": [
+              "NEW & <",
+              "IN",
+              "OUT"
+            ],
+            "after_inline_children": [
+              [],
+              [],
+              []
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

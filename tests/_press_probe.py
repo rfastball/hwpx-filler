@@ -14,6 +14,7 @@ import json
 import threading
 from contextlib import contextmanager
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from secrets import randbelow
 from urllib.parse import urlsplit
 
 from _web_source import REPO_ROOT
@@ -58,6 +59,16 @@ def _built_css_path() -> tuple[str, str]:
     return css_path, artifact.artifact_id
 
 
+def _browser_safe_server(handler: type[SimpleHTTPRequestHandler]) -> ThreadingHTTPServer:
+    last_error = None
+    for _ in range(32):
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", 49152 + randbelow(16384)), handler)
+        except OSError as exc:
+            last_error = exc
+    raise RuntimeError("Chrome-safe loopback port was not allocated after 32 attempts") from last_error
+
+
 @contextmanager
 def _loopback_document(document: str):
     artifact = resolve_web_artifact(repo_root=REPO_ROOT)
@@ -80,7 +91,7 @@ def _loopback_document(document: str):
         def log_message(self, _format: str, *args) -> None:
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = _browser_safe_server(Handler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -110,10 +121,7 @@ def measure_press(scaffold: str, width: int, motion: str) -> dict:
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                channel="chrome",
-                args=[f"--explicitly-allowed-ports={urlsplit(url).port}"],
-            )
+            browser = playwright.chromium.launch(channel="chrome")
             try:
                 context = browser.new_context(
                     viewport={"width": max(width + 200, 800), "height": 600},
@@ -218,10 +226,7 @@ def measure_viewport_rects(
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                channel="chrome",
-                args=[f"--explicitly-allowed-ports={urlsplit(url).port}"],
-            )
+            browser = playwright.chromium.launch(channel="chrome")
             try:
                 context = browser.new_context(
                     viewport={"width": width, "height": height},
@@ -282,10 +287,7 @@ def measure_forced_colors() -> dict:
     with _loopback_document(html) as (url, served_artifact_id):
         assert served_artifact_id == artifact_id
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                channel="chrome",
-                args=[f"--explicitly-allowed-ports={urlsplit(url).port}"],
-            )
+            browser = playwright.chromium.launch(channel="chrome")
             try:
                 measured = {}
                 for mode in ("active", "none"):

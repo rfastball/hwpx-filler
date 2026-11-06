@@ -1,7 +1,7 @@
 """데이터셋 풀 워크숍 Application 상태 — UI·저장 구현 비의존.
 
 웹 컨트롤러(:class:`~hwpxfiller.webapp.screen_pool.PoolController`)가 이 뷰모델을 들고
-``rows()``·``register_excel``/``register_pclm``/``register_nara``·
+``rows()``·``register_excel``/``register_pclm``·
 ``archive``/``activate``/``delete`` 로
 **렌더·오케스트레이션만** 한다(액션 키→핸들러 라우팅과 stale 항목 봉합은 컨트롤러 몫).
 참조 등록·상태 전이·행 성형은 전부 여기 산다 — PySide6 임포트 없이 헤드리스로
@@ -46,7 +46,6 @@ from ..domain.dataset_reference import (
     reference_sheets,
     resolve_pclm_db,
 )
-from .nara_acquire import validate_range
 from .dataset_pool_port import DatasetPoolPort as DatasetPoolPort
 
 
@@ -686,7 +685,7 @@ class DatasetPoolViewModel:
         시트 목록이다 — 호출자(링2 컨트롤러)가 어댑터
         :func:`~hwpxfiller.data.pclm.list_sqlite_sheets` 로 읽어 넘긴다(Application 은 파일을
         열지 않는다). 그 밖의 이름을 저장하면 실행 때마다 실패하는 죽은 참조가 조용히 생긴다
-        (``register_nara`` 의 기간 검증과 같은 근거, RC-13). 고정 허용목록은 사용자 결정
+        (Rust ``DatasetPoolCommands.register_nara`` 의 기간 검증과 같은 근거, RC-13). 고정 허용목록은 사용자 결정
         (2026-09-30)으로 걷혔다 — 기준은 그 DB 하나다. 거절은 쓸 수 있는 시트 이름을 재진술한다.
         """
         name = (name or "").strip()
@@ -795,39 +794,6 @@ class DatasetPoolViewModel:
         item = self.registry.relink_confirmed(
             key, path, sheet=sheet, note=note, name=name, expected_basis=basis, sheets=sheets
         )
-        self.refresh()
-        return item
-
-    def register_nara(
-        self,
-        name: str,
-        bgn_dt: str,
-        end_dt: str,
-        *,
-        num_rows: "int | None" = None,
-        page_no: "int | None" = None,
-        note: str = "",
-    ) -> DatasetReference:
-        """나라장터 쿼리 참조 등록 — 기간·건수만 저장(**ServiceKey 없음**·데이터 없음).
-
-        기간은 등록 시점에 검증한다(형식·1개월 제한) — 취득 경로만 믿고 우회 저장하면
-        실행 때마다 실패하는 죽은 참조가 조용히 생긴다(RC-13).
-        """
-        name = (name or "").strip()
-        if not name:
-            raise ValueError("데이터셋 이름을 입력하세요.")
-        if not bgn_dt or not end_dt:
-            raise ValueError("조회 기간(시작·종료)을 입력하세요.")
-        rng_err = validate_range(bgn_dt, end_dt)
-        if rng_err:
-            raise ValueError(rng_err)
-        opts: "dict[str, object]" = {"bgn_dt": bgn_dt, "end_dt": end_dt}
-        if num_rows:
-            opts["num_rows"] = num_rows
-        if page_no:
-            opts["page_no"] = page_no
-        item = DatasetReference(name=name, kind="nara", opts=opts, note=note)
-        self.registry.add(item)
         self.refresh()
         return item
 

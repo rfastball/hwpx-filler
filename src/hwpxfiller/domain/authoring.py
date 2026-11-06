@@ -1236,8 +1236,3 @@ def compile_document(
             pkg.entries[name] = serialize_modified_section(root)
     report.modified = bool(report.compiled)
     return pkg, report
-
-
-# 컴파일본 옆저장(compile_to_sibling)은 파일 IO 개시(경로 열기·충돌 검사·저장)라
-# P2-19R(#576)에서 External 로 이사했다:
-# :func:`hwpxfiller.external.template_inspection.compile_to_sibling`.

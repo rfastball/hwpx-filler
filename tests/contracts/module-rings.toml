@@ -65,11 +65,6 @@ target = "RETIRE"
 source_write_set = ["src/hwpxfiller/__init__.py"]
 
 [[unit]]
-module = "hwpxfiller.cli"
-target = "HOST"
-source_write_set = ["src/hwpxfiller/cli.py"]
-
-[[unit]]
 module = "hwpxfiller.data"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/__init__.py"]
@@ -268,11 +263,6 @@ source_write_set = ["src/hwpxfiller/webapp/action_registry.py"]
 module = "hwpxfiller.webapp.app"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/app.py"]
-
-[[unit]]
-module = "hwpxfiller.webapp.blocker_affordance"
-target = "FRONTEND_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/blocker_affordance.py"]
 
 [[unit]]
 module = "hwpxfiller.webapp.boot_budget"

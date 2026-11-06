@@ -1,0 +1,129 @@
+[
+  {
+    "message": "fieldBegin has no id",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin type=\"BOOKMARK\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "duplicate fieldBegin",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "ambiguous BOOKMARK fieldEnd",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "has no fieldEnd",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "end precedes begin",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "partial-paragraph BOOKMARK begin",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:t>prefix</hp:t><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>inside</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "partial-paragraph BOOKMARK end",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>inside</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl><hp:t>suffix</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "not native ctrl/run/top-level-p",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "not native ctrl/run/top-level-p",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/><hp:t>A</hp:t><hp:fieldEnd beginIDRef=\"1\"/></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "non-paragraph section child",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:foo/><hp:p><hp:run><hp:t>B</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "crossing BOOKMARK regions",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A1</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"B\"/></hp:ctrl><hp:t>B1</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>A2</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>B2</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT2</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "has no fieldEnd",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p></hs:sec>",
+      "Contents/section1.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:t>B</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "markpenBegin/markpenEnd range intersects",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:t><hp:markpenBegin color=\"#ffff00\"/>OUT</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>IN<hp:markpenEnd/></hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>IN2</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT2</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "insertBegin/insertEnd range intersects",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>IN<hp:insertBegin Id=\"2\" TcId=\"3\"/></hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>IN2</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT2<hp:insertEnd Id=\"2\" TcId=\"3\"/></hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "deleteBegin/deleteEnd range intersects",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:t><hp:deleteBegin Id=\"4\" TcId=\"5\"/>OUT</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>IN</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>IN2</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT2<hp:deleteEnd Id=\"4\" TcId=\"5\"/></hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "non-native namespace",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><x:p xmlns:x=\"urn:s0-foreign\"><x:run><x:ctrl><x:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></x:ctrl><x:t>A</x:t><x:ctrl><x:fieldEnd beginIDRef=\"1\"/></x:ctrl></x:run></x:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "metaTag uses a non-native namespace",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl xmlns:x=\"urn:s0-foreign\"><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"><x:metaTag>{}</x:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "hp:metaTag must contain text only",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"><hp:metaTag><hp:t>nested</hp:t></hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "not native ctrl/run/top-level-p",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p xmlns:x=\"urn:s0-foreign\"><hp:run><x:ctrl><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl></x:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "non-paragraph section child",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><x:p xmlns:x=\"urn:s0-foreign\"><x:run><x:t>X</x:t></x:run></x:p><hp:p><hp:run><hp:t>B</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+    }
+  },
+  {
+    "message": "would leave no paragraph",
+    "sections": {
+      "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><!--keep--><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>B</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    }
+  }
+]

@@ -106,7 +106,6 @@ TERMINAL_STATES: "tuple[str, ...]" = (STATE_SUCCEEDED, STATE_FAILED)
 
 #: 호스트 소유 연산 11종. **``frontend/src/selftest/runner.js`` 의 ``HOST_OPS`` 와 같은 목록이고
 #: 같은 순서다** — 두 벌이 갈라지면 프런트는 요청하는데 호스트는 모르는 이름이 생긴다.
-#: 그 드리프트는 ``tests/test_selftest_api.py`` 가 runner.js 를 직접 읽어 센다.
 HOST_OPS: "tuple[str, ...]" = (
     "mode_select",
     "input_select",

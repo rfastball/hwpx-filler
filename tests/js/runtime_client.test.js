@@ -46,7 +46,7 @@ function adapterWith(api) {
 /* ══════════════ 생성 계약의 소비 형태 ══════════════ */
 
 test("생성 계약 — 메서드 전수는 내부 표면을 포함하고, 내부 표면은 그 부분집합이다", () => {
-  assert.equal(HOST_METHODS.length, 30);
+  assert.equal(HOST_METHODS.length, 31);
   for (const name of ["initial", "dispatch", "generate", "close_guard_state", "open_authoring_document", "save_authoring_document", "authoring_cases_file", "export_authoring_result"]) {
     assert.ok(HOST_METHODS.includes(name), `${name} 이 HOST_METHODS 에 없습니다`);
   }
@@ -240,6 +240,7 @@ test("invoke — 계약 밖 이름은 호스트에 닿기 전에 시끄럽게 �
   const client = clientWith({});
 
   assert.throws(() => client.invoke("ghost_method"), /계약\(HOST_METHODS\)에 없는/);
+  assert.throws(() => client.invoke("close_flush_required"), /host-internal 메서드/);
 });
 
 test("invoke — 종료 전 buffer flush 후 close_guard_state 를 다시 조회한다", async () => {

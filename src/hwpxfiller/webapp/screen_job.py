@@ -1645,8 +1645,7 @@ class JobController:
         return {"ok": True}
 
     # (close_guard_reason 은 U2 §2.9(#344)에서 사망 — 창 닫기는 명시적 종료 선언이고 진행
-    #  중 선택은 계약상 보존하지 않는다. 이 화면은 창 종료 가드에 참여하지 않으며, 그 배제는
-    #  tests/test_webapp_bridge.py 의 `silent_loss_by_contract` 표에 **선언**돼 있다. 가드
+    #  중 선택은 계약상 보존하지 않는다. 이 화면은 창 종료 가드에 참여하지 않는다. 가드
     #  술어 `_guard_state` 의 나머지 두 소비자 — `session_guard_for`(홈 삭제 가드, #268)와
     #  `_do_guard_state`(데이터 재겨눔·재연결 사전 확인) — 는 그대로 산다.)
 

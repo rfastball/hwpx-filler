@@ -76,7 +76,7 @@ MUTATION_KINDS: "tuple[str, ...]" = ("mutated", "deleted")
 # ------------------------------------------------- 등록 데이터(풀) 겨눔 공유 관문(#26/#6)
 # 나라장터 소스 동결 결정(2026-07-16): 내부망 API 미확인으로 매몰비용이 가장 큰 영역이라
 # 웹 표면에 노출하지 않는다(#10 frozen·#24 계류와 정합). 도메인 seam(data/nara.py·
-# source_from_pool_item 의 nara 분기·register_nara)은 보존 — 동결 해제 시 재배선 지점.
+# source_from_pool_item 의 nara 분기·Rust DatasetPoolCommands.register_nara)은 보존 — 동결 해제 시 재배선 지점.
 # 풀에 이미 있는 nara 항목은 숨기지 않고 목록에 표시하되, 겨눔은 아래 관문이 시끄럽게
 # 거절한다(confirm-or-alarm: 조용한 실패·조용한 숨김 둘 다 금지).
 NARA_FROZEN_TEXT = (

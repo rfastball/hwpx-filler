@@ -3,34 +3,38 @@
 <a id="architecture-boundaries"></a>
 ## 계층과 실행 자산
 
-의존은 바깥에서 안으로 흐른다. `hwpxfiller`가 `hwpxcore`를 사용하며 역방향은 금지다.
+`hwpxfiller`→`hwpxcore`; Rust도 `hwpx-filler`→`hwpx-core`다. 역의존 금지.
 
 | 계층 | 소유 | 금지 |
 |---|---|---|
 | `hwpxcore/` 형식 커널 | HWPX bytes 파싱·관찰·직렬화 | 제품 규칙, 파일 시스템·창·시계 등 환경 효과 |
-| domain·application | 작업·구성·선택·준비·실행 판정 | DOM·pywebview |
+| domain·application | 작업·구성·선택·준비·실행 판정 | DOM·Tauri 창 |
 | `viewmodel/` | 상태·문안·게이트 투영 | 실제 창·DOM 조작 |
 | `webapp/` | 컨트롤러·브리지·네이티브 자원 조정 | 도메인 판정 재구현 |
 | `frontend/` | React 렌더·포커스·모달·표시 상태 | 의미·권한·최신성·실행 가능 여부의 독립 판정 |
 
-모듈 좌표는 [module-rings.toml](../tests/contracts/module-rings.toml), 공개 경계·vendor 배치는
-[architecture_contract.toml](../tests/architecture_contract.toml)이 소유한다. 예외 목록을 복제하지 않는다.
-제품은 Windows pywebview/WebView2에서 실행하며 유일한 웹 소스는 `frontend/`다.
-소스 실행은 현재 소스에 대해 봉인된 `build/web/`, 배포 실행은 번들의 `web/`를 검증한다.
-자산 경로 override나 검증 실패 fallback은 없다. [빌드 절차](../CONTRIBUTING.md#development)를 따른다.
+모듈·공개 경계는 [module-rings.toml](../tests/contracts/module-rings.toml)과
+[architecture_contract.toml](../tests/architecture_contract.toml)이 소유한다. 예외 복제 금지.
+소스 실행과 네이티브 번들은 React·Tauri 2·WebView2를 사용한다. 앱·CLI의 제품 처리는 Rust가
+맡고, Python 구현은 기존 계약 대조와 아직 이전하지 않은 검증에 남아 있다.
+소스 `build/web/`, 배포 번들 `web/`를 봉인 검증한다. 경로 override·검증 실패 fallback은 없다.
+[빌드 절차](../CONTRIBUTING.md#development)를 따른다.
 
 <a id="architecture-runtime"></a>
 ## 통신과 화면 수명
 
-`WebFrontend.initial(screen)`과 `dispatch(screen, action, payload)`의 화면·액션·키는
-[action_registry.py](../src/hwpxfiller/webapp/action_registry.py)가 검증한다. 알 수 없는 키를
+`LiveGraph.initial(screen)`과 `dispatch(screen, action, payload)`의 화면·액션·키는
+[action_registry.rs](../crates/hwpx-desktop/src/action_registry.rs)가 검증한다. 알 수 없는 키를
 조용히 버리지 않는다. 직접 네이티브 호출은 registry 밖이므로 메서드 본문이 입력을 검증한다.
 정확한 목록은 [런타임 참조](reference/runtime.md), 웹 호출은 [bridge.js](../frontend/js/bridge.js),
-TypeScript 계약은 [gen_bridge_contract.py](../scripts/gen_bridge_contract.py)가 소유한다.
+TypeScript 계약은 [gen_bridge_contract.mjs](../scripts/gen_bridge_contract.mjs)가 소유한다.
 
-Python→웹 제품 경계는 `window.__hwpx`의 snapshot 사건이다. 테스트용 `window.__hwpxTest`와
+Rust→웹 제품 경계는 `window.__hwpx`의 snapshot 사건이다. 테스트용 `window.__hwpxTest`와
 섞지 않는다. 컨트롤러 push sink는 주입되므로 실제 창 없이 dispatch·snapshot을 검사한다.
 `pool`·`tpl`처럼 일부 표면이 구독하는 채널을 최상위 화면으로 설명하지 않는다.
+
+앱은 홈의 단일 인스턴스 권한을 얻은 뒤 작업 그래프와 창을 만든다. 작업 디렉터리 하나의
+writer 프로세스는 하나이며, 같은 프로세스의 저장소 인스턴스는 읽기·수정·쓰기 잠금을 공유한다.
 
 제품은 단일 React 트리다. snapshot store는 도착 순서를 보관한다. 일반 model은 store를 직접 구독하고,
 `job`만 full/progress를 합친다. pull은 revision 비교로 새 push를 덮지 않는다.
@@ -38,21 +42,21 @@ Python→웹 제품 경계는 `window.__hwpx`의 snapshot 사건이다. 테스�
 `aria-hidden`을 함께 적용한다. 구독·listener·worker·vendor 객체는 설치한 소유자가 해제한다.
 렌더 연속성은 범용 DOM 복원 없이 행동으로 검증한다.
 
-튜토리얼은 화면과 별도인 셸 표면이다. Python이 학습 위치·연습 자원·성공 사건·단계별 상자 대상과 복귀 문맥을 소유한다.
+튜토리얼은 화면과 별도인 셸 표면이다. Rust가 학습 위치·연습 자원·성공 사건·단계별 상자 대상과 복귀 문맥을 소유한다.
 웹은 사전 검사·미저장 변경 확인·기존 화면 이탈을 마친 뒤 전환 토큰으로 연습을 시작·종료한다. 취소 시 전환을 확정하지 않는다.
-연습 환경은 과정별 홈에 조립한 별도 그래프이며 전환은 [workspace_switch.py](../src/hwpxfiller/webapp/workspace_switch.py) 한 곳이다. 전환·복귀 문맥은 메모리 값이고 단일 인스턴스 잠금·WebView2 프로필은 실제 앱 홈을 쓴다. 모달 안내는 기존 포커스 경계 안에 둔다. Python이 판정하고 웹은 명령 없는 누르기·메뉴 닫힘만 보고한다. 네이티브 파일 선택은 현재 단계의 연습 사본을 기본 위치로 제시하되 다른 파일도 허용한다.
+연습 환경은 과정별 홈에 조립한 별도 그래프이며 전환은 [workspace_switch.rs](../crates/hwpx-desktop/src/workspace_switch.rs) 한 곳이다. 전환·복귀 문맥은 메모리 값이고 단일 인스턴스 잠금·WebView2 프로필은 실제 앱 홈을 쓴다. 모달 안내는 기존 포커스 경계 안에 둔다. Rust가 판정하고 웹은 명령 없는 누르기·메뉴 닫힘만 보고한다. 네이티브 파일 선택은 현재 단계의 연습 사본을 기본 위치로 제시하되 다른 파일도 허용한다.
 
 상단 탭은 `job`(문서 만들기)·`library`(문서 작업), `editor`·`workbench`·`authoring`은 몰입 화면이다.
 이탈 판정은 [shell/nav.ts](../frontend/src/shell/nav.ts), 적용·수명·고정 owner 위임은 셸이 맡는다.
 [overlay/engine.ts](../frontend/src/overlay/engine.ts)는 DOM 없는 스택 상태기계로 확인 promise,
-Escape, 초기 포커스와 복귀를 조정한다. Python이 손실 집합을 판정하고 웹이 확인을 표시한다.
+Escape, 초기 포커스와 복귀를 조정한다. Rust가 손실 집합을 판정하고 웹이 확인을 표시한다.
 실패한 확인을 성공·무응답으로 바꾸거나 화면별 지름길로 이탈 가드를 우회하지 않는다.
 
-저작 세션은 Python이 문서 revision·구조·시험 최신성·저장 및 외부 변경을 소유하고, 웹은 편집기
+저작 세션은 Rust가 문서 revision·구조·시험 최신성·저장 및 외부 변경을 소유하고, 웹은 편집기
 history·선택·표시를 소유한다. HWPX 위치는 manifest 순서의 section entry와 native 문단 좌표,
 TXT 위치는 줄바꿈을 LF 하나로 접은 본문(편집기 좌표)의 UTF-16 오프셋으로 전달하고 저장은 파일의 줄바꿈을 되살린다. 표 셀 안 문단은 `cell_path`(바깥 표부터 상위 문단·컨트롤·셀·
 문단 순서)를 덧붙이며 글상자 문단은 양쪽 모두 위치를 내지 않는다. 명령 가용 여부·거절 사유·문제 분류는
-Python 투영이고 웹은 버튼·메뉴·팔레트에 같은 판정을 쓴다. rhwp SDK는 전용 adapter 안에 두며
+Rust 투영이고 웹은 버튼·메뉴·팔레트에 같은 판정을 쓴다. rhwp SDK는 전용 adapter 안에 두며
 Studio·WASM·폰트는 같은 고정 원천과 보존 패치로 빌드해 웹 산출물에 동봉한다. 보존 패치는 셸 표면에 필요한
 훅(선택 끝 줄 사각형, 캐럿·초점을 옮기지 않는 스크롤, 문제 장식 종류, 표에 걸친 선택의 셀 끝을 표의 닻 본문 문단으로
 접는 범위 보고, 호스트가 끄는 자동 저장·복구, 범위 고르기의 누름 자리 보고와 고무줄 범위, 쪽마다 한 상자인 영역 표지)도 더하며 그 형식은 adapter 밖으로

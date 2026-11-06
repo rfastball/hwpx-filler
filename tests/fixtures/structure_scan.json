@@ -1,0 +1,3988 @@
+{
+  "text": [
+    {
+      "id": "positive_control_restores_declaration",
+      "text": "계약 일반사항\n{{#항목 특약 특약 사항}}\n{{#선택 지체상금 지체상금 조항}}\n지체상금은 {{지체상금률}} 로 한다.\n{{/선택}}\n{{#선택 하자보수 하자보수 조항}}\n하자보수 기간은 {{하자기간}} 이다.\n{{/선택}}\n{{/항목}}\n\n{{#항목 부칙}}\n{{#선택 가}}\n가 본문\n{{/선택}}\n{{#선택 나}}\n나 본문\n{{/선택}}\n{{/항목}}\n발주자: {{수요기관}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": [
+              {
+                "id": "지체상금",
+                "label": "지체상금 조항"
+              },
+              {
+                "id": "하자보수",
+                "label": "하자보수 조항"
+              }
+            ]
+          },
+          {
+            "id": "부칙",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              },
+              {
+                "id": "나",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 2,
+          "options": 4,
+          "fields": 3,
+          "markers": 12
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 1,
+            "end_marker_line": 8,
+            "content_start": 3,
+            "content_end": 6
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "지체상금",
+            "begin_marker_line": 2,
+            "end_marker_line": 4,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "하자보수",
+            "begin_marker_line": 5,
+            "end_marker_line": 7,
+            "content_start": 6,
+            "content_end": 6
+          },
+          {
+            "kind": "slot",
+            "slot_id": "부칙",
+            "option_id": null,
+            "begin_marker_line": 10,
+            "end_marker_line": 17,
+            "content_start": 12,
+            "content_end": 15
+          },
+          {
+            "kind": "option",
+            "slot_id": "부칙",
+            "option_id": "가",
+            "begin_marker_line": 11,
+            "end_marker_line": 13,
+            "content_start": 12,
+            "content_end": 12
+          },
+          {
+            "kind": "option",
+            "slot_id": "부칙",
+            "option_id": "나",
+            "begin_marker_line": 14,
+            "end_marker_line": 16,
+            "content_start": 15,
+            "content_end": 15
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 8,
+          "end": 24,
+          "source": "{{#항목 특약 특약 사항}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 25,
+          "end": 45,
+          "source": "{{#선택 지체상금 지체상금 조항}}",
+          "label": "지체상금 조항",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 52,
+          "end": 61,
+          "source": "{{지체상금률}}",
+          "label": "지체상금률"
+        },
+        {
+          "kind": "marker",
+          "start": 68,
+          "end": 75,
+          "source": "{{/선택}}",
+          "label": "지체상금 조항",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 76,
+          "end": 96,
+          "source": "{{#선택 하자보수 하자보수 조항}}",
+          "label": "하자보수 조항",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 106,
+          "end": 114,
+          "source": "{{하자기간}}",
+          "label": "하자기간"
+        },
+        {
+          "kind": "marker",
+          "start": 119,
+          "end": 126,
+          "source": "{{/선택}}",
+          "label": "하자보수 조항",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 127,
+          "end": 134,
+          "source": "{{/항목}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 136,
+          "end": 146,
+          "source": "{{#항목 부칙}}",
+          "label": "부칙",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 147,
+          "end": 156,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 162,
+          "end": 169,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 170,
+          "end": 179,
+          "source": "{{#선택 나}}",
+          "label": "나",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 185,
+          "end": 192,
+          "source": "{{/선택}}",
+          "label": "나",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 193,
+          "end": 200,
+          "source": "{{/항목}}",
+          "label": "부칙",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 206,
+          "end": 214,
+          "source": "{{수요기관}}",
+          "label": "수요기관"
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            9,
+            18
+          ],
+          "text": "계약 일반사항\n\n발주자: {{수요기관}}"
+        },
+        {
+          "selected": {
+            "특약": [
+              "하자보수"
+            ],
+            "부칙": [
+              "가"
+            ]
+          },
+          "visible": [
+            0,
+            6,
+            9,
+            12,
+            18
+          ],
+          "text": "계약 일반사항\n하자보수 기간은 {{하자기간}} 이다.\n\n가 본문\n발주자: {{수요기관}}",
+          "stage1": "계약 일반사항\n{{#항목 특약 특약 사항}}\n{{#선택 하자보수 하자보수 조항}}\n하자보수 기간은 {{하자기간}} 이다.\n{{/선택}}\n{{/항목}}\n\n{{#항목 부칙}}\n{{#선택 가}}\n가 본문\n{{/선택}}\n{{/항목}}\n발주자: {{수요기관}}",
+          "rescan": {
+            "slots": [
+              {
+                "id": "특약",
+                "label": "특약 사항",
+                "options": [
+                  {
+                    "id": "하자보수",
+                    "label": "하자보수 조항"
+                  }
+                ]
+              },
+              {
+                "id": "부칙",
+                "label": "",
+                "options": [
+                  {
+                    "id": "가",
+                    "label": ""
+                  }
+                ]
+              }
+            ],
+            "diagnostics": [],
+            "summary": {
+              "slots": 2,
+              "options": 2,
+              "fields": 2,
+              "markers": 8
+            },
+            "placements": [
+              {
+                "kind": "slot",
+                "slot_id": "특약",
+                "option_id": null,
+                "begin_marker_line": 1,
+                "end_marker_line": 5,
+                "content_start": 3,
+                "content_end": 3
+              },
+              {
+                "kind": "option",
+                "slot_id": "특약",
+                "option_id": "하자보수",
+                "begin_marker_line": 2,
+                "end_marker_line": 4,
+                "content_start": 3,
+                "content_end": 3
+              },
+              {
+                "kind": "slot",
+                "slot_id": "부칙",
+                "option_id": null,
+                "begin_marker_line": 7,
+                "end_marker_line": 11,
+                "content_start": 9,
+                "content_end": 9
+              },
+              {
+                "kind": "option",
+                "slot_id": "부칙",
+                "option_id": "가",
+                "begin_marker_line": 8,
+                "end_marker_line": 10,
+                "content_start": 9,
+                "content_end": 9
+              }
+            ]
+          }
+        },
+        {
+          "selected": {
+            "특약": [
+              "지체상금"
+            ],
+            "부칙": [
+              "나"
+            ]
+          },
+          "visible": [
+            0,
+            3,
+            9,
+            15,
+            18
+          ],
+          "text": "계약 일반사항\n지체상금은 {{지체상금률}} 로 한다.\n\n나 본문\n발주자: {{수요기관}}",
+          "stage1": "계약 일반사항\n{{#항목 특약 특약 사항}}\n{{#선택 지체상금 지체상금 조항}}\n지체상금은 {{지체상금률}} 로 한다.\n{{/선택}}\n{{/항목}}\n\n{{#항목 부칙}}\n{{#선택 나}}\n나 본문\n{{/선택}}\n{{/항목}}\n발주자: {{수요기관}}",
+          "rescan": {
+            "slots": [
+              {
+                "id": "특약",
+                "label": "특약 사항",
+                "options": [
+                  {
+                    "id": "지체상금",
+                    "label": "지체상금 조항"
+                  }
+                ]
+              },
+              {
+                "id": "부칙",
+                "label": "",
+                "options": [
+                  {
+                    "id": "나",
+                    "label": ""
+                  }
+                ]
+              }
+            ],
+            "diagnostics": [],
+            "summary": {
+              "slots": 2,
+              "options": 2,
+              "fields": 2,
+              "markers": 8
+            },
+            "placements": [
+              {
+                "kind": "slot",
+                "slot_id": "특약",
+                "option_id": null,
+                "begin_marker_line": 1,
+                "end_marker_line": 5,
+                "content_start": 3,
+                "content_end": 3
+              },
+              {
+                "kind": "option",
+                "slot_id": "특약",
+                "option_id": "지체상금",
+                "begin_marker_line": 2,
+                "end_marker_line": 4,
+                "content_start": 3,
+                "content_end": 3
+              },
+              {
+                "kind": "slot",
+                "slot_id": "부칙",
+                "option_id": null,
+                "begin_marker_line": 7,
+                "end_marker_line": 11,
+                "content_start": 9,
+                "content_end": 9
+              },
+              {
+                "kind": "option",
+                "slot_id": "부칙",
+                "option_id": "나",
+                "begin_marker_line": 8,
+                "end_marker_line": 10,
+                "content_start": 9,
+                "content_end": 9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "blank_line_counts_as_content",
+      "text": "{{#항목 특약}}\n\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 12,
+          "end": 19,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            1
+          ],
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_unbalanced_end_without_begin",
+      "text": "본문\n{{/항목}}\n{{/선택}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 3,
+          "end": 10,
+          "source": "{{/항목}}",
+          "label": "항목",
+          "region": "slot",
+          "role": "close",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 18,
+          "source": "{{/선택}}",
+          "label": "선택",
+          "region": "option",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_unbalanced_begin_without_end_names_the_file_scope",
+      "text": "{{#항목 특약}}\n{{#선택 가}}\n본문",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "「선택 가」 범위가 열린 채 파일이 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#선택 가}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "「항목 특약」 범위가 열린 채 파일이 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 20,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_crossed_range",
+      "text": "{{#항목 특약}}\n{{#선택 가}}\n본문\n{{/항목}}\n{{/선택}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "crossed_range",
+            "message": "「선택 가」 이 닫히기 전에 「항목 특약」 이 닫혔습니다 — 범위가 교차합니다.",
+            "context": "{{/항목}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 3,
+            "content_start": 2,
+            "content_end": 2
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_line": 1,
+            "end_marker_line": 3,
+            "content_start": 2,
+            "content_end": 2
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 20,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 24,
+          "end": 31,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 32,
+          "end": 39,
+          "source": "{{/선택}}",
+          "label": "선택",
+          "region": "option",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_unknown_keyword",
+      "text": "{{#조건 x}}\n본문\n{{/조건}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「조건」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{#조건 x}}"
+          },
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「조건」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{/조건}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 9,
+          "source": "{{#조건 x}}",
+          "label": "",
+          "region": "",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 13,
+          "end": 20,
+          "source": "{{/조건}}",
+          "label": "",
+          "region": "",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_empty_slot_id",
+      "text": "{{#항목}}\n본문\n{{/항목}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "empty_slot_id",
+            "message": "「항목」 마커에 id 가 없습니다 — id 는 필수입니다.",
+            "context": "{{#항목}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 7,
+          "source": "{{#항목}}",
+          "label": "",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 18,
+          "source": "{{/항목}}",
+          "label": "항목",
+          "region": "slot",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_empty_option_id",
+      "text": "{{#항목 특약}}\n{{#선택}}\n본문\n{{/선택}}\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "empty_option_id",
+            "message": "「선택」 마커에 id 가 없습니다 — id 는 필수입니다.",
+            "context": "{{#선택}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 4,
+            "content_start": 2,
+            "content_end": 2
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 18,
+          "source": "{{#선택}}",
+          "label": "",
+          "region": "option",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 22,
+          "end": 29,
+          "source": "{{/선택}}",
+          "label": "선택",
+          "region": "option",
+          "role": "close",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 30,
+          "end": 37,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_duplicate_slot_id",
+      "text": "{{#항목 특약}}\n본문\n{{/항목}}\n{{#항목 특약}}\n본문\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          },
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "duplicate_slot_id",
+            "message": "같은 문서에서 항목 id 「특약」 가 두 번 선언됐습니다.",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 2,
+          "options": 0,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 2,
+            "content_start": 1,
+            "content_end": 1
+          },
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 3,
+            "end_marker_line": 5,
+            "content_start": 4,
+            "content_end": 4
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 14,
+          "end": 21,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 22,
+          "end": 32,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 36,
+          "end": 43,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_duplicate_option_id",
+      "text": "{{#항목 특약}}\n{{#선택 가}}\n본문\n{{/선택}}\n{{#선택 가}}\n본문\n{{/선택}}\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              },
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "duplicate_option_id",
+            "message": "항목 「특약」 안에서 선택 id 「가」 가 두 번 선언됐습니다.",
+            "context": "{{#선택 가}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 2,
+          "fields": 0,
+          "markers": 6
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 7,
+            "content_start": 2,
+            "content_end": 5
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_line": 1,
+            "end_marker_line": 3,
+            "content_start": 2,
+            "content_end": 2
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_line": 4,
+            "end_marker_line": 6,
+            "content_start": 5,
+            "content_end": 5
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 20,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 24,
+          "end": 31,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 32,
+          "end": 41,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 45,
+          "end": 52,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 53,
+          "end": 60,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_option_outside_slot",
+      "text": "{{#선택 가}}\n본문\n{{/선택}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "option_outside_slot",
+            "message": "「선택 가」 이 항목 범위 밖에 있습니다 — 선택은 항목 직속만 가능합니다.",
+            "context": "{{#선택 가}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 9,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 13,
+          "end": 20,
+          "source": "{{/선택}}",
+          "label": "선택",
+          "region": "option",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_nested_slot",
+      "text": "{{#항목 가}}\n{{#항목 나}}\n본문\n{{/항목}}\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "가",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "nested_slot",
+            "message": "「항목 가」 안에서 다시 「항목 나」 을 열었습니다 — 항목 중첩은 없습니다.",
+            "context": "{{#항목 나}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "가",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 3,
+            "content_start": 2,
+            "content_end": 2
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 9,
+          "source": "{{#항목 가}}",
+          "label": "가",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 10,
+          "end": 19,
+          "source": "{{#항목 나}}",
+          "label": "나",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 23,
+          "end": 30,
+          "source": "{{/항목}}",
+          "label": "가",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 31,
+          "end": 38,
+          "source": "{{/항목}}",
+          "label": "항목",
+          "region": "slot",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_nested_option",
+      "text": "{{#항목 특약}}\n{{#선택 가}}\n{{#선택 나}}\n본문\n{{/선택}}\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "nested_option",
+            "message": "「선택 가」 이 닫히기 전에 「선택 나」 을 열었습니다.",
+            "context": "{{#선택 나}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 5
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 5,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_line": 1,
+            "end_marker_line": 4,
+            "content_start": 3,
+            "content_end": 3
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 20,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 21,
+          "end": 30,
+          "source": "{{#선택 나}}",
+          "label": "나",
+          "region": "option",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 34,
+          "end": 41,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 42,
+          "end": 49,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_marker_not_alone_two_markers_on_one_line",
+      "text": "{{#항목 특약}}{{/항목}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "marker_not_alone",
+            "message": "한 줄에 구간 마커가 2개 이상입니다 — 마커는 줄을 단독으로 차지해야 합니다.",
+            "context": "{{#항목 특약}}{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 10,
+          "end": 17,
+          "source": "{{/항목}}",
+          "label": "항목",
+          "region": "slot",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_marker_not_alone_with_residual_text",
+      "text": "앞말 {{#항목 특약}}\n본문\n{{/항목}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "marker_not_alone",
+            "message": "구간 마커가 다른 텍스트와 같은 줄에 있습니다 — 마커는 줄을 단독으로 차지해야 합니다.",
+            "context": "앞말 {{#항목 특약}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 3,
+          "end": 13,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 17,
+          "end": 24,
+          "source": "{{/항목}}",
+          "label": "항목",
+          "region": "slot",
+          "role": "close",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_empty_range",
+      "text": "{{#항목 특약}}\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "empty_range",
+            "message": "「항목 특약」 범위에 내용 문단이 없습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 1,
+            "content_start": 1,
+            "content_end": 0
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 18,
+          "source": "{{/항목}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_end_marker_extra_text",
+      "text": "{{#항목 특약}}\n본문\n{{/항목 군더더기}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "end_marker_extra_text",
+            "message": "닫는 「항목」 마커에 남은 텍스트가 있습니다: 「군더더기」 — 닫는 마커는 키워드만 가집니다.",
+            "context": "{{/항목 군더더기}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 특약}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 14,
+          "end": 26,
+          "source": "{{/항목 군더더기}}",
+          "label": "특약",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "same_declaration_restores_identical_slots_across_media",
+      "text": "{{#항목 특약 특약 사항}}\n{{#선택 지체상금 지체상금 조항}}\n지체상금은 {{지체상금률}} 로 한다.\n{{/선택}}\n{{#선택 하자보수 하자보수 조항}}\n하자보수 기간은 {{하자기간}} 이다.\n{{/선택}}\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": [
+              {
+                "id": "지체상금",
+                "label": "지체상금 조항"
+              },
+              {
+                "id": "하자보수",
+                "label": "하자보수 조항"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 2,
+          "fields": 2,
+          "markers": 6
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 7,
+            "content_start": 2,
+            "content_end": 5
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "지체상금",
+            "begin_marker_line": 1,
+            "end_marker_line": 3,
+            "content_start": 2,
+            "content_end": 2
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "하자보수",
+            "begin_marker_line": 4,
+            "end_marker_line": 6,
+            "content_start": 5,
+            "content_end": 5
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 16,
+          "source": "{{#항목 특약 특약 사항}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 17,
+          "end": 37,
+          "source": "{{#선택 지체상금 지체상금 조항}}",
+          "label": "지체상금 조항",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 44,
+          "end": 53,
+          "source": "{{지체상금률}}",
+          "label": "지체상금률"
+        },
+        {
+          "kind": "marker",
+          "start": 60,
+          "end": 67,
+          "source": "{{/선택}}",
+          "label": "지체상금 조항",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 68,
+          "end": 88,
+          "source": "{{#선택 하자보수 하자보수 조항}}",
+          "label": "하자보수 조항",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 98,
+          "end": 106,
+          "source": "{{하자기간}}",
+          "label": "하자기간"
+        },
+        {
+          "kind": "marker",
+          "start": 111,
+          "end": 118,
+          "source": "{{/선택}}",
+          "label": "하자보수 조항",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 119,
+          "end": 126,
+          "source": "{{/항목}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [],
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "selection_projection_keeps_lines_directly_under_a_slot",
+      "text": "머리말\n{{#항목 첨부}}\n공통 안내\n{{#선택 가}}\n가 본문\n{{/선택}}\n맺음 안내\n{{/항목}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "첨부",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "첨부",
+            "option_id": null,
+            "begin_marker_line": 1,
+            "end_marker_line": 7,
+            "content_start": 2,
+            "content_end": 6
+          },
+          {
+            "kind": "option",
+            "slot_id": "첨부",
+            "option_id": "가",
+            "begin_marker_line": 3,
+            "end_marker_line": 5,
+            "content_start": 4,
+            "content_end": 4
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 4,
+          "end": 14,
+          "source": "{{#항목 첨부}}",
+          "label": "첨부",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 21,
+          "end": 30,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 36,
+          "end": 43,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 50,
+          "end": 57,
+          "source": "{{/항목}}",
+          "label": "첨부",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            2,
+            6
+          ],
+          "text": "머리말\n공통 안내\n맺음 안내\n"
+        }
+      ]
+    },
+    {
+      "id": "selection_projection_preserves_original_line_endings",
+      "text": "머리말\r\n{{#항목 첨부}}\r\n{{#선택 가}}\r\n가 본문\r\n{{/선택}}\r\n{{/항목}}\r\n꼬리말\r\n",
+      "scan": {
+        "slots": [
+          {
+            "id": "첨부",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "첨부",
+            "option_id": null,
+            "begin_marker_line": 1,
+            "end_marker_line": 5,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "option",
+            "slot_id": "첨부",
+            "option_id": "가",
+            "begin_marker_line": 2,
+            "end_marker_line": 4,
+            "content_start": 3,
+            "content_end": 3
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 5,
+          "end": 15,
+          "source": "{{#항목 첨부}}",
+          "label": "첨부",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 17,
+          "end": 26,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 34,
+          "end": 41,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 43,
+          "end": 50,
+          "source": "{{/항목}}",
+          "label": "첨부",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            6
+          ],
+          "text": "머리말\r\n꼬리말\r\n"
+        }
+      ]
+    },
+    {
+      "id": "selection_projection_refuses_when_the_scan_carries_diagnostics",
+      "text": "{{#항목 첨부}}\n본문\n",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "「항목 첨부」 범위가 열린 채 파일이 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#항목 첨부}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 1
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 첨부}}",
+          "label": "첨부",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "selection_projection_is_identity_for_a_slotless_template",
+      "text": "수신: {{수신}}\n건명: {{건명}}\n",
+      "scan": {
+        "slots": [],
+        "diagnostics": [],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 2,
+          "markers": 0
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "field",
+          "start": 4,
+          "end": 10,
+          "source": "{{수신}}",
+          "label": "수신"
+        },
+        {
+          "kind": "field",
+          "start": 15,
+          "end": 21,
+          "source": "{{건명}}",
+          "label": "건명"
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            1
+          ],
+          "text": "수신: {{수신}}\n건명: {{건명}}\n"
+        }
+      ]
+    },
+    {
+      "id": "stage_one_keeps_the_slot_markers_so_the_rescan_can_verify_structure",
+      "text": "계약 일반사항\n{{#항목 특약 특약 사항}}\n{{#선택 하자보수 하자보수 조항}}\n하자보수 기간은 {{하자기간}} 이다.\n{{/선택}}\n{{/항목}}\n\n{{#항목 부칙}}\n{{#선택 가}}\n가 본문\n{{/선택}}\n{{/항목}}\n발주자: {{수요기관}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": [
+              {
+                "id": "하자보수",
+                "label": "하자보수 조항"
+              }
+            ]
+          },
+          {
+            "id": "부칙",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 2,
+          "options": 2,
+          "fields": 2,
+          "markers": 8
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 1,
+            "end_marker_line": 5,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "하자보수",
+            "begin_marker_line": 2,
+            "end_marker_line": 4,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "slot",
+            "slot_id": "부칙",
+            "option_id": null,
+            "begin_marker_line": 7,
+            "end_marker_line": 11,
+            "content_start": 9,
+            "content_end": 9
+          },
+          {
+            "kind": "option",
+            "slot_id": "부칙",
+            "option_id": "가",
+            "begin_marker_line": 8,
+            "end_marker_line": 10,
+            "content_start": 9,
+            "content_end": 9
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 8,
+          "end": 24,
+          "source": "{{#항목 특약 특약 사항}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 25,
+          "end": 45,
+          "source": "{{#선택 하자보수 하자보수 조항}}",
+          "label": "하자보수 조항",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 55,
+          "end": 63,
+          "source": "{{하자기간}}",
+          "label": "하자기간"
+        },
+        {
+          "kind": "marker",
+          "start": 68,
+          "end": 75,
+          "source": "{{/선택}}",
+          "label": "하자보수 조항",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 76,
+          "end": 83,
+          "source": "{{/항목}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 85,
+          "end": 95,
+          "source": "{{#항목 부칙}}",
+          "label": "부칙",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 96,
+          "end": 105,
+          "source": "{{#선택 가}}",
+          "label": "가",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 111,
+          "end": 118,
+          "source": "{{/선택}}",
+          "label": "가",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 119,
+          "end": 126,
+          "source": "{{/항목}}",
+          "label": "부칙",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 132,
+          "end": 140,
+          "source": "{{수요기관}}",
+          "label": "수요기관"
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            6,
+            12
+          ],
+          "text": "계약 일반사항\n\n발주자: {{수요기관}}"
+        }
+      ]
+    },
+    {
+      "id": "empty_text_has_no_tokens",
+      "text": "",
+      "scan": {
+        "slots": [],
+        "diagnostics": [],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 0
+        },
+        "placements": []
+      },
+      "spans": [],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [],
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "plain_text_has_no_tokens",
+      "text": "토큰 없는 안내문\n둘째 줄",
+      "scan": {
+        "slots": [],
+        "diagnostics": [],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 0
+        },
+        "placements": []
+      },
+      "spans": [],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            1
+          ],
+          "text": "토큰 없는 안내문\n둘째 줄"
+        }
+      ]
+    },
+    {
+      "id": "token_spans_leave_broken_markers_visible_as_markers",
+      "text": "제목: {{공고명}}\n{{#항목 사유}}",
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "「항목 사유」 범위가 열린 채 파일이 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#항목 사유}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 1,
+          "markers": 1
+        },
+        "placements": []
+      },
+      "spans": [
+        {
+          "kind": "field",
+          "start": 4,
+          "end": 11,
+          "source": "{{공고명}}",
+          "label": "공고명"
+        },
+        {
+          "kind": "marker",
+          "start": 12,
+          "end": 22,
+          "source": "{{#항목 사유}}",
+          "label": "사유",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        }
+      ]
+    },
+    {
+      "id": "token_spans_name_broken_markers_only_when_the_text_says_what_they_are",
+      "text": "{{#항목 열림}}\n{{/선택}}\n{{#그밖 x}}\n{{#항목}}\n{{/항목 꼬리}}\n",
+      "scan": {
+        "slots": [
+          {
+            "id": "열림",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          },
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「그밖」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{#그밖 x}}"
+          },
+          {
+            "kind": "empty_slot_id",
+            "message": "「항목」 마커에 id 가 없습니다 — id 는 필수입니다.",
+            "context": "{{#항목}}"
+          },
+          {
+            "kind": "end_marker_extra_text",
+            "message": "닫는 「항목」 마커에 남은 텍스트가 있습니다: 「꼬리」 — 닫는 마커는 키워드만 가집니다.",
+            "context": "{{/항목 꼬리}}"
+          },
+          {
+            "kind": "empty_range",
+            "message": "「항목 열림」 범위에 내용 문단이 없습니다.",
+            "context": "{{/항목 꼬리}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 5
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "열림",
+            "option_id": null,
+            "begin_marker_line": 0,
+            "end_marker_line": 4,
+            "content_start": 1,
+            "content_end": 3
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 0,
+          "end": 10,
+          "source": "{{#항목 열림}}",
+          "label": "열림",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 11,
+          "end": 18,
+          "source": "{{/선택}}",
+          "label": "선택",
+          "region": "option",
+          "role": "close",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 19,
+          "end": 28,
+          "source": "{{#그밖 x}}",
+          "label": "",
+          "region": "",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 29,
+          "end": 36,
+          "source": "{{#항목}}",
+          "label": "",
+          "region": "slot",
+          "role": "open",
+          "paired": false
+        },
+        {
+          "kind": "marker",
+          "start": 37,
+          "end": 47,
+          "source": "{{/항목 꼬리}}",
+          "label": "열림",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        }
+      ]
+    },
+    {
+      "id": "two_stage_projection",
+      "text": "계약 일반사항\n{{#항목 특약 특약 사항}}\n{{#선택 지체상금 지체상금 조항}}\n지체상금은 {{지체상금률}} 로 한다.\n{{/선택}}\n{{/항목}}\n\n{{#항목 부칙}}\n{{#선택 나}}\n나 본문\n{{/선택}}\n{{/항목}}\n발주자: {{수요기관}}",
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": [
+              {
+                "id": "지체상금",
+                "label": "지체상금 조항"
+              }
+            ]
+          },
+          {
+            "id": "부칙",
+            "label": "",
+            "options": [
+              {
+                "id": "나",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 2,
+          "options": 2,
+          "fields": 2,
+          "markers": 8
+        },
+        "placements": [
+          {
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_line": 1,
+            "end_marker_line": 5,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "지체상금",
+            "begin_marker_line": 2,
+            "end_marker_line": 4,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "kind": "slot",
+            "slot_id": "부칙",
+            "option_id": null,
+            "begin_marker_line": 7,
+            "end_marker_line": 11,
+            "content_start": 9,
+            "content_end": 9
+          },
+          {
+            "kind": "option",
+            "slot_id": "부칙",
+            "option_id": "나",
+            "begin_marker_line": 8,
+            "end_marker_line": 10,
+            "content_start": 9,
+            "content_end": 9
+          }
+        ]
+      },
+      "spans": [
+        {
+          "kind": "marker",
+          "start": 8,
+          "end": 24,
+          "source": "{{#항목 특약 특약 사항}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 25,
+          "end": 45,
+          "source": "{{#선택 지체상금 지체상금 조항}}",
+          "label": "지체상금 조항",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 52,
+          "end": 61,
+          "source": "{{지체상금률}}",
+          "label": "지체상금률"
+        },
+        {
+          "kind": "marker",
+          "start": 68,
+          "end": 75,
+          "source": "{{/선택}}",
+          "label": "지체상금 조항",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 76,
+          "end": 83,
+          "source": "{{/항목}}",
+          "label": "특약 사항",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 85,
+          "end": 95,
+          "source": "{{#항목 부칙}}",
+          "label": "부칙",
+          "region": "slot",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 96,
+          "end": 105,
+          "source": "{{#선택 나}}",
+          "label": "나",
+          "region": "option",
+          "role": "open",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 111,
+          "end": 118,
+          "source": "{{/선택}}",
+          "label": "나",
+          "region": "option",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "marker",
+          "start": 119,
+          "end": 126,
+          "source": "{{/항목}}",
+          "label": "부칙",
+          "region": "slot",
+          "role": "close",
+          "paired": true
+        },
+        {
+          "kind": "field",
+          "start": 132,
+          "end": 140,
+          "source": "{{수요기관}}",
+          "label": "수요기관"
+        }
+      ],
+      "projections": [
+        {
+          "selected": {},
+          "visible": [
+            0,
+            6,
+            12
+          ],
+          "text": "계약 일반사항\n\n발주자: {{수요기관}}"
+        }
+      ]
+    }
+  ],
+  "hwpx": [
+    {
+      "id": "same_declaration_restores_identical_slots_across_media",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 지체상금 지체상금 조항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>지체상금은 {{지체상금률}} 로 한다.</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 하자보수 하자보수 조항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>하자보수 기간은 {{하자기간}} 이다.</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": [
+              {
+                "id": "지체상금",
+                "label": "지체상금 조항"
+              },
+              {
+                "id": "하자보수",
+                "label": "하자보수 조항"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 2,
+          "fields": 2,
+          "markers": 6
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 7,
+            "content_start": 2,
+            "content_end": 5
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "지체상금",
+            "begin_marker_index": 1,
+            "end_marker_index": 3,
+            "content_start": 2,
+            "content_end": 2
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "하자보수",
+            "begin_marker_index": 4,
+            "end_marker_index": 6,
+            "content_start": 5,
+            "content_end": 5
+          }
+        ]
+      },
+      "tokens": [
+        {
+          "name": "지체상금률",
+          "compilable": true,
+          "reason": ""
+        },
+        {
+          "name": "하자기간",
+          "compilable": true,
+          "reason": ""
+        }
+      ]
+    },
+    {
+      "id": "structure_markers_are_not_field_token_candidates",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": []
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 1,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": [
+        {
+          "name": "계약명",
+          "compilable": true,
+          "reason": ""
+        }
+      ]
+    },
+    {
+      "id": "incomplete_structure_marker_stays_loud_as_fragment",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 0
+        },
+        "placements": []
+      },
+      "tokens": [
+        {
+          "name": "{{#항목 특약",
+          "compilable": false,
+          "reason": "토큰이 파편에 걸침"
+        }
+      ]
+    },
+    {
+      "id": "complete_structure_marker_is_not_reported_as_fragment",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "empty_range",
+            "message": "「항목 특약」 범위에 내용 문단이 없습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 1,
+            "content_start": 1,
+            "content_end": 0
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "positive_control_restores_declaration_and_summary",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>계약 일반사항</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 지체상금 지체상금 조항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>지체상금은 {{지체상금률}} 로 한다.</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 하자보수 하자보수 조항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>하자보수 기간은 {{하자기간}} 이다.</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>발주자: {{수요기관}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": [
+              {
+                "id": "지체상금",
+                "label": "지체상금 조항"
+              },
+              {
+                "id": "하자보수",
+                "label": "하자보수 조항"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 2,
+          "fields": 3,
+          "markers": 6
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 1,
+            "end_marker_index": 8,
+            "content_start": 3,
+            "content_end": 6
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "지체상금",
+            "begin_marker_index": 2,
+            "end_marker_index": 4,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "하자보수",
+            "begin_marker_index": 5,
+            "end_marker_index": 7,
+            "content_start": 6,
+            "content_end": 6
+          }
+        ]
+      },
+      "tokens": [
+        {
+          "name": "지체상금률",
+          "compilable": true,
+          "reason": ""
+        },
+        {
+          "name": "하자기간",
+          "compilable": true,
+          "reason": ""
+        },
+        {
+          "name": "수요기관",
+          "compilable": true,
+          "reason": ""
+        }
+      ]
+    },
+    {
+      "id": "label_is_optional",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_unbalanced_begin_without_end",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "「항목 특약」 범위가 열린 채 문서가 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 1
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_unbalanced_option_begin_without_end",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가 가안}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "「선택 가」 범위가 열린 채 문서가 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#선택 가 가안}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "「항목 특약」 범위가 열린 채 문서가 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_unbalanced_end_without_begin",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_crossed_range",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가 가안}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약",
+            "options": [
+              {
+                "id": "가",
+                "label": "가안"
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "crossed_range",
+            "message": "「선택 가」 이 닫히기 전에 「항목 특약」 이 닫혔습니다 — 범위가 교차합니다.",
+            "context": "{{/항목}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 3,
+            "content_start": 2,
+            "content_end": 2
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_index": 1,
+            "end_marker_index": 3,
+            "content_start": 2,
+            "content_end": 2
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_unknown_keyword",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#조건 x}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/조건}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「조건」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{#조건 x}}"
+          },
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「조건」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{/조건}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_unknown_keyword_when_marker_body_is_empty",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「(없음)」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{#}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 1
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_empty_slot_id",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "empty_slot_id",
+            "message": "「항목」 마커에 id 가 없습니다 — id 는 필수입니다.",
+            "context": "{{#항목}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_empty_option_id",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "empty_option_id",
+            "message": "「선택」 마커에 id 가 없습니다 — id 는 필수입니다.",
+            "context": "{{#선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 3
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 3,
+            "content_start": 2,
+            "content_end": 2
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_duplicate_slot_id",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문 1</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문 2</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          },
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "duplicate_slot_id",
+            "message": "같은 문서에서 항목 id 「특약」 가 두 번 선언됐습니다.",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 2,
+          "options": 0,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 3,
+            "end_marker_index": 5,
+            "content_start": 4,
+            "content_end": 4
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_duplicate_option_id",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문 1</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문 2</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              },
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "duplicate_option_id",
+            "message": "항목 「특약」 안에서 선택 id 「가」 가 두 번 선언됐습니다.",
+            "context": "{{#선택 가}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 2,
+          "fields": 0,
+          "markers": 6
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 7,
+            "content_start": 2,
+            "content_end": 5
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_index": 1,
+            "end_marker_index": 3,
+            "content_start": 2,
+            "content_end": 2
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_index": 4,
+            "end_marker_index": 6,
+            "content_start": 5,
+            "content_end": 5
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_option_outside_slot",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "option_outside_slot",
+            "message": "「선택 가」 이 항목 범위 밖에 있습니다 — 선택은 항목 직속만 가능합니다.",
+            "context": "{{#선택 가}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_nested_slot",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 갑}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 을}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "갑",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "nested_slot",
+            "message": "「항목 갑」 안에서 다시 「항목 을」 을 열었습니다 — 항목 중첩은 없습니다.",
+            "context": "{{#항목 을}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 3
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "갑",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 3,
+            "content_start": 2,
+            "content_end": 2
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_nested_option",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 나}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "nested_option",
+            "message": "「선택 가」 이 닫히기 전에 「선택 나」 을 열었습니다.",
+            "context": "{{#선택 나}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 5
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 5,
+            "content_start": 3,
+            "content_end": 3
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_index": 1,
+            "end_marker_index": 4,
+            "content_start": 3,
+            "content_end": 3
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_marker_in_table_cell",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가 셀 안}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>셀 본문 {{계약명}}</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "marker_in_table",
+            "message": "표 셀 안에는 구간 마커를 둘 수 없습니다 — 본문 직계 문단으로 옮기세요.",
+            "context": "{{#선택 가 셀 안}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 1,
+          "markers": 3
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": [
+        {
+          "name": "계약명",
+          "compilable": true,
+          "reason": ""
+        }
+      ]
+    },
+    {
+      "id": "diagnostic_marker_not_top_level_outside_table",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:drawText><hp:subList><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p></hp:subList></hp:drawText></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "marker_not_top_level",
+            "message": "본문 직계가 아닌 문단(글상자·중첩 구조 안)의 구간 마커는 인정되지 않습니다.",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 1
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_marker_not_alone_with_other_text",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>서두 {{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "marker_not_alone",
+            "message": "구간 마커가 다른 텍스트와 같은 문단에 있습니다 — 마커는 문단을 단독으로 차지해야 합니다.",
+            "context": "서두 {{#항목 특약}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_marker_not_alone_two_markers",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "marker_not_alone",
+            "message": "한 문단에 구간 마커가 2개 이상입니다 — 마커는 문단을 단독으로 차지해야 합니다.",
+            "context": "{{#항목 특약}}{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_empty_option_range",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 가}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/선택}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": [
+              {
+                "id": "가",
+                "label": ""
+              }
+            ]
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "empty_range",
+            "message": "「선택 가」 범위에 내용 문단이 없습니다.",
+            "context": "{{/선택}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 1,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 3,
+            "content_start": 1,
+            "content_end": 2
+          },
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "option",
+            "slot_id": "특약",
+            "option_id": "가",
+            "begin_marker_index": 1,
+            "end_marker_index": 2,
+            "content_start": 2,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "diagnostic_end_marker_extra_text",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목 특약}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "end_marker_extra_text",
+            "message": "닫는 「항목」 마커에 남은 텍스트가 있습니다: 「특약」 — 닫는 마커는 키워드만 가집니다.",
+            "context": "{{/항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "range_does_not_pair_across_content_xml_boundary",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p></hs:sec>"
+        },
+        {
+          "name": "Contents/header0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unbalanced_marker",
+            "message": "「항목 특약」 범위가 열린 채 문서가 끝났습니다 — 닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
+            "context": "{{#항목 특약}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "slot_id_duplication_is_still_detected_across_content_xml",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        },
+        {
+          "name": "Contents/header0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          },
+          {
+            "id": "특약",
+            "label": "",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "duplicate_slot_id",
+            "message": "같은 문서에서 항목 id 「특약」 가 두 번 선언됐습니다.",
+            "context": "{{#항목 특약}}"
+          }
+        ],
+        "summary": {
+          "slots": 2,
+          "options": 0,
+          "fields": 0,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          },
+          {
+            "entry": "Contents/header0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "id_normalization_reuses_field_id_rule",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목  특약  라벨  둘 }}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "라벨 둘",
+            "options": []
+          }
+        ],
+        "diagnostics": [],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 2,
+            "content_start": 1,
+            "content_end": 1
+          }
+        ]
+      },
+      "tokens": []
+    },
+    {
+      "id": "scan_structure_reads_only",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#조건 x}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [
+          {
+            "kind": "unknown_keyword",
+            "message": "알 수 없는 구간 키워드입니다: 「조건」 — 「항목」·「선택」만 쓸 수 있습니다.",
+            "context": "{{#조건 x}}"
+          },
+          {
+            "kind": "unbalanced_marker",
+            "message": "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
+            "context": "{{/항목}}"
+          }
+        ],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 0,
+          "markers": 2
+        },
+        "placements": []
+      },
+      "tokens": []
+    },
+    {
+      "id": "marker_total_counts_every_complete_marker_regardless_of_validity",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{#선택 지체상금}}</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/조건}} 남은 말</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>{{/항목}}</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [
+          {
+            "id": "특약",
+            "label": "특약 사항",
+            "options": []
+          }
+        ],
+        "diagnostics": [
+          {
+            "kind": "marker_in_table",
+            "message": "표 셀 안에는 구간 마커를 둘 수 없습니다 — 본문 직계 문단으로 옮기세요.",
+            "context": "{{#선택 지체상금}}"
+          },
+          {
+            "kind": "marker_not_alone",
+            "message": "구간 마커가 다른 텍스트와 같은 문단에 있습니다 — 마커는 문단을 단독으로 차지해야 합니다.",
+            "context": "{{/조건}} 남은 말"
+          }
+        ],
+        "summary": {
+          "slots": 1,
+          "options": 0,
+          "fields": 1,
+          "markers": 4
+        },
+        "placements": [
+          {
+            "entry": "Contents/section0.xml",
+            "kind": "slot",
+            "slot_id": "특약",
+            "option_id": null,
+            "begin_marker_index": 0,
+            "end_marker_index": 4,
+            "content_start": 1,
+            "content_end": 2
+          }
+        ]
+      },
+      "tokens": [
+        {
+          "name": "계약명",
+          "compilable": true,
+          "reason": ""
+        }
+      ]
+    },
+    {
+      "id": "marker_total_is_zero_without_any_notation",
+      "sources": [
+        {
+          "name": "mimetype",
+          "xml": "application/hwp+zip"
+        },
+        {
+          "name": "Contents/section0.xml",
+          "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run charPrIDRef=\"0\"><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"0\"><hp:t>본문</hp:t></hp:run></hp:p></hs:sec>"
+        }
+      ],
+      "scan": {
+        "slots": [],
+        "diagnostics": [],
+        "summary": {
+          "slots": 0,
+          "options": 0,
+          "fields": 1,
+          "markers": 0
+        },
+        "placements": []
+      },
+      "tokens": [
+        {
+          "name": "계약명",
+          "compilable": true,
+          "reason": ""
+        }
+      ]
+    }
+  ],
+  "equivalent": "{{#항목 특약 특약 사항}}\n{{#선택 지체상금 지체상금 조항}}\n지체상금은 {{지체상금률}} 로 한다.\n{{/선택}}\n{{#선택 하자보수 하자보수 조항}}\n하자보수 기간은 {{하자기간}} 이다.\n{{/선택}}\n{{/항목}}"
+}

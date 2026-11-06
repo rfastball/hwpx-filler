@@ -1,10 +1,42 @@
 /* Product composition: one public global, one push path, and correctly wired services. */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createBridge } from "../../frontend/js/bridge.js";
 import { closeTutorialOverlays, createTutorialSession } from "../../frontend/src/tutorial/session.ts";
 import { createOverlayEngine } from "../../frontend/src/overlay/engine.ts";
 
 const BOOTSTRAP = "../../frontend/src/bootstrap.js";
+
+test("Tauri transport preserves host calls and readiness without exposing test operations", async () => {
+  const prior = globalThis.window;
+  const calls = [];
+  const events = [];
+  let reject = false;
+  globalThis.window = {
+    __TAURI__: { core: { invoke: async (command, args) => {
+      if (reject) throw "native failure";
+      calls.push([command, args]);
+      return { ok: true };
+    } } },
+    dispatchEvent: (event) => events.push(event.type),
+  };
+  try {
+    const { bridge, testHost } = createBridge();
+    assert.equal(bridge.hostReady(), true);
+    assert.equal(testHost.available(), false);
+    await bridge.call("editor", "refresh", { revision: 2 });
+    assert.deepEqual(calls, [["product_call", {
+      method: "dispatch", args: ["editor", "refresh", { revision: 2 }],
+    }]]);
+    await Promise.resolve();
+    assert.deepEqual(events, ["pywebviewready"]);
+    reject = true;
+    await assert.rejects(bridge.initial("editor"), (error) =>
+      error instanceof Error && error.message === "native failure");
+  } finally {
+    globalThis.window = prior;
+  }
+});
 
 const LEAVES = ["guard.js"];
 

@@ -1,8 +1,8 @@
 # 복잡도 예산 동결 원장 — 상한을 넘는 단위만, 실측값을 동결 상한으로 적는다.
 #
 # 이 파일은 **내려가기만** 한다. 실패를 고치는 길은 원장 상향이 아니라 책임 분리다.
-# 상한·측정 규칙: scripts/complexity_measure.py · 판정·작성기: scripts/complexity_budget.py
-#   uv run python scripts/complexity_budget.py --tighten   # 줄어든 값 내리기·낡은 항목 지우기
+# 측정: scripts/complexity_axes.mjs + crates/hwpx-artifact/examples/complexity_axes.rs
+# 판정·작성: node scripts/complexity_budget.mjs --check|--tighten
 # 불가피한 상향·신규 항목은 그 항목을 표로 쓰고 새 이슈를 단다(탈출구):
 #   function_complexity = { value = 14, override = "#1234", reason = "왜 지금 쪼갤 수 없는가" }
 
@@ -398,62 +398,6 @@ function_complexity = 46
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]
 function_complexity = 29
 
-[budget."packaging/verify_specs.py::declared_hidden_imports"]
-function_complexity = 11
-
-[budget."packaging/verify_specs.py::main"]
-function_complexity = 18
-
-[budget."scripts/build_nara_testset.py::curate"]
-function_complexity = 24
-
-[budget."scripts/build_nara_testset.py::main"]
-function_complexity = 12
-
-[budget."scripts/capture_101_screenshots.py::_land"]
-function_complexity = 17
-
-[budget."scripts/capture_101_screenshots.py::main"]
-function_complexity = 22
-function_statements = 56
-
-[budget."scripts/check_package_coverage.py::evaluate"]
-function_complexity = 17
-
-[budget."scripts/check_package_coverage.py::load_floors"]
-function_complexity = 13
-
-[budget."scripts/docs_contract.py"]
-module_statements = 552
-
-[budget."scripts/docs_contract.py::acknowledge_review"]
-function_complexity = 17
-
-[budget."scripts/docs_contract.py::check"]
-function_complexity = 38
-
-[budget."scripts/docs_contract.py::inventory"]
-function_complexity = 66
-function_statements = 74
-
-[budget."scripts/docs_contract.py::link_problems"]
-function_complexity = 12
-
-[budget."scripts/docs_contract.py::link_targets"]
-function_complexity = 15
-
-[budget."scripts/docs_contract.py::registry"]
-function_complexity = 20
-
-[budget."scripts/docs_contract.py::render_index"]
-function_complexity = 13
-
-[budget."scripts/docs_contract.py::render_reference"]
-function_complexity = 12
-
-[budget."scripts/docs_contract.py::route"]
-function_complexity = 15
-
 [budget."scripts/extract_js_ast_axes.mjs"]
 module_statements = 463
 
@@ -474,42 +418,6 @@ function_complexity = 11
 
 [budget."scripts/extract_js_ast_axes.mjs::typescriptAxes.visit"]
 function_complexity = 60
-function_statements = 66
-
-[budget."scripts/gen_bridge_contract.py::extract_app_contract"]
-function_complexity = 34
-
-[budget."scripts/gen_bridge_contract.py::render_contract"]
-function_complexity = 11
-
-[budget."scripts/live101/driver.py"]
-module_statements = 424
-
-[budget."scripts/live101/driver.py::_run_with_home.drive"]
-function_complexity = 11
-
-[budget."scripts/live101/driver.py::_run_with_home.stage_data"]
-function_complexity = 13
-
-[budget."scripts/live101/report.py::judge"]
-function_complexity = 48
-function_statements = 68
-
-[budget."scripts/live101/scenario.py"]
-module_statements = 492
-
-[budget."scripts/live101/scenario.py::run"]
-function_statements = 166
-
-[budget."scripts/live101/scenario.py::run_sx"]
-function_complexity = 40
-function_statements = 204
-
-[budget."scripts/ui_copy_census.py::census"]
-function_complexity = 12
-
-[budget."scripts/ui_copy_census.py::scan_js"]
-function_complexity = 32
 function_statements = 66
 
 [budget."src/hwpxcore/bookmark_region.py"]
@@ -673,19 +581,6 @@ function_complexity = 14
 
 [budget."src/hwpxfiller/application/work_template_state.py::validate_aggregate"]
 function_complexity = 22
-
-[budget."src/hwpxfiller/cli.py"]
-module_statements = 385
-
-[budget."src/hwpxfiller/cli.py::_load_records"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/cli.py::_report_generation"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/cli.py::_run"]
-function_complexity = 40
-function_statements = 91
 
 [budget."src/hwpxfiller/data/excel.py::ExcelDataSource._append_record"]
 function_complexity = 11
@@ -858,10 +753,6 @@ function_complexity = 13
 
 [budget."src/hwpxfiller/external/example_pack.py::remove"]
 function_complexity = 11
-
-[budget."src/hwpxfiller/external/headless_generation.py::run_headless_generation"]
-function_complexity = 32
-function_statements = 51
 
 [budget."src/hwpxfiller/external/hwpx_product_inspection.py::_inspect_slot_snapshot"]
 function_complexity = 23
@@ -1109,9 +1000,6 @@ function_complexity = 15
 function_complexity = 27
 function_statements = 89
 
-[budget."src/hwpxfiller/webapp/blocker_affordance.py::BlockerAffordance.validate"]
-function_complexity = 13
-
 [budget."src/hwpxfiller/webapp/data_zone.py"]
 module_statements = 437
 
@@ -1296,9 +1184,6 @@ function_complexity = 36
 [budget."tests/repo_contract/test_architecture.py::test_web_controllers_use_ring1_public_seams"]
 function_complexity = 28
 
-[budget."tests/repo_contract/test_dispatch_payload_contract.py::test_literal_frontend_payloads_match_the_registered_schema"]
-function_complexity = 22
-
 [budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_import_names"]
 function_complexity = 21
 
@@ -1323,35 +1208,8 @@ function_complexity = 32
 [budget."tests/repo_contract/test_p3_forbidden_edges.py::_vendor_public_type_edges.visit"]
 function_complexity = 22
 
-[budget."tests/test_authoring.py"]
-module_statements = 1589
-
 [budget."tests/test_hwpx_structure_probe.py::test_native_bookmark_encodings_and_durability_observations"]
 function_complexity = 43
 
-[budget."tests/test_job.py"]
-module_statements = 1057
-
 [budget."tests/test_web_authoring_layout.py::test_authoring_columns_scale_and_narrow_sheet"]
 function_complexity = 22
-
-[budget."tests/test_web_selftest_gate.py"]
-module_statements = 1309
-
-[budget."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
-class_methods = 83
-
-[budget."tests/test_webapp_authoring.py"]
-module_statements = 1070
-
-[budget."tests/test_webapp_authoring.py::test_outline_targets_locate_by_identity_with_domain_availability"]
-function_complexity = 23
-
-[budget."tests/test_webapp_editor.py"]
-module_statements = 2123
-
-[budget."tests/test_webapp_job.py"]
-module_statements = 3792
-
-[budget."tests/test_webapp_job_binding_review.py"]
-module_statements = 967

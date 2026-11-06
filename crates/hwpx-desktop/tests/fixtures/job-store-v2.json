@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "name": "테스트",
+  "template_path": "C:/other/서식.hwpx",
+  "template_key": "",
+  "filename_pattern": "공고서-{{date}}-{{seq:001}}",
+  "mapping": {
+    "name": "",
+    "mappings": [],
+    "provenance": {}
+  },
+  "data_path": "",
+  "data_sheet": "",
+  "data_header_row": 0,
+  "data_kind": "",
+  "last_run_at": "",
+  "favorited_at": "",
+  "tags": {
+    "용도": "계약",
+    "상태": "검토"
+  },
+  "group": "내 그룹",
+  "authority_id": "",
+  "reviewed_rules": {},
+  "template_revision": 1,
+  "binding_revision": 1,
+  "previous_rules": {}
+}

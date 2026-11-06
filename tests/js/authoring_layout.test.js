@@ -1,11 +1,13 @@
 /* UX-08(#1027) — 저작 작업대의 열 폭·분할선·좁은 폭 시트, TXT 편집기 테마, 강제 색상 표지.
  *
- * 실제 배치(열 폭·시트가 편집면을 덮는가)는 실렌더 게이트(tests/test_web_authoring_layout.py)가
+ * 실제 배치(열 폭·시트가 편집면을 덮는가)는 실렌더 게이트(tests/browser/browser_resource.test.js)가
  * 잰다. 여기서는 그 배치를 움직이는 순수 번역(키·끌기 → 폭), 개인화 서비스의 싣기·영속,
  * 표면이 내는 접근성 표지, 그리고 CSS 가 그 표지를 실제로 겨누는지를 잰다. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { keyedWidth, draggedWidth, WIDTH_STEP, cyclePanels, PANEL_CYCLE } from "../../frontend/src/screens/authoring_layout.ts";
@@ -15,6 +17,41 @@ import { AUTHORING_WIDTH_BOUNDS, clampAuthoringWidth, createPersonalization } fr
 import { lintpadIsDark, lintpadDarkFacet } from "../../frontend/src/editorview/txt_lintpad.ts";
 
 const css = (name) => readFileSync(new URL(`../../frontend/css/${name}`, import.meta.url), "utf8");
+const press = JSON.parse(readFileSync(new URL("../browser/render_fixtures.json", import.meta.url))).press;
+
+function productSources(root) {
+  return readdirSync(root, { withFileTypes: true }).flatMap((item) => {
+    const path = resolve(root, item.name);
+    if (item.isDirectory()) return item.name === "selftest" ? [] : productSources(path);
+    if ([".css", ".html", ".svg", ".txt", ".woff2"].some((suffix) => path.endsWith(suffix))) return [];
+    return [path];
+  });
+}
+
+test("press scale belongs exactly to small box controls; retired rows have no product producer", () => {
+  const source = css("base.css");
+  const block = source.slice(source.indexOf(".btn:active:not(:disabled)"), source.indexOf("/* 부유 메뉴"))
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const scaled = new Set();
+  for (const match of block.matchAll(/([^{}]+)\{[^{}]*transform:\s*scale\([^)]*\)[^{}]*\}/g)) {
+    for (const selector of match[1].split(",")) {
+      scaled.add(selector.trim().replaceAll(":active:not(:disabled)", "").replaceAll(":active", "").trim());
+    }
+  }
+  assert.deepEqual([...scaled].sort(), [...press.BOX_SURFACES].sort());
+  assert.ok(Object.keys(press.ROW_SURFACES).every((selector) => !scaled.has(selector)));
+  const assets = [new URL("../../frontend/index.html", import.meta.url),
+    ...productSources(fileURLToPath(new URL("../../frontend/src/", import.meta.url)))];
+  for (const selector of press.DEAD_SELECTORS) {
+    assert.ok(!block.includes(selector), selector);
+    const name = selector.slice(1);
+    assert.ok(assets.every((asset) => !readFileSync(asset, "utf8").includes(name)), selector);
+  }
+  for (const [selector, width] of Object.entries(press.ROW_SURFACES)) {
+    assert.ok(width >= 100 && press.SCAFFOLDS[selector], selector);
+  }
+  assert.ok(readFileSync(new URL("../../frontend/src/overlay/host.ts", import.meta.url), "utf8").includes("modal-card"));
+});
 
 test("분할선 키보드: 구조는 → 가 넓히고, 속성은 ← 가 넓힌다 — 한 번에 1rem, Home/End 는 범위 끝", () => {
   assert.equal(WIDTH_STEP, 16);
@@ -39,10 +76,10 @@ test("분할선 끌기: 화면 px 이동을 뿌리 글자 크기로 나눠 기�
   assert.equal(draggedWidth("properties", 240, -1000, 16), AUTHORING_WIDTH_BOUNDS.properties.max);
 });
 
-test("개인화 경계값은 Python settings.AUTHORING_WIDTH_BOUNDS 와 같고, 비유효 입력은 저장값 없음(null)이다", () => {
-  const settings = readFileSync(new URL("../../src/hwpxfiller/external/settings.py", import.meta.url), "utf8");
+test("개인화 경계값은 Rust 저장 정책과 같고, 비유효 입력은 저장값 없음(null)이다", () => {
+  const settings = readFileSync(new URL("../../crates/hwpx-desktop/src/shell_settings.rs", import.meta.url), "utf8");
   for (const [panel, { min, max }] of Object.entries(AUTHORING_WIDTH_BOUNDS)) {
-    assert.match(settings, new RegExp(`"${panel}": \\(${min}, ${max}\\)`), panel);
+    assert.match(settings, new RegExp(`"${panel}"\\s*=>\\s*\\(${min},\\s*${max}\\)`), panel);
   }
   assert.equal(clampAuthoringWidth("outline", null), null);
   assert.equal(clampAuthoringWidth("outline", "헛것"), null);

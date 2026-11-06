@@ -40,9 +40,6 @@ build = [
     "pyinstaller>=6.21",
 ]
 
-[project.scripts]
-hwpxfiller = "hwpxfiller.cli:main"
-
 [project.gui-scripts]
 # pywebview 웹 진입점만 남는다 — 구 Qt 진입점(hwpx-filler)은 PySide6 제거(#23)로 폐기.
 hwpx-filler-web = "hwpxfiller.webapp.app:main"
@@ -55,7 +52,7 @@ testpaths = ["tests"]
 # marker 는 **자원 경계**다 — 그 테스트가 무엇을 켜야 도는가(N-11B). CI 는 이 세 축으로 잡을
 # 갈라 실패 영역을 분리하고, 남는 무표 집합이 결정론적 contract suite 가 된다. 축은 기존
 # `skipif` 옵트아웃을 대체하지 않고 그 위에 얹는다 — 게이트를 켜는 줄이 사라지지 않았는지
-# 세는 음성 대조(`tests/test_quality_workflow.py`)가 그 줄들을 계속 보아야 하기 때문이다.
+# 세는 음성 대조(`tests/js/quality_workflow.test.js`)가 그 줄들을 계속 보아야 하기 때문이다.
 #
 # 새 marker 는 **여기 먼저** 등록한다. `--strict-markers` 가 미등록 mark 를 수집 단계에서
 # 죽인다 — 오타난 mark 가 조용히 아무것도 선택하지 않는 길을 막는 것이 목적이다.

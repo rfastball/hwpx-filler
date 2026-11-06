@@ -1,0 +1,2623 @@
+[
+  {
+    "function": "ordinal_label",
+    "args": [
+      1
+    ],
+    "kwargs": {},
+    "expected": "첫째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      2
+    ],
+    "kwargs": {},
+    "expected": "둘째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      3
+    ],
+    "kwargs": {},
+    "expected": "셋째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      4
+    ],
+    "kwargs": {},
+    "expected": "넷째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      5
+    ],
+    "kwargs": {},
+    "expected": "다섯째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      6
+    ],
+    "kwargs": {},
+    "expected": "여섯째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      7
+    ],
+    "kwargs": {},
+    "expected": "일곱째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      8
+    ],
+    "kwargs": {},
+    "expected": "여덟째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      9
+    ],
+    "kwargs": {},
+    "expected": "아홉째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      10
+    ],
+    "kwargs": {},
+    "expected": "열째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      11
+    ],
+    "kwargs": {},
+    "expected": "11번째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      -1
+    ],
+    "kwargs": {},
+    "expected": "마지막"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      -2
+    ],
+    "kwargs": {},
+    "expected": "끝에서 둘째"
+  },
+  {
+    "function": "ordinal_label",
+    "args": [
+      -3
+    ],
+    "kwargs": {},
+    "expected": "끝에서 셋째"
+  },
+  {
+    "function": "split_index_options",
+    "args": [
+      null
+    ],
+    "kwargs": {},
+    "expected": [
+      {
+        "value": 1,
+        "label": "첫째"
+      },
+      {
+        "value": 2,
+        "label": "둘째"
+      },
+      {
+        "value": 3,
+        "label": "셋째"
+      },
+      {
+        "value": -1,
+        "label": "마지막"
+      }
+    ]
+  },
+  {
+    "function": "split_index_options",
+    "args": [
+      {
+        "mode": "split",
+        "delimiter": "-",
+        "index": 5
+      }
+    ],
+    "kwargs": {},
+    "expected": [
+      {
+        "value": 1,
+        "label": "첫째"
+      },
+      {
+        "value": 2,
+        "label": "둘째"
+      },
+      {
+        "value": 3,
+        "label": "셋째"
+      },
+      {
+        "value": 5,
+        "label": "다섯째"
+      },
+      {
+        "value": -1,
+        "label": "마지막"
+      }
+    ]
+  },
+  {
+    "function": "split_index_options",
+    "args": [
+      {
+        "mode": "split",
+        "delimiter": "-",
+        "index": -2
+      }
+    ],
+    "kwargs": {},
+    "expected": [
+      {
+        "value": 1,
+        "label": "첫째"
+      },
+      {
+        "value": 2,
+        "label": "둘째"
+      },
+      {
+        "value": 3,
+        "label": "셋째"
+      },
+      {
+        "value": -1,
+        "label": "마지막"
+      },
+      {
+        "value": -2,
+        "label": "끝에서 둘째"
+      }
+    ]
+  },
+  {
+    "function": "split_index_options",
+    "args": [
+      {
+        "mode": "split",
+        "delimiter": "-",
+        "index": 1
+      }
+    ],
+    "kwargs": {},
+    "expected": [
+      {
+        "value": 1,
+        "label": "첫째"
+      },
+      {
+        "value": 2,
+        "label": "둘째"
+      },
+      {
+        "value": 3,
+        "label": "셋째"
+      },
+      {
+        "value": -1,
+        "label": "마지막"
+      }
+    ]
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      null
+    ],
+    "kwargs": {},
+    "expected": "+ 가공"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "before",
+        "delimiter": "-"
+      }
+    ],
+    "kwargs": {},
+    "expected": "‘-’ 앞까지"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "after",
+        "delimiter": "("
+      }
+    ],
+    "kwargs": {},
+    "expected": "‘(’ 뒤부터"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "between",
+        "open": "(",
+        "close": ")"
+      }
+    ],
+    "kwargs": {},
+    "expected": "‘(’ 뒤부터 ‘)’ 앞까지"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "split",
+        "delimiter": ",",
+        "index": 1
+      }
+    ],
+    "kwargs": {},
+    "expected": "‘,’로 나눈 조각 중 첫째"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "head",
+        "count": 11
+      }
+    ],
+    "kwargs": {},
+    "expected": "앞에서 11글자"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "tail",
+        "count": 8
+      }
+    ],
+    "kwargs": {},
+    "expected": "뒤에서 8글자"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "chars",
+        "start": 3,
+        "length": 4
+      }
+    ],
+    "kwargs": {},
+    "expected": "3번째 글자부터 4글자"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "chars",
+        "start": 3
+      }
+    ],
+    "kwargs": {},
+    "expected": "3번째 글자부터"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "replace",
+        "find": "(주)",
+        "replace": "주식회사"
+      }
+    ],
+    "kwargs": {},
+    "expected": "‘(주)’ 대신 ‘주식회사’"
+  },
+  {
+    "function": "slice_label",
+    "args": [
+      {
+        "mode": "remove",
+        "find": "(VAT 포함)"
+      }
+    ],
+    "kwargs": {},
+    "expected": "‘(VAT 포함)’ 지우기"
+  },
+  {
+    "function": "value_shape",
+    "args": [
+      "R26BK09017075-000"
+    ],
+    "kwargs": {},
+    "expected": "a9a9-9"
+  },
+  {
+    "function": "value_shape",
+    "args": [
+      "  트림  "
+    ],
+    "kwargs": {},
+    "expected": "가"
+  },
+  {
+    "function": "value_shape",
+    "args": [
+      ""
+    ],
+    "kwargs": {},
+    "expected": ""
+  },
+  {
+    "function": "value_shape",
+    "args": [
+      "가나다 123 ABC"
+    ],
+    "kwargs": {},
+    "expected": "가 9 a"
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      0
+    ],
+    "kwargs": {},
+    "expected": 0
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      1
+    ],
+    "kwargs": {},
+    "expected": 1
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      3
+    ],
+    "kwargs": {},
+    "expected": 2
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      4
+    ],
+    "kwargs": {},
+    "expected": 3
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      2
+    ],
+    "kwargs": {},
+    "error": "선택 좌표가 글자 가운데를 가리킴: 2"
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      -1
+    ],
+    "kwargs": {},
+    "error": "선택 좌표가 올바르지 않음: -1"
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      true
+    ],
+    "kwargs": {},
+    "error": "선택 좌표가 올바르지 않음: True"
+  },
+  {
+    "function": "code_point_offset",
+    "args": [
+      "a𠀀b",
+      100
+    ],
+    "kwargs": {},
+    "error": "선택 좌표가 값 밖을 가리킴: 100"
+  },
+  {
+    "function": "slice_methods",
+    "args": [
+      null
+    ],
+    "kwargs": {},
+    "expected": [
+      {
+        "label": "일부만 쓰기",
+        "methods": [
+          {
+            "mode": "before",
+            "parts": [
+              {
+                "input": "delimiter",
+                "kind": "text",
+                "label": "앞까지의 기준 글자",
+                "wide": false
+              },
+              {
+                "text": "앞까지"
+              }
+            ],
+            "miss_choice": true,
+            "on_missing": "keep"
+          },
+          {
+            "mode": "after",
+            "parts": [
+              {
+                "input": "delimiter",
+                "kind": "text",
+                "label": "뒤부터의 기준 글자",
+                "wide": false
+              },
+              {
+                "text": "뒤부터"
+              }
+            ],
+            "miss_choice": true,
+            "on_missing": "keep"
+          },
+          {
+            "mode": "between",
+            "parts": [
+              {
+                "input": "open",
+                "kind": "text",
+                "label": "뒤부터의 기준 글자",
+                "wide": false
+              },
+              {
+                "text": "뒤부터"
+              },
+              {
+                "input": "close",
+                "kind": "text",
+                "label": "앞까지의 기준 글자",
+                "wide": false
+              },
+              {
+                "text": "앞까지"
+              }
+            ],
+            "miss_choice": true,
+            "on_missing": "keep"
+          },
+          {
+            "mode": "split",
+            "parts": [
+              {
+                "input": "delimiter",
+                "kind": "text",
+                "label": "나누는 글자",
+                "wide": false
+              },
+              {
+                "text": "로 나눈 조각 중",
+                "attach": true
+              },
+              {
+                "input": "index",
+                "kind": "ordinal",
+                "label": "몇째 조각",
+                "options": [
+                  {
+                    "value": 1,
+                    "label": "첫째"
+                  },
+                  {
+                    "value": 2,
+                    "label": "둘째"
+                  },
+                  {
+                    "value": 3,
+                    "label": "셋째"
+                  },
+                  {
+                    "value": -1,
+                    "label": "마지막"
+                  }
+                ]
+              }
+            ],
+            "miss_choice": false,
+            "on_missing": "keep"
+          },
+          {
+            "mode": "head",
+            "parts": [
+              {
+                "text": "앞에서"
+              },
+              {
+                "input": "count",
+                "kind": "number",
+                "label": "앞에서 글자 수",
+                "optional": false
+              },
+              {
+                "text": "글자",
+                "attach": true
+              }
+            ],
+            "miss_choice": false,
+            "on_missing": null
+          },
+          {
+            "mode": "tail",
+            "parts": [
+              {
+                "text": "뒤에서"
+              },
+              {
+                "input": "count",
+                "kind": "number",
+                "label": "뒤에서 글자 수",
+                "optional": false
+              },
+              {
+                "text": "글자",
+                "attach": true
+              }
+            ],
+            "miss_choice": false,
+            "on_missing": null
+          },
+          {
+            "mode": "chars",
+            "parts": [
+              {
+                "input": "start",
+                "kind": "number",
+                "label": "몇 번째 글자부터",
+                "optional": false
+              },
+              {
+                "text": "번째 글자부터",
+                "attach": true
+              },
+              {
+                "input": "length",
+                "kind": "number",
+                "label": "글자 수",
+                "optional": true
+              },
+              {
+                "text": "글자",
+                "attach": true
+              }
+            ],
+            "miss_choice": false,
+            "on_missing": "keep"
+          }
+        ]
+      },
+      {
+        "label": "글자 고치기",
+        "methods": [
+          {
+            "mode": "replace",
+            "parts": [
+              {
+                "input": "find",
+                "kind": "text",
+                "label": "찾을 글자",
+                "wide": true
+              },
+              {
+                "text": "대신"
+              },
+              {
+                "input": "replace",
+                "kind": "text",
+                "label": "바꿀 글자",
+                "wide": true
+              }
+            ],
+            "miss_choice": false,
+            "on_missing": null
+          },
+          {
+            "mode": "remove",
+            "parts": [
+              {
+                "input": "find",
+                "kind": "text",
+                "label": "지울 글자",
+                "wide": true
+              },
+              {
+                "text": "지우기"
+              }
+            ],
+            "miss_choice": false,
+            "on_missing": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "function": "slice_values",
+    "args": [
+      [
+        {
+          "금액": " 0 "
+        },
+        {
+          "금액": " 1 "
+        },
+        {
+          "금액": " 2 "
+        },
+        {
+          "금액": " 3 "
+        },
+        {
+          "금액": " 4 "
+        },
+        {
+          "금액": " 5 "
+        },
+        {
+          "금액": " 6 "
+        },
+        {
+          "금액": " 7 "
+        },
+        {
+          "금액": " 8 "
+        },
+        {
+          "금액": " 9 "
+        },
+        {
+          "금액": " 10 "
+        },
+        {
+          "금액": " 11 "
+        },
+        {
+          "금액": " 12 "
+        },
+        {
+          "금액": " 13 "
+        },
+        {
+          "금액": " 14 "
+        }
+      ],
+      "금액"
+    ],
+    "kwargs": {},
+    "expected": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ]
+  },
+  {
+    "function": "slice_values",
+    "args": [
+      [
+        {
+          "다른": "x"
+        }
+      ],
+      "금액"
+    ],
+    "kwargs": {},
+    "expected": [
+      ""
+    ]
+  },
+  {
+    "function": "propose_slices",
+    "args": [
+      [
+        "170,309,180원 (VAT 포함)",
+        "48,500,000원 (VAT 포함)",
+        "9,900,000원",
+        "1,230,000원 (VAT 별도)",
+        ""
+      ],
+      0,
+      0,
+      11
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "candidates": [
+        {
+          "mode": "before",
+          "slice": {
+            "mode": "before",
+            "delimiter": "원",
+            "on_missing": "keep"
+          },
+          "label": "‘원’ 앞까지",
+          "matched": 4,
+          "total": 4,
+          "tag": "4/4행 맞음",
+          "tip": "맞는 행: 값 있는 4행 중 4행",
+          "full": true
+        },
+        {
+          "mode": "head",
+          "slice": {
+            "mode": "head",
+            "count": 11
+          },
+          "label": "앞에서 11글자",
+          "matched": 1,
+          "total": 4,
+          "tag": "1/4행 맞음",
+          "tip": "맞는 행: 값 있는 4행 중 1행",
+          "full": false
+        }
+      ],
+      "message": ""
+    }
+  },
+  {
+    "function": "propose_slices",
+    "args": [
+      [
+        "R26BK09017075-000",
+        "R26BK09017076-001",
+        "R26BK09017077-002",
+        ""
+      ],
+      0,
+      0,
+      13
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "candidates": [
+        {
+          "mode": "before",
+          "slice": {
+            "mode": "before",
+            "delimiter": "-",
+            "on_missing": "keep"
+          },
+          "label": "‘-’ 앞까지",
+          "matched": 3,
+          "total": 3,
+          "tag": "3/3행 맞음",
+          "tip": "맞는 행: 값 있는 3행 중 3행",
+          "full": true
+        },
+        {
+          "mode": "split",
+          "slice": {
+            "mode": "split",
+            "delimiter": "-",
+            "index": 1,
+            "on_missing": "keep"
+          },
+          "label": "‘-’로 나눈 조각 중 첫째",
+          "matched": 3,
+          "total": 3,
+          "tag": "3/3행 맞음",
+          "tip": "맞는 행: 값 있는 3행 중 3행",
+          "full": true
+        },
+        {
+          "mode": "head",
+          "slice": {
+            "mode": "head",
+            "count": 13
+          },
+          "label": "앞에서 13글자",
+          "matched": 3,
+          "total": 3,
+          "tag": "3/3행 맞음",
+          "tip": "맞는 행: 값 있는 3행 중 3행",
+          "full": true
+        }
+      ],
+      "message": ""
+    }
+  },
+  {
+    "function": "propose_slices",
+    "args": [
+      [
+        "a   b",
+        "c   d"
+      ],
+      0,
+      1,
+      4
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "candidates": [],
+      "message": "고른 부분에 맞는 방식이 없습니다. 방식을 직접 고르세요."
+    }
+  },
+  {
+    "function": "propose_slices",
+    "args": [
+      [
+        "a",
+        "b"
+      ],
+      5,
+      0,
+      1
+    ],
+    "kwargs": {},
+    "error": "예시 행이 올바르지 않음: 5"
+  },
+  {
+    "function": "propose_slices",
+    "args": [
+      [
+        "",
+        ""
+      ],
+      0,
+      0,
+      1
+    ],
+    "kwargs": {},
+    "error": "예시 행이 올바르지 않음: 0"
+  },
+  {
+    "function": "propose_slices",
+    "args": [
+      [
+        "a",
+        "b"
+      ],
+      0,
+      1,
+      0
+    ],
+    "kwargs": {},
+    "error": "선택 범위가 거꾸로임: 1~0"
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "금액",
+      {
+        "mode": "before",
+        "delimiter": "원"
+      },
+      [
+        "170,309,180원 (VAT 포함)",
+        "48,500,000원 (VAT 포함)",
+        "9,900,000원",
+        "1,230,000원 (VAT 별도)",
+        ""
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "원"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "",
+          "keep": "170,309,180",
+          "post": "원 (VAT 포함)",
+          "result": "170,309,180",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "",
+          "keep": "48,500,000",
+          "post": "원 (VAT 포함)",
+          "result": "48,500,000",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "",
+          "keep": "9,900,000",
+          "post": "원",
+          "result": "9,900,000",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 3,
+          "label": "4행",
+          "pre": "",
+          "keep": "1,230,000",
+          "post": "원 (VAT 별도)",
+          "result": "1,230,000",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 4,
+          "label": "5행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·금액〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 5행 미리보기",
+      "summary": "맞음 4행 · 빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "170,309,180원 (VAT 포함)",
+        "miss_tag": "",
+        "pre": "",
+        "keep": "170,309,180",
+        "post": "원 (VAT 포함)"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 3,
+          "label": "4",
+          "aria": "4행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 4,
+          "label": "5",
+          "aria": "5행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        }
+      ],
+      "miss_choice": {
+        "label": "‘원’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "chars",
+        "start": 1,
+        "length": 3
+      },
+      [
+        "ABC123",
+        "12X456",
+        "가나123",
+        ""
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "chars",
+        "start": 1,
+        "length": 3
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "",
+          "keep": "ABC",
+          "post": "123",
+          "result": "ABC",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "",
+          "keep": "12X",
+          "post": "456",
+          "result": "12X",
+          "marker": false,
+          "status": "odd",
+          "tags": [
+            "형식 다름"
+          ]
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "",
+          "keep": "가나1",
+          "post": "23",
+          "result": "가나1",
+          "marker": false,
+          "status": "odd",
+          "tags": [
+            "형식 다름"
+          ]
+        },
+        {
+          "index": 3,
+          "label": "4행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 4행 미리보기",
+      "summary": "맞음 1행 · 형식 다름 2행 · 빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "ABC123",
+        "miss_tag": "",
+        "pre": "",
+        "keep": "ABC",
+        "post": "123"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 3,
+          "label": "4",
+          "aria": "4행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "split",
+        "delimiter": "-",
+        "index": 3
+      },
+      [
+        "a-b",
+        "no-dash-removed",
+        "just"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "split",
+        "delimiter": "-",
+        "index": 3
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "a-b",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "조각 없음"
+          ]
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "no-dash-",
+          "keep": "removed",
+          "post": "",
+          "result": "removed",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "just",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "조각 없음"
+          ]
+        }
+      ],
+      "rows_label": "불러온 3행 미리보기",
+      "summary": "맞음 1행 · 확인 필요 2행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "a-b",
+        "miss_tag": "조각 없음",
+        "pre": "a-b",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": false
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "before",
+        "delimiter": "X"
+      },
+      [
+        "abc"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "X"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "abc",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "‘X’ 없음"
+          ]
+        }
+      ],
+      "rows_label": "불러온 1행 미리보기",
+      "summary": "확인 필요 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "abc",
+        "miss_tag": "‘X’ 없음",
+        "pre": "abc",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        }
+      ],
+      "miss_choice": {
+        "label": "‘X’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "between",
+        "open": "(",
+        "close": ")"
+      },
+      [
+        "no parens"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "between",
+        "open": "(",
+        "close": ")"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "no parens",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "‘(’ 또는 ‘)’ 없음"
+          ]
+        }
+      ],
+      "rows_label": "불러온 1행 미리보기",
+      "summary": "확인 필요 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "no parens",
+        "miss_tag": "‘(’ 또는 ‘)’ 없음",
+        "pre": "no parens",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        }
+      ],
+      "miss_choice": {
+        "label": "‘(’ 또는 ‘)’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "chars",
+        "start": 50
+      },
+      [
+        "abc"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "chars",
+        "start": 50
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "abc",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "확인 필요"
+          ]
+        }
+      ],
+      "rows_label": "불러온 1행 미리보기",
+      "summary": "확인 필요 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "abc",
+        "miss_tag": "확인 필요",
+        "pre": "abc",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "before",
+        "delimiter": "-"
+      },
+      [
+        ""
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "-"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 1행 미리보기",
+      "summary": "빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": null,
+        "value": "",
+        "miss_tag": "",
+        "pre": "",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        }
+      ],
+      "miss_choice": {
+        "label": "‘-’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "replace",
+        "find": "a",
+        "replace": "b"
+      },
+      [
+        "a1",
+        "c1",
+        ""
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "replace",
+        "find": "a",
+        "replace": "b"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "a1",
+          "keep": "",
+          "post": "",
+          "result": "b1",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "c1",
+          "keep": "",
+          "post": "",
+          "result": "c1",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 3행 미리보기",
+      "summary": "맞음 2행 · 빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "a1",
+        "miss_tag": "",
+        "pre": "a1",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      null,
+      [
+        "a",
+        "b"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": null,
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "a",
+          "keep": "",
+          "post": "",
+          "result": "a",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "b",
+          "keep": "",
+          "post": "",
+          "result": "b",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 2행 미리보기",
+      "summary": "",
+      "hint": "쓸 부분을 끌어 고르거나 방식을 고르세요.",
+      "sample": {
+        "index": 0,
+        "value": "a",
+        "miss_tag": "",
+        "pre": "a",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "금액",
+      {
+        "mode": "remove",
+        "find": "x"
+      },
+      [
+        "xxx"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "remove",
+        "find": "x"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "xxx",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·금액〙",
+          "marker": true,
+          "status": "miss",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 1행 미리보기",
+      "summary": "확인 필요 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "xxx",
+        "miss_tag": "",
+        "pre": "xxx",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "before",
+        "delimiter": "X",
+        "on_missing": "keep"
+      },
+      [
+        "abc"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "X",
+        "on_missing": "keep"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "abc",
+          "keep": "",
+          "post": "",
+          "result": "abc",
+          "marker": false,
+          "status": "miss",
+          "tags": [
+            "‘X’ 없음"
+          ]
+        }
+      ],
+      "rows_label": "불러온 1행 미리보기",
+      "summary": "확인 필요 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "abc",
+        "miss_tag": "‘X’ 없음",
+        "pre": "abc",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        }
+      ],
+      "miss_choice": {
+        "label": "‘X’ 없는 행",
+        "value": "keep",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "before",
+        "delimiter": "X"
+      },
+      [
+        "",
+        "b",
+        "c"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "X"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "b",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "‘X’ 없음"
+          ]
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "c",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "‘X’ 없음"
+          ]
+        }
+      ],
+      "rows_label": "불러온 3행 미리보기",
+      "summary": "확인 필요 2행 · 빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": 1,
+        "value": "b",
+        "miss_tag": "‘X’ 없음",
+        "pre": "b",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": false
+        }
+      ],
+      "miss_choice": {
+        "label": "‘X’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      {
+        "mode": "before",
+        "delimiter": "X"
+      },
+      [
+        "",
+        "b",
+        "c"
+      ]
+    ],
+    "kwargs": {
+      "sample": 2
+    },
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "X"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "b",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "‘X’ 없음"
+          ]
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "c",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·f〙",
+          "marker": true,
+          "status": "miss",
+          "tags": [
+            "‘X’ 없음"
+          ]
+        }
+      ],
+      "rows_label": "불러온 3행 미리보기",
+      "summary": "확인 필요 2행 · 빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": 2,
+        "value": "c",
+        "miss_tag": "‘X’ 없음",
+        "pre": "c",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": true
+        }
+      ],
+      "miss_choice": {
+        "label": "‘X’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "preview_slice",
+    "args": [
+      "f",
+      null,
+      [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12"
+      ]
+    ],
+    "kwargs": {},
+    "expected": {
+      "ok": true,
+      "slice": null,
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "0",
+          "keep": "",
+          "post": "",
+          "result": "0",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "1",
+          "keep": "",
+          "post": "",
+          "result": "1",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "2",
+          "keep": "",
+          "post": "",
+          "result": "2",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 3,
+          "label": "4행",
+          "pre": "3",
+          "keep": "",
+          "post": "",
+          "result": "3",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 4,
+          "label": "5행",
+          "pre": "4",
+          "keep": "",
+          "post": "",
+          "result": "4",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 5,
+          "label": "6행",
+          "pre": "5",
+          "keep": "",
+          "post": "",
+          "result": "5",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 6,
+          "label": "7행",
+          "pre": "6",
+          "keep": "",
+          "post": "",
+          "result": "6",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 7,
+          "label": "8행",
+          "pre": "7",
+          "keep": "",
+          "post": "",
+          "result": "7",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 8,
+          "label": "9행",
+          "pre": "8",
+          "keep": "",
+          "post": "",
+          "result": "8",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 9,
+          "label": "10행",
+          "pre": "9",
+          "keep": "",
+          "post": "",
+          "result": "9",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 10,
+          "label": "11행",
+          "pre": "10",
+          "keep": "",
+          "post": "",
+          "result": "10",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 11,
+          "label": "12행",
+          "pre": "11",
+          "keep": "",
+          "post": "",
+          "result": "11",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        },
+        {
+          "index": 12,
+          "label": "13행",
+          "pre": "12",
+          "keep": "",
+          "post": "",
+          "result": "12",
+          "marker": false,
+          "status": "plain",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 13행 미리보기",
+      "summary": "",
+      "hint": "쓸 부분을 끌어 고르거나 방식을 고르세요.",
+      "sample": {
+        "index": 0,
+        "value": "0",
+        "miss_tag": "",
+        "pre": "0",
+        "keep": "",
+        "post": ""
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 3,
+          "label": "4",
+          "aria": "4행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 4,
+          "label": "5",
+          "aria": "5행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 5,
+          "label": "6",
+          "aria": "6행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 6,
+          "label": "7",
+          "aria": "7행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 7,
+          "label": "8",
+          "aria": "8행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 8,
+          "label": "9",
+          "aria": "9행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 9,
+          "label": "10",
+          "aria": "10행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 10,
+          "label": "11",
+          "aria": "11행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 11,
+          "label": "12",
+          "aria": "12행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 12,
+          "label": "13",
+          "aria": "13행",
+          "disabled": false,
+          "pressed": false
+        }
+      ],
+      "miss_choice": null
+    }
+  },
+  {
+    "function": "slice_query",
+    "args": [
+      "preview"
+    ],
+    "kwargs": {
+      "field": "f",
+      "source": "k",
+      "spec": null,
+      "enabled": false,
+      "records": [],
+      "payload": {}
+    },
+    "error": "가공은 데이터 열 값에만 둘 수 있음: 'f'"
+  },
+  {
+    "function": "slice_query",
+    "args": [
+      "preview"
+    ],
+    "kwargs": {
+      "field": "금액",
+      "source": "금액",
+      "spec": {
+        "mode": "before",
+        "delimiter": "원"
+      },
+      "enabled": true,
+      "records": [
+        {
+          "금액": "170,309,180원 (VAT 포함)"
+        },
+        {
+          "금액": "48,500,000원 (VAT 포함)"
+        },
+        {
+          "금액": "9,900,000원"
+        },
+        {
+          "금액": "1,230,000원 (VAT 별도)"
+        },
+        {
+          "금액": ""
+        }
+      ],
+      "payload": {}
+    },
+    "expected": {
+      "ok": true,
+      "slice": {
+        "mode": "before",
+        "delimiter": "원"
+      },
+      "rows": [
+        {
+          "index": 0,
+          "label": "1행",
+          "pre": "",
+          "keep": "170,309,180",
+          "post": "원 (VAT 포함)",
+          "result": "170,309,180",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 1,
+          "label": "2행",
+          "pre": "",
+          "keep": "48,500,000",
+          "post": "원 (VAT 포함)",
+          "result": "48,500,000",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 2,
+          "label": "3행",
+          "pre": "",
+          "keep": "9,900,000",
+          "post": "원",
+          "result": "9,900,000",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 3,
+          "label": "4행",
+          "pre": "",
+          "keep": "1,230,000",
+          "post": "원 (VAT 별도)",
+          "result": "1,230,000",
+          "marker": false,
+          "status": "hit",
+          "tags": []
+        },
+        {
+          "index": 4,
+          "label": "5행",
+          "pre": "",
+          "keep": "",
+          "post": "",
+          "result": "〘미입력·금액〙",
+          "marker": true,
+          "status": "empty",
+          "tags": []
+        }
+      ],
+      "rows_label": "불러온 5행 미리보기",
+      "summary": "맞음 4행 · 빈 값 1행",
+      "hint": "",
+      "sample": {
+        "index": 0,
+        "value": "170,309,180원 (VAT 포함)",
+        "miss_tag": "",
+        "pre": "",
+        "keep": "170,309,180",
+        "post": "원 (VAT 포함)"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "label": "1",
+          "aria": "1행",
+          "disabled": false,
+          "pressed": true
+        },
+        {
+          "index": 1,
+          "label": "2",
+          "aria": "2행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 2,
+          "label": "3",
+          "aria": "3행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 3,
+          "label": "4",
+          "aria": "4행",
+          "disabled": false,
+          "pressed": false
+        },
+        {
+          "index": 4,
+          "label": "5",
+          "aria": "5행, 빈 값",
+          "disabled": true,
+          "pressed": false
+        }
+      ],
+      "miss_choice": {
+        "label": "‘원’ 없는 행",
+        "value": "empty",
+        "choices": [
+          {
+            "value": "keep",
+            "label": "원본 그대로"
+          },
+          {
+            "value": "empty",
+            "label": "빈 값"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "function": "slice_query",
+    "args": [
+      "propose"
+    ],
+    "kwargs": {
+      "field": "금액",
+      "source": "금액",
+      "spec": null,
+      "enabled": true,
+      "records": [
+        {
+          "금액": "170,309,180원 (VAT 포함)"
+        },
+        {
+          "금액": "48,500,000원 (VAT 포함)"
+        },
+        {
+          "금액": "9,900,000원"
+        },
+        {
+          "금액": "1,230,000원 (VAT 별도)"
+        },
+        {
+          "금액": ""
+        }
+      ],
+      "payload": {
+        "sample": 0,
+        "start": 0,
+        "end": 11
+      }
+    },
+    "expected": {
+      "ok": true,
+      "candidates": [
+        {
+          "mode": "before",
+          "slice": {
+            "mode": "before",
+            "delimiter": "원",
+            "on_missing": "keep"
+          },
+          "label": "‘원’ 앞까지",
+          "matched": 4,
+          "total": 4,
+          "tag": "4/4행 맞음",
+          "tip": "맞는 행: 값 있는 4행 중 4행",
+          "full": true
+        },
+        {
+          "mode": "head",
+          "slice": {
+            "mode": "head",
+            "count": 11
+          },
+          "label": "앞에서 11글자",
+          "matched": 1,
+          "total": 4,
+          "tag": "1/4행 맞음",
+          "tip": "맞는 행: 값 있는 4행 중 1행",
+          "full": false
+        }
+      ],
+      "message": ""
+    }
+  },
+  {
+    "function": "slice_query",
+    "args": [
+      "delete"
+    ],
+    "kwargs": {
+      "field": "금액",
+      "source": "금액",
+      "spec": null,
+      "enabled": true,
+      "records": [
+        {
+          "금액": "170,309,180원 (VAT 포함)"
+        },
+        {
+          "금액": "48,500,000원 (VAT 포함)"
+        },
+        {
+          "금액": "9,900,000원"
+        },
+        {
+          "금액": "1,230,000원 (VAT 별도)"
+        },
+        {
+          "금액": ""
+        }
+      ],
+      "payload": {}
+    },
+    "error": "알 수 없는 가공 질의: 'delete'"
+  }
+]

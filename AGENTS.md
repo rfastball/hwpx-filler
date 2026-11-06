@@ -11,7 +11,7 @@
 - `git status --short`로 기존 변경을 확인하고, 요청 밖 변경이나 사용자 작업을 덮어쓰지 않는다.
 - [기여 절차](CONTRIBUTING.md)에서 작업에 해당하는 절을 읽는다.
   [문서 지도](docs/README.md)로 필요한 제품 계약을 찾는다. 상세 절차·제품 계약은 이곳에 복제하지 않는다.
-- 문서·계약 변경 전 `uv run python scripts/docs_contract.py --route`로 기존 소유 절을 찾는다.
+- 문서·계약 변경 전 `node scripts/docs_contract.mjs --route`로 기존 소유 절을 찾는다.
   같은 목적의 새 정본을 만들지 않는다. 동작과 문서가 다르면 코드·테스트로 확인해 불일치를 보고한다.
 
 ## 환경과 검증
@@ -28,7 +28,7 @@ uv sync --locked --all-extras --group dev --group build
 # 코드 변경 검증. 추가 인자는 pytest에만 전달된다.
 .\test.ps1
 # 문서·계약 변경 검증. 앱 전체 테스트를 대체하지 않는다.
-uv run python scripts/docs_contract.py --check
+node scripts/docs_contract.mjs --check
 ```
 
 - `test.ps1`는 web build → Node 테스트 → Ruff → Pyright → pytest·coverage를 실행한다.

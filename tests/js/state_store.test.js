@@ -4,7 +4,7 @@
    전수를 잰다: 도착 순 보관·참조 안정·해제 가능한 구독·이중 해제 throw·리스너 격리·
    당김 revision 가드·계약 유도 채널. React 결합은 화면 runtime model의 안정된 결속 쌍
    (`subscribe/getSnapshot`)까지를 여기서 재고, 실 React 렌더 루프 위의 실물 증거는
-   실 WebView2의 마커 되읽기는 `tests/test_web_selftest_gate.py`가 진다.
+   실 WebView2의 마커 되읽기는 `scripts/verify_native_selftest.mjs`가 진다.
 
    `.ts` 를 확장자 그대로 싣는 것 자체가 계약이다 — Node 24 type stripping 이 제품
    파일을 무변환으로 실어야 node 게이트와 Vite 빌드가 같은 파일을 본다. */

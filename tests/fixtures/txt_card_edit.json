@@ -1,0 +1,1411 @@
+{
+  "base_marks": [
+    {
+      "test": "test_base_marks_splits_declared_blank_from_data_blank_and_covers_missing_and_fill",
+      "args": [
+        [
+          {
+            "text": "",
+            "kind": "blank",
+            "name": "a"
+          },
+          {
+            "text": " ",
+            "kind": "literal",
+            "name": ""
+          },
+          {
+            "text": "",
+            "kind": "blank",
+            "name": "b"
+          },
+          {
+            "text": " ",
+            "kind": "literal",
+            "name": ""
+          },
+          {
+            "text": "값",
+            "kind": "fill",
+            "name": "c"
+          },
+          {
+            "text": " ",
+            "kind": "literal",
+            "name": ""
+          },
+          {
+            "text": "{{d}}",
+            "kind": "missing",
+            "name": "d"
+          }
+        ],
+        [
+          "a"
+        ]
+      ],
+      "kwargs": {},
+      "expected": [
+        {
+          "kind": "declared",
+          "name": "a",
+          "start": 0,
+          "end": 0
+        },
+        {
+          "kind": "blank",
+          "name": "b",
+          "start": 1,
+          "end": 1
+        },
+        {
+          "kind": "fill",
+          "name": "c",
+          "start": 2,
+          "end": 3
+        },
+        {
+          "kind": "missing",
+          "name": "d",
+          "start": 4,
+          "end": 9
+        }
+      ]
+    },
+    {
+      "test": "test_base_marks_skips_literal_text",
+      "args": [
+        [
+          {
+            "text": "머리말 ",
+            "kind": "literal",
+            "name": ""
+          },
+          {
+            "text": "값",
+            "kind": "fill",
+            "name": "x"
+          },
+          {
+            "text": " 꼬리말",
+            "kind": "literal",
+            "name": ""
+          }
+        ],
+        []
+      ],
+      "kwargs": {},
+      "expected": [
+        {
+          "kind": "fill",
+          "name": "x",
+          "start": 4,
+          "end": 5
+        }
+      ]
+    }
+  ],
+  "edit_card": [
+    {
+      "test": "test_typing_into_a_zero_length_blank_fills_it_and_maps_the_inserted_range",
+      "args": [
+        "안녕",
+        [
+          {
+            "kind": "blank",
+            "name": "X",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "안녕하세요"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "안녕하세요",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "X",
+            "start": 2,
+            "end": 5
+          }
+        ],
+        "filled": [
+          "X"
+        ],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_typing_only_whitespace_into_a_blank_does_not_count_as_filled",
+      "args": [
+        "값:",
+        [
+          {
+            "kind": "blank",
+            "name": "X",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "값:   "
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "값:   ",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "X",
+            "start": 5,
+            "end": 5
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": true
+      }
+    },
+    {
+      "test": "test_declared_blank_can_also_be_filled_by_typing",
+      "args": [
+        "값:",
+        [
+          {
+            "kind": "declared",
+            "name": "X",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "값:그래도 채움"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "값:그래도 채움",
+        "marks": [
+          {
+            "kind": "declared",
+            "name": "X",
+            "start": 2,
+            "end": 8
+          }
+        ],
+        "filled": [
+          "X"
+        ],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_editing_a_missing_token_resolves_it_but_leaving_it_untouched_does_not",
+      "args": [
+        "앞{{D}}뒤",
+        [
+          {
+            "kind": "missing",
+            "name": "D",
+            "start": 1,
+            "end": 6
+          }
+        ],
+        "앞{{D}}뒤"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "앞{{D}}뒤",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "D",
+            "start": 1,
+            "end": 6
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_editing_a_missing_token_resolves_it_but_leaving_it_untouched_does_not",
+      "args": [
+        "앞{{D}}뒤",
+        [
+          {
+            "kind": "missing",
+            "name": "D",
+            "start": 1,
+            "end": 6
+          }
+        ],
+        "앞실제값뒤"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "앞실제값뒤",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "D",
+            "start": 1,
+            "end": 4
+          }
+        ],
+        "filled": [],
+        "resolved": [
+          "D"
+        ],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_fill_marks_shift_when_text_is_inserted_before_them",
+      "args": [
+        "A: 1, B: 2",
+        [
+          {
+            "kind": "fill",
+            "name": "A",
+            "start": 3,
+            "end": 4
+          },
+          {
+            "kind": "fill",
+            "name": "B",
+            "start": 9,
+            "end": 10
+          }
+        ],
+        "// A: 1, B: 2"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "// A: 1, B: 2",
+        "marks": [
+          {
+            "kind": "fill",
+            "name": "A",
+            "start": 6,
+            "end": 7
+          },
+          {
+            "kind": "fill",
+            "name": "B",
+            "start": 12,
+            "end": 13
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_fill_marks_survive_an_edit_inside_an_unrelated_region",
+      "args": [
+        "수신: 회계과, 건명: 복사기",
+        [
+          {
+            "kind": "fill",
+            "name": "수신",
+            "start": 4,
+            "end": 7
+          },
+          {
+            "kind": "fill",
+            "name": "건명",
+            "start": 13,
+            "end": 16
+          }
+        ],
+        "수신: 회계과(수정), 건명: 복사기"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "수신: 회계과(수정), 건명: 복사기",
+        "marks": [
+          {
+            "kind": "fill",
+            "name": "수신",
+            "start": 4,
+            "end": 11
+          },
+          {
+            "kind": "fill",
+            "name": "건명",
+            "start": 17,
+            "end": 20
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_fullwidth_aligns_only_outside_marks_and_keeps_marks_consistent",
+      "args": [
+        "가  나  나  다",
+        [
+          {
+            "kind": "fill",
+            "name": "필드",
+            "start": 3,
+            "end": 7
+          }
+        ],
+        "가  나  나  다"
+      ],
+      "kwargs": {
+        "fullwidth": true
+      },
+      "expected": {
+        "text": "가　나  나　다",
+        "marks": [
+          {
+            "kind": "fill",
+            "name": "필드",
+            "start": 2,
+            "end": 6
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": true
+      }
+    },
+    {
+      "test": "test_fullwidth_off_leaves_consecutive_spaces_untouched",
+      "args": [
+        "가  나  다",
+        [
+          {
+            "kind": "fill",
+            "name": "필드",
+            "start": 3,
+            "end": 4
+          }
+        ],
+        "가  나  다"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "가  나  다",
+        "marks": [
+          {
+            "kind": "fill",
+            "name": "필드",
+            "start": 3,
+            "end": 4
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": true
+      }
+    },
+    {
+      "test": "test_a_repeated_blank_counts_as_filled_only_when_every_occurrence_is_filled",
+      "args": [
+        " / ",
+        [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 0,
+            "end": 0
+          },
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "v / "
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "v / ",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 0,
+            "end": 1
+          },
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 4,
+            "end": 4
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_a_repeated_blank_counts_as_filled_only_when_every_occurrence_is_filled",
+      "args": [
+        " / ",
+        [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 0,
+            "end": 0
+          },
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "v / w"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "v / w",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 0,
+            "end": 1
+          },
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 4,
+            "end": 5
+          }
+        ],
+        "filled": [
+          "x"
+        ],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_text_typed_next_to_a_missing_token_does_not_resolve_it",
+      "args": [
+        "{{x}} end",
+        [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "{{x}}! end"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "{{x}}! end",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_text_typed_next_to_a_missing_token_does_not_resolve_it",
+      "args": [
+        "{{x}} end",
+        [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "!{{x}} end"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "!{{x}} end",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 1,
+            "end": 6
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_text_typed_next_to_a_missing_token_does_not_resolve_it",
+      "args": [
+        "{{x}} end",
+        [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "{{x}}{{x}} end"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "{{x}}{{x}} end",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 5,
+            "end": 10
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_text_typed_next_to_a_missing_token_does_not_resolve_it",
+      "args": [
+        "{{x}} end",
+        [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "값 end"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "값 end",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 1
+          }
+        ],
+        "filled": [],
+        "resolved": [
+          "x"
+        ],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_text_typed_next_to_a_missing_token_does_not_resolve_it",
+      "args": [
+        "{{x}} end",
+        [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "{{y}} end"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "{{y}} end",
+        "marks": [
+          {
+            "kind": "missing",
+            "name": "x",
+            "start": 0,
+            "end": 5
+          }
+        ],
+        "filled": [],
+        "resolved": [
+          "x"
+        ],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_replacing_literal_text_beside_a_blank_does_not_fill_the_blank",
+      "args": [
+        "금액:원",
+        [
+          {
+            "kind": "blank",
+            "name": "amt",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "금액;원"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "금액;원",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "amt",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_replacing_literal_text_beside_a_blank_does_not_fill_the_blank",
+      "args": [
+        "금액:원",
+        [
+          {
+            "kind": "blank",
+            "name": "amt",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "금액:5원"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "금액:5원",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "amt",
+            "start": 3,
+            "end": 4
+          }
+        ],
+        "filled": [
+          "amt"
+        ],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_repeated_literal_text_still_anchors_an_unambiguous_insertion",
+      "args": [
+        "AAA",
+        [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 1,
+            "end": 1
+          },
+          {
+            "kind": "blank",
+            "name": "y",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "ABAA"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "ABAA",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 1,
+            "end": 2
+          },
+          {
+            "kind": "blank",
+            "name": "y",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "filled": [
+          "x"
+        ],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_ambiguous_insertions_never_count_as_filled",
+      "args": [
+        "가 끝",
+        [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 2,
+            "end": 2
+          },
+          {
+            "kind": "blank",
+            "name": "y",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "가 값끝"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "가 값끝",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 3,
+            "end": 3
+          },
+          {
+            "kind": "blank",
+            "name": "y",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_ambiguous_insertions_never_count_as_filled",
+      "args": [
+        "AAAA",
+        [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "AAAAA"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "AAAAA",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "x",
+            "start": 2,
+            "end": 2
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_ambiguous_insertions_never_count_as_filled",
+      "args": [
+        "값 끝",
+        [
+          {
+            "kind": "fill",
+            "name": "a",
+            "start": 0,
+            "end": 1
+          },
+          {
+            "kind": "blank",
+            "name": "b",
+            "start": 1,
+            "end": 1
+          }
+        ],
+        "값추가 끝"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "값추가 끝",
+        "marks": [
+          {
+            "kind": "fill",
+            "name": "a",
+            "start": 0,
+            "end": 3
+          },
+          {
+            "kind": "blank",
+            "name": "b",
+            "start": 3,
+            "end": 3
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_filling_several_blanks_in_one_card_still_counts_each",
+      "args": [
+        "수신: \n건명: \n끝",
+        [
+          {
+            "kind": "blank",
+            "name": "a",
+            "start": 4,
+            "end": 4
+          },
+          {
+            "kind": "blank",
+            "name": "b",
+            "start": 9,
+            "end": 9
+          }
+        ],
+        "수신: 총무과\n건명: 복사기\n끝"
+      ],
+      "kwargs": {
+        "fullwidth": false
+      },
+      "expected": {
+        "text": "수신: 총무과\n건명: 복사기\n끝",
+        "marks": [
+          {
+            "kind": "blank",
+            "name": "a",
+            "start": 4,
+            "end": 7
+          },
+          {
+            "kind": "blank",
+            "name": "b",
+            "start": 12,
+            "end": 15
+          }
+        ],
+        "filled": [
+          "a",
+          "b"
+        ],
+        "resolved": [],
+        "space_run": false
+      }
+    },
+    {
+      "test": "test_plain_edit_restores_alignment_spaces_and_keeps_typed_characters",
+      "args": [
+        "항목:    값 V",
+        [
+          {
+            "kind": "fill",
+            "name": "v",
+            "start": 9,
+            "end": 10
+          }
+        ],
+        "항목:    값 V"
+      ],
+      "kwargs": {
+        "fullwidth": true
+      },
+      "expected": {
+        "text": "항목:　　값 V",
+        "marks": [
+          {
+            "kind": "fill",
+            "name": "v",
+            "start": 7,
+            "end": 8
+          }
+        ],
+        "filled": [],
+        "resolved": [],
+        "space_run": true
+      }
+    }
+  ],
+  "editor_card": [
+    {
+      "test": "test_editor_card_accounts_for_a_non_bmp_character_before_a_mark",
+      "args": [
+        "😀X",
+        [
+          {
+            "kind": "fill",
+            "name": "f",
+            "start": 1,
+            "end": 2
+          }
+        ]
+      ],
+      "kwargs": {},
+      "expected": [
+        "😀X",
+        [
+          {
+            "kind": "fill",
+            "name": "f",
+            "start": 2,
+            "end": 3
+          }
+        ]
+      ]
+    },
+    {
+      "test": "test_editor_card_matches_python_offsets_for_bmp_only_lf_text",
+      "args": [
+        "안녕\nX",
+        [
+          {
+            "kind": "fill",
+            "name": "f",
+            "start": 3,
+            "end": 4
+          }
+        ]
+      ],
+      "kwargs": {},
+      "expected": [
+        "안녕\nX",
+        [
+          {
+            "kind": "fill",
+            "name": "f",
+            "start": 3,
+            "end": 4
+          }
+        ]
+      ]
+    },
+    {
+      "test": "test_editor_card_folds_crlf_and_cr_to_one_place_like_the_editor",
+      "args": [
+        "가: 값\r\n\r\n나: \r다: 😀끝",
+        [
+          {
+            "kind": "fill",
+            "name": "가",
+            "start": 3,
+            "end": 4
+          },
+          {
+            "kind": "blank",
+            "name": "나",
+            "start": 11,
+            "end": 11
+          },
+          {
+            "kind": "fill",
+            "name": "다",
+            "start": 15,
+            "end": 16
+          }
+        ]
+      ],
+      "kwargs": {},
+      "expected": [
+        "가: 값\n\n나: \n다: 😀끝",
+        [
+          {
+            "kind": "fill",
+            "name": "가",
+            "start": 3,
+            "end": 4
+          },
+          {
+            "kind": "blank",
+            "name": "나",
+            "start": 9,
+            "end": 9
+          },
+          {
+            "kind": "fill",
+            "name": "다",
+            "start": 13,
+            "end": 15
+          }
+        ]
+      ]
+    }
+  ],
+  "line_break": [
+    {
+      "test": "test_line_break_is_the_first_line_break_or_lf",
+      "args": [
+        "a\r\nb\nc"
+      ],
+      "kwargs": {},
+      "expected": "\r\n"
+    },
+    {
+      "test": "test_line_break_is_the_first_line_break_or_lf",
+      "args": [
+        "a\rb"
+      ],
+      "kwargs": {},
+      "expected": "\r"
+    },
+    {
+      "test": "test_line_break_is_the_first_line_break_or_lf",
+      "args": [
+        "a\nb\r\n"
+      ],
+      "kwargs": {},
+      "expected": "\n"
+    },
+    {
+      "test": "test_line_break_is_the_first_line_break_or_lf",
+      "args": [
+        "한 줄"
+      ],
+      "kwargs": {},
+      "expected": "\n"
+    }
+  ],
+  "source_text": [
+    {
+      "test": "test_source_text_returns_the_source_for_an_untouched_echo",
+      "args": [
+        "가\r\n나\n다\r라",
+        "가\n나\n다\n라",
+        "\r\n"
+      ],
+      "kwargs": {},
+      "expected": "가\r\n나\n다\r라"
+    },
+    {
+      "test": "test_source_text_keeps_untouched_breaks_and_writes_new_ones_in_the_templates_break",
+      "args": [
+        "수신: 회계과\r\n건명: \r\n",
+        "수신: 회계과\n건명: 복사기\n임차\n붙임\r\n1부",
+        "\r\n"
+      ],
+      "kwargs": {},
+      "expected": "수신: 회계과\r\n건명: 복사기\r\n임차\r\n붙임\r\n1부"
+    },
+    {
+      "test": "test_source_text_drops_a_joined_line_break",
+      "args": [
+        "가\r\n나\r\n다",
+        "가나\n다",
+        "\r\n"
+      ],
+      "kwargs": {},
+      "expected": "가나\r\n다"
+    },
+    {
+      "test": "test_source_text_folds_a_received_crlf_instead_of_doubling_the_line",
+      "args": [
+        "가\r\n나",
+        "가\r\n나!",
+        "\r\n"
+      ],
+      "kwargs": {},
+      "expected": "가\r\n나!"
+    }
+  ],
+  "raw_card": [
+    {
+      "test": "test_raw_card_shows_tokens_unfilled_and_marks_them_missing",
+      "args": [
+        "수신: {{수신}}\n건명: {{건명}}"
+      ],
+      "kwargs": {},
+      "expected": [
+        "수신: {{수신}}\n건명: {{건명}}",
+        [
+          {
+            "kind": "missing",
+            "name": "수신",
+            "start": 4,
+            "end": 10
+          },
+          {
+            "kind": "missing",
+            "name": "건명",
+            "start": 15,
+            "end": 21
+          }
+        ]
+      ]
+    }
+  ],
+  "plain_edit": [
+    {
+      "test": "test_plain_edit_restores_alignment_spaces_and_keeps_typed_characters",
+      "args": [
+        "항목:　　값 V",
+        "항목:    값 V",
+        "항목:　　값 V!"
+      ],
+      "kwargs": {},
+      "expected": "항목:    값 V!"
+    },
+    {
+      "test": "test_plain_edit_restores_alignment_spaces_and_keeps_typed_characters",
+      "args": [
+        "항목:　　값 V",
+        "항목:    값 V",
+        "항목:　　값 V"
+      ],
+      "kwargs": {},
+      "expected": "항목:    값 V"
+    },
+    {
+      "test": "test_plain_edit_restores_alignment_spaces_and_keeps_typed_characters",
+      "args": [
+        "항목:　　값 V",
+        "항목:    값 V",
+        "항목:　　　값 V"
+      ],
+      "kwargs": {},
+      "expected": "항목:    　값 V"
+    },
+    {
+      "test": "test_plain_edit_restores_alignment_spaces_and_keeps_typed_characters",
+      "args": [
+        "항목:    값 V",
+        "항목:    값 V",
+        "항목:    값 V!"
+      ],
+      "kwargs": {},
+      "expected": "항목:    값 V!"
+    }
+  ],
+  "alignment": [
+    {
+      "args": [
+        "",
+        ""
+      ],
+      "expected": [
+        [
+          "equal",
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "args": [
+        "abc",
+        ""
+      ],
+      "expected": [
+        [
+          "delete",
+          0,
+          3,
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "args": [
+        "",
+        "abc"
+      ],
+      "expected": [
+        [
+          "insert",
+          0,
+          0,
+          0,
+          3
+        ]
+      ]
+    },
+    {
+      "args": [
+        "AAA",
+        "ABAA"
+      ],
+      "expected": [
+        [
+          "equal",
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "insert",
+          1,
+          1,
+          1,
+          2
+        ],
+        [
+          "equal",
+          1,
+          3,
+          2,
+          4
+        ]
+      ]
+    },
+    {
+      "args": [
+        "ababab",
+        "bababa"
+      ],
+      "expected": [
+        [
+          "insert",
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          "equal",
+          0,
+          5,
+          1,
+          6
+        ],
+        [
+          "delete",
+          5,
+          6,
+          6,
+          6
+        ]
+      ]
+    },
+    {
+      "args": [
+        "가\r\n😀A",
+        "가\n😀B"
+      ],
+      "expected": [
+        [
+          "equal",
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          "delete",
+          1,
+          2,
+          1,
+          1
+        ],
+        [
+          "equal",
+          2,
+          4,
+          1,
+          3
+        ],
+        [
+          "replace",
+          4,
+          5,
+          3,
+          4
+        ]
+      ]
+    },
+    {
+      "args": [
+        "headAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtail",
+        "headAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtail"
+      ],
+      "expected": [
+        [
+          "equal",
+          0,
+          114,
+          0,
+          114
+        ],
+        [
+          "insert",
+          114,
+          114,
+          114,
+          115
+        ],
+        [
+          "equal",
+          114,
+          228,
+          115,
+          229
+        ]
+      ]
+    }
+  ]
+}

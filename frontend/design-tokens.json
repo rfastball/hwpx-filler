@@ -1,0 +1,138 @@
+{
+  "_note": "앱 B 디자인 토큰 단일 출처. 값을 바꾸려면 여기만 고치고 `node scripts/gen_design_tokens.mjs` 실행 — 웹 CSS(web·web-diff)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. 최상위 그룹(color/state/badge/neutral/log)이 라이트 팔레트, 형제 `dark` 섹션이 같은 group/key 로 다크 팔레트다(gen 이 :root + @media(prefers-color-scheme:dark) + [data-theme=dark] 3블록 방출). space/radius/type 스케일도 gen 이 CSS 변수(--sp-*·--rad-*·--fs-*)로 방출하되 **테마 불변**이라 라이트 :root 블록에만 찍는다(다크 미중복). space 는 수치키(px 값=키; padding/margin/gap 이 촘촘해 t-shirt 대신 수치 사다리), radius/type 은 역할 의미키. 무단위 정수는 space/radius에 px, type에 rem(16 기준)을 부착한다.",
+  "color": {
+    "primary": "#2f5fbf",
+    "primary_hover": "#274fa0",
+    "brand": "#2874A6",
+    "warn": "#a05a00",
+    "danger": "#c0392b",
+    "ok": "#1e8449",
+    "muted": "#656a72",
+    "border": "#e2e4e8",
+    "card_bg": "#ffffff",
+    "window_bg": "#f6f7f9",
+    "ink": "#1c2126",
+    "on_accent": "#ffffff",
+    "shadow": "rgba(0,0,0,.2)",
+    "scrim": "rgba(13,18,26,.42)",
+    "scrim_reduced": "rgba(13,18,26,.78)"
+  },
+  "state": {
+    "unconfirmed_bg": "#fff3bf",
+    "unmatched_bg": "#ffd8d8",
+    "data_empty_fg": "#b00020",
+    "select_bg": "#dfe6fb"
+  },
+  "badge": {
+    "fill_bg": "#e5f2ea",
+    "blank_bg": "#f6ecdb",
+    "missing_bg": "#fbe6e3",
+    "ack_bg": "#ecebf4",
+    "ack_fg": "#4a3f8a",
+    "fill_border": "#bfe0cb",
+    "blank_border": "#e6c98f",
+    "missing_border": "#e6a49c",
+    "ack_border": "#c8c3e6",
+    "missing_press": "#f9d9d4"
+  },
+  "neutral": {
+    "surface_alt": "#f3f4f6",
+    "hover": "#f0f2f5",
+    "pressed": "#e6e9ee",
+    "track": "#eef0f3",
+    "header_bg": "#eef1f4",
+    "border_strong": "#cbd0d6",
+    "border_control": "#767b83",
+    "ink_soft": "#5c626b",
+    "header_ink": "#4a505a",
+    "ink_control": "#2b3038"
+  },
+  "log": {
+    "surface": "#1e242b",
+    "ink": "#c6d0da"
+  },
+  "semantic": {
+    "_note": "저작 편집면의 의미 표지(필드·항목·선택) 색 — HWPX 편집면(vendor/rhwp/patches/authoring.patch .rhwp-semantic-layer)과 같은 값이라 TXT·HWPX 가 같은 색으로 말한다(FB-03 #1079). *_ink 는 이름표 칩 바탕 위 글자다.",
+    "field": "#198575",
+    "slot": "#7364b5",
+    "option": "#c08436",
+    "slot_ink": "#ffffff",
+    "option_ink": "#1c2126"
+  },
+  "dark": {
+    "_note": "다크 팔레트 — 단순 반전이 아니라 손으로 재산출. 원칙: 밝은 accent(primary/ok)는 흰글씨 대신 어두운 on_accent 잉크를 얹고 다크 표면 위 텍스트로도 읽히게 밝힘(라이트에선 accent 가 어두워 흰글씨였던 이중용도 충돌 해소). 파스텔 틴트(state/badge)는 같은 색조의 어둡고 저채도 배경 + 밝힌 전경/보더. 중성 램프는 극성 반전(hover 가 surface 보다 밝음). 대비 하한은 test_contrast_wcag 가 기계 비준.",
+    "color": {
+      "primary": "#6f97e8",
+      "primary_hover": "#8badf0",
+      "brand": "#4ea8e5",
+      "warn": "#e0a850",
+      "danger": "#ec7264",
+      "ok": "#43b877",
+      "muted": "#98a0ab",
+      "border": "#333a44",
+      "card_bg": "#1c2127",
+      "window_bg": "#131619",
+      "ink": "#e7eaee",
+      "on_accent": "#0f1418",
+      "shadow": "rgba(0,0,0,.5)",
+      "scrim": "rgba(0,0,0,.62)",
+      "scrim_reduced": "rgba(0,0,0,.84)"
+    },
+    "state": {
+      "unconfirmed_bg": "#3a3320",
+      "unmatched_bg": "#3f2626",
+      "data_empty_fg": "#f2705f",
+      "select_bg": "#1e2846"
+    },
+    "badge": {
+      "fill_bg": "#17301f",
+      "blank_bg": "#33291a",
+      "missing_bg": "#3a221f",
+      "ack_bg": "#262340",
+      "ack_fg": "#b7aef0",
+      "fill_border": "#2f5e3f",
+      "blank_border": "#5c4a2b",
+      "missing_border": "#6b3a34",
+      "ack_border": "#453f6b",
+      "missing_press": "#472925"
+    },
+    "neutral": {
+      "surface_alt": "#23272d",
+      "hover": "#262b31",
+      "pressed": "#2d333a",
+      "track": "#2a2f36",
+      "header_bg": "#191d22",
+      "border_strong": "#454c56",
+      "border_control": "#6b7280",
+      "ink_soft": "#aab1bb",
+      "header_ink": "#c2c8d0",
+      "ink_control": "#dbe0e6"
+    },
+    "log": {
+      "surface": "#12161b",
+      "ink": "#c6d0da"
+    },
+    "semantic": {
+      "field": "#3fb39c",
+      "slot": "#9486dc",
+      "option": "#d9a35a",
+      "slot_ink": "#0f1418",
+      "option_ink": "#0f1418"
+    }
+  },
+  "space": { "2": 2, "4": 4, "6": 6, "8": 8, "10": 10, "12": 12, "16": 16, "24": 24, "40": 40 },
+  "radius": { "control": 6, "surface": 9, "overlay": 12, "pill": 999 },
+  "layer": { "overlay_root": 90, "popover": 100, "modal": 200 },
+  "type": { "caption": 12, "body": 14, "dense": 13, "strong": 15, "section": 19, "kpi": 23 },
+  "font": {
+    "_note": "글꼴 스택 — 테마 불변(라이트 :root 만). ui=본문, mono=토큰·경로·원문 편집기. 한글 글리프가 없는 서양 고정폭(Cascadia·Consolas) 뒤에 D2Coding 을 두어 한글도 고정폭으로 떨어지게 한다.",
+    "ui": "\"Pretendard GOV Variable\",\"Segoe UI\",\"Malgun Gothic\",\"Apple SD Gothic Neo\",system-ui,sans-serif",
+    "mono": "\"Cascadia Code\",\"Consolas\",\"D2Coding\",ui-monospace,monospace"
+  },
+  "motion": {
+    "_note": "조작 피드백 모션(#179 슬라이스 4, emil-design-eng). 테마 불변 — space/radius/type 처럼 라이트 :root 만. dur_*=ms(무단위 정수 → gen 이 ms 부착), ease_*=cubic-bezier 문자열(그대로). press=버튼 눌림(100~160), pop=메뉴/팝오버(125~250), modal=모달 등장(180~220). 전부 <300ms.",
+    "dur_press": 140, "dur_pop": 150, "dur_modal": 160,
+    "ease_out": "cubic-bezier(.23,1,.32,1)",
+    "ease_in_out": "cubic-bezier(.77,0,.175,1)"
+  }
+}

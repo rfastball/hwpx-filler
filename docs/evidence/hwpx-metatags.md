@@ -6,8 +6,9 @@
 
 > **문서 상태:** 형식 관측 증거
 > **권위 범위:** 한컴 native metadata carrier 의 wire format 관찰과 보존성 실험 설계
-> **후속 정본:** 우리 코드의 동작은 `tests/_hwpx_metatag_spike.py` 와 `tests/test_metatag_s1.py`,
-> 구조 범위 primitive 는 `docs/evidence/hwpx-ranges.md`
+> **후속 정본:** carrier와 저장 전후 코퍼스 검증은 `crates/hwpx-core/src/bookmark_region.rs`,
+> 제품 Slot 판정은 `crates/hwpx-filler/src/hwpx_product_inspection.rs`가 소유한다.
+> 아래 Python 도구·경로·명령은 원관측 당시의 기록이다. 구조 범위 관측은 `docs/evidence/hwpx-ranges.md`를 따른다.
 > **편집 정책:** 새 native evidence(특히 한글 open/save 결과)가 생길 때만 판정과 근거를 함께 갱신
 
 ## 1. 목적과 비목표
@@ -658,7 +659,7 @@ Slot semantic 의 왕복 복원(§9.3).
 | `canonical.hwpx` | `283589AF21FE656F6F3ACE461D9DA1A77E9FBA1E829D823D3F514BBEB1DA631E` |
 | `canonical-resaved.hwpx` | `E43D50A2F81DBF884D94860FC67D1868ABE05F65BF2BFC211FE367C08D48422C` |
 
-두 파일은 byte 단위로 다르지만 `tests/test_slot_inspection.py`의 동일 판독 경로에서 Slot 1개와
+두 파일은 byte 단위로 다르지만 [Rust 제품 판독 검사](../../crates/hwpx-filler/src/hwpx_product_inspection.rs)의 동일 경로에서 Slot 1개와
 Option 2개를 같은 순서·id로 복원하고 진단은 비어 있다. S1의 더 큰 미지 payload가 실제 한글
 open/edit/save 뒤 보존된 증거와 S1.5 최소 serializer를 결합해 semantic equality를 고정한다.
 구형 document-level catalog와 제거한 S1 정책 필드는 제품 권위로 사용하지 않는다.

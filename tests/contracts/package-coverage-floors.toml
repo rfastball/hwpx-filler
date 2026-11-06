@@ -9,51 +9,92 @@ unmatched_allow = ["src/hwpxfiller/host/native"]
 
 [packages.hwpxcore]
 path = "src/hwpxcore"
+rust_files = [
+  "crates/hwpx-core/src/authoring_edit.rs", "crates/hwpx-core/src/bookmark_region.rs", "crates/hwpx-core/src/bookmark_region/create.rs", "crates/hwpx-core/src/bookmark_region/duplicate.rs", "crates/hwpx-core/src/bookmark_region/topology.rs", "crates/hwpx-core/src/bookmark_region/move_block.rs", "crates/hwpx-core/src/field_occurrence.rs", "crates/hwpx-core/src/lib.rs", "crates/hwpx-core/src/lineseg.rs", "crates/hwpx-core/src/marker_edit.rs", "crates/hwpx-core/src/native_admission.rs", "crates/hwpx-core/src/native_admission/index.rs", "crates/hwpx-core/src/native_admission/field.rs", "crates/hwpx-core/src/native_admission/bookmark.rs", "crates/hwpx-core/src/native_authoring.rs", "crates/hwpx-core/src/native_transfer.rs", "crates/hwpx-core/src/package.rs", "crates/hwpx-core/src/package/admission.rs", "crates/hwpx-core/src/package/budget.rs", "crates/hwpx-core/src/shape_text.rs", "crates/hwpx-core/src/structural_boundary.rs", "crates/hwpx-core/src/text_extract.rs", "crates/hwpx-core/src/text_model.rs", "crates/hwpx-core/src/xml_dom.rs", "crates/hwpx-core/src/xml_view.rs",
+]
 line = 95
 branch = 87
-
 [packages.hwpxfiller]
 path = "src/hwpxfiller"
+rust_files = [
+  "crates/hwpx-artifact/src/lib.rs", "crates/hwpx-artifact/src/main.rs", "crates/hwpx-artifact/src/native_notices.rs", "crates/hwpx-artifact/src/reconcile.rs", "crates/hwpx-artifact/src/source_files.rs", "crates/hwpx-artifact/src/studio.rs", "crates/hwpx-artifact/src/toolchain.rs", "crates/hwpx-artifact/src/webview_retry.rs", "crates/hwpx-desktop/src/packaged_selfcheck.rs", "crates/hwpx-desktop/src/web_assets.rs", "crates/hwpx-filler/src/lib.rs",
+]
 line = 77
 branch = 67
-
 [packages."hwpxfiller.application"]
 path = "src/hwpxfiller/application"
+rust_files = [
+  "crates/hwpx-filler/src/candidate_revision.rs", "crates/hwpx-filler/src/dataset_pool.rs", "crates/hwpx-filler/src/document_creation_workbench.rs", "crates/hwpx-filler/src/execution_capture.rs", "crates/hwpx-filler/src/execution_compilation.rs", "crates/hwpx-filler/src/execution_composition.rs", "crates/hwpx-filler/src/execution_contract_set.rs", "crates/hwpx-filler/src/execution_semantic_kernel.rs", "crates/hwpx-filler/src/execution_structure.rs", "crates/hwpx-filler/src/execution_structure_build.rs", "crates/hwpx-filler/src/execution_structure_validation.rs", "crates/hwpx-filler/src/field_binding_input.rs", "crates/hwpx-filler/src/field_proposal.rs", "crates/hwpx-filler/src/fresh_execution_observation.rs", "crates/hwpx-filler/src/generation.rs", "crates/hwpx-filler/src/generation_delivery.rs", "crates/hwpx-filler/src/nara_acquire.rs", "crates/hwpx-filler/src/prepare_orchestration.rs", "crates/hwpx-filler/src/prepare_template_change.rs", "crates/hwpx-filler/src/preset_fit.rs", "crates/hwpx-filler/src/qualification_evidence.rs", "crates/hwpx-filler/src/record_validation.rs",
+  "crates/hwpx-filler/src/run_delivery_intent.rs", "crates/hwpx-filler/src/run_request.rs", "crates/hwpx-filler/src/seal_execution_plan.rs", "crates/hwpx-filler/src/seal_execution_product.rs", "crates/hwpx-filler/src/selection_compatibility.rs", "crates/hwpx-filler/src/shipping_seal_policy.rs", "crates/hwpx-filler/src/slot_command.rs", "crates/hwpx-filler/src/slot_configuration_context.rs", "crates/hwpx-filler/src/slot_configuration_projection.rs", "crates/hwpx-filler/src/slot_reconciliation.rs", "crates/hwpx-filler/src/slot_selection_input.rs", "crates/hwpx-filler/src/stored_execution_plan.rs", "crates/hwpx-filler/src/stored_work_configuration.rs", "crates/hwpx-filler/src/template_change_product.rs", "crates/hwpx-filler/src/template_qualification.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/work_slot_configuration.rs", "crates/hwpx-filler/src/work_template_state.rs", "crates/hwpx-filler/src/workbench_execution_status.rs",
+]
 line = 92
 branch = 72
-
 [packages."hwpxfiller.domain"]
 path = "src/hwpxfiller/domain"
+rust_files = [
+  "crates/hwpx-filler/src/authoring.rs", "crates/hwpx-filler/src/canonical_execution_encoding.rs", "crates/hwpx-filler/src/copy_name.rs", "crates/hwpx-filler/src/data_contract.rs", "crates/hwpx-filler/src/data_contract_check.rs", "crates/hwpx-filler/src/data_source.rs", "crates/hwpx-filler/src/dataset_reference.rs", "crates/hwpx-filler/src/field_binding.rs", "crates/hwpx-filler/src/field_binding/runtime_clock.rs", "crates/hwpx-filler/src/fields.rs", "crates/hwpx-filler/src/format_engine.rs", "crates/hwpx-filler/src/identity_summary.rs", "crates/hwpx-filler/src/jamo.rs", "crates/hwpx-filler/src/job.rs", "crates/hwpx-filler/src/lint.rs", "crates/hwpx-filler/src/mapping.rs", "crates/hwpx-filler/src/output_folder_default.rs", "crates/hwpx-filler/src/output_name.rs", "crates/hwpx-filler/src/output_name_audit.rs", "crates/hwpx-filler/src/preset.rs", "crates/hwpx-filler/src/python_casefold.rs",
+  "crates/hwpx-filler/src/raw_data_record.rs", "crates/hwpx-filler/src/schema.rs", "crates/hwpx-filler/src/schema_drift.rs", "crates/hwpx-filler/src/slot.rs", "crates/hwpx-filler/src/slot_selection.rs", "crates/hwpx-filler/src/structure_scan.rs", "crates/hwpx-filler/src/template_authoring.rs", "crates/hwpx-filler/src/text_render.rs", "crates/hwpx-filler/src/text_slice.rs", "crates/hwpx-filler/src/text_structure.rs", "crates/hwpx-filler/src/validation.rs", "crates/hwpx-filler/src/work_package.rs",
+]
 line = 96
 branch = 92
-
 [packages."hwpxfiller.external"]
 path = "src/hwpxfiller/external"
+rust_files = [
+  "crates/hwpx-desktop/src/applied_template_asset.rs", "crates/hwpx-desktop/src/atomic_file.rs", "crates/hwpx-desktop/src/authoring_store.rs", "crates/hwpx-desktop/src/candidate_store.rs", "crates/hwpx-desktop/src/captured_file.rs", "crates/hwpx-desktop/src/contract_data_binding.rs", "crates/hwpx-desktop/src/current_execution_preparation.rs", "crates/hwpx-desktop/src/dataset_registry.rs", "crates/hwpx-desktop/src/dataset_registry/commands.rs", "crates/hwpx-desktop/src/example_pack.rs", "crates/hwpx-desktop/src/headless_generation.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-desktop/src/artifact_observation.rs", "crates/hwpx-desktop/src/nara_secret_store.rs", "crates/hwpx-desktop/src/nara_source.rs", "crates/hwpx-desktop/src/nara_transport.rs", "crates/hwpx-desktop/src/preset_registry.rs", "crates/hwpx-desktop/src/qualification_store.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-desktop/src/settings_store.rs", "crates/hwpx-desktop/src/slot_token.rs",
+  "crates/hwpx-desktop/src/template_change_coordinator.rs", "crates/hwpx-desktop/src/template_files.rs", "crates/hwpx-desktop/src/template_link.rs", "crates/hwpx-desktop/src/template_root.rs", "crates/hwpx-desktop/src/template_stage_runner.rs", "crates/hwpx-desktop/src/text_registry.rs", "crates/hwpx-desktop/src/tutorial_seed.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-desktop/src/work_package_autobind.rs", "crates/hwpx-desktop/src/work_package_install.rs", "crates/hwpx-desktop/src/work_package_io.rs", "crates/hwpx-desktop/src/work_package_sources.rs", "crates/hwpx-desktop/src/work_template_store.rs", "crates/hwpx-filler/src/authoring_transfer.rs", "crates/hwpx-filler/src/field_proposal_reading.rs", "crates/hwpx-filler/src/hwpx_authoring_analysis.rs", "crates/hwpx-filler/src/hwpx_authoring_availability.rs", "crates/hwpx-filler/src/hwpx_authoring_commands.rs", "crates/hwpx-filler/src/hwpx_authoring_fields.rs",
+  "crates/hwpx-filler/src/hwpx_authoring_preview.rs", "crates/hwpx-filler/src/hwpx_authoring_reading.rs", "crates/hwpx-filler/src/hwpx_authoring_region_blocks.rs", "crates/hwpx-filler/src/hwpx_authoring_regions.rs", "crates/hwpx-filler/src/hwpx_authoring_search.rs", "crates/hwpx-filler/src/hwpx_authoring_syntax.rs", "crates/hwpx-filler/src/hwpx_authoring_transfer.rs", "crates/hwpx-filler/src/hwpx_authoring_trial.rs", "crates/hwpx-filler/src/hwpx_product_inspection.rs", "crates/hwpx-filler/src/hwpx_qualification.rs", "crates/hwpx-filler/src/hwpx_structure.rs", "crates/hwpx-filler/src/hwpx_structure_ops.rs", "crates/hwpx-filler/src/hwpx_structure_ops/preflight.rs", "crates/hwpx-filler/src/job_binding_projection.rs", "crates/hwpx-filler/src/materialization_conformance.rs", "crates/hwpx-filler/src/materialization_runner.rs", "crates/hwpx-filler/src/rhwp_preflight.rs", "crates/hwpx-filler/src/runtime_capability.rs", "crates/hwpx-filler/src/text_authoring_trial.rs", "crates/hwpx-filler/src/text_materialization_conformance.rs", "crates/hwpx-filler/src/text_template_inspection.rs",
+  "crates/hwpx-filler/src/txt_authoring.rs", "crates/hwpx-filler/src/txt_authoring_transfer.rs",
+]
 line = 98
 branch = 98
-
 [packages."hwpxfiller.data"]
 path = "src/hwpxfiller/data"
+rust_files = [
+  "crates/hwpx-filler/src/data_excel.rs", "crates/hwpx-filler/src/data_excel_xml.rs", "crates/hwpx-filler/src/data_factory.rs", "crates/hwpx-filler/src/data_pclm.rs", "crates/hwpx-filler/src/data_pipeline.rs", "crates/hwpx-filler/src/nara.rs",
+]
 line = 93
 branch = 85
-
 [packages."hwpxfiller.viewmodel"]
 path = "src/hwpxfiller/viewmodel"
+rust_files = ["crates/hwpx-filler/src/partial_gate.rs",
+  "crates/hwpx-desktop/src/tutorial_lessons.rs", "crates/hwpx-filler/src/editor_mapping.rs", "crates/hwpx-filler/src/editor_save_policy.rs", "crates/hwpx-filler/src/editor_session_state.rs", "crates/hwpx-filler/src/editor_slice.rs", "crates/hwpx-filler/src/filter_primitives.rs", "crates/hwpx-filler/src/filter_state.rs", "crates/hwpx-filler/src/home_state.rs", "crates/hwpx-filler/src/library_detail.rs", "crates/hwpx-filler/src/mapping_state.rs", "crates/hwpx-filler/src/record_range.rs", "crates/hwpx-filler/src/result_errors.rs", "crates/hwpx-filler/src/review_state.rs", "crates/hwpx-filler/src/run_state.rs", "crates/hwpx-filler/src/selection_state.rs", "crates/hwpx-filler/src/template_library_state.rs", "crates/hwpx-filler/src/txt_card.rs", "crates/hwpx-filler/src/txt_card_diff.rs", "crates/hwpx-filler/src/txt_card_edit.rs", "crates/hwpx-filler/src/txt_queue.rs",
+  "crates/hwpx-filler/src/work_candidates.rs",
+]
 line = 96
 branch = 89
 
 [packages."hwpxfiller.host"]
 path = "src/hwpxfiller/host"
+rust_files = [
+  "crates/hwpx-desktop/src/boot_budget.rs", "crates/hwpx-desktop/src/directory_lock.rs", "crates/hwpx-desktop/src/job_writer_lease.rs", "crates/hwpx-desktop/src/locations.rs", "crates/hwpx-desktop/src/owned_paths.rs", "crates/hwpx-desktop/src/per_work_fence.rs", "crates/hwpx-desktop/src/shell_settings.rs",
+]
 line = 100
 branch = 100
 
 [packages."hwpxfiller.webapp"]
 path = "src/hwpxfiller/webapp"
+rust_files = [
+  "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-desktop/src/authoring_controller.rs", "crates/hwpx-desktop/src/authoring_edit_dispatch.rs", "crates/hwpx-desktop/src/authoring_helpers.rs", "crates/hwpx-desktop/src/authoring_linked_proposal.rs", "crates/hwpx-desktop/src/authoring_location.rs", "crates/hwpx-desktop/src/authoring_projection.rs", "crates/hwpx-desktop/src/authoring_proposal.rs", "crates/hwpx-desktop/src/authoring_proposal_dispatch.rs", "crates/hwpx-desktop/src/authoring_search_dispatch.rs", "crates/hwpx-desktop/src/authoring_session.rs", "crates/hwpx-desktop/src/authoring_session_dispatch.rs", "crates/hwpx-desktop/src/authoring_session_io.rs", "crates/hwpx-desktop/src/authoring_snapshot.rs", "crates/hwpx-desktop/src/authoring_trial_dispatch.rs", "crates/hwpx-desktop/src/bin/hwpxfiller.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/generate_run.rs", "crates/hwpx-desktop/src/editor_controller.rs", "crates/hwpx-desktop/src/editor_controller/actions.rs", "crates/hwpx-desktop/src/editor_controller/save.rs", "crates/hwpx-desktop/src/editor_intake.rs", "crates/hwpx-desktop/src/editor_projection.rs", "crates/hwpx-desktop/src/generation_gate.rs", "crates/hwpx-desktop/src/host_common.rs", "crates/hwpx-desktop/src/job_actions.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/job_data_filters.rs", "crates/hwpx-desktop/src/job_data_projection.rs", "crates/hwpx-desktop/src/job_data_range.rs", "crates/hwpx-desktop/src/job_data_session.rs",
+  "crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/job_hwpx_panel.rs", "crates/hwpx-desktop/src/job_ledger.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-desktop/src/job_panel.rs", "crates/hwpx-desktop/src/job_recovery.rs", "crates/hwpx-desktop/src/job_remembered.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/job_screen.rs", "crates/hwpx-desktop/src/job_session_gate.rs", "crates/hwpx-desktop/src/legacy_practice.rs", "crates/hwpx-desktop/src/lib.rs", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-desktop/src/library_observation.rs", "crates/hwpx-desktop/src/live_graph.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/native_selftest.rs", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/onboarding_match_authoring.rs", "crates/hwpx-desktop/src/onboarding_product.rs", "crates/hwpx-desktop/src/onboarding_state.rs", "crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/pool_controller/projection.rs", "crates/hwpx-desktop/src/product_api.rs", "crates/hwpx-desktop/src/product_transport.rs", "crates/hwpx-desktop/src/registered_contract_data.rs",
+  "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-desktop/src/slot_configuration_runner.rs", "crates/hwpx-desktop/src/template_controller.rs", "crates/hwpx-desktop/src/template_groups.rs", "crates/hwpx-desktop/src/template_inventory.rs", "crates/hwpx-desktop/src/workbench_controller.rs", "crates/hwpx-desktop/src/workbench_materialization.rs", "crates/hwpx-desktop/src/workbench_observation_product.rs", "crates/hwpx-desktop/src/workspace_runtime.rs", "crates/hwpx-desktop/src/workspace_switch.rs", "crates/hwpx-filler/src/active_work_state.rs", "crates/hwpx-filler/src/job_presentation.rs",
+]
 line = 86
 branch = 82
 
 # 「데이터로 필드 찾기」(#1156) 판정기 — 순수 함수라 전 분기를 단위 테스트가 잰다.
 [packages."hwpxfiller.domain.field_induction"]
 path = "src/hwpxfiller/domain/field_induction"
+rust_files = [
+  "crates/hwpx-filler/src/field_induction.rs", "crates/hwpx-filler/src/field_induction_evidence.rs", "crates/hwpx-filler/src/field_induction_grading.rs", "crates/hwpx-filler/src/field_induction_labels.rs", "crates/hwpx-filler/src/field_induction_proposal.rs",
+]
 line = 99
 branch = 98
+
+# Release-build/launch gates own build.rs and the GUI entry point. The Windows
+# native/WebView2 gates own clipboard, dialogs, Explorer, mutex, and Tauri host.
+[rust]
+unmeasured_allow = [
+  "crates/hwpx-desktop/build.rs", "crates/hwpx-desktop/src/bin/documentnarmi.rs",
+  "crates/hwpx-desktop/src/clipboard.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/reveal.rs",
+  "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/tauri_host.rs",
+]

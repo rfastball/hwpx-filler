@@ -2,7 +2,7 @@
 
 ## 왜 실 편집기인가
 
-`compare_rhwp_roundtrip` 의 단위 테스트(`tests/test_authoring.py`)는 **비교기의 규칙**만 잰다.
+`compare_rhwp_roundtrip` 의 Rust 테스트(`crates/hwpx-filler/src/rhwp_preflight.rs`)는 **비교기의 규칙**만 잰다.
 어떤 문서가 저작 작업대에서 편집 가능하게 열리는지는 vendor rhwp 직렬화기의 실측 사실이라
 단위 테스트로는 알 수 없다. 실습 표본(`examples/quickstart-101/templates`)이 「읽기 전용 ·
 보존 확인 필요」로 열리던 결함(#1022)이 그 틈으로 출하됐다 — 비교기 단위 테스트는 전부
@@ -28,12 +28,13 @@ import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import pytest
 
+from _press_probe import _browser_safe_server
 from _web_source import REPO_ROOT
 from hwpxfiller.external.rhwp_preflight import compare_rhwp_roundtrip
 from hwpxfiller.web_artifact import resolve_web_artifact
@@ -133,7 +134,7 @@ def _loopback(generated: Path | None = None) -> Iterator[str]:
 
     Handler.extensions_map = {**Handler.extensions_map, ".js": "text/javascript",
                               ".mjs": "text/javascript", ".wasm": "application/wasm"}
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = _browser_safe_server(Handler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

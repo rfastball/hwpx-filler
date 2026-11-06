@@ -200,6 +200,42 @@ def _measure_document(browser, html: str, artifact_id: str, width: int, height: 
         return _measure_page(browser, url, width, height, script)
 
 
+def test_loopback_retries_busy_chrome_safe_ports(monkeypatch) -> None:
+    import _press_probe
+
+    class Server:
+        def __init__(self, address) -> None:
+            self.server_address = address
+
+    requested = []
+    choices = iter((0, 16383))
+
+    def bind(address, _handler):
+        requested.append(address[1])
+        if len(requested) == 1:
+            raise OSError("port in use")
+        return Server(address)
+
+    monkeypatch.setattr(_press_probe, "randbelow", lambda _limit: next(choices))
+    monkeypatch.setattr(_press_probe, "ThreadingHTTPServer", bind)
+    server = _press_probe._browser_safe_server(object)
+    assert requested == [49152, 65535]
+    assert server.server_address[1] == 65535
+
+    attempted = []
+
+    def unavailable(address, _handler):
+        attempted.append(address[1])
+        raise OSError("all candidate ports busy")
+
+    monkeypatch.setattr(_press_probe, "randbelow", lambda _limit: 0)
+    monkeypatch.setattr(_press_probe, "ThreadingHTTPServer", unavailable)
+    with pytest.raises(RuntimeError, match="32 attempts") as exc:
+        _press_probe._browser_safe_server(object)
+    assert attempted == [49152] * 32
+    assert isinstance(exc.value.__cause__, OSError)
+
+
 def _render(browser, width: int, height: int, scale: str, app_style: str = "") -> dict:
     from _press_probe import _built_css_path
 

@@ -1,6 +1,6 @@
-/* 복잡도 예산의 JS/TS 측정기 — `scripts/complexity_measure.py` 의 짝.
+/* 복잡도 예산의 JS/TS 측정기 — `scripts/complexity_budget.mjs` 의 입력.
  *
- * 범위·등급·원장 판정은 전부 Python 쪽이 소유하고, 여기는 **받은 파일을 재기만** 한다.
+ * 범위·등급·원장 판정은 complexity_budget.mjs가 소유하고, 여기는 받은 파일을 재기만 한다.
  * stdin 으로 `{"root": "<저장소>", "files": ["frontend/src/a.ts", ...]}` 를 받아 stdout 에
  * 단위 배열(JSON)을 낸다. 파싱 실패는 조용히 건너뛰지 않고 파일 이름과 함께 죽는다.
  *

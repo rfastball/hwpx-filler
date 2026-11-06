@@ -1,4 +1,5 @@
 # Python
+/target/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -63,7 +64,7 @@ desktop.ini
 
 # 패키징 산출물(빌드 시 자동 생성)
 # packaging/*.ico 는 더 이상 빌드 생성물이 아니다 — 커밋된 정적 리소스(#258;
-# filler 는 scripts/render_document_narmi_branding.py 산출). 미커밋이면 CI 빌드에
+# filler 는 scripts/render_document_narmi_branding.mjs 산출). 미커밋이면 CI 빌드에
 # 아이콘이 빠진 채 조용히 성공한다(spec 의 exists() 폴백).
 *.spec.bak
 

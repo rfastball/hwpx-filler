@@ -1,19 +1,12 @@
 ﻿<#
 .SYNOPSIS
-  filler 소스 실행 러너 — exe 빌드 없이 누름틀 주입 제품을 바로 띄운다.
-
+  소스에서 네이티브 GUI 또는 CLI를 실행한다.
 .DESCRIPTION
-  루트에서 `.\run-filler.ps1`. 패키징 없이 개발 중인 코드를 그대로 실행한다.
-  exe 와 동일한 진입점(main())을 타므로 UI·로직 검증이 그대로 된다.
-  test.ps1 / build.ps1 과 같은 관례로 uv 관리 환경을 쓴다.
-
-.PARAMETER Cli
-  GUI 대신 CLI 진입점 실행. 이후 인자는 그대로 CLI 로 전달된다.
-
+  GUI는 봉인된 개발용 web 자산을 준비한 뒤 Rust/Tauri 창을 연다.
+  CLI는 GUI 런타임 없이 같은 소스의 네이티브 CLI를 실행한다.
 .EXAMPLE
-  .\run-filler.ps1                   # GUI
-  .\run-filler.ps1 -Cli --help       # CLI
-  .\run-filler.ps1 -Cli --template t.hwpx --data d.xlsx
+  .\run-filler.ps1
+  .\run-filler.ps1 -Cli --help
 #>
 [CmdletBinding()]
 param(
@@ -23,24 +16,34 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-
-# 한글 출력이 콘솔 코드페이지 무관하게 깨지지 않도록 UTF-8 강제.
-$env:PYTHONUTF8 = '1'
-$env:PYTHONIOENCODING = 'utf-8'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-
-$module = if ($Cli) { 'hwpxfiller.cli' } else { 'hwpxfiller.webapp' }
-
-if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)) {
-    Write-Error "uv 없음. 설치 후: uv sync --all-extras --group dev"
-    exit 1
+$priorCargoHome = $env:CARGO_HOME
+$priorRustupHome = $env:RUSTUP_HOME
+$local = Join-Path $root '.cache\rhwp-cargo\bin\cargo.exe'
+if (Test-Path -LiteralPath $local -PathType Leaf) {
+    $env:CARGO_HOME = Join-Path $root '.cache\rhwp-cargo'
+    $env:RUSTUP_HOME = Join-Path $root '.cache\rhwp-rustup'
+    $cargoPath = $local
+} else {
+    $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $cargo) { throw 'Rust Cargo가 없습니다.' }
+    $cargoPath = $cargo.Source
 }
 
-if (-not $Cli) {
-    & (Join-Path $root 'build-web.ps1')
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Push-Location $root
+try {
+    if ($Cli) {
+        & $cargoPath run -p hwpx-desktop --bin hwpxfiller --no-default-features `
+            --locked -- @Rest
+    } else {
+        if ($Rest.Count) { throw 'GUI 실행에는 추가 인자를 사용할 수 없습니다.' }
+        & (Join-Path $root 'build-web.ps1')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & $cargoPath run -p hwpx-desktop --bin documentnarmi --locked -- `
+            --dev-assets (Join-Path $root 'build\web') (Join-Path $root 'examples\tutorial')
+    }
+    exit $LASTEXITCODE
+} finally {
+    Pop-Location
+    $env:CARGO_HOME = $priorCargoHome
+    $env:RUSTUP_HOME = $priorRustupHome
 }
-
-Write-Host "실행: $module  (uv/Python 3.13)" -ForegroundColor Cyan
-& uv run --no-sync --extra gui python -m $module @Rest
-exit $LASTEXITCODE

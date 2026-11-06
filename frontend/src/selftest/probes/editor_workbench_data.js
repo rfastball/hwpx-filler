@@ -26,7 +26,7 @@
  * 위 표의 1:1 대응이다.
  *
  * 무엇을 **안** 바꿨나: 프로브가 하는 일·순서·발신·재는 필드·타이밍 의도. 값 모양은 기준
- * 실행과 같다 — `tests/test_web_selftest_gate.py` 가 이 필드들을 이름으로 단언한다.
+ * 실행과 같다 — `scripts/verify_native_selftest.mjs` 가 실 영수증을 단언한다.
  *
  * 무엇을 바꿨나: **상태 인계 방식 하나뿐**. 창 객체 위의 `__<이름>` 스태시가 사라지고
  * 프로브가 결과를 반환한다. 실렌더를 모는 푸시 진입점도 전역 조회가 아니라 `ctx.push` 주입이고
@@ -1005,7 +1005,11 @@ async function probeHwpxAuthoring(ctx, out) {
       try {
         if (!open) return;
         open.click();
-        const started = await pollFor(ctx, async () => !!activeTab(await snapshot()).id, 20, 100);
+        /* open_path parses the entire HWPX and projects its structure before the session ID
+           exists. The documented candidate mount allowance is six seconds; the old two-second
+           poll could abandon a valid debug session and start the next candidate while the
+           first open was still in flight. */
+        const started = await pollFor(ctx, async () => !!activeTab(await snapshot()).id, 30, 200);
         if (!started) {
           out.hwpx_authoring_preflight.push({ key: candidate.key, editable: null, reason: "세션 미생성" });
           continue;

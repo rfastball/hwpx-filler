@@ -1,0 +1,1432 @@
+{
+  "structures": {
+    "normal": {
+      "projection_schema_version": "hwpx-structure-projection-v2",
+      "product_structure": {
+        "root_fields": [
+          "성명"
+        ],
+        "slots": [
+          {
+            "id": "s1",
+            "shared_fields": [
+              "주소"
+            ],
+            "options": [
+              {
+                "id": "o1",
+                "fields": [
+                  "항목"
+                ]
+              },
+              {
+                "id": "o2",
+                "fields": [
+                  "금액"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "field_occurrences": [
+        {
+          "field_id": "성명",
+          "occurrence_ordinal": 0,
+          "owner_kind": "ROOT",
+          "owner_slot_id": null,
+          "owner_option_id": null,
+          "content_entry_id": "c0",
+          "structural_order": 0,
+          "native_value_target_class": "hwpx-field-value/v1",
+          "resolver_contract_id": "hwpx-field-resolver/v1"
+        },
+        {
+          "field_id": "주소",
+          "occurrence_ordinal": 0,
+          "owner_kind": "SLOT_SHARED",
+          "owner_slot_id": "s1",
+          "owner_option_id": null,
+          "content_entry_id": "c0",
+          "structural_order": 12,
+          "native_value_target_class": "hwpx-field-value/v1",
+          "resolver_contract_id": "hwpx-field-resolver/v1"
+        },
+        {
+          "field_id": "항목",
+          "occurrence_ordinal": 0,
+          "owner_kind": "OPTION",
+          "owner_slot_id": "s1",
+          "owner_option_id": "o1",
+          "content_entry_id": "c0",
+          "structural_order": 16,
+          "native_value_target_class": "hwpx-field-value/v1",
+          "resolver_contract_id": "hwpx-field-resolver/v1"
+        },
+        {
+          "field_id": "금액",
+          "occurrence_ordinal": 0,
+          "owner_kind": "OPTION",
+          "owner_slot_id": "s1",
+          "owner_option_id": "o2",
+          "content_entry_id": "c0",
+          "structural_order": 26,
+          "native_value_target_class": "hwpx-field-value/v1",
+          "resolver_contract_id": "hwpx-field-resolver/v1"
+        },
+        {
+          "field_id": "성명",
+          "occurrence_ordinal": 1,
+          "owner_kind": "ROOT",
+          "owner_slot_id": null,
+          "owner_option_id": null,
+          "content_entry_id": "c0",
+          "structural_order": 50,
+          "native_value_target_class": "hwpx-field-value/v1",
+          "resolver_contract_id": "hwpx-field-resolver/v1"
+        }
+      ],
+      "option_regions": [
+        {
+          "slot_id": "s1",
+          "option_id": "o1",
+          "content_entry_id": "c0",
+          "begin_order": 15,
+          "end_order": 20,
+          "owner_relation_facts": [
+            {
+              "relation": "target_owner_slot",
+              "slot_id": "s1",
+              "coincidence": "INTERIOR"
+            },
+            {
+              "relation": "target_owner_content_entry",
+              "content_entry_id": "c0"
+            }
+          ],
+          "retained_content_relation_facts": [
+            {
+              "field_id": "성명",
+              "occurrence_ordinal": 0,
+              "owner_kind": "ROOT",
+              "position": "BEFORE"
+            },
+            {
+              "field_id": "주소",
+              "occurrence_ordinal": 0,
+              "owner_kind": "SLOT_SHARED",
+              "position": "BEFORE"
+            },
+            {
+              "field_id": "금액",
+              "occurrence_ordinal": 0,
+              "owner_kind": "OPTION",
+              "position": "AFTER"
+            },
+            {
+              "field_id": "성명",
+              "occurrence_ordinal": 1,
+              "owner_kind": "ROOT",
+              "position": "AFTER"
+            }
+          ],
+          "removal_capability_ref": "remove-option/v1"
+        },
+        {
+          "slot_id": "s1",
+          "option_id": "o2",
+          "content_entry_id": "c0",
+          "begin_order": 25,
+          "end_order": 30,
+          "owner_relation_facts": [
+            {
+              "relation": "target_owner_slot",
+              "slot_id": "s1",
+              "coincidence": "INTERIOR"
+            },
+            {
+              "relation": "target_owner_content_entry",
+              "content_entry_id": "c0"
+            }
+          ],
+          "retained_content_relation_facts": [
+            {
+              "field_id": "성명",
+              "occurrence_ordinal": 0,
+              "owner_kind": "ROOT",
+              "position": "BEFORE"
+            },
+            {
+              "field_id": "주소",
+              "occurrence_ordinal": 0,
+              "owner_kind": "SLOT_SHARED",
+              "position": "BEFORE"
+            },
+            {
+              "field_id": "항목",
+              "occurrence_ordinal": 0,
+              "owner_kind": "OPTION",
+              "position": "BEFORE"
+            },
+            {
+              "field_id": "성명",
+              "occurrence_ordinal": 1,
+              "owner_kind": "ROOT",
+              "position": "AFTER"
+            }
+          ],
+          "removal_capability_ref": "remove-option/v1"
+        }
+      ],
+      "removal_target_relations": [
+        {
+          "left_option_ref": {
+            "slot_id": "s1",
+            "option_id": "o1"
+          },
+          "right_option_ref": {
+            "slot_id": "s1",
+            "option_id": "o2"
+          },
+          "relation": "DISJOINT"
+        }
+      ],
+      "content_entries": [
+        {
+          "content_entry_id": "c0",
+          "envelope_class": "section-body/v1",
+          "envelope_capability_facts": {
+            "retains_admissible_envelope": true,
+            "handles_empty_edges": true,
+            "preserves_owner_marker": true,
+            "coincident_boundary_admissible": true
+          }
+        }
+      ],
+      "global_composition_facts": {
+        "crossing_free": true,
+        "resolver_stability_facts": {
+          "remaining_target_resolvable_after_removal": true,
+          "active_field_resolvable_after_removal": true,
+          "field_write_preserves_identity": true
+        },
+        "admitted_relation_profile": "unadmitted"
+      }
+    },
+    "slotless": {
+      "projection_schema_version": "hwpx-structure-projection-v2",
+      "product_structure": {
+        "root_fields": [
+          "성명"
+        ],
+        "slots": []
+      },
+      "field_occurrences": [
+        {
+          "field_id": "성명",
+          "occurrence_ordinal": 0,
+          "owner_kind": "ROOT",
+          "owner_slot_id": null,
+          "owner_option_id": null,
+          "content_entry_id": "c0",
+          "structural_order": 0,
+          "native_value_target_class": "hwpx-field-value/v1",
+          "resolver_contract_id": "hwpx-field-resolver/v1"
+        }
+      ],
+      "option_regions": [],
+      "removal_target_relations": [],
+      "content_entries": [
+        {
+          "content_entry_id": "c0",
+          "envelope_class": "section-body/v1",
+          "envelope_capability_facts": {
+            "retains_admissible_envelope": true,
+            "handles_empty_edges": true,
+            "preserves_owner_marker": true,
+            "coincident_boundary_admissible": true
+          }
+        }
+      ],
+      "global_composition_facts": {
+        "crossing_free": true,
+        "resolver_stability_facts": {
+          "remaining_target_resolvable_after_removal": true,
+          "active_field_resolvable_after_removal": true,
+          "field_write_preserves_identity": true
+        },
+        "admitted_relation_profile": "unadmitted"
+      }
+    },
+    "two_slots": {
+      "projection_schema_version": "hwpx-structure-projection-v2",
+      "product_structure": {
+        "root_fields": [],
+        "slots": [
+          {
+            "id": "sA",
+            "shared_fields": [],
+            "options": [
+              {
+                "id": "a1",
+                "fields": []
+              },
+              {
+                "id": "a2",
+                "fields": []
+              }
+            ]
+          },
+          {
+            "id": "sB",
+            "shared_fields": [],
+            "options": [
+              {
+                "id": "b1",
+                "fields": []
+              },
+              {
+                "id": "b2",
+                "fields": []
+              }
+            ]
+          }
+        ]
+      },
+      "field_occurrences": [],
+      "option_regions": [
+        {
+          "slot_id": "sA",
+          "option_id": "a1",
+          "content_entry_id": "c0",
+          "begin_order": 5,
+          "end_order": 10,
+          "owner_relation_facts": [
+            {
+              "relation": "target_owner_slot",
+              "slot_id": "sA",
+              "coincidence": "INTERIOR"
+            },
+            {
+              "relation": "target_owner_content_entry",
+              "content_entry_id": "c0"
+            }
+          ],
+          "retained_content_relation_facts": [],
+          "removal_capability_ref": "remove-option/v1"
+        },
+        {
+          "slot_id": "sA",
+          "option_id": "a2",
+          "content_entry_id": "c0",
+          "begin_order": 25,
+          "end_order": 30,
+          "owner_relation_facts": [
+            {
+              "relation": "target_owner_slot",
+              "slot_id": "sA",
+              "coincidence": "INTERIOR"
+            },
+            {
+              "relation": "target_owner_content_entry",
+              "content_entry_id": "c0"
+            }
+          ],
+          "retained_content_relation_facts": [],
+          "removal_capability_ref": "remove-option/v1"
+        },
+        {
+          "slot_id": "sB",
+          "option_id": "b1",
+          "content_entry_id": "c0",
+          "begin_order": 55,
+          "end_order": 60,
+          "owner_relation_facts": [
+            {
+              "relation": "target_owner_slot",
+              "slot_id": "sB",
+              "coincidence": "INTERIOR"
+            },
+            {
+              "relation": "target_owner_content_entry",
+              "content_entry_id": "c0"
+            }
+          ],
+          "retained_content_relation_facts": [],
+          "removal_capability_ref": "remove-option/v1"
+        },
+        {
+          "slot_id": "sB",
+          "option_id": "b2",
+          "content_entry_id": "c0",
+          "begin_order": 75,
+          "end_order": 80,
+          "owner_relation_facts": [
+            {
+              "relation": "target_owner_slot",
+              "slot_id": "sB",
+              "coincidence": "INTERIOR"
+            },
+            {
+              "relation": "target_owner_content_entry",
+              "content_entry_id": "c0"
+            }
+          ],
+          "retained_content_relation_facts": [],
+          "removal_capability_ref": "remove-option/v1"
+        }
+      ],
+      "removal_target_relations": [
+        {
+          "left_option_ref": {
+            "slot_id": "sA",
+            "option_id": "a1"
+          },
+          "right_option_ref": {
+            "slot_id": "sA",
+            "option_id": "a2"
+          },
+          "relation": "DISJOINT"
+        },
+        {
+          "left_option_ref": {
+            "slot_id": "sA",
+            "option_id": "a1"
+          },
+          "right_option_ref": {
+            "slot_id": "sB",
+            "option_id": "b1"
+          },
+          "relation": "DISJOINT"
+        },
+        {
+          "left_option_ref": {
+            "slot_id": "sA",
+            "option_id": "a1"
+          },
+          "right_option_ref": {
+            "slot_id": "sB",
+            "option_id": "b2"
+          },
+          "relation": "DISJOINT"
+        },
+        {
+          "left_option_ref": {
+            "slot_id": "sA",
+            "option_id": "a2"
+          },
+          "right_option_ref": {
+            "slot_id": "sB",
+            "option_id": "b1"
+          },
+          "relation": "DISJOINT"
+        },
+        {
+          "left_option_ref": {
+            "slot_id": "sA",
+            "option_id": "a2"
+          },
+          "right_option_ref": {
+            "slot_id": "sB",
+            "option_id": "b2"
+          },
+          "relation": "DISJOINT"
+        },
+        {
+          "left_option_ref": {
+            "slot_id": "sB",
+            "option_id": "b1"
+          },
+          "right_option_ref": {
+            "slot_id": "sB",
+            "option_id": "b2"
+          },
+          "relation": "DISJOINT"
+        }
+      ],
+      "content_entries": [
+        {
+          "content_entry_id": "c0",
+          "envelope_class": "section-body/v1",
+          "envelope_capability_facts": {
+            "retains_admissible_envelope": true,
+            "handles_empty_edges": true,
+            "preserves_owner_marker": true,
+            "coincident_boundary_admissible": true
+          }
+        }
+      ],
+      "global_composition_facts": {
+        "crossing_free": true,
+        "resolver_stability_facts": {
+          "remaining_target_resolvable_after_removal": true,
+          "active_field_resolvable_after_removal": true,
+          "field_write_preserves_identity": true
+        },
+        "admitted_relation_profile": "unadmitted"
+      }
+    }
+  },
+  "qualified": {
+    "normal": {
+      "payload": {
+        "execution_semantics_contract": "execution-semantics/v1",
+        "operation_alphabet_version": "execution-operation-alphabet/v1",
+        "exact_template_execution_basis": {
+          "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+          "materialization_base_contract_id": "applied-template-candidate-base/v1",
+          "work_authority_id": "work-1",
+          "template_application_id": "app-1",
+          "template_lineage_id": "lin-1",
+          "revision_id": "rev-1",
+          "media": "hwpx",
+          "exact_content_digest": "sha256:cccc",
+          "pass_evidence_id": "ev-1",
+          "qualification_profile_id": "hwpx-template-qualification-v2",
+          "structure_projection_schema_version": "hwpx-structure-projection-v2",
+          "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f"
+        },
+        "effective_selection": {
+          "slot_mode": "SLOTTED",
+          "selections": [
+            {
+              "slot_id": "s1",
+              "selected_option_id": "o1"
+            }
+          ]
+        },
+        "effective_field_binding": {
+          "active_binding_digest": "sha256:ecf1bdf6a5d5f14f660b8293bcb898e38b0c4f37cf6fe4006707eb58516a3d51",
+          "required_source_keys": [
+            "이름"
+          ],
+          "required_source_key_set_digest": "sha256:58e37147c41063b1d316cbb2978056bff8f040746a39dddee187f57e4ddc77a3",
+          "active_binding_rules": [
+            {
+              "field_id": "성명",
+              "binding_kind": "SOURCE",
+              "value_expression": {
+                "kind": "FROM_SOURCE",
+                "source_key": "이름",
+                "format_kind": null,
+                "format_code": "",
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            },
+            {
+              "field_id": "주소",
+              "binding_kind": "CONSTANT",
+              "value_expression": {
+                "kind": "CONSTANT",
+                "canonical_value": {
+                  "kind": "TEXT",
+                  "text": "서울"
+                },
+                "format_code": null,
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            },
+            {
+              "field_id": "항목",
+              "binding_kind": "INTENTIONAL_BLANK",
+              "value_expression": {
+                "kind": "INTENTIONAL_BLANK",
+                "exact_blank_policy": "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+              }
+            }
+          ]
+        },
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 2,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "이름",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "주소",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "CONSTANT",
+              "canonical_value": {
+                "kind": "TEXT",
+                "text": "서울"
+              },
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "항목",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "INTENTIONAL_BLANK",
+              "exact_blank_policy": "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "s1",
+            "option_id": "o2"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "주소"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "항목"
+          }
+        ],
+        "composition_verification_ref": {
+          "composition_contract_id": "hwpx-composition/v1",
+          "native_primitive_contract_id": "hwpx-native-primitive/v1",
+          "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f",
+          "theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd",
+          "premise_verification_digest": "sha256:3e2901f2517abae6e5cc18fbaf070da8446cd1122017d4eb30fc2256552c306f"
+        }
+      },
+      "digest": "sha256:c1c5b3e8d1404e3e87e4a962a729efc95b464d1cc30e48a376ed978ce2009e7f",
+      "active_field_sequence": [
+        "성명",
+        "주소",
+        "항목",
+        "성명"
+      ],
+      "active_logical_field_order": [
+        "성명",
+        "주소",
+        "항목"
+      ]
+    },
+    "selected_o2": {
+      "payload": {
+        "execution_semantics_contract": "execution-semantics/v1",
+        "operation_alphabet_version": "execution-operation-alphabet/v1",
+        "exact_template_execution_basis": {
+          "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+          "materialization_base_contract_id": "applied-template-candidate-base/v1",
+          "work_authority_id": "work-1",
+          "template_application_id": "app-1",
+          "template_lineage_id": "lin-1",
+          "revision_id": "rev-1",
+          "media": "hwpx",
+          "exact_content_digest": "sha256:cccc",
+          "pass_evidence_id": "ev-1",
+          "qualification_profile_id": "hwpx-template-qualification-v2",
+          "structure_projection_schema_version": "hwpx-structure-projection-v2",
+          "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f"
+        },
+        "effective_selection": {
+          "slot_mode": "SLOTTED",
+          "selections": [
+            {
+              "slot_id": "s1",
+              "selected_option_id": "o2"
+            }
+          ]
+        },
+        "effective_field_binding": {
+          "active_binding_digest": "sha256:8d2b4b39b8f4fca0a1ee9c194f6dfbbdfb0d74dd0ae023ca3de832b44c50e7ae",
+          "required_source_keys": [
+            "금액열",
+            "이름"
+          ],
+          "required_source_key_set_digest": "sha256:20ce09387e98a85a172e9a18bf3ffb07e22a03923ff64c5c0a184b7a563425c1",
+          "active_binding_rules": [
+            {
+              "field_id": "금액",
+              "binding_kind": "SOURCE",
+              "value_expression": {
+                "kind": "FROM_SOURCE",
+                "source_key": "금액열",
+                "format_kind": null,
+                "format_code": null,
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            },
+            {
+              "field_id": "성명",
+              "binding_kind": "SOURCE",
+              "value_expression": {
+                "kind": "FROM_SOURCE",
+                "source_key": "이름",
+                "format_kind": null,
+                "format_code": "",
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            },
+            {
+              "field_id": "주소",
+              "binding_kind": "CONSTANT",
+              "value_expression": {
+                "kind": "CONSTANT",
+                "canonical_value": {
+                  "kind": "TEXT",
+                  "text": "서울"
+                },
+                "format_code": null,
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            }
+          ]
+        },
+        "active_field_requirements": [
+          {
+            "field_id": "금액",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "금액열",
+              "format_kind": null,
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 2,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "이름",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "주소",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "CONSTANT",
+              "canonical_value": {
+                "kind": "TEXT",
+                "text": "서울"
+              },
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "s1",
+            "option_id": "o1"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "주소"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "금액"
+          }
+        ],
+        "composition_verification_ref": {
+          "composition_contract_id": "hwpx-composition/v1",
+          "native_primitive_contract_id": "hwpx-native-primitive/v1",
+          "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f",
+          "theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd",
+          "premise_verification_digest": "sha256:3e2901f2517abae6e5cc18fbaf070da8446cd1122017d4eb30fc2256552c306f"
+        }
+      },
+      "digest": "sha256:bdeeb55b6ec920bd06b4c12e0a9dc4faa4a01dcce0374630d2a2bc1ec755cb4a",
+      "active_field_sequence": [
+        "성명",
+        "주소",
+        "금액",
+        "성명"
+      ],
+      "active_logical_field_order": [
+        "성명",
+        "주소",
+        "금액"
+      ]
+    },
+    "slotless": {
+      "payload": {
+        "execution_semantics_contract": "execution-semantics/v1",
+        "operation_alphabet_version": "execution-operation-alphabet/v1",
+        "exact_template_execution_basis": {
+          "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+          "materialization_base_contract_id": "applied-template-candidate-base/v1",
+          "work_authority_id": "work-1",
+          "template_application_id": "app-1",
+          "template_lineage_id": "lin-1",
+          "revision_id": "rev-1",
+          "media": "hwpx",
+          "exact_content_digest": "sha256:cccc",
+          "pass_evidence_id": "ev-1",
+          "qualification_profile_id": "hwpx-template-qualification-v2",
+          "structure_projection_schema_version": "hwpx-structure-projection-v2",
+          "template_structure_digest": "sha256:f8f5ca97ba42f45b70c7a745bcd2eb1823f2d68b0e542b5bd16585b41bd17034"
+        },
+        "effective_selection": {
+          "slot_mode": "SLOTLESS",
+          "selections": []
+        },
+        "effective_field_binding": {
+          "active_binding_digest": "sha256:b499de361682a296aabfb45ac75f6840e6ecbc0cc71098c600028af548521130",
+          "required_source_keys": [
+            "이름"
+          ],
+          "required_source_key_set_digest": "sha256:58e37147c41063b1d316cbb2978056bff8f040746a39dddee187f57e4ddc77a3",
+          "active_binding_rules": [
+            {
+              "field_id": "성명",
+              "binding_kind": "SOURCE",
+              "value_expression": {
+                "kind": "FROM_SOURCE",
+                "source_key": "이름",
+                "format_kind": null,
+                "format_code": "",
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            }
+          ]
+        },
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "이름",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          }
+        ],
+        "composition_verification_ref": {
+          "composition_contract_id": "hwpx-composition/v1",
+          "native_primitive_contract_id": "hwpx-native-primitive/v1",
+          "template_structure_digest": "sha256:f8f5ca97ba42f45b70c7a745bcd2eb1823f2d68b0e542b5bd16585b41bd17034",
+          "theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd",
+          "premise_verification_digest": "sha256:c6ff335870d7a34ca697cf20d16025cd5c7c16a9ca892f754ca8cd0dffcc2de8"
+        }
+      },
+      "digest": "sha256:501f9c5ba38fb6f39391f30a498bf2b9cd67a0a223a43650b7f72188e69dd182",
+      "active_field_sequence": [
+        "성명"
+      ],
+      "active_logical_field_order": [
+        "성명"
+      ]
+    },
+    "active_change": {
+      "payload": {
+        "execution_semantics_contract": "execution-semantics/v1",
+        "operation_alphabet_version": "execution-operation-alphabet/v1",
+        "exact_template_execution_basis": {
+          "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+          "materialization_base_contract_id": "applied-template-candidate-base/v1",
+          "work_authority_id": "work-1",
+          "template_application_id": "app-1",
+          "template_lineage_id": "lin-1",
+          "revision_id": "rev-1",
+          "media": "hwpx",
+          "exact_content_digest": "sha256:cccc",
+          "pass_evidence_id": "ev-1",
+          "qualification_profile_id": "hwpx-template-qualification-v2",
+          "structure_projection_schema_version": "hwpx-structure-projection-v2",
+          "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f"
+        },
+        "effective_selection": {
+          "slot_mode": "SLOTTED",
+          "selections": [
+            {
+              "slot_id": "s1",
+              "selected_option_id": "o1"
+            }
+          ]
+        },
+        "effective_field_binding": {
+          "active_binding_digest": "sha256:34395502407b81d7f872106a069a7f0f837c91beeafb5dac3311532013e09856",
+          "required_source_keys": [
+            "금액열"
+          ],
+          "required_source_key_set_digest": "sha256:e817e4ad2c70349d18aaadf6873d26cb1e5d53ea303a44602c2b356f1cc5f511",
+          "active_binding_rules": [
+            {
+              "field_id": "성명",
+              "binding_kind": "SOURCE",
+              "value_expression": {
+                "kind": "FROM_SOURCE",
+                "source_key": "금액열",
+                "format_kind": null,
+                "format_code": "",
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            },
+            {
+              "field_id": "주소",
+              "binding_kind": "CONSTANT",
+              "value_expression": {
+                "kind": "CONSTANT",
+                "canonical_value": {
+                  "kind": "TEXT",
+                  "text": "서울"
+                },
+                "format_code": null,
+                "document_content_value_policy_id": "document-content-value/v1"
+              }
+            },
+            {
+              "field_id": "항목",
+              "binding_kind": "INTENTIONAL_BLANK",
+              "value_expression": {
+                "kind": "INTENTIONAL_BLANK",
+                "exact_blank_policy": "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+              }
+            }
+          ]
+        },
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 2,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "금액열",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "주소",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "CONSTANT",
+              "canonical_value": {
+                "kind": "TEXT",
+                "text": "서울"
+              },
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "항목",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "INTENTIONAL_BLANK",
+              "exact_blank_policy": "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "s1",
+            "option_id": "o2"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "주소"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "항목"
+          }
+        ],
+        "composition_verification_ref": {
+          "composition_contract_id": "hwpx-composition/v1",
+          "native_primitive_contract_id": "hwpx-native-primitive/v1",
+          "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f",
+          "theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd",
+          "premise_verification_digest": "sha256:3e2901f2517abae6e5cc18fbaf070da8446cd1122017d4eb30fc2256552c306f"
+        }
+      },
+      "digest": "sha256:13955d35088b2b4fcbc64986c062cd7891f814328c4198b5f6f09cb381a89c4f",
+      "active_field_sequence": [
+        "성명",
+        "주소",
+        "항목",
+        "성명"
+      ],
+      "active_logical_field_order": [
+        "성명",
+        "주소",
+        "항목"
+      ]
+    },
+    "two_slots": {
+      "payload": {
+        "execution_semantics_contract": "execution-semantics/v1",
+        "operation_alphabet_version": "execution-operation-alphabet/v1",
+        "exact_template_execution_basis": {
+          "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+          "materialization_base_contract_id": "applied-template-candidate-base/v1",
+          "work_authority_id": "work-1",
+          "template_application_id": "app-1",
+          "template_lineage_id": "lin-1",
+          "revision_id": "rev-1",
+          "media": "hwpx",
+          "exact_content_digest": "sha256:cccc",
+          "pass_evidence_id": "ev-1",
+          "qualification_profile_id": "hwpx-template-qualification-v2",
+          "structure_projection_schema_version": "hwpx-structure-projection-v2",
+          "template_structure_digest": "sha256:b7a2f37185f4870c52e88f9a56e1642677f1dcffaf803363db7d1d308fc406c7"
+        },
+        "effective_selection": {
+          "slot_mode": "SLOTTED",
+          "selections": [
+            {
+              "slot_id": "sA",
+              "selected_option_id": "a1"
+            },
+            {
+              "slot_id": "sB",
+              "selected_option_id": "b1"
+            }
+          ]
+        },
+        "effective_field_binding": {
+          "active_binding_digest": "sha256:a8c7a545e46b42886368101d3ad26ff95926195b840fc4a4ff7f008ebb28563f",
+          "required_source_keys": [],
+          "required_source_key_set_digest": "sha256:a8c7a545e46b42886368101d3ad26ff95926195b840fc4a4ff7f008ebb28563f",
+          "active_binding_rules": []
+        },
+        "active_field_requirements": [],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "sA",
+            "option_id": "a2"
+          },
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "sB",
+            "option_id": "b2"
+          }
+        ],
+        "composition_verification_ref": {
+          "composition_contract_id": "hwpx-composition/v1",
+          "native_primitive_contract_id": "hwpx-native-primitive/v1",
+          "template_structure_digest": "sha256:b7a2f37185f4870c52e88f9a56e1642677f1dcffaf803363db7d1d308fc406c7",
+          "theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd",
+          "premise_verification_digest": "sha256:7575208a4b34ff4d32bded09fe867f926eb2cb2a065463d532039a13abb485f9"
+        }
+      },
+      "digest": "sha256:17d17698e8e2bcd86df3a2a7f5568748593032a55233604a74c831acbde4a30d",
+      "active_field_sequence": [],
+      "active_logical_field_order": []
+    }
+  },
+  "sealed_plans": {
+    "normal": {
+      "payload": {
+        "plan_schema_version": "hwpx-execution-plan/v2",
+        "canonical_encoding_version": "execution-canonical/v1",
+        "execution_basis": {
+          "workspace_instance_id": "ws-1",
+          "work_authority_id": "work-1",
+          "qualification_profile_semantic_digest": "sha256:b89d00d94bfcf149145cfd758fde327756191fa0ab5704a336048e909110e175",
+          "template": {
+            "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "work_authority_id": "work-1",
+            "template_application_id": "app-1",
+            "exact_content_digest": "sha256:cccc"
+          },
+          "contracts": {
+            "slot_selection_contract_id": "slot-selection/v1",
+            "field_binding_contract_id": "field-binding/v5",
+            "source_schema_contract_id": "source-schema/v2",
+            "raw_record_contract_id": "raw-record/v1",
+            "execution_semantic_contract_id": "execution-semantics/v1",
+            "binding_value_contract_id": "binding-value/v2",
+            "document_value_resolution_contract_id": "document-content-value/v2",
+            "record_validation_contract_id": "record-validation/v1",
+            "record_review_contract_id": "record-review/v1",
+            "composition_contract_id": "hwpx-composition/v1",
+            "native_primitive_contract_id": "hwpx-native-primitive/v1",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "materialization_contract_id": "materialization/v1",
+            "contract_set_schema_version": "execution-contract-set/v1",
+            "composition_theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd"
+          },
+          "contract_set_manifest_digest": "sha256:e2f91a955bbbd313cb40a48156c4a2d9f4c32768a60e159949be6b5f54e587c5",
+          "selection": {
+            "slot_mode": "SLOTTED",
+            "selection_semantic_contract_id": "slot-selection/v1",
+            "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f",
+            "effective_selection_digest": "sha256:2e14b85b864b53f39e02510d28e7d6393585c872f95e15a0595c35b5165c72e1"
+          },
+          "field_binding": {
+            "active_binding_digest": "sha256:ecf1bdf6a5d5f14f660b8293bcb898e38b0c4f37cf6fe4006707eb58516a3d51",
+            "required_source_keys": [
+              "이름"
+            ],
+            "required_source_key_set_digest": "sha256:58e37147c41063b1d316cbb2978056bff8f040746a39dddee187f57e4ddc77a3"
+          }
+        },
+        "execution_basis_digest": "sha256:9a6efefa5cefd7530ba8ddc3695cf2cdce93cabab748a0f48cf247aee0a4b461",
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 2,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "이름",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "주소",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "CONSTANT",
+              "canonical_value": {
+                "kind": "TEXT",
+                "text": "서울"
+              },
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "항목",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "INTENTIONAL_BLANK",
+              "exact_blank_policy": "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "s1",
+            "option_id": "o2"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "주소"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "항목"
+          }
+        ]
+      },
+      "digest": "sha256:a3e98a5ca9adbb0220aefc4d0c3937f950839616b229a37abbbd9e22cd94599f"
+    },
+    "selected_o2": {
+      "payload": {
+        "plan_schema_version": "hwpx-execution-plan/v2",
+        "canonical_encoding_version": "execution-canonical/v1",
+        "execution_basis": {
+          "workspace_instance_id": "ws-1",
+          "work_authority_id": "work-1",
+          "qualification_profile_semantic_digest": "sha256:b89d00d94bfcf149145cfd758fde327756191fa0ab5704a336048e909110e175",
+          "template": {
+            "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "work_authority_id": "work-1",
+            "template_application_id": "app-1",
+            "exact_content_digest": "sha256:cccc"
+          },
+          "contracts": {
+            "slot_selection_contract_id": "slot-selection/v1",
+            "field_binding_contract_id": "field-binding/v5",
+            "source_schema_contract_id": "source-schema/v2",
+            "raw_record_contract_id": "raw-record/v1",
+            "execution_semantic_contract_id": "execution-semantics/v1",
+            "binding_value_contract_id": "binding-value/v2",
+            "document_value_resolution_contract_id": "document-content-value/v2",
+            "record_validation_contract_id": "record-validation/v1",
+            "record_review_contract_id": "record-review/v1",
+            "composition_contract_id": "hwpx-composition/v1",
+            "native_primitive_contract_id": "hwpx-native-primitive/v1",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "materialization_contract_id": "materialization/v1",
+            "contract_set_schema_version": "execution-contract-set/v1",
+            "composition_theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd"
+          },
+          "contract_set_manifest_digest": "sha256:e2f91a955bbbd313cb40a48156c4a2d9f4c32768a60e159949be6b5f54e587c5",
+          "selection": {
+            "slot_mode": "SLOTTED",
+            "selection_semantic_contract_id": "slot-selection/v1",
+            "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f",
+            "effective_selection_digest": "sha256:b0d8bbcf7db83d31e6802e2ffffbab44c4ad31f33a8579175da4f806602c1830"
+          },
+          "field_binding": {
+            "active_binding_digest": "sha256:8d2b4b39b8f4fca0a1ee9c194f6dfbbdfb0d74dd0ae023ca3de832b44c50e7ae",
+            "required_source_keys": [
+              "금액열",
+              "이름"
+            ],
+            "required_source_key_set_digest": "sha256:20ce09387e98a85a172e9a18bf3ffb07e22a03923ff64c5c0a184b7a563425c1"
+          }
+        },
+        "execution_basis_digest": "sha256:bdafed9276efdd2daa0b9b790a6ed85e238a0440f44505ecfcf9ff2f1db94594",
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 2,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "이름",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "주소",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "CONSTANT",
+              "canonical_value": {
+                "kind": "TEXT",
+                "text": "서울"
+              },
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "금액",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "금액열",
+              "format_kind": null,
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "s1",
+            "option_id": "o1"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "주소"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "금액"
+          }
+        ]
+      },
+      "digest": "sha256:6e0a98f266224aa0883118e03ef6aa2a96b2fd60d3d94b975e844c5bd59b468f"
+    },
+    "active_change": {
+      "payload": {
+        "plan_schema_version": "hwpx-execution-plan/v2",
+        "canonical_encoding_version": "execution-canonical/v1",
+        "execution_basis": {
+          "workspace_instance_id": "ws-1",
+          "work_authority_id": "work-1",
+          "qualification_profile_semantic_digest": "sha256:b89d00d94bfcf149145cfd758fde327756191fa0ab5704a336048e909110e175",
+          "template": {
+            "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "work_authority_id": "work-1",
+            "template_application_id": "app-1",
+            "exact_content_digest": "sha256:cccc"
+          },
+          "contracts": {
+            "slot_selection_contract_id": "slot-selection/v1",
+            "field_binding_contract_id": "field-binding/v5",
+            "source_schema_contract_id": "source-schema/v2",
+            "raw_record_contract_id": "raw-record/v1",
+            "execution_semantic_contract_id": "execution-semantics/v1",
+            "binding_value_contract_id": "binding-value/v2",
+            "document_value_resolution_contract_id": "document-content-value/v2",
+            "record_validation_contract_id": "record-validation/v1",
+            "record_review_contract_id": "record-review/v1",
+            "composition_contract_id": "hwpx-composition/v1",
+            "native_primitive_contract_id": "hwpx-native-primitive/v1",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "materialization_contract_id": "materialization/v1",
+            "contract_set_schema_version": "execution-contract-set/v1",
+            "composition_theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd"
+          },
+          "contract_set_manifest_digest": "sha256:e2f91a955bbbd313cb40a48156c4a2d9f4c32768a60e159949be6b5f54e587c5",
+          "selection": {
+            "slot_mode": "SLOTTED",
+            "selection_semantic_contract_id": "slot-selection/v1",
+            "template_structure_digest": "sha256:f7c40f47fb7cbd6e611c02a188084d044aff770ae521c89c27b2afe0be24683f",
+            "effective_selection_digest": "sha256:2e14b85b864b53f39e02510d28e7d6393585c872f95e15a0595c35b5165c72e1"
+          },
+          "field_binding": {
+            "active_binding_digest": "sha256:34395502407b81d7f872106a069a7f0f837c91beeafb5dac3311532013e09856",
+            "required_source_keys": [
+              "금액열"
+            ],
+            "required_source_key_set_digest": "sha256:e817e4ad2c70349d18aaadf6873d26cb1e5d53ea303a44602c2b356f1cc5f511"
+          }
+        },
+        "execution_basis_digest": "sha256:e5e6e254c993e51a57b0992748ee1997969b2e5dd76d6c23870196d118561c06",
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 2,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "금액열",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "주소",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "CONSTANT",
+              "canonical_value": {
+                "kind": "TEXT",
+                "text": "서울"
+              },
+              "format_code": null,
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          },
+          {
+            "field_id": "항목",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "INTENTIONAL_BLANK",
+              "exact_blank_policy": "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "REMOVE_OPTION",
+            "slot_id": "s1",
+            "option_id": "o2"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "주소"
+          },
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "항목"
+          }
+        ]
+      },
+      "digest": "sha256:7f001fee919bbf8ca59db06e28da9e41b00d24fdcd42e3b0274781ebc3e8405d"
+    },
+    "slotless": {
+      "payload": {
+        "plan_schema_version": "hwpx-execution-plan/v2",
+        "canonical_encoding_version": "execution-canonical/v1",
+        "execution_basis": {
+          "workspace_instance_id": "ws-1",
+          "work_authority_id": "work-1",
+          "qualification_profile_semantic_digest": "sha256:b89d00d94bfcf149145cfd758fde327756191fa0ab5704a336048e909110e175",
+          "template": {
+            "execution_base_kind": "APPLIED_TEMPLATE_CANDIDATE",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "work_authority_id": "work-1",
+            "template_application_id": "app-1",
+            "exact_content_digest": "sha256:cccc"
+          },
+          "contracts": {
+            "slot_selection_contract_id": "slot-selection/v1",
+            "field_binding_contract_id": "field-binding/v5",
+            "source_schema_contract_id": "source-schema/v2",
+            "raw_record_contract_id": "raw-record/v1",
+            "execution_semantic_contract_id": "execution-semantics/v1",
+            "binding_value_contract_id": "binding-value/v2",
+            "document_value_resolution_contract_id": "document-content-value/v2",
+            "record_validation_contract_id": "record-validation/v1",
+            "record_review_contract_id": "record-review/v1",
+            "composition_contract_id": "hwpx-composition/v1",
+            "native_primitive_contract_id": "hwpx-native-primitive/v1",
+            "materialization_base_contract_id": "applied-template-candidate-base/v1",
+            "materialization_contract_id": "materialization/v1",
+            "contract_set_schema_version": "execution-contract-set/v1",
+            "composition_theorem_evidence_manifest_digest": "sha256:783dae86f3541de41ecb3789da2509dff2436ee82be01a703d4c89697d7647dd"
+          },
+          "contract_set_manifest_digest": "sha256:e2f91a955bbbd313cb40a48156c4a2d9f4c32768a60e159949be6b5f54e587c5",
+          "selection": {
+            "slot_mode": "SLOTLESS",
+            "selection_semantic_contract_id": "slot-selection/v1",
+            "template_structure_digest": "sha256:f8f5ca97ba42f45b70c7a745bcd2eb1823f2d68b0e542b5bd16585b41bd17034",
+            "effective_selection_digest": null
+          },
+          "field_binding": {
+            "active_binding_digest": "sha256:b499de361682a296aabfb45ac75f6840e6ecbc0cc71098c600028af548521130",
+            "required_source_keys": [
+              "이름"
+            ],
+            "required_source_key_set_digest": "sha256:58e37147c41063b1d316cbb2978056bff8f040746a39dddee187f57e4ddc77a3"
+          }
+        },
+        "execution_basis_digest": "sha256:01f8cd13e361932c76a0c42b0a1722c21f1ad0f6cc84cc56a66bfb055b86f65c",
+        "active_field_requirements": [
+          {
+            "field_id": "성명",
+            "expected_active_occurrence_count": 1,
+            "value_expression": {
+              "kind": "FROM_SOURCE",
+              "source_key": "이름",
+              "format_kind": null,
+              "format_code": "",
+              "document_content_value_policy_id": "document-content-value/v1"
+            }
+          }
+        ],
+        "ordered_operations": [
+          {
+            "op": "APPLY_FIELD_BINDING",
+            "field_id": "성명"
+          }
+        ]
+      },
+      "digest": "sha256:dac6a23d3d3051edcc426452673e6edcf989979e3eb87391ad2397f55e39c1d2"
+    }
+  }
+}

@@ -22,11 +22,8 @@
 from __future__ import annotations
 
 
-#: 지금 세션이 쓰고 있는 데이터가 목록 맨 위에 서는 행의 키 — **웹과 같은 글자**다
-#: (``frontend/src/screens/pool_column.ts`` 의 ``SESSION_DATA_KEY``). 풀 슬롯 키 공간과
-#: 겹치지 않는다: 슬롯 키는 등록이 낳고 이 값은 여기 리터럴 하나다. 두 리터럴이 갈리지
-#: 않는지는 ``tests/repo_contract/test_pool_session_key_drift.py`` 가 정적으로 본다 —
-#: 갈리면 세션 행이 「고를 수 없는 행」에서 「없는 슬롯」으로 조용히 바뀐다.
+#: Python 세션의 호환 키. 제품의 Rust 키는 브리지 생성기로 TypeScript에 전달하며,
+#: 생성 계약과 프런트 소비는 ``tests/js/bridge_contract.test.js``가 검사한다.
 SESSION_DATA_KEY = "session"
 
 #: 열 행 하나가 드는 키 **전부**. 순서는 문서 순서일 뿐이고 계약은 집합이다.

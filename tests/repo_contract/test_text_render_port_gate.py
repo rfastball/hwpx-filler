@@ -13,7 +13,6 @@ slot-bearing TXT 의 산출물은 이제 **Sealed Plan 이 정한 물질화**를
 - 작업대(:mod:`hwpxfiller.webapp.screen_workbench`) — 원문 보기와 slotless 카드
 - 편집기 템플릿 읽기(:mod:`hwpxfiller.webapp.editor_sources`) — 토큰 **미리보기**(빈
   레코드)로 필드 구성을 센다, 문서를 만들지 않는다
-- CLI(:mod:`hwpxfiller.cli`) — slotless 전용(구간 표기가 있으면 시끄럽게 거절한다)
 
 ``template_fields`` 는 감싸지 않는다: 그것은 「이 템플릿이 참조하는 이름이 무엇인가」를 묻는
 읽기 술어라 문서를 만들지 않고, 소비자가 넓다(화면 공용·TXT 레지스트리·맞추기 표). 감싸는
@@ -56,8 +55,6 @@ ALLOWED_MODULES = frozenset(
         # 표시 표면(원문 보기·카드·토큰 미리보기)
         "src/hwpxfiller/webapp/screen_workbench.py",
         "src/hwpxfiller/webapp/editor_sources.py",
-        # slotless 전용 CLI
-        "src/hwpxfiller/cli.py",
     }
 )
 
@@ -103,38 +100,6 @@ def test_owner_modules_actually_use_the_symbols() -> None:
     for label in sorted(ALLOWED_MODULES):
         source = (ROOT / label).read_text(encoding="utf-8")
         assert _guarded_uses(source, label), f"{label} 이 guarded 심볼을 더는 쓰지 않는다"
-
-
-def test_cli_render_refuses_structure_notation_before_substituting() -> None:
-    """CLI 의 직결 치환이 **구간 표기 검문 뒤에만** 도달함을 소스 순서로 못박는다.
-
-    열거만으로는 「CLI 가 slotless 전용이다」가 증명되지 않는다 — 그 자격은 거절 검문이
-    치환보다 먼저 서는 데서 온다. 검문이 사라지거나 뒤로 밀리면 여기서 빨강이다.
-    """
-    source = (ROOT / "src/hwpxfiller/cli.py").read_text(encoding="utf-8")
-    tree = ast.parse(source, filename="cli.py")
-    render_main = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_render_main"
-    )
-    scan_lines = [
-        node.lineno
-        for node in ast.walk(render_main)
-        if isinstance(node, ast.Name) and node.id == "scan_text_structure"
-    ]
-    call_lines = [
-        node.lineno
-        for node in ast.walk(render_main)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "render_record"
-    ]
-    assert scan_lines and call_lines, (scan_lines, call_lines)
-    assert max(scan_lines) < min(call_lines), (
-        "CLI render 가 구간 표기 검문보다 먼저 치환한다 — 고르지 않은 선택지와 마커가 실린 "
-        "텍스트가 그대로 나간다"
-    )
 
 
 def test_negative_probe_detects_direct_substitution() -> None:

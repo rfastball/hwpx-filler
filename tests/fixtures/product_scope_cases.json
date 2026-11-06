@@ -1,0 +1,301 @@
+{
+  "cases": [
+    {
+      "name": "duplicate-slot",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"same\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"B\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"same\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>B</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "duplicate-slot-id"
+      ],
+      "slots": [
+        {
+          "id": "same",
+          "options": [],
+          "label": null
+        },
+        {
+          "id": "same",
+          "options": [],
+          "label": null
+        }
+      ]
+    },
+    {
+      "name": "duplicate-option",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:ha=\"http://www.hancom.co.kr/hwpml/2011/app\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hp10=\"http://www.hancom.co.kr/hwpml/2016/paragraph\" xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\" xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\" xmlns:hhs=\"http://www.hancom.co.kr/hwpml/2011/history\" xmlns:hm=\"http://www.hancom.co.kr/hwpml/2011/master-page\" xmlns:hpf=\"http://www.hancom.co.kr/schema/2011/hpf\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf/\" xmlns:ooxmlchart=\"http://www.hancom.co.kr/hwpml/2016/ooxmlchart\" xmlns:hwpunitchar=\"http://www.hancom.co.kr/hwpml/2016/HwpUnitChar\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xmlns:config=\"urn:oasis:names:tc:opendocument:xmlns:config:1.0\"><hp:p id=\"3121190098\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:secPr id=\"\" textDirection=\"HORIZONTAL\" spaceColumns=\"1134\" tabStop=\"8000\" tabStopVal=\"4000\" tabStopUnit=\"HWPUNIT\" outlineShapeIDRef=\"1\" memoShapeIDRef=\"0\" textVerticalWidthHead=\"0\" masterPageCnt=\"0\"><hp:grid lineGrid=\"0\" charGrid=\"0\" wonggojiFormat=\"0\"/><hp:startNum pageStartsOn=\"BOTH\" page=\"0\" pic=\"0\" tbl=\"0\" equation=\"0\"/><hp:visibility hideFirstHeader=\"0\" hideFirstFooter=\"0\" hideFirstMasterPage=\"0\" border=\"SHOW_ALL\" fill=\"SHOW_ALL\" hideFirstPageNum=\"0\" hideFirstEmptyLine=\"0\" showLineNumber=\"0\"/><hp:lineNumberShape restartType=\"0\" countBy=\"0\" distance=\"0\" startNumber=\"0\"/><hp:pagePr landscape=\"WIDELY\" width=\"59528\" height=\"84186\" gutterType=\"LEFT_ONLY\"><hp:margin header=\"4252\" footer=\"4252\" gutter=\"0\" left=\"8504\" right=\"8504\" top=\"5668\" bottom=\"4252\"/></hp:pagePr><hp:footNotePr><hp:autoNumFormat type=\"DIGIT\" userChar=\"\" prefixChar=\"\" suffixChar=\")\" supscript=\"0\"/><hp:noteLine length=\"-1\" type=\"SOLID\" width=\"0.12 mm\" color=\"#000000\"/><hp:noteSpacing betweenNotes=\"283\" belowLine=\"567\" aboveLine=\"850\"/><hp:numbering type=\"CONTINUOUS\" newNum=\"1\"/><hp:placement place=\"EACH_COLUMN\" beneathText=\"0\"/></hp:footNotePr><hp:endNotePr><hp:autoNumFormat type=\"DIGIT\" userChar=\"\" prefixChar=\"\" suffixChar=\")\" supscript=\"0\"/><hp:noteLine length=\"14692344\" type=\"SOLID\" width=\"0.12 mm\" color=\"#000000\"/><hp:noteSpacing betweenNotes=\"0\" belowLine=\"567\" aboveLine=\"850\"/><hp:numbering type=\"CONTINUOUS\" newNum=\"1\"/><hp:placement place=\"END_OF_DOCUMENT\" beneathText=\"0\"/></hp:endNotePr><hp:pageBorderFill type=\"BOTH\" borderFillIDRef=\"1\" textBorder=\"PAPER\" headerInside=\"0\" footerInside=\"0\" fillArea=\"PAPER\"><hp:offset left=\"1417\" right=\"1417\" top=\"1417\" bottom=\"1417\"/></hp:pageBorderFill><hp:pageBorderFill type=\"EVEN\" borderFillIDRef=\"1\" textBorder=\"PAPER\" headerInside=\"0\" footerInside=\"0\" fillArea=\"PAPER\"><hp:offset left=\"1417\" right=\"1417\" top=\"1417\" bottom=\"1417\"/></hp:pageBorderFill><hp:pageBorderFill type=\"ODD\" borderFillIDRef=\"1\" textBorder=\"PAPER\" headerInside=\"0\" footerInside=\"0\" fillArea=\"PAPER\"><hp:offset left=\"1417\" right=\"1417\" top=\"1417\" bottom=\"1417\"/></hp:pageBorderFill></hp:secPr><hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"1\" sameSz=\"1\" sameGap=\"0\"/></hp:ctrl></hp:run><hp:run charPrIDRef=\"0\"><hp:t>AAA</hp:t></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:ctrl><hp:fieldBegin id=\"1166752276\" type=\"BOOKMARK\" name=\"S0_SLOT\" editable=\"0\" dirty=\"1\" zorder=\"-1\" fieldid=\"627207531\" metaTag=\"\"><hp:parameters cnt=\"1\" name=\"\"><hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"추가 지급 안내\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>BBB</hp:t></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:ctrl><hp:fieldBegin id=\"1166752277\" type=\"BOOKMARK\" name=\"S0_OPT_A\" editable=\"0\" dirty=\"1\" zorder=\"-1\" fieldid=\"627207531\" metaTag=\"\"><hp:parameters cnt=\"1\" name=\"\"><hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"same\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>CCC</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1166752277\" fieldid=\"627207531\"/></hp:ctrl><hp:t/></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:ctrl><hp:fieldBegin id=\"1166752278\" type=\"BOOKMARK\" name=\"S0_OPT_B\" editable=\"0\" dirty=\"1\" zorder=\"-1\" fieldid=\"627207531\" metaTag=\"\"><hp:parameters cnt=\"1\" name=\"\"><hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"same\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>DDD</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1166752278\" fieldid=\"627207531\"/></hp:ctrl><hp:t/></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:t>EEE</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1166752276\" fieldid=\"627207531\"/></hp:ctrl><hp:t/></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "duplicate-option-id"
+      ],
+      "slots": [
+        {
+          "id": "추가 지급 안내",
+          "options": [
+            {
+              "id": "same",
+              "order": 0,
+              "label": null
+            },
+            {
+              "id": "same",
+              "order": 1,
+              "label": null
+            }
+          ],
+          "label": null
+        }
+      ],
+      "corpus": "structural_range_s0/R5-nested.hwpx"
+    },
+    {
+      "name": "orphan",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"O\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"성과급 안내\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "orphan-option"
+      ],
+      "slots": []
+    },
+    {
+      "name": "nested-slot",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"a\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"B\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"b\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>B</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"3\" type=\"BOOKMARK\" name=\"O\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"성과급 안내\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>C</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"3\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>D</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "ambiguous-membership",
+        "nested-slot"
+      ],
+      "slots": [
+        {
+          "id": "a",
+          "options": [],
+          "label": null
+        },
+        {
+          "id": "b",
+          "options": [],
+          "label": null
+        }
+      ]
+    },
+    {
+      "name": "nested-option",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"S\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"추가 지급 안내\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"A\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"a\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>B</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"3\" type=\"BOOKMARK\" name=\"B\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"b\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>C</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"3\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>D</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "nested-option"
+      ],
+      "slots": [
+        {
+          "id": "추가 지급 안내",
+          "options": [
+            {
+              "id": "a",
+              "order": 0,
+              "label": null
+            },
+            {
+              "id": "b",
+              "order": 1,
+              "label": null
+            }
+          ],
+          "label": null
+        }
+      ]
+    },
+    {
+      "name": "crossing",
+      "entries": {
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"B\"/></hp:ctrl><hp:t>B</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>C</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>D</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "crossing-range"
+      ],
+      "slots": []
+    },
+    {
+      "name": "malformed-pair",
+      "entries": {
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>OUT</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "bookmark-resolve-failed"
+      ],
+      "slots": []
+    },
+    {
+      "name": "malformed-xml",
+      "entries": {
+        "Contents/section0.xml": "<broken>"
+      },
+      "diagnostics": [
+        "bookmark-resolve-failed"
+      ],
+      "slots": []
+    },
+    {
+      "name": "nested-boundary",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"S\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"nested\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "bookmark-resolve-failed"
+      ],
+      "slots": [
+        {
+          "id": "nested",
+          "options": [],
+          "label": null
+        }
+      ]
+    },
+    {
+      "name": "invalid-inner-scope",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"SLOT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"outer\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"PLAIN\"/></hp:ctrl><hp:t>B</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"3\" type=\"BOOKMARK\" name=\"BAD\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"future\", \"id\": \"bad\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>C</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"4\" type=\"BOOKMARK\" name=\"BLOCKED\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"blocked\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>D</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"4\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"3\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"5\" type=\"BOOKMARK\" name=\"OPTION\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"after\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>F</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"5\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "unknown-kind"
+      ],
+      "slots": [
+        {
+          "id": "outer",
+          "options": [
+            {
+              "id": "after",
+              "order": 0,
+              "label": null
+            }
+          ],
+          "label": null
+        }
+      ],
+      "observations": [
+        {
+          "classification": "known_product",
+          "role": "slot",
+          "usable": true,
+          "kind": "slot",
+          "id": "outer",
+          "owner": null
+        },
+        {
+          "classification": "non_product",
+          "role": "none",
+          "usable": true,
+          "kind": null,
+          "id": null,
+          "owner": null
+        },
+        {
+          "classification": "invalid_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": null,
+          "id": null,
+          "owner": null
+        },
+        {
+          "classification": "known_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": "slot_option",
+          "id": "blocked",
+          "owner": null
+        },
+        {
+          "classification": "known_product",
+          "role": "option",
+          "usable": true,
+          "kind": "slot_option",
+          "id": "after",
+          "owner": 0
+        }
+      ]
+    },
+    {
+      "name": "unsupported-entry",
+      "entries": {
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run></hp:run></hp:p></hs:sec>",
+        "Contents/header0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"PRODUCT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"unsupported\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "unsupported-product-entry"
+      ],
+      "slots": [],
+      "observations": [
+        {
+          "classification": "known_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": "slot",
+          "id": "unsupported",
+          "owner": null
+        }
+      ]
+    },
+    {
+      "name": "unsupported-entry",
+      "entries": {
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run></hp:run></hp:p></hs:sec>",
+        "Contents/footer0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"PRODUCT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"unsupported\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "unsupported-product-entry"
+      ],
+      "slots": [],
+      "observations": [
+        {
+          "classification": "known_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": "slot",
+          "id": "unsupported",
+          "owner": null
+        }
+      ]
+    },
+    {
+      "name": "unattributed-metatag",
+      "entries": {
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:ha=\"http://www.hancom.co.kr/hwpml/2011/app\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:hp10=\"http://www.hancom.co.kr/hwpml/2016/paragraph\" xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hc=\"http://www.hancom.co.kr/hwpml/2011/core\" xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\" xmlns:hhs=\"http://www.hancom.co.kr/hwpml/2011/history\" xmlns:hm=\"http://www.hancom.co.kr/hwpml/2011/master-page\" xmlns:hpf=\"http://www.hancom.co.kr/schema/2011/hpf\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:opf=\"http://www.idpf.org/2007/opf/\" xmlns:ooxmlchart=\"http://www.hancom.co.kr/hwpml/2016/ooxmlchart\" xmlns:hwpunitchar=\"http://www.hancom.co.kr/hwpml/2016/HwpUnitChar\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xmlns:config=\"urn:oasis:names:tc:opendocument:xmlns:config:1.0\"><hp:p id=\"3121190098\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:secPr id=\"\" textDirection=\"HORIZONTAL\" spaceColumns=\"1134\" tabStop=\"8000\" tabStopVal=\"4000\" tabStopUnit=\"HWPUNIT\" outlineShapeIDRef=\"1\" memoShapeIDRef=\"0\" textVerticalWidthHead=\"0\" masterPageCnt=\"0\"><hp:grid lineGrid=\"0\" charGrid=\"0\" wonggojiFormat=\"0\"/><hp:startNum pageStartsOn=\"BOTH\" page=\"0\" pic=\"0\" tbl=\"0\" equation=\"0\"/><hp:visibility hideFirstHeader=\"0\" hideFirstFooter=\"0\" hideFirstMasterPage=\"0\" border=\"SHOW_ALL\" fill=\"SHOW_ALL\" hideFirstPageNum=\"0\" hideFirstEmptyLine=\"0\" showLineNumber=\"0\"/><hp:lineNumberShape restartType=\"0\" countBy=\"0\" distance=\"0\" startNumber=\"0\"/><hp:pagePr landscape=\"WIDELY\" width=\"59528\" height=\"84186\" gutterType=\"LEFT_ONLY\"><hp:margin header=\"4252\" footer=\"4252\" gutter=\"0\" left=\"8504\" right=\"8504\" top=\"5668\" bottom=\"4252\"/></hp:pagePr><hp:footNotePr><hp:autoNumFormat type=\"DIGIT\" userChar=\"\" prefixChar=\"\" suffixChar=\")\" supscript=\"0\"/><hp:noteLine length=\"-1\" type=\"SOLID\" width=\"0.12 mm\" color=\"#000000\"/><hp:noteSpacing betweenNotes=\"283\" belowLine=\"567\" aboveLine=\"850\"/><hp:numbering type=\"CONTINUOUS\" newNum=\"1\"/><hp:placement place=\"EACH_COLUMN\" beneathText=\"0\"/></hp:footNotePr><hp:endNotePr><hp:autoNumFormat type=\"DIGIT\" userChar=\"\" prefixChar=\"\" suffixChar=\")\" supscript=\"0\"/><hp:noteLine length=\"14692344\" type=\"SOLID\" width=\"0.12 mm\" color=\"#000000\"/><hp:noteSpacing betweenNotes=\"0\" belowLine=\"567\" aboveLine=\"850\"/><hp:numbering type=\"CONTINUOUS\" newNum=\"1\"/><hp:placement place=\"END_OF_DOCUMENT\" beneathText=\"0\"/></hp:endNotePr><hp:pageBorderFill type=\"BOTH\" borderFillIDRef=\"1\" textBorder=\"PAPER\" headerInside=\"0\" footerInside=\"0\" fillArea=\"PAPER\"><hp:offset left=\"1417\" right=\"1417\" top=\"1417\" bottom=\"1417\"/></hp:pageBorderFill><hp:pageBorderFill type=\"EVEN\" borderFillIDRef=\"1\" textBorder=\"PAPER\" headerInside=\"0\" footerInside=\"0\" fillArea=\"PAPER\"><hp:offset left=\"1417\" right=\"1417\" top=\"1417\" bottom=\"1417\"/></hp:pageBorderFill><hp:pageBorderFill type=\"ODD\" borderFillIDRef=\"1\" textBorder=\"PAPER\" headerInside=\"0\" footerInside=\"0\" fillArea=\"PAPER\"><hp:offset left=\"1417\" right=\"1417\" top=\"1417\" bottom=\"1417\"/></hp:pageBorderFill></hp:secPr><hp:ctrl><hp:colPr id=\"\" type=\"NEWSPAPER\" layout=\"LEFT\" colCount=\"1\" sameSz=\"1\" sameGap=\"0\"/></hp:ctrl></hp:run><hp:run charPrIDRef=\"0\"><hp:t>AAA</hp:t></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:ctrl><hp:fieldBegin id=\"1166752276\" type=\"BOOKMARK\" name=\"S0_SLOT\" editable=\"0\" dirty=\"1\" zorder=\"-1\" fieldid=\"627207531\" metaTag=\"\"><hp:parameters cnt=\"1\" name=\"\"><hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"slot\"}, \"name\": \"#hf\"}</hp:metaTag><ns0:metaTag xmlns:ns0=\"urn:foreign\">{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"hidden\"}, \"name\": \"#hf\"}</ns0:metaTag></hp:fieldBegin></hp:ctrl><hp:t>BBB</hp:t></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:ctrl><hp:fieldBegin id=\"1166752277\" type=\"BOOKMARK\" name=\"S0_OPT_A\" editable=\"0\" dirty=\"1\" zorder=\"-1\" fieldid=\"627207531\" metaTag=\"\"><hp:parameters cnt=\"1\" name=\"\"><hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"a\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>CCC</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1166752277\" fieldid=\"627207531\"/></hp:ctrl><hp:t/></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:ctrl><hp:fieldBegin id=\"1166752278\" type=\"BOOKMARK\" name=\"S0_OPT_B\" editable=\"0\" dirty=\"1\" zorder=\"-1\" fieldid=\"627207531\" metaTag=\"\"><hp:parameters cnt=\"1\" name=\"\"><hp:integerParam name=\"Prop\">2</hp:integerParam></hp:parameters><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"b\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>DDD</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1166752278\" fieldid=\"627207531\"/></hp:ctrl><hp:t/></hp:run></hp:p><hp:p id=\"0\" paraPrIDRef=\"0\" styleIDRef=\"0\" pageBreak=\"0\" columnBreak=\"0\" merged=\"0\"><hp:run charPrIDRef=\"0\"><hp:t>EEE</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1166752276\" fieldid=\"627207531\"/></hp:ctrl><hp:t/></hp:run></hp:p></hs:sec>"
+      },
+      "diagnostics": [
+        "bookmark-resolve-failed"
+      ],
+      "slots": [],
+      "observations": [
+        {
+          "classification": "known_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": "slot",
+          "id": "slot",
+          "owner": null
+        },
+        {
+          "classification": "known_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": "slot_option",
+          "id": "a",
+          "owner": null
+        },
+        {
+          "classification": "known_product",
+          "role": "invalid_product",
+          "usable": false,
+          "kind": "slot_option",
+          "id": "b",
+          "owner": null
+        }
+      ],
+      "corpus": "structural_range_s0/R5-nested.hwpx"
+    }
+  ]
+}

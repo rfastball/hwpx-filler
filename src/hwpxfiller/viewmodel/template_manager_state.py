@@ -1,22 +1,7 @@
-"""템플릿 관리 워크숍 ViewModel — Qt 비의존(링1). 특정 Job 밖의 템플릿 라이브러리 관리면.
+"""템플릿 라이브러리의 Python 검증용 ViewModel.
 
-웹 템플릿·에디터 컨트롤러가 이 뷰모델을 들고
-``rows()``·``actions_for(state)``·``scan_preview(path)``·``apply_fieldize(path)``·
-``convert_preview(path)``·``apply_convert(path)``·``slot_view(path)`` 와 Slot 관리 동사 셋·
-``lint(path, vocabulary=None)``·``drift(old,new)`` 로 **렌더·오케스트레이션만** 한다. 상태 판정(compile_status)·상태별
-게이트 액션·2단계 fieldize(스캔 미리보기→적용)·구간 표기 변환·Slot 목록 투영·lint/drift 는
-전부 여기 산다 — PySide6 임포트 없이 창 없이 테스트된다.
-
-**새 코어 없음.** 전부 기존 코어 재사용:
-- ``domain.template_status.compile_status`` — RAW/PARTIAL/COMPILED 3-상태(호출마다 재산출).
-- ``domain.authoring.scan_tokens``/``compile_document`` — 읽기 전용 스캔 미리보기 → 명시적 적용.
-- ``domain.lint.lint_template``/``diff_schema`` — 위생 점검 + 판본 드리프트.
-- ``domain.fields.read_fields`` — 누름틀 값 미리보기.
-
-**설계 원칙**("묻고 확정하게 하라, 아니면 시끄럽게 알려라"):
-- fieldize 는 CLI 와 동일하게 **dry-run 기본**(scan_preview 는 파일을 만지지 않는다) →
-  명시적 적용(apply_fieldize)에서만 컴파일·저장한다.
-- 읽을 수 없는 파일은 조용히 감추지 않고 ``error`` 를 담은 행으로 **시끄럽게** 노출한다.
+행·검토 상세와 누름틀·구간 변환을 같은 판독 계약으로 투영한다.
+변환은 미리보기 뒤 명시적으로 적용하며, 읽기 실패는 사유를 담은 행과 상세로 노출한다.
 """
 
 from __future__ import annotations
@@ -740,18 +725,6 @@ class TemplateManagerViewModel:
             skipped=[s for s in sites if not s.compilable],
         )
 
-    def apply_fieldize(self, path: str):
-        """명시적 적용 — 토큰을 누름틀로 컴파일하고 **같은 경로에 저장**, 행 갱신.
-
-        저장 후 그 파일의 compile_status 는 진행한다(RAW/PARTIAL → COMPILED). 바뀐 게
-        없으면(``modified=False``) 저장하지 않는다(저장 판정은 포트 concrete 소유).
-        리포트를 반환한다.
-        """
-        report = self._file_ops.compile_file(str(path))
-        if report.modified:
-            self.refresh()
-        return report
-
     # ------------------------------------ 누름틀·구간 변환 2단계(S8-03 #834)
     def convert_preview(self, path: str) -> ConvertPreview:
         """dry-run — 필드 토큰 + 구간 표기를 한 미리보기로. **파일 무변형**(읽기 전용)."""
@@ -1008,42 +981,7 @@ class TemplateManagerViewModel:
             f"대상 파일: {Path(path).name}"
         )
 
-    # ----------------------------------------------------------- lint/drift
-    def lint(self, path: str, vocabulary=None) -> LintReport:
-        """단일 템플릿 위생 점검(유사 필드명·미치환 토큰·어휘). 읽기 전용.
-
-        ``vocabulary`` 는 코어 :func:`~hwpxfiller.domain.lint.lint_template` 의 통제 어휘
-        그대로 전달한다(RC-14 시그니처 정렬 — CLI ``--vocab`` 과 위생 점검 범위 동등).
-        """
-        return self._file_ops.lint(str(path), vocabulary=vocabulary)
-
-    def drift(self, old_path: str, new_path: str) -> SchemaDrift:
-        """두 판본의 필드셋 드리프트(추가/삭제/개명 추정). 읽기 전용."""
-        return self._file_ops.diff(str(old_path), str(new_path))
-
-    # ------------------------------------------------------ 결과 문구 성형(링1)
-    # 단일 결과 라벨이 lint/미리보기/드리프트/컴파일을 무맥락으로 덮어쓰던 것을(RC-14)
-    # 대상 템플릿명을 포함한 성형으로 고정한다 — 표현 계층이 아니라 여기 살아야
-    # 헤드리스로 테스트되고 '얇은 렌더러' 계약이 지켜진다.
-    def format_compile_result(self, path: str, report) -> ResultLine:
-        """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함) — 성공은 ok(UD-07)."""
-        return ResultLine(
-            f"누름틀 변환 완료 {Path(path).name}: 필드 {len(report.compiled)}개 추가", "ok"
-        )
-
-    def format_scan_empty_result(self, path: str, preview: "ScanPreview") -> ResultLine:
-        """컴파일 스캔 결과 '변환 가능 토큰 없음' → 인라인 결과 문구(UD-24).
-
-        같은 화면 다른 결과 4종과 대칭으로 lbl_result 에 싣는다(차단 모달 강등 —
-        ADR-E: 모달은 파괴 확정에만). 진행 불가 통지이므로 warn 레벨.
-        """
-        name = Path(path).name
-        text = f"누름틀 변환 {name}: 변환 가능한 토큰이 없습니다"
-        if preview.skipped:
-            names = ", ".join(s.name for s in preview.skipped)
-            text += f" (건너뜀 {len(preview.skipped)}개: {names})"
-        return ResultLine(text, "warn")
-
+    # ------------------------------------------------------ 검토 결과 문구
     def format_lint_result(self, path: str, report: LintReport) -> ResultLine:
         """lint 리포트 → 결과 문구(심각도 한국어·대상 템플릿명 포함).
 
@@ -1061,39 +999,3 @@ class TemplateManagerViewModel:
             for f in report.findings
         )
         return ResultLine("\n".join(lines), level)
-
-    def format_preview_result(self, path: str, values: "dict[str, str]") -> ResultLine:
-        """누름틀 값 미리보기 → 결과 문구(대상 템플릿명 포함) — 정보성이므로 muted.
-
-        빈 값 필드는 '필드명 = ' 뒤 무표시 공백으로 렌더돼 의도적 공란과 채우다 만 것을
-        구별할 수 없었다(UD-26 F5) — 빈 값을 '(비움)' 으로 명시 재진술한다(ADR-B).
-        """
-        name = Path(path).name
-        if not values:
-            return ResultLine(f"미리보기 {name}: 누름틀 값이 없습니다.", "muted")
-        return ResultLine(
-            f"미리보기 {name}:\n"
-            + "\n".join(f"{k} = {v if str(v).strip() else '(비움)'}" for k, v in values.items()),
-            "muted",
-        )
-
-    def format_drift_result(
-        self, old_path: str, new_path: str, drift: SchemaDrift
-    ) -> ResultLine:
-        """드리프트 결과 → 결과 문구(비교 판본 쌍 명시) — 변화 있으면 warn, 없으면 ok."""
-        pair = f"{Path(old_path).name} → {Path(new_path).name}"
-        if not drift.has_changes:
-            return ResultLine(f"템플릿 변경 {pair}: 필드셋 변화 없음.", "ok")
-        parts = [f"템플릿 변경 {pair}:"]
-        for n in drift.added:
-            parts.append(f"+ 추가: {n}")
-        for n in drift.removed:
-            parts.append(f"- 삭제: {n}")
-        for r in drift.renamed:
-            parts.append(f"~ 개명(추정): {r['old']} → {r['new']} ({r['score']})")
-        return ResultLine("\n".join(parts), "warn")
-
-    # ----------------------------------------------------- 누름틀 값 미리보기
-    def filled_values(self, path: str) -> "dict[str, str]":
-        """템플릿의 현재 누름틀 값 — C1 read_fields 포트 위임."""
-        return self._file_ops.read_fields(str(path))

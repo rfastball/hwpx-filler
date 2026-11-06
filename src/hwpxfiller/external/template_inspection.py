@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 from hwpxcore.package import HwpxPackage
 
@@ -226,31 +225,6 @@ def compile_template_file(path: str) -> CompileReport:
     if report.modified:
         write_hwpx_package(path, package)
     return report
-
-
-def compile_to_sibling(path: str, *, overwrite: bool = False) -> "tuple[str | None, CompileReport]":
-    """토큰을 컴파일해 **원본 옆** ``<이름>.compiled.hwpx`` 로 저장(원본 무변형).
-
-    출력 경로 파생·저장·충돌 정책을 뷰가 하드코딩하지 않는다(RC-28). 정책:
-
-    - 바꿀 토큰이 없으면(``modified=False``) 아무것도 쓰지 않고 ``(None, report)``.
-    - 컴파일본이 이미 있으면 ``overwrite=True`` 없이는 :class:`FileExistsError`
-      (메시지 = 충돌 경로)로 시끄럽게 차단 — 조용한 덮어쓰기 금지(RC-02). 호출측이
-      사용자 확정을 받은 뒤 ``overwrite=True`` 로 재호출한다.
-    - 컴파일·저장 실패는 그대로 raise(호출측이 시끄럽게 표시).
-
-    (P2-19R 에서 ``domain.authoring`` 과 분리 — 경로 열기·충돌 검사·저장이 파일 IO 개시라
-    Domain 에 둘 수 없다. 의미 불변.)
-    """
-    package = read_hwpx_package(path)
-    _compiled, report = compile_document(package)
-    if not report.modified:
-        return None, report
-    compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
-    if Path(compiled_path).exists() and not overwrite:
-        raise FileExistsError(compiled_path)
-    write_hwpx_package(compiled_path, package)
-    return compiled_path, report
 
 
 def lint_template_file(

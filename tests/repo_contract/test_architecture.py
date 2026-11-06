@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import ast
-import importlib
 import re
 from pathlib import Path
 
-from _web_source import REPO_ROOT, SOURCE_JS_DIR
+from _web_source import REPO_ROOT
 
 ROOT = REPO_ROOT
 
@@ -370,34 +369,6 @@ def test_home_directory_resolution_has_one_source() -> None:
             if pattern.search(line):
                 offenders.append(f"{path.relative_to(ROOT).as_posix()}:{lineno}")
     assert not offenders, "home_dir() 우회:\n" + "\n".join(offenders)
-
-
-def test_generated_reference_documents_every_direct_bridge_method() -> None:
-    bridge = (SOURCE_JS_DIR / "bridge.js").read_text(encoding="utf-8")
-    contract = (ROOT / "docs" / "reference" / "runtime.md").read_text(encoding="utf-8")
-    methods = set(re.findall(r"\bapi\.(\w+)", bridge)) - {"initial", "dispatch"}
-    undocumented = sorted(method for method in methods if f"`{method}`" not in contract)
-    assert methods and not undocumented, f"문서화되지 않은 직접 브리지: {undocumented}"
-
-
-def test_packaging_entry_imports_resolve() -> None:
-    pattern = re.compile(r"^\s*from\s+(hwpxfiller[\w.]*)\s+import\s+(.+)$")
-    failures: list[str] = []
-    for path in sorted((ROOT / "packaging").glob("*.py")):
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if not (match := pattern.match(line)):
-                continue
-            module, names = match.groups()
-            try:
-                imported = importlib.import_module(module)
-            except Exception as exc:  # noqa: BLE001
-                failures.append(f"{path.name}:{lineno}: {module}: {exc}")
-                continue
-            for raw in names.split(","):
-                symbol = raw.strip().split(" as ")[0].strip().strip("()")
-                if symbol and not hasattr(imported, symbol):
-                    failures.append(f"{path.name}:{lineno}: {module}.{symbol}")
-    assert not failures, "\n".join(failures)
 
 
 def test_job_content_fingerprints_go_through_the_registry_port():

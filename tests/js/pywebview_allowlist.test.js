@@ -244,6 +244,21 @@ function listSources(relativeDir) {
   return out.sort();
 }
 
+test("파괴 확인이 브라우저 기본창으로 우회되지 않는다", () => {
+  const offenders = [];
+  for (const rel of listSources("")) {
+    const body = readFileSync(new URL(rel, FRONTEND), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|\s)\/\/.*$/gm, "$1");
+    for (const match of body.matchAll(/window\.(?:confirm|prompt)/g)) {
+      const line = body.slice(0, match.index).split("\n").length;
+      offenders.push(`frontend/${rel}:${line}: ${match[0]}`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    "브라우저 네이티브 확인 UI 재유입; Modal.confirm/Modal.prompt를 사용하세요");
+});
+
 test("계약 결선 — 이름 전수·allowlist 실재가 pytest 쪽과 같은 파일에서 나온다", () => {
   assert.deepEqual(Object.keys(RESERVED).sort(), ["__hwpx", "__hwpxTest", "pywebview"],
     "계약의 예약 전역 이름 전수가 어긋납니다 — pytest 결선 테스트와 같은 정본입니다");

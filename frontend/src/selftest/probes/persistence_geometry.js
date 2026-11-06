@@ -105,7 +105,20 @@ const FILE_PROTOCOL = "file".concat(":");
 function measureResources(ctx) {
   const win = ctx.win;
   const pageUrl = new win.URL(win.location.href);
-  const resources = win.performance.getEntriesByType("resource").map((entry) => entry.name);
+  const ipcOrigin = ["http:", "", "ipc.localhost"].join("/");
+  // Tauri records its private invoke transport as a resource timing entry.
+  // It is an IPC message, not a fetched web asset; keep external URLs visible.
+  const resources = win.performance.getEntriesByType("resource")
+    .map((entry) => entry.name)
+    .filter((value) => {
+      if (!win.__TAURI__?.core?.invoke) return true;
+      try {
+        const url = new win.URL(value, pageUrl);
+        return !(url.origin === ipcOrigin && url.pathname === "/product_call");
+      } catch (_) {
+        return true;
+      }
+    });
   const forbidden = resources.filter((value) => {
     let resource;
     try {

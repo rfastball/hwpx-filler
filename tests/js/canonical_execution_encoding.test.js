@@ -1,7 +1,7 @@
-/* S5-06(#702) TypeScript parity — Python `domain/canonical_execution_encoding.py` 와 byte 동일.
+/* TypeScript parity — Rust `canonical_execution_encoding.rs` 와 byte 동일.
 
-   `tests/fixtures/execution_canonical_v1_golden.json` 은 Python·TS 공통 오러클이다.
-   여기서 TS 가, `tests/test_canonical_execution_encoding.py` 에서 Python 이 같은 파일을 재현한다.
+   `tests/fixtures/execution_canonical_v1_golden.json` 은 Rust·TS 공통 오러클이다.
+   여기서 TS 가, Rust canonical_execution_encoding 단위 테스트가 같은 파일을 재현한다.
    한쪽 encoding 이 달라지면 그쪽 스위트만 빨강이 된다.
 
    `.ts` 확장자 그대로 import — Node type stripping 이 제품 파일을 무변환으로 실어 Vite 빌드와

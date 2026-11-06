@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { lintpadDecorations } from "../../frontend/src/editorview/txt_lintpad.ts";
 import { cardMarks } from "../../frontend/src/screens/workbench.ts";
 
-// #1148 PR B — 검토·복사 작업대 본문의 표식 층. 종류·자리·채움은 Python 이 낸다(`card.marks`,
-// tests/test_txt_card_edit.py 가 그 판정을 잰다). 여기서는 받은 표식을 그리고, 편집 뒤에도 자리를 옮겨
+// #1148 PR B — 검토·복사 작업대 본문의 표식 층. 종류·자리·채움은 Rust가 낸다(`card.marks`,
+// crates/hwpx-filler/src/txt_card_edit.rs가 그 판정을 잰다). 여기서는 받은 표식을 그리고, 편집 뒤에도 자리를 옮겨
 // 들며, 빈 자리에 친 글자가 그 표식의 범위(값 칠)가 되는지만 잰다.
 
 const DOC = "담당: \n비고: \n수신 회계과";
@@ -42,7 +42,7 @@ test("빈 자리에 친 글자는 그 표식의 범위가 되고 값 칠로 바�
   ]);
 });
 
-test("Python 이 본 문서와 지금 문서가 다르면 받은 표식을 덮지 않는다(편집 왕복 사이)", () => {
+test("Rust 가 본 문서와 지금 문서가 다르면 받은 표식을 덮지 않는다(편집 왕복 사이)", () => {
   const drawn = lintpadDecorations(DOC, {
     marks: MARKS,
     edits: [{ start: 4, end: 4, text: "홍" }],
@@ -51,8 +51,8 @@ test("Python 이 본 문서와 지금 문서가 다르면 받은 표식을 덮�
   assert.equal(marksOf(drawn).length, 3, "옛 문서 기준 표식(빈 목록)이 지금 문서의 표식을 지우지 않는다");
 });
 
-test("편집기는 CRLF 를 한 자리로 접는다 — 그래서 Python 은 본문·표식을 LF 문서 좌표로 낸다", () => {
-  // tests/test_webapp_workbench.py::test_crlf_template_marks_line_up_with_the_editor_document 의 짝.
+test("편집기는 CRLF 를 한 자리로 접는다 — 그래서 Rust 는 본문·표식을 LF 문서 좌표로 낸다", () => {
+  // crates/hwpx-desktop/src/workbench_controller.rs의 UTF-16·CRLF 컨트롤러 검사의 짝.
   // 원문(CRLF) 좌표의 표식을 받으면 앞선 줄바꿈 수만큼 표지가 뒤로 밀린다(온나라 기안 복사 창 어긋남).
   const crlf = lintpadDecorations("담당: \r\n비고: \r\n수신 회계과", { marks: MARKS });
   assert.equal(crlf.doc, DOC);

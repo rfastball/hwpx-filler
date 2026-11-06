@@ -18,6 +18,22 @@
    뽑지 않는다 — 뽑는 순간 요청은 프로브에 걸렸는데 발신은 실물로 새는 자리가 생긴다. */
 const DISPATCH_REJECTION_KEY = "__hwpx_dispatch_rejection_v1__";
 
+function attachTauriTransport() {
+  if (window.pywebview?.api) return;
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (typeof invoke !== "function") return;
+  const api = new Proxy(Object.create(null), {
+    get(_target, method) {
+      if (typeof method !== "string" || method === "then"
+        || (method.startsWith("selftest_") && window.__HWPX_NATIVE_SELFTEST__ !== true)) return undefined;
+      return (...args) => Promise.resolve().then(() => invoke("product_call", { method, args }))
+        .catch((reason) => { throw reason instanceof Error ? reason : new Error(String(reason)); });
+    },
+  });
+  window.pywebview = { api };
+  queueMicrotask(() => window.dispatchEvent(new Event("pywebviewready")));
+}
+
 function unwrapDispatchResult(value) {
   if (!value || typeof value !== "object" || !Object.hasOwn(value, DISPATCH_REJECTION_KEY)) {
     return value;
@@ -38,6 +54,7 @@ function unwrapDispatch(value) {
 }
 
 export function createBridge() {
+  attachTauriTransport();
   // screen id → [fn, ...] — 한 채널 복수 구독이 앞의 소비자를 조용히 밀어내지 않도록 배열로 둔다.
   const renderers = {};
 
