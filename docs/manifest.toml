@@ -161,7 +161,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
-source_sha256 = "73638ed778e9f7d6f6eca7e896c64401fc309988d618c19e8a827365786776ee"
+source_sha256 = "193f4fbfc9a7ec53fd6cc6e4724d21e96c81f1ec1ff8d9439cdbfe9517110055"
 body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
 [[topic]]
