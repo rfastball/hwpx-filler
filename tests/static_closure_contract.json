@@ -19,7 +19,7 @@
     "  패키지 이름을 유도하는 단일 출처이기도 하다(scripts/generate_build_metadata.mjs).",
     "dev_dependency_owners — 정적 import로 보이지 않는 빌드/형식 전용 의존의 exact 책임 분류."
   ],
-  "non_code_suffixes": [".css", ".html", ".svg", ".txt", ".woff2"],
+  "non_code_suffixes": [".css", ".html", ".json", ".svg", ".txt", ".woff2"],
   "reserved_globals": {
     "pywebview": [
       "js/bridge.js",
