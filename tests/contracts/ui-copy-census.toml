@@ -4028,7 +4028,7 @@ file = "crates/hwpx-filler/src/workbench_execution_status.rs"
 text = "확인할 항목이 있습니다"
 [[sentence]]
 file = "frontend/js/bridge.js"
-text = "Python dispatch 거절 봉투가 손상되었습니다."
+text = "Rust dispatch 거절 봉투가 손상되었습니다."
 [[sentence]]
 file = "frontend/js/undo_toast.js"
 text = "UndoToast: host 부재 — 되돌리기 어포던스 없이 재진술합니다."
@@ -4118,7 +4118,7 @@ file = "frontend/src/react/root.ts"
 text = "정산할 React root 가 없습니다 — unmount 는 정확히 1회여야 합니다."
 [[sentence]]
 file = "frontend/src/runtime/adapter.ts"
-text = "Python dispatch 거절 봉투가 손상되었습니다."
+text = "Rust dispatch 거절 봉투가 손상되었습니다."
 [[sentence]]
 file = "frontend/src/runtime/adapter.ts"
 text = "호스트(pywebview)가 없어 {} 를 부를 수 없습니다."

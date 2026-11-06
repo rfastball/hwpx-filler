@@ -145,24 +145,22 @@ hwpxdiff는 문서를 *읽고 견주는* 도구입니다.
 
 ## 개발
 
-앱·CLI는 `rust-toolchain.toml`의 Rust를 사용합니다. 아직 이전하지 않은 검증용 Python은
-`.python-version`과 [`uv`](https://docs.astral.sh/uv/)로 관리합니다. React 프런트엔드는
-`.node-version`의 Node와 `package.json`에 고정된 npm을 사용합니다. 첫 웹 빌드는 HWPX 편집기
-rhwp의 원천과 도구를 준비하느라 네트워크가 필요합니다.
+앱·CLI와 검증 도구는 `rust-toolchain.toml`의 Rust를 사용합니다. React 프런트엔드는
+`.node-version`의 Node와 `package.json`에 고정된 npm을 사용합니다. 렌더 검사에는 설치된 Chrome이
+필요합니다. 첫 웹 빌드는 HWPX 편집기 rhwp의 원천과 도구를 준비하느라 네트워크가 필요합니다.
 
 ```powershell
-uv python install
-uv sync --locked --all-extras --group dev --group build
+npm ci
 
 .\run-filler.ps1        # 봉인된 프런트 빌드 후 Rust/Tauri 소스 앱 실행
 .\run-filler.ps1 -Cli --help
 .\build-web.ps1         # 프런트만 빌드(101 실습 런처 전)
-.\test.ps1              # web build → Node·Rust → Ruff → Pyright → pytest
+.\test.ps1              # web build → Node·문서 → Rust → Chrome 렌더 → 실 Win32 → WebView2 실창
 .\build.ps1             # GUI 포터블 빌드 + self-check
 .\package-installer.ps1 # Inno Setup 설치본
 ```
 
-Rust 제품 `hwpx-filler`는 형식 kernel `hwpx-core` 위에 서며 의존은 `hwpx-filler → hwpx-core`로만
+Rust 제품 `hwpx-filler`는 형식 kernel `hwpx-core` 위에 서며 의존은 `hwpx-desktop → hwpx-filler → hwpx-core`로만
 흐릅니다. kernel은 제품 로직이나 환경 효과 없이 HWPX bytes만 파싱·직렬화합니다.
 
 - [개발·빌드·배포 환경](CONTRIBUTING.md#development)

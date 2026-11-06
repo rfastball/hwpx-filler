@@ -55,7 +55,7 @@ export const PERSISTENCE_GEOMETRY_KEYS = Object.freeze([
  * offsetParent 는 전부 문서 안이라 프런트가 잰다. resize 는 문서 밖이라 호스트가 한다.
  */
 export const GEOMETRY_OWNERSHIP_DECISION = Object.freeze({
-  site: "src/hwpxfiller/webapp/app.py:3634",
+  site: "crates/hwpx-desktop/src/native_selftest.rs:251",
   decision: "host",
   rule: "문서 안(DOM·CSSOM·computed style·레이아웃 박스)은 frontend, 문서 밖(네이티브 창 프레임·"
     + "프로세스·디스크·아티팩트 정체성)은 host.",

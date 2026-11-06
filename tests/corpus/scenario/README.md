@@ -61,7 +61,7 @@ cargo test -p hwpx-filler --lib procurement_templates --locked
 
 ```powershell
 $env:HWPXFILLER_HOME = "$PWD\tests\corpus\scenario"   # txt 트랙이 이 폴더를 나열
-python -m hwpxfiller.webapp
+.\run-filler.ps1
 ```
 
 **HWPX 작업 트랙**

@@ -13,7 +13,7 @@
 | npm engine | `11.16.0` | [package.json](../../package.json) |
 | package manager | `npm@11.16.0` | [package.json](../../package.json) |
 | Rust pin | `1.93.1` | [rust-toolchain.toml](../../rust-toolchain.toml) |
-| Rust components | `clippy, rustfmt` | [rust-toolchain.toml](../../rust-toolchain.toml) |
+| Rust components | `clippy, rustfmt, llvm-tools` | [rust-toolchain.toml](../../rust-toolchain.toml) |
 | Cargo workspace | `crates/hwpx-core, crates/hwpx-filler, crates/hwpx-artifact, crates/hwpx-desktop` | [Cargo.toml](../../Cargo.toml) |
 
 ## 진입점
@@ -36,8 +36,8 @@ cargo run --locked -p hwpx-desktop --bin hwpxfiller --no-default-features -- dri
 
 원천: [quality.yml](../../.github/workflows/quality.yml). 실제 설정의 등록 목록이다.
 
-- Jobs: `sealed-web`, `static`, `pytest-contract`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `rust-kernel`, `quality-gate`
-- `quality-gate.needs`: `sealed-web`, `static`, `pytest-contract`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `rust-kernel`
+- Jobs: `sealed-web`, `static`, `rust-coverage`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `rust-kernel`, `quality-gate`
+- `quality-gate.needs`: `sealed-web`, `static`, `rust-coverage`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `rust-kernel`
 
 ## Native host 공개 메서드
 

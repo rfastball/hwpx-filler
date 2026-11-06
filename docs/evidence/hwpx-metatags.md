@@ -8,7 +8,8 @@
 > **권위 범위:** 한컴 native metadata carrier 의 wire format 관찰과 보존성 실험 설계
 > **후속 정본:** carrier와 저장 전후 코퍼스 검증은 `crates/hwpx-core/src/bookmark_region.rs`,
 > 제품 Slot 판정은 `crates/hwpx-filler/src/hwpx_product_inspection.rs`가 소유한다.
-> 아래 Python 도구·경로·명령은 원관측 당시의 기록이다. 구조 범위 관측은 `docs/evidence/hwpx-ranges.md`를 따른다.
+> 아래 Python 도구·경로·명령은 원관측 당시의 기록이며 Python 구현 퇴역으로 저장소에서 제거되어 지금은 실행할 수 없다.
+> 코퍼스 파일은 남아 있다. 구조 범위 관측은 `docs/evidence/hwpx-ranges.md`를 따른다.
 > **편집 정책:** 새 native evidence(특히 한글 open/save 결과)가 생길 때만 판정과 근거를 함께 갱신
 
 ## 1. 목적과 비목표

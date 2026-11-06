@@ -3,7 +3,7 @@
 <a id="ui-terms"></a>
 ## 용어·빈 값·단위
 
-같은 개념은 모든 표면에서 같은 이름으로 말한다. 문안 정리로 Python/JSON 식별자·데이터 표식을 바꾸지 않는다.
+같은 개념은 모든 표면에서 같은 이름으로 말한다. 문안 정리로 Rust/JSON 식별자·데이터 표식을 바꾸지 않는다.
 
 | 개념 | 사용자에게 쓰는 말 |
 |---|---|
@@ -15,7 +15,7 @@
 | 값 유형 | 텍스트 / 날짜 / 금액 / 고정값 / 오늘 날짜 |
 | 날짜 표시형 | 시각 / 날짜+시각 등 표시형 명칭 |
 | 칸 일부·글자 고치기(`text_slice`) | 가공; 방식은 문장(`‘x’ 앞까지`·`‘x’로 나눈 조각 중 첫째`·`‘x’ 대신 ‘y’`); 빠짐 처리는 원본 그대로 / 빈 값 |
-| `Slot` / `Option` | 항목(저작) / 선택 |
+| `Slot` / `SlotOption` | 항목(저작) / 선택 |
 | 저작에서 사용자가 범위·대상을 고르는 행위 | 고르다(`고른 범위`·`…고르세요`); 명사 '선택'은 `Option` 전용 |
 | 템플릿 편집·교체 조치 / 조치 후 결과 | 템플릿 조치 필요 / 템플릿 변경사항 |
 | 값 없음 / 의도적 미채움 | 빈 값 / 비움 확정, 선택지의 `(비움)` |
@@ -63,7 +63,7 @@
 문안 정리로 JSON 키·판정을 바꾸지 않고 assertion·census를 같은 변경으로 갱신한다.
 
 [ui-copy-census.toml](../tests/contracts/ui-copy-census.toml)은 문장 allowlist다.
-[스캐너](../scripts/ui_copy_census.mjs)가 React 화면과 Rust 제품 세 crate의 문장 다중집합을
+[스캐너](../scripts/ui_copy_census.mjs)가 React 화면과 Rust `hwpx-core`·`hwpx-filler`·`hwpx-desktop` 소스의 문장 다중집합을
 대조한다. 새 문장은 기본 0이며 필요한 전문·이유를 PR에 적고 등록한다.
 열거 밖 문장은 추가하지 않는다. 지운 문장도 함께 제거한다.
 검토한 항목만 원장에 반영하고 `node scripts/ui_copy_census.mjs --check`로 확인한다.
@@ -167,8 +167,8 @@ TXT·HWPX 모두 마지막으로 고친 시험 필드(없으면 고른 필드)�
 않는다), 결과 뷰어는 초점을 가져가지 않는다.
 
 눌림 효과는 표 정렬을 유지한다. reduced-motion 두 경로의
-[실렌더 기하](../tests/test_web_press_geometry.py)를 검사한다. 저작 작업대의 열 폭·좁은 폭 시트·
-결과 시험 칸 높이·강제 색상 표지는 창 폭과 글자 배율별 [배치 실렌더](../tests/test_web_authoring_layout.py)가 잰다. 포커스·캐럿·스크롤·IME 연속성,
+설치 Chrome [실렌더 기하](../tests/browser/browser_resource.test.js)를 검사한다. 저작 작업대의 열 폭·좁은 폭 시트·
+결과 시험 칸 높이·강제 색상 표지는 창 폭과 글자 배율별 [배치 실렌더](../tests/browser/browser_resource.test.js)가 잰다. 포커스·캐럿·스크롤·IME 연속성,
 모달 포커스 포획·복귀와 비활성 사유를 지킨다. 라이트·다크 모두
 [대비 검사](../tests/js/design_tokens.test.js)와 실제 렌더를 통과해야 한다.
 대비 하한·대상 쌍은 테스트가 소유한다. [실앱 검사](../scripts/verify_native_selftest.mjs)의 통과는 접근성 인증이 아니다.

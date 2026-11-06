@@ -3,28 +3,28 @@
 <a id="development"></a>
 ## 환경·검증·출하
 
-Python 검증은 `uv`, 네이티브 앱은 `rust-toolchain.toml`을 따른다. 버전은 [생성 참조](docs/reference/runtime.md)에 있다.
+앱·CLI와 검증 도구는 Rust(`rust-toolchain.toml`)와 Node(`.node-version`)만 쓴다. 버전은 [생성 참조](docs/reference/runtime.md)에 있다.
 제품은 Windows에서 검증하며 Linux 정적 검사는 실 WebView2 검증을 대신하지 않는다.
 
 ```powershell
-uv python install
-uv sync --locked --all-extras --group dev --group build
+npm ci
 .\run-filler.ps1
 .\run-filler.ps1 -Cli --help
 .\test.ps1
-.\test.ps1 tests\test_engine.py -x
-uv run ruff check scripts
+.\test.ps1 -LiveScope auto
+.\test-rust.ps1
+.\scripts\rust_coverage.ps1
 ```
 
-Python은 `.python-version`·`pyproject.toml`·`uv.lock`, Node는 `.node-version`·`package.json`을 따른다.
-수동 venv를 만들지 않는다. 의존성 변경 시 잠금 파일도 갱신하며 CI는 `--locked`로 검사한다.
+Node는 `package.json`·`package-lock.json`, Rust는 `Cargo.toml`·`Cargo.lock`을 따른다.
+의존성 변경 시 잠금 파일도 갱신하며 CI는 `npm ci`·`--locked`로 검사한다. 렌더 검사에는 설치된 Chrome이 필요하다.
 
 HWPX 저작용 rhwp는 `vendor/rhwp/source.json`과 `scripts/build_rhwp.ps1`이 준비한다.
 첫 빌드는 네트워크가 필요하며 앱은 봉인된 Studio·WASM·폰트만 쓴다.
 
-`test.ps1`는 web build → Node → Rust → Ruff → Pyright → pytest·coverage → 네이티브 실창 전체를 실행한다.
-추가 인자는 pytest에 넘기며 명시적 테스트 경로·`-k`·`-m` 선택은 해당 검사만 실행한다.
-Rust만은 `.\test-rust.ps1`로 검사한다. Python 도구 변경 시 해당 경로에 Ruff를 실행한다.
+`test.ps1`는 web build → TOML 파서 준비 → Node 테스트 → 문구 census → 복잡도 예산 → 문서 계약 →
+Rust workspace → 설치 Chrome 렌더·rhwp 왕복 → 실 Win32 → 네이티브 실창을 실행하고 실패한 단계에서 멈춘다.
+인자는 `-LiveScope`·`-SkipLive`뿐이며 그 밖의 인자는 거절한다. Rust만은 `.\test-rust.ps1`로 검사한다.
 문서 검사 성공을 전체 품질 성공으로 보고하지 않는다.
 로컬 `.\test.ps1 -LiveScope auto`는 나머지 검사를 마친 뒤 봉인한 web 자산을 검증하고
 Rust GUI를 release profile로 빌드해 격리 자산 폴더에서 해당 WebView2 범위만 실행한다.
@@ -33,12 +33,13 @@ Rust GUI를 release profile로 빌드해 격리 자산 폴더에서 해당 WebVi
 
 [quality.yml](.github/workflows/quality.yml)이 job 구성·순서를 소유한다. `sealed-web`의 한 산출물을
 소비자가 `VerifyExisting`으로 **setup-node보다 먼저** 검증한다. `quality-gate`는 필수 job의
-success만 허용하고 문서 변경도 repo-contract에서 검사한다. `sealed-web`은 Node의 프런트
-계약 검사와 Rust의 봉인 검증을 사용하며 Python 환경을 설치하지 않는다.
+success만 허용하고 문서 변경은 `static`에서 검사한다. `sealed-web`은 Node의 프런트
+계약 검사와 Rust의 봉인 검증을 사용한다.
 
-coverage 하한은 [원장](tests/contracts/package-coverage-floors.toml)의 패키지별 line·branch 값이다.
-네이티브 양성 테스트를 수치로 대체하지 않는다. `native`·`browser`·`live`는 등록된 자원 marker다.
-자원이 없는 로컬에서만 `HWPX_SKIP_NATIVE_TESTS`·`HWPX_SKIP_MOTION_TESTS`·`HWPX_SKIP_GUI_TESTS`를
+coverage 하한은 [원장](tests/contracts/package-coverage-floors.toml)의 패키지별 line·branch 값이며
+`scripts/rust_coverage.ps1`이 LLVM 계측으로 재고 `rust-coverage` job이 소유한다. 하한은 올리기만 한다.
+네이티브 양성 테스트를 수치로 대체하지 않는다. 실 Win32 검사는 `#[ignore]` Rust 테스트이며 이름 목록을
+`test.ps1`·`windows-native`가 공유한다. 자원이 없는 로컬에서만 `HWPX_SKIP_NATIVE_TESTS`·`HWPX_SKIP_MOTION_TESTS`·`HWPX_SKIP_GUI_TESTS`를
 명시하고 제외 범위를 보고한다. CI에는 opt-out·부분 live가 없다. 기존 창·fixture와 앱 홈 격리를 재사용한다.
 
 ```powershell
@@ -55,7 +56,7 @@ coverage 하한은 [원장](tests/contracts/package-coverage-floors.toml)의 패
 frontend identity를 대조한다. `build-metadata.json`은 identity와 런타임 근거를 담는다.
 동봉 자산은 [제품 지원 경계](docs/product.md#product-scope)를 따른다.
 
-GUI와 CLI는 독립 onedir 폴더 `dist/hwpx-filler-web`·`dist/hwpx-cli`에 배포한다.
+GUI와 CLI는 독립 폴더 `dist/hwpx-filler-web`·`dist/hwpx-cli`에 배포한다.
 각 exe는 `hwpx-filler-web.exe`·`hwpx-cli.exe`다. 빌더는 Node 없는 PATH의 seal selfcheck,
 실제 WebView2·same-origin·외부망 차단과 CLI 명령을 검사한다. GUI 런타임은 CLI에서 제외한다.
 Node·node_modules·frontend 원천은 싣지 않고, 제3자 고지는 각 번들의 `THIRD_PARTY_NOTICES`·
@@ -68,21 +69,21 @@ Node·node_modules·frontend 원천은 싣지 않고, 제3자 고지는 각 번�
 [작업 흐름](docs/workflow.md), [화면 규칙](docs/ui-style.md)이 각각 소유한다.
 실패·불확실성·손실을 숨기거나 의미 판정을 여러 계층에서 다시 조립하지 않는다.
 
-링1 공개 API는 소비 컨트롤러와 행동 테스트를 함께 변경한다. 화면 추가·삭제·개명은 컨트롤러·
+`hwpx-filler` 공개 API는 소비 컨트롤러와 행동 테스트를 함께 변경한다. 화면 추가·삭제·개명은 컨트롤러·
 registry·프런트 라우팅·DOM 루트·blocker 복구·selftest·live101·실렌더를 한 변경으로 다룬다.
 직접 호출은 메서드 입력 검증과 생성 브리지·독립 오라클을 함께 대조한다.
 동결 모델·자산은 실제 소비자를 확인하지 않고 삭제하거나 표면에 재연결하지 않는다.
 
 리뷰는 계획 일치뿐 아니라 기존 busy/disabled 열거, 트리거↔액션 양방향 존재, 공유 팩토리·
-상수·헬퍼의 중복 구현, docstring에 명시한 seam·접근 경계 우회를 확인한다.
+상수·헬퍼의 중복 구현, 문서 주석에 명시한 seam·접근 경계 우회를 확인한다.
 사용자 새 문장은 [문안 규칙](docs/ui-style.md#ui-copy)대로 기본 0이고 먼저 열거한다.
 
-모듈·클래스·함수의 문장·분기 상한은 [복잡도 게이트](scripts/complexity_budget.mjs)가 검사한다.
+JavaScript·Rust 모듈·함수의 문장·분기 상한은 [복잡도 게이트](scripts/complexity_budget.mjs)가 검사한다.
 [동결 원장](tests/contracts/complexity-budget.toml)의 기존 초과는 내려가기만 하며,
 책임을 분리한 뒤 `node scripts/complexity_budget.mjs --tighten`으로 줄인다.
 추가·상향은 추적 이슈와 사유를 기록한 임시 `override`만 허용한다.
 
-커밋은 한국어 Conventional Commits와 PR 번호를 사용한다. 빌드·venv·비밀값·coverage·pytest
+커밋은 한국어 Conventional Commits와 PR 번호를 사용한다. 빌드·비밀값·coverage
 보고서·로컬 에이전트 설정은 커밋하지 않는다. 봇 리뷰는 자문이며 고칠 것은 고치고 독립 작업은
 이슈로 남긴다. 필수 품질 판정은 `quality-gate`다. 테스트하지 못한 자원·범위를 결과에 명시한다.
 문서 경로 수정은 설명 링크와 실제 파일 입력을 구분한다. 목업의 테스트 입력은 먼저 최소

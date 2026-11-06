@@ -3,20 +3,19 @@
 <a id="architecture-boundaries"></a>
 ## 계층과 실행 자산
 
-`hwpxfiller`→`hwpxcore`; Rust도 `hwpx-filler`→`hwpx-core`다. 역의존 금지.
+`hwpx-desktop`→`hwpx-filler`→`hwpx-core` 순으로만 의존한다. 역의존 금지.
 
 | 계층 | 소유 | 금지 |
 |---|---|---|
-| `hwpxcore/` 형식 커널 | HWPX bytes 파싱·관찰·직렬화 | 제품 규칙, 파일 시스템·창·시계 등 환경 효과 |
-| domain·application | 작업·구성·선택·준비·실행 판정 | DOM·Tauri 창 |
-| `viewmodel/` | 상태·문안·게이트 투영 | 실제 창·DOM 조작 |
-| `webapp/` | 컨트롤러·브리지·네이티브 자원 조정 | 도메인 판정 재구현 |
+| `crates/hwpx-core` 형식 커널 | HWPX bytes 파싱·관찰·직렬화 | 제품 규칙, 파일 시스템·창·시계 등 환경 효과 |
+| `crates/hwpx-filler` | 작업·구성·선택·준비·실행 판정, 상태·문안·게이트 투영 | Tauri·WebView2·Win32 창 |
+| `crates/hwpx-desktop` | 컨트롤러·브리지·네이티브 자원 조정, GUI·CLI 실행 파일 | 도메인 판정 재구현 |
+| `crates/hwpx-artifact` | 웹 산출물 봉인·identity 대조 | 제품 판정 |
 | `frontend/` | React 렌더·포커스·모달·표시 상태 | 의미·권한·최신성·실행 가능 여부의 독립 판정 |
 
-모듈·공개 경계는 [module-rings.toml](../tests/contracts/module-rings.toml)과
-[architecture_contract.toml](../tests/architecture_contract.toml)이 소유한다. 예외 복제 금지.
-소스 실행과 네이티브 번들은 React·Tauri 2·WebView2를 사용한다. 앱·CLI의 제품 처리는 Rust가
-맡고, Python 구현은 기존 계약 대조와 아직 이전하지 않은 검증에 남아 있다.
+crate 의존 방향과 형식 커널의 환경 효과 금지는 [architecture.rs](../crates/hwpx-artifact/tests/architecture.rs),
+프런트 vendor 봉쇄는 [architecture_contract.toml](../tests/architecture_contract.toml)이 소유한다. 예외 복제 금지.
+소스 실행과 네이티브 번들은 React·Tauri 2·WebView2를 사용하며 앱·CLI의 제품 처리는 모두 Rust가 맡는다.
 소스 `build/web/`, 배포 번들 `web/`를 봉인 검증한다. 경로 override·검증 실패 fallback은 없다.
 [빌드 절차](../CONTRIBUTING.md#development)를 따른다.
 

@@ -40,7 +40,7 @@ function unwrapDispatchResult(value) {
   }
   const rejection = value[DISPATCH_REJECTION_KEY];
   if (!rejection || typeof rejection !== "object" || typeof rejection.message !== "string") {
-    throw new Error("Python dispatch 거절 봉투가 손상되었습니다.");
+    throw new Error("Rust dispatch 거절 봉투가 손상되었습니다.");
   }
   const error = new Error(rejection.message);
   if (typeof rejection.name === "string" && rejection.name) error.name = rejection.name;

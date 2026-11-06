@@ -8,7 +8,7 @@
 > **권위 범위:** structural range 설계 전 format-kernel 관찰, corpus 증거와 미해결 질문
 > **후속 정본:** production 동작과 회귀 검사는 `crates/hwpx-core/src/bookmark_region.rs`와 하위 모듈,
 > 거절 입력은 `tests/fixtures/bookmark_region_refusals.json`이 소유한다. 아래 Python 경로와 검사 수치는
-> 원관측 당시의 기록이다. native evidence와 Q1~Q7 판정은 이 문서가 소유한다.
+> 원관측 당시의 기록이며 그 도구는 Python 구현 퇴역으로 제거되었다. native evidence와 Q1~Q7 판정은 이 문서가 소유한다.
 > **편집 정책:** 새 native evidence가 생길 때만 판정과 근거를 함께 갱신
 
 ## 1. 범위와 방법
