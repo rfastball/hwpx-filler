@@ -90,6 +90,16 @@
 import { ERROR_CODES } from "../runner.js";
 import { probePclmRegistration, probeSheetReorder } from "./pclm_registration.js";
 import { probeCardCopyWithHoles, probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
+import {
+  authoringKeyboardHelpers, authoringKeyboardSnapshot, probeAuthoringKeyboardOutline,
+  probeAuthoringKeyboardProperties, probeAuthoringKeyboardDock, probeAuthoringKeyboardPosition,
+  probeAuthoringKeyboardToolbar,
+} from "./editor_workbench_keyboard.js";
+import {
+  hwpxAuthoringHelpers, runHwpxAuthoringSearchAndCreate, runHwpxAuthoringUndoRedo,
+  runHwpxAuthoringRename, runHwpxAuthoringModes, runHwpxAuthoringKeyboardNav,
+  runHwpxAuthoringNarrowWindow, runHwpxAuthoringSavePath,
+} from "./editor_workbench_band.js";
 
 export const D_CLUSTER = "D";
 
@@ -439,156 +449,19 @@ async function probeAuthoringIme(ctx, out, input) {
 /** §10 키보드만으로: 구조 목록 → 필드 선택 → 속성(이름 변경 미리보기) → Escape 두 단계 → F2 →
  *  문제 위치 이동 → 원위치 복귀(TXT). 줄 번호는 Python 스냅샷에서 읽고, 화면의 위치 표기와 맞춘다. */
 async function probeAuthoringKeyboard(ctx, out) {
-  const doc = ctx.doc;
   const started = Date.now();
   const nav = keyboardNav(ctx);
-  const nameInput = () => doc.querySelector(".authoring-properties input");
-  const preview = () => doc.querySelector(
-    ".authoring-properties section.authoring-preview:not(.authoring-refusal)");
-  const contextText = () => textOf(doc.querySelector(".authoring-properties .authoring-context")).trim();
-  const panelGone = () => !doc.querySelector(".authoring-properties");
-  /* 편집면 캐럿이 선 줄(0부터) — CodeMirror 는 초점을 쥔 동안 제 선택을 DOM 선택으로 쓴다(activeElement 가 편집면이면
-     창 초점과 무관하다). 속성 패널을 열지 않는 선택(NG-06 keepDock)의 이동은 이 줄로 잰다. */
-  const caretLine = () => {
-    const content = doc.querySelector(".authoring-document:not([hidden]) .cm-content");
-    const picked = doc.getSelection ? doc.getSelection() : null;
-    if (!content || !picked || !picked.anchorNode || !content.contains(picked.anchorNode)) return -1;
-    let node = picked.anchorNode;
-    if (node === content) node = content.childNodes[Math.min(picked.anchorOffset, content.childNodes.length - 1)];
-    const el = node && (node.nodeType === 3 ? node.parentElement : node);
-    const line = el && el.closest ? el.closest(".cm-line") : null;
-    return line ? Array.prototype.indexOf.call(content.querySelectorAll(".cm-line"), line) : -1;
-  };
-  const snap = await service(ctx, "Bridge").initial("authoring");
-  const tab = (((snap || {}).tabs) || []).find((item) => item.id === (snap || {}).active_id) || {};
-  const field = ((((tab.analysis || {}).fields) || [])[0] || {});
-  const occurrence = (field.occurrences || [])[0] || {};
-  const problem = (tab.problems || []).find((item) => item.location) || {};
-  const dockTab = (el) => !!el && !!el.closest(".authoring-dock") && el.getAttribute("role") === "tab";
-  // 문맥 줄은 Python 의 사람이 읽는 위치(UX-10 R2: 「N행」)다 — 스냅샷의 줄 번호(0부터)로 기대값을 세운다.
-  const range = (place) => `${Number((place || {}).line) + 1}행`;
+  /* `editor_workbench_keyboard.js` 는 production import 그래프의 순환을 피하려고 이 파일을
+     역수입하지 않는다 — 공유 헬퍼는 여기서 한 번 묶어 인자로 내려보낸다. */
+  const lib = { service, settleRender, settleUntil, pressKey, textOf, waitFor, typeValue, probeAuthoringIme };
+  const helpers = authoringKeyboardHelpers(ctx.doc, lib);
   try {
-    out.kbd_outline_reached = await nav.cycleTo(".authoring-outline");
-    if (!out.kbd_outline_reached) return;
-    /* 필드 목록은 구조 패널의 두 번째 보기다(UX-09): F6 은 보이는 보기(구조)의 tree 로 들어오므로, 보기 탭 줄로
-       올라가(Shift+Tab) → 로 「필드」 보기를 연다(자동 활성화). 이어서 Tab 이 필터를 지나 그 보기의 tree 로 간다. */
-    const outlineTab = (el) => !!el && el.getAttribute("role") === "tab" && !!el.closest(".authoring-outline");
-    out.kbd_fields_view = nav.tabTo(outlineTab, 6, true)
-      && nav.arrowTo((el) => outlineTab(el) && textOf(el).trim().indexOf("필드") === 0, "ArrowRight", 2);
-    await settleRender(ctx);
-    // 초점만이 아니라 보기가 실제로 바뀌었는가 — 아니면 다음 Tab 이 숨지 않은 구조 tree 로 들어가 같은 이름의 사용 위치 줄을 고른다.
-    out.kbd_fields_view = out.kbd_fields_view && nav.active().getAttribute("aria-selected") === "true";
-    if (!out.kbd_fields_view) return;
-    // 구조 목록은 APG tree 다(UX-04): 한 번의 Tab 으로 들어오고 ↓ 로 줄을 옮긴다.
-    out.kbd_field_focused = await nav.treeTo((el) => nav.nameOf(el).indexOf(`필드 · ${field.name} · `) === 0, 16);
-    out.kbd_field_label = nav.nameOf(nav.active());
-    if (!out.kbd_field_focused) return;
-    pressKey(ctx, "Enter");
-    out.kbd_properties_focus = await waitFor(ctx, () => !!nameInput() && nav.active() === nameInput()
-      && nameInput().value === field.name, 40, 50);
-    out.kbd_properties_command = (doc.querySelector(".authoring-properties select") || {}).value || "";
-    out.kbd_name_described_by = nameInput() ? String(nameInput().getAttribute("aria-describedby") || "") : "";
-    out.kbd_properties_target = textOf(doc.getElementById("authoring-properties-target")).trim();
-    out.kbd_properties_context = textOf(doc.getElementById("authoring-properties-context")).trim();
-    if (!out.kbd_properties_focus) return;
-
-    await probeAuthoringIme(ctx, out, nameInput());
-
-    typeValue(ctx, nameInput(), "공고제목");
-    pressKey(ctx, "Enter");
-    out.kbd_rename_preview = await waitFor(
-      ctx, () => textOf(preview()).indexOf("‘공고제목’으로 변경됩니다") >= 0, 40, 50);
-    out.kbd_rename_preview_text = textOf(preview()).trim().slice(0, 120);
-    pressKey(ctx, "Escape");                               // 1단계: 작성 중인 값만 되돌린다
-    await settleUntil(ctx, () => !!nameInput() && nameInput().value === field.name);
-    out.kbd_escape_reverts = !!nameInput() && nameInput().value === field.name;
-    out.kbd_escape_keeps_panel = !panelGone();
-    pressKey(ctx, "Escape");                               // 2단계: 패널을 닫고 선택으로 돌아간다
-    out.kbd_escape_closes = await waitFor(ctx, panelGone, 20, 50);
-    out.kbd_escape_focus_editor = await waitFor(ctx, () => nav.within(".cm-editor"), 20, 50);
-    pressKey(ctx, "F2");                                   // 선택한 의미 요소의 이름 작업
-    out.kbd_f2_focus = await waitFor(ctx, () => !!nameInput() && nav.active() === nameInput(), 20, 50);
-    out.kbd_f2_command = (doc.querySelector(".authoring-properties select") || {}).value || "";
-    pressKey(ctx, "Escape");
-    await waitFor(ctx, panelGone, 20, 50);
-
-    /* 문제는 하단 독(보조 패널)의 탭이다(§3.1): F6 으로 독에 들어가 「문제 N」 탭을 Enter 로 펼친다.
-       탭 이름의 수는 Python 스냅샷의 problems 수와 같아야 하고, 펼친 뒤 독에는 탭 패널이 하나만 선다. */
-    out.kbd_dock_reached = await nav.cycleTo(".authoring-dock");
-    // 독 탭 줄은 APG tabs 다: 들어온 탭에서 Home 으로 첫 탭(문제)까지 간다.
-    out.kbd_problems_tab = nav.arrowTo((el) => dockTab(el) && textOf(el).trim().indexOf("문제") === 0, "Home", 2);
-    out.kbd_problems_tab_label = out.kbd_problems_tab ? textOf(nav.active()).trim() : "";
-    out.kbd_problems_expected = (tab.problems || []).length;
-    if (!out.kbd_problems_tab) return;
-    const problemsTab = nav.active();
-    pressKey(ctx, "Enter");
-    const action = () => doc.querySelector(
-      '.authoring-dock [role="tabpanel"] .authoring-bottom[aria-label="문제"] .authoring-problem button');
-    out.kbd_problem_focus = await waitFor(ctx, () => !!action() && nav.active() === action(), 20, 50);
-    out.kbd_problems_selected = problemsTab.getAttribute("aria-selected") === "true";
-    out.kbd_dock_panels = doc.querySelectorAll('.authoring-dock [role="tabpanel"]').length;
-    out.kbd_problem_action = nav.nameOf(nav.active());
-    const problemRow = doc.querySelector('.authoring-bottom[aria-label="문제"] .authoring-problem');
-    out.kbd_problem_text = textOf(problemRow).trim().slice(0, 120);
-    // 문제 한 건은 행이다(UX-09) — 심각도는 글자 칩, 종류는 흐린 글로 선다(색이 아니라 글).
-    out.kbd_problem_severity = textOf(problemRow && problemRow.querySelector(".authoring-badge")).trim();
-    out.kbd_problem_category = textOf(problemRow && problemRow.querySelector(".authoring-problem-category")).trim();
-    if (!out.kbd_problem_focus) return;
-    /* 문제 행의 Enter 는 독에서 시작한 선택이다(NG-06 keepDock): 편집면 선택이 문제 위치로 옮겨 가고, 독의 활성 탭은
-       「문제」 그대로이며 속성 패널은 열리지 않는다. 이동은 편집면 캐럿이 선 줄로 잰다(문제 위치는 Python 스냅샷의 줄). */
-    pressKey(ctx, "Enter");
-    out.kbd_problem_expected_line = Number((problem.location || {}).line);
-    out.kbd_problem_moved = await waitFor(
-      ctx, () => caretLine() === out.kbd_problem_expected_line, 40, 50);
-    out.kbd_problem_caret_line = caretLine();
-    await settleRender(ctx);
-    out.kbd_problem_dock_kept = problemsTab.getAttribute("aria-selected") === "true"
-      && !!doc.querySelector('.authoring-dock [role="tabpanel"] .authoring-bottom[aria-label="문제"]');
-    out.kbd_problem_no_properties = panelGone();
-
-    /* 「이전 위치로」는 도구 막대 「더보기」 메뉴 안에 있다: 더보기 → Enter → 메뉴 첫 항목에 초점 →
-       ↓ 로 「이전 위치로」 → Enter. 도구 막대와 메뉴는 APG toolbar·menu 라 Tab 이 아니라 방향키로 옮긴다. */
-    out.kbd_toolbar_again = await nav.cycleTo(".authoring-toolbar");
-    /* 흐린 만들기 단추(NG-11): 도구 막대 roving 이 aria-disabled 단추에도 선다. Enter(누름)는 명령을 실행하지 않고
-       위치 줄 메모에 그 판정의 Python 사유를 세운다 — hover 사유(title)와 같은 문장이다. 이 문서는 닫히지 않은
-       항목(구조 오류)이 있어 「항목으로 만들기」가 어느 자리에서나 불가다. 펼친 독 탭(문제)과 초점은 그대로다. */
-    const dimmedSlot = (el) => !!el && !!el.closest(".authoring-toolbar") && textOf(el).trim() === "항목으로 만들기";
-    out.kbd_dimmed_reached = nav.arrowTo(dimmedSlot, "ArrowRight", 20);
-    if (!out.kbd_dimmed_reached) return;
-    const dimmed = nav.active();
-    out.kbd_dimmed_aria = dimmed.getAttribute("aria-disabled") === "true" && !dimmed.disabled;
-    out.kbd_dimmed_title = String(dimmed.getAttribute("title") || "");
-    const noteText = () => textOf(doc.querySelector("#scr-authoring .authoring-selection-note")).trim();
-    pressKey(ctx, "Enter");
-    out.kbd_dimmed_note = await waitFor(ctx, () => !!noteText() && noteText() === out.kbd_dimmed_title, 20, 50);
-    out.kbd_dimmed_note_text = noteText();
-    out.kbd_dimmed_no_panel = panelGone() && problemsTab.getAttribute("aria-selected") === "true";
-    out.kbd_dimmed_focus_kept = nav.active() === dimmed;
-    out.kbd_more_button = nav.arrowTo(
-      (el) => !!el && !!el.closest(".authoring-toolbar") && nav.nameOf(el) === "더보기", "ArrowRight", 20);
-    if (!out.kbd_more_button) return;
-    pressKey(ctx, "Enter");
-    const moreMenu = () => doc.querySelector('#scr-authoring [role="menu"][aria-label="더보기"]');
-    out.kbd_more_menu = await waitFor(ctx, () => !!moreMenu() && !!nav.active()
-      && nav.active().getAttribute("role") === "menuitem" && moreMenu().contains(nav.active()), 20, 50);
-    if (!out.kbd_more_menu) return;
-    out.kbd_back_button = nav.arrowTo((el) => !!el && el.getAttribute("role") === "menuitem"
-      && !!moreMenu() && moreMenu().contains(el) && textOf(el).trim() === "이전 위치로", "ArrowDown", 8);
-    if (!out.kbd_back_button) return;
-    pressKey(ctx, "Enter");
-    out.kbd_more_menu_closed = await waitFor(ctx, () => !moreMenu(), 20, 50);
-    /* 복귀는 편집면 캐럿이 원래 줄(필드 사용 위치)로 돌아온 것으로 잰다. 이어서 F2 로 속성 패널을 열어 그 자리의
-       문맥 줄이 원시 offset 이 아니라 사람이 읽는 줄 번호(「N행」)임을 되읽는다(UX-10 R2). */
-    out.kbd_back_expected_line = Number(occurrence.line);
-    out.kbd_back_restored = await waitFor(ctx, () => caretLine() === out.kbd_back_expected_line, 40, 50);
-    out.kbd_back_focus_editor = await waitFor(ctx, () => nav.within(".cm-editor"), 20, 50);
-    out.kbd_back_expected = range(occurrence);
-    pressKey(ctx, "F2");
-    out.kbd_back_properties = await waitFor(ctx, () => !!nameInput() && contextText().indexOf(range(occurrence)) >= 0, 40, 50);
-    out.kbd_back_context = contextText();
-    pressKey(ctx, "Escape");
-    await waitFor(ctx, panelGone, 20, 50);
-    out.kbd_error_band = textOf(doc.querySelector("#scr-authoring .authoring-shell > div.authoring-error")).trim();
+    const { tab, field, occurrence, problem } = await authoringKeyboardSnapshot(ctx, lib);
+    const outlineOk = await probeAuthoringKeyboardOutline(ctx, out, nav, field, lib);
+    const propertiesOk = await probeAuthoringKeyboardProperties(ctx, out, nav, helpers, field, outlineOk, lib);
+    const dock = await probeAuthoringKeyboardDock(ctx, out, nav, tab, propertiesOk, lib);
+    const positionOk = await probeAuthoringKeyboardPosition(ctx, out, helpers, dock.problemsTab, problem, dock.ok, lib);
+    await probeAuthoringKeyboardToolbar(ctx, out, nav, helpers, occurrence, dock.problemsTab, positionOk, lib);
   } finally {
     out.kbd_ms = Date.now() - started;
   }
@@ -1131,379 +1004,24 @@ async function runHwpxAuthoringBand(ctx, out, candidate, sid) {
   const doc = ctx.doc;
   const Bridge = service(ctx, "Bridge");
   const Personalization = service(ctx, "Personalization");
-  const all = (selector) => Array.prototype.slice.call(doc.querySelectorAll(selector));
-  const hit = (selector, label) => all(selector).find((el) => textOf(el).indexOf(label) >= 0) || null;
-  const exact = (selector, label) => all(selector).find((el) => textOf(el).trim() === label) || null;
-  // 그림 단추(UX-09: 실행 취소·다시 실행)는 보이는 글 대신 이름(aria-label)으로 찾는다.
-  const named = (selector, label) => all(selector).find((el) => String(el.getAttribute("aria-label") || "").indexOf(label) === 0) || null;
-  const snapshot = () => Bridge.initial("authoring");
-  const activeTab = (snap) => (((snap || {}).tabs) || []).find(
-    (tab) => tab.id === (snap || {}).active_id) || {};
-  const fieldsOf = (tab) => (((tab.analysis) || {}).fields) || [];
-  const countOf = (tab, name) => {
-    const found = fieldsOf(tab).find((field) => field.name === name);
-    return found ? found.count : 0;
+  /* `editor_workbench_band.js` 는 production import 그래프의 순환을 피하려고 이 파일을
+     역수입하지 않는다 — 공유 헬퍼는 여기서 한 번 묶어 인자로 내려보낸다. */
+  const lib = {
+    textOf, waitFor, typeValue, byId, pollFor, keyboardNav, pressKey, tabbables, settleRender,
+    stubBridgeInvoke,
   };
-  const tab = async () => activeTab(await snapshot());
-  const content = async () => String(
-    (await Bridge.call("authoring", "content", { session_id: sid })).content);
-  const undoLabel = () => String((named(".authoring-toolbar button", "문서 실행 취소") || { getAttribute: () => "" }).getAttribute("aria-label") || "").trim();
-  const previewText = () => textOf(doc.querySelector(
-    ".authoring-properties section.authoring-preview:not(.authoring-refusal)"));
-  const affected = () => {
-    const found = /사용 위치 (\d+)곳/.exec(previewText());
-    return found ? Number(found[1]) : -1;
-  };
-  /** 속성 폼의 Enter — 이름 칸에서 누른 Enter 의 암묵 제출과 같은 submit 경로다(pressKey 의 Enter 와 같다). */
-  const enter = () => {
-    const form = doc.querySelector("#scr-authoring form.authoring-properties");
-    if (!form) return false;
-    form.requestSubmit();
-    return true;
-  };
-  const crumbNow = () => textOf(doc.querySelector(
-    '#scr-authoring .authoring-selection .authoring-crumb[aria-current="location"]')).trim();
-  const afford = (ms) => ctx.remainingMs() > ms;
+  const helpers = hwpxAuthoringHelpers(ctx, out, doc, Bridge, sid, lib);
 
-  /* 내부 대기 상한은 **짧게** 잡는다(DOM 2초 · 백엔드 왕복 2.5초). 어느 국면이 서지
-     않으면 사유를 적고 곧장 나간다 — 아홉 자리에서 각자 길게 기다리면 합이 프로브 시한을
-     넘고, 그때는 감시견이 프로브째 죽여 TXT 단언까지 증거를 잃는다. */
-  const DOM_TRIES = 20;
-  const DOM_MS = 100;
-  const WIRE_TRIES = 20;
-  const WIRE_MS = 125;
-  /* 중단 사유와 함께 **표면이 그 순간 보이던 오류**를 싣는다 — 제품이 거절·예외를 오류
-     띠(`.authoring-error`)로 그렸는데 프로브가 사유만 적으면, 「반영되지 않음」이 대기 부족인지
-     제품의 거절인지가 증거에서 갈리지 않는다. */
-  const give = (reason) => {
-    out.hwpx_authoring_aborted = reason;
-    out.hwpx_authoring_abort_alerts = all("#scr-authoring .authoring-error")
-      .map((el) => textOf(el).trim().slice(0, 200)).filter(Boolean);
-    return false;
-  };
+  const mount = await helpers.content();                 // 디스크 바이트(아직 편집기 발신 전)
+  out.hwpx_authoring_base_field_count = helpers.fieldsOf(await helpers.tab()).length;
 
-  const mount = await content();                        // 디스크 바이트(아직 편집기 발신 전)
-  out.hwpx_authoring_base_field_count = fieldsOf(await tab()).length;
-
-  /* ── ④ 서식 있는 본문 문구를 고르고 필드로 만든다 ─────────────────────────────
-     본문 범위 선택은 iframe **안**의 사건이라 게이트가 직접 끌 수 없다. 제품이 같은
-     선택을 만드는 두 번째 실경로가 검색 적중 클릭이다(controller.select → locate). */
-  exact('.authoring-dock [role="tab"]', "검색").click();
-  if (!await waitFor(ctx, () => !!doc.querySelector('.authoring-bottom input[name="query"]'),
-    DOM_TRIES, DOM_MS)) return give("검색 패널 미개방");
-  typeValue(ctx, doc.querySelector('.authoring-bottom input[name="query"]'), candidate.query);
-  exact(".authoring-bottom button", "찾기").click();
-  const found = await waitFor(
-    ctx, () => !!hit(".authoring-bottom button", candidate.context), WIRE_TRIES, WIRE_MS);
-  out.hwpx_authoring_search_hit = found
-    ? textOf(hit(".authoring-bottom button", candidate.context)).trim() : "";
-  if (!found) return give("본문 검색 적중 없음");
-  hit(".authoring-bottom button", candidate.context).click();
-  /* 검색 적중은 독에서 시작한 선택이다(NG-06 keepDock): 선택이 옮겨 가고(「필드로 만들기」 판정이 그 범위로 켜진다)
-     독의 검색 탭과 적중 목록은 그대로이며 속성 패널은 열리지 않는다. 속성은 이어서 「필드로 만들기」가 연다. */
-  const createReady = () => {
-    const button = exact(".authoring-toolbar button", "필드로 만들기");
-    return !!(button && !button.disabled && button.getAttribute("aria-disabled") !== "true");
-  };
-  if (!await waitFor(ctx, createReady, WIRE_TRIES, WIRE_MS)) return give("검색 적중 선택 뒤 필드로 만들기 미개방");
-  const searchTab = exact('.authoring-dock [role="tab"]', "검색");
-  out.hwpx_authoring_hit_dock_kept = !!searchTab && searchTab.getAttribute("aria-selected") === "true"
-    && !!hit(".authoring-bottom button", candidate.context);
-  out.hwpx_authoring_hit_no_properties = !doc.querySelector(".authoring-properties");
-  // 일반 문서로 연(저장 경로 없는) 새 템플릿에는 연결된 작업이 없다 — 「변경 영향·작업 적용」 문맥 탭이 서지 않는다(NG-09).
-  out.hwpx_authoring_impact_tab = !!exact('.authoring-dock [role="tab"]', "변경 영향·작업 적용");
-  const create = exact(".authoring-toolbar button", "필드로 만들기");
-  out.hwpx_authoring_create_enabled = !!(create && !create.disabled && create.getAttribute("aria-disabled") !== "true");
-  if (!out.hwpx_authoring_create_enabled) return give("필드로 만들기 비활성");
-  create.click();
-  if (!await waitFor(ctx, () => !!doc.querySelector(".authoring-properties input"),
-    DOM_TRIES, DOM_MS)) return give("속성 입력 없음");
-  /* 만들기 진입(IDE-03 NG-04·NG-05): 「명령」 선택이 없고 제출 단추가 명령 이름 하나다. 이름 칸은 Python 제안값으로
-     열린다 — 이 표본 문구(「1. 입찰개요」)에는 「라벨:」이 없어 빈 칸이다(진단용으로 싣는다). */
-  out.hwpx_authoring_create_form_select = !!doc.querySelector(".authoring-properties select");
-  out.hwpx_authoring_create_submit_label = textOf(doc.querySelector('.authoring-properties button[type="submit"]')).trim();
-  out.hwpx_authoring_create_suggested = doc.querySelector(".authoring-properties input").value;
-  out.hwpx_authoring_create_new_field = candidate.newField;
-  typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.newField);
-  /* 새 이름 한 자리의 필드 만들기는 확인 등급 none 이다(P-01): 명령 단추 한 번(= Enter 한 번)에 적용되고
-     미리보기 구획은 한 프레임도 서지 않는다. 그 사이 구획이 섰는지는 DOM 변화를 지켜 잰다. */
-  let previewFlashed = false;
-  const Observer = ctx.win.MutationObserver;
-  const flashes = new Observer(() => {
-    if (doc.querySelector(".authoring-properties section.authoring-preview:not(.authoring-refusal)")) previewFlashed = true;
-  });
-  flashes.observe(byId(ctx, "scr-authoring"), { childList: true, subtree: true });
-  const submit = exact(".authoring-properties button", "필드로 만들기");
-  if (!submit) { flashes.disconnect(); return give("필드로 만들기 제출 단추 없음"); }
-  submit.click();
-  const appliedAt = Date.now();
-  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
-    WIRE_TRIES, WIRE_MS)) {
-    const late = await tab();
-    out.hwpx_authoring_create_late = {
-      ms: Date.now() - appliedAt, revision: late.revision, dirty: late.dirty,
-      field_count: fieldsOf(late).length, new_count: countOf(late, candidate.newField),
-    };
-    flashes.disconnect();
-    out.hwpx_authoring_create_refusal = textOf(
-      doc.querySelector(".authoring-properties .authoring-reason[role=alert], .authoring-refusal")).trim().slice(0, 160);
-    return give("필드 생성이 분석에 반영되지 않음");
-  }
-  out.hwpx_authoring_create_ms = Date.now() - appliedAt;
-  /* 적용 뒤(결정 2·NG-14): 속성 패널이 닫히고 선택이 새 필드에 서서 위치 줄이 「필드 · 이름」이 된다. */
-  out.hwpx_authoring_create_panel_closed = await waitFor(
-    ctx, () => !doc.querySelector(".authoring-properties"), WIRE_TRIES, WIRE_MS);
-  await waitFor(ctx, () => crumbNow() === `필드 · ${candidate.newField}`, WIRE_TRIES, WIRE_MS);
-  flashes.disconnect();
-  out.hwpx_authoring_create_preview_flashed = previewFlashed;
-  out.hwpx_authoring_create_crumb = crumbNow();
-  const created = await content();
-  out.hwpx_authoring_create_field_count = fieldsOf(await tab()).length;
-  out.hwpx_authoring_create_label = undoLabel();
-  out.hwpx_authoring_create_changed_content = created !== mount;
-
-  /* ── ⑤ 한 번의 문서 실행 취소가 원래 본문을 되돌린다 ───────────────────────── */
-  named(".authoring-toolbar button", "문서 실행 취소").click();
-  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 0,
-    WIRE_TRIES, WIRE_MS)) return give("실행 취소가 필드를 되돌리지 않음");
-  const undone = await content();
-  out.hwpx_authoring_undo_field_count = fieldsOf(await tab()).length;
-  out.hwpx_authoring_undo_changed_content = undone !== created;
-  /* 진단용(단언하지 않는다): 마운트 시점 기준선은 **디스크 바이트**라, 되돌린 뒤 편집기가
-     내보낸 바이트와 동일하지 않을 수 있다. 원본 동일의 확정은 ⑧의 제품 비교기가 진다. */
-  out.hwpx_authoring_undo_content_equals_mount = undone === mount;
-  out.hwpx_authoring_undo_label_cleared = undoLabel() === "문서 실행 취소";
-  named(".authoring-toolbar button", "문서 다시 실행").click();
-  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 1,
-    WIRE_TRIES, WIRE_MS)) return give("다시 실행이 필드를 되살리지 않음");
-  out.hwpx_authoring_redo_field_count = fieldsOf(await tab()).length;
-  out.hwpx_authoring_redo_content_equals_create = (await content()) === created;
-  named(".authoring-toolbar button", "문서 실행 취소").click();
-  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.newField) === 0,
-    WIRE_TRIES, WIRE_MS)) return give("두 번째 실행 취소 미반영");
-  out.hwpx_authoring_undo2_content_equals_undo = (await content()) === undone;
-
-  /* ── ⑥ 이름 변경은 **모든 사용 위치**를 함께 옮긴다(AC07) ───────────────────── */
-  if (!afford(8000)) return give("예산 부족: 이름 변경");
-  // 필드 목록은 구조 패널의 「필드」 보기다(UX-09) — 그 보기를 열고, 필드 줄(treeitem)을 이름으로 찾는다
-  // (「필드 · 이름 · 사용 위치 n곳」 — 화면 읽기가 읽는 그 이름).
-  const fieldsView = doc.querySelector("#authoring-outline-fields");
-  if (fieldsView) fieldsView.click();
-  await settleRender(ctx);
-  const summary = all('#authoring-outline-fields-panel [role="treeitem"]').find(
-    (el) => String(el.getAttribute("aria-label") || "").indexOf(`필드 · ${candidate.field} · 사용 위치 ${candidate.occurrences}곳`) === 0);
-  out.hwpx_authoring_rename_target = summary ? String(summary.getAttribute("aria-label")).trim() : "";
-  if (!summary) return give("구조 목록에 사용 위치 2곳 필드가 없음");
-  summary.click();
-  /* 입력창의 존재로는 선택이 끝났는지 알 수 없다 — 선택(controller.select → locate)이 끝나야
-     명령이 「필드 이름 변경」으로 바뀌고 이름 칸이 그 필드의 이름으로 채워진다. 그 전에 쓰면
-     직전 명령이 옛 선택 위에서 미리보기를 낸다(게이트 4차 재실행에서 실제로 났다). 구조 목록 줄이 연
-     폼은 「명령」 선택을 둔다(NG-05). */
-  const settled = () => {
-    const kind = doc.querySelector(".authoring-properties select");
-    const input = doc.querySelector(".authoring-properties input");
-    return !!kind && kind.value === "rename_field" && !!input && input.value === candidate.field;
-  };
-  if (!await waitFor(ctx, settled, WIRE_TRIES, WIRE_MS)) return give("필드 선택 뒤 이름 변경 속성 미정착");
-  typeValue(ctx, doc.querySelector(".authoring-properties input"), candidate.renamed);
-  /* 이름 변경은 확인 등급 enter 다(P-01): 첫 Enter 가 영향 구획을 세우고, 같은 주 단추에 Enter 표기가 선다.
-     입력이 그대로면 두 번째 Enter 가 적용이다. */
-  if (!enter()) return give("이름 변경 폼 없음");
-  if (!await waitFor(ctx, () => affected() >= 0, WIRE_TRIES, WIRE_MS)) {
-    out.hwpx_authoring_rename_refusal = textOf(
-      doc.querySelector(".authoring-refusal")).trim().slice(0, 160);
-    return give("이름 변경 미리보기 미도착");
-  }
-  out.hwpx_authoring_rename_affected = affected();
-  out.hwpx_authoring_rename_preview_text = previewText().trim().slice(0, 160);
-  const armed = doc.querySelector('.authoring-properties button[type="submit"][aria-keyshortcuts="Enter"]');
-  out.hwpx_authoring_rename_enter_armed = !!armed && textOf(armed).trim() === "필드 이름 변경Enter";
-  if (!enter()) return give("이름 변경 Enter 확정 불가");
-  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.renamed) > 0,
-    WIRE_TRIES, WIRE_MS)) return give("이름 변경이 분석에 반영되지 않음");
-  const renamed = await tab();
-  out.hwpx_authoring_rename_new_count = countOf(renamed, candidate.renamed);
-  out.hwpx_authoring_rename_old_count = countOf(renamed, candidate.field);
-  out.hwpx_authoring_rename_field_total = fieldsOf(renamed).length;
-  named(".authoring-toolbar button", "문서 실행 취소").click();
-  if (!await pollFor(ctx, async () => countOf(await tab(), candidate.field) > 0,
-    WIRE_TRIES, WIRE_MS)) return give("이름 변경 실행 취소 미반영");
-  const restored = await tab();
-  out.hwpx_authoring_rename_undo_old_count = countOf(restored, candidate.field);
-  out.hwpx_authoring_rename_undo_new_count = countOf(restored, candidate.renamed);
-
-  /* ── ⑦ 표시 방식 전환은 내용도 미저장 상태도 건드리지 않는다(AC23) ───────────── */
-  const beforeModes = await tab();
-  const contentBeforeModes = await content();
-  const modeButton = (value) => doc.querySelector(`.authoring-toolbar .authoring-mode button[value="${value}"]`);
-  if (!modeButton("document")) return give("표시 방식 선택이 없음");
-  const applied = [];
-  for (const value of ["document", "structure", "template"]) {
-    modeButton(value).click();
-    await settleRender(ctx);
-    await ctx.sleep(120);                               // 장식 왕복(iframe) 반영
-    applied.push((doc.querySelector('.authoring-toolbar .authoring-mode button[aria-pressed="true"]') || {}).value || "");
-  }
-  out.hwpx_authoring_modes = applied;
-  const afterModes = await tab();
-  out.hwpx_authoring_mode_dirty_before = beforeModes.dirty;
-  out.hwpx_authoring_mode_dirty_after = afterModes.dirty;
-  out.hwpx_authoring_mode_content_stable = (await content()) === contentBeforeModes;
-
-  /* ── ⑦-b §10 키보드만으로 구조 목록의 필드를 고르고 F2 로 이름 칸에 간다(HWPX) ─────
-     실 rhwp iframe 이 초점을 가져가도 셸의 F6·F2·Escape 가 선다는 것을 잰다. 좌표 클릭 없음. */
-  if (afford(9000)) {
-    const kbStart = Date.now();
-    const nav = keyboardNav(ctx);
-    const nameInput = () => doc.querySelector(".authoring-properties input");
-    const prefix = `필드 · ${candidate.field} · 사용 위치 ${candidate.occurrences}곳`;
-    out.hwpx_kbd_outline = await nav.cycleTo(".authoring-outline");
-    /* 진단(단언하지 않는다): 첫 Tab 한 번의 사건 판정과 탭 순서 안의 위치를 싣는다 — 닿지 못했을 때
-       「키가 막혔다」와 「순서에 없다」를 증거에서 가른다. */
-    const before = nav.active();
-    const order = tabbables(ctx);
-    const first = out.hwpx_kbd_outline ? pressKey(ctx, "Tab") : { prevented: null };
-    out.hwpx_kbd_first_tab = { prevented: first.prevented, order: order.length,
-      at: order.indexOf(before), moved: nav.active() !== before, now: nav.nameOf(nav.active()).slice(0, 60) };
-    out.hwpx_kbd_field = out.hwpx_kbd_outline && await nav.treeTo((el) => nav.nameOf(el).indexOf(prefix) === 0, 80);
-    out.hwpx_kbd_field_label = nav.nameOf(nav.active());
-    if (out.hwpx_kbd_field) {
-      pressKey(ctx, "Enter");
-      await waitFor(ctx, settled, WIRE_TRIES, WIRE_MS);
-      pressKey(ctx, "F2");
-      out.hwpx_kbd_f2_focus = await waitFor(ctx, () => !!nameInput() && nav.active() === nameInput()
-        && nameInput().value === candidate.field, WIRE_TRIES, WIRE_MS);
-      /* Escape 는 두 단계다(§6.2·§10): 작성 중인 값이 적용값과 다르면 먼저 되돌리고, 다음 Escape 가
-         패널을 닫는다. rhwp 는 초점 이동 뒤 자기 커서를 300ms 주기로 다시 보고하므로 그 사이 선택
-         대상이 바뀌면 첫 Escape 가 「되돌리기」가 될 수 있다 — 단계 수와 그때의 대상을 함께 싣는다. */
-      const target = () => textOf(doc.getElementById("authoring-properties-target")).trim();
-      const gone = () => !doc.querySelector(".authoring-properties");
-      out.hwpx_kbd_escape_target_before = target();
-      out.hwpx_kbd_escape_presses = 0;
-      for (let press = 0; press < 2 && !gone(); press += 1) {
-        pressKey(ctx, "Escape");
-        out.hwpx_kbd_escape_presses += 1;
-        await waitFor(ctx, gone, 8, 100);
-      }
-      out.hwpx_kbd_escape_closes = gone();
-      /* UX-07 — 편집면 iframe **안**에서 누른 Escape·F6 도 셸에 닿는다. 스튜디오 입력칸은 같은 출처라
-         contentDocument 로 닿고, 합성 키도 스튜디오의 키 처리기를 실물로 지난다(셸로 넘기는 것은 그 처리기다). */
-      const frame = doc.querySelector(".authoring-document:not([hidden]) .authoring-editor-host iframe");
-      const studio = frame && frame.contentDocument;
-      const input = studio && studio.querySelector('[aria-label="문서 편집 입력"]');
-      out.hwpx_kbd_iframe_input = !!input;
-      if (out.hwpx_kbd_escape_closes && input) {
-        const pressInside = (key, init) => input.dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown",
-          Object.assign({ key, bubbles: true, cancelable: true }, init || {})));
-        frame.focus();
-        pressKey(ctx, "F2");                                   // 셸이 속성 패널을 다시 연다
-        out.hwpx_kbd_iframe_panel_open = await waitFor(ctx, () => !gone(), WIRE_TRIES, WIRE_MS);
-        pressInside("Escape");
-        out.hwpx_kbd_iframe_escape_closes = await waitFor(ctx, gone, 20, 100);
-        frame.focus();
-        pressInside("F6");
-        await settleRender(ctx);
-        out.hwpx_kbd_iframe_f6_to = nav.nameOf(nav.active()).slice(0, 60);
-        out.hwpx_kbd_iframe_f6_left = nav.active() !== frame && !nav.within(".authoring-canvas")
-          && nav.within(".authoring-toolbar,.authoring-outline,.authoring-properties,.authoring-dock");
-      }
-    }
-    out.hwpx_kbd_ms = Date.now() - kbStart;
-  } else {
-    out.hwpx_kbd_skipped = "예산 부족";
-  }
-
-  /* ── 좁은 창(760×600)·150% 배율에서도 편집면이 서고 가로 스크롤이 없다 ───────── */
-  const fits = () => {
-    const root = doc.documentElement;
-    const face = doc.querySelector(".authoring-canvas");
-    return {
-      scroll_w: root.scrollWidth, client_w: root.clientWidth,
-      canvas_h: face ? face.clientHeight : 0,
-      ok: root.scrollWidth <= root.clientWidth && !!face && face.clientHeight > 100,
-    };
-  };
-  if (afford(6000)) {
-    ctx.state.hwpxWindowResized = true;
-    await ctx.host("window_resize", { width: 760, height: 600 });
-    await ctx.sleep(600);                               // OS resize → relayout(grid_narrow 와 같은 값)
-    const narrow = fits();
-    out.hwpx_authoring_min_window_ok = narrow.ok;
-    out.hwpx_authoring_min_window_scroll_w = narrow.scroll_w;
-    out.hwpx_authoring_min_window_client_w = narrow.client_w;
-    out.hwpx_authoring_min_window_canvas_h = narrow.canvas_h;
-    await ctx.host("window_resize", { width: 1440, height: 900 });
-    await ctx.sleep(600);
-    ctx.state.hwpxWindowResized = false;
-    /* 배율은 제품의 개인화 동사로 올린다(설정 모달이 부르는 그 함수) — 150% = `larger`.
-       그 동사는 **폭도 함께 다시 쓴다**(`apply` 가 현재 계산값을 읽어 되쓴다). 그래서 그
-       값이 아직 서지 않은 대역에서 부르면 하한(180px)이 심어지고, 그 자취는 뒤따르는
-       개인화 프로브의 `master_width == 240` 실패로 나타난다 — 서지 않았으면 부르지 않고
-       사유를 싣는다(원인이 이 밴드가 아니라 저쪽 프로브로 보이는 경로를 만들지 않는다). */
-    const app = doc.querySelector(".app");
-    const masterBefore = app
-      ? ctx.win.getComputedStyle(app).getPropertyValue("--master-width").trim() : "";
-    if (!masterBefore) {
-      out.hwpx_authoring_font_scale_skipped = "개인화가 아직 폭을 적용하지 않았습니다";
-    } else {
-      const real = ctx.win.alert;
-      ctx.win.alert = function () {
-        out.hwpx_authoring_alerts = (out.hwpx_authoring_alerts || 0) + 1;
-      };
-      /* 되돌릴 값은 「normal」이 아니라 **이 부팅이 들고 있던 배율**이다 — 배율 영속 검사가
-         env 로 large/larger 를 심은 부팅에서 normal 로 되돌리면 그 검사의 재시작 되읽기가
-         normal 을 읽는다(게이트 3차에서 실제로 났다). */
-      const scaleBefore = doc.documentElement.getAttribute("data-font-scale") || "normal";
-      const pxBefore = ctx.win.getComputedStyle(doc.documentElement).fontSize;
-      out.hwpx_authoring_font_scale_before = scaleBefore;
-      try {
-        Personalization.setFontScale("larger");
-        await settleRender(ctx);
-        await ctx.sleep(200);
-        const large = fits();
-        out.hwpx_authoring_font_scale = String(
-          doc.documentElement.getAttribute("data-font-scale") || "");
-        out.hwpx_authoring_font_scale_px = ctx.win.getComputedStyle(doc.documentElement).fontSize;
-        out.hwpx_authoring_font_scale_ok = large.ok;
-        out.hwpx_authoring_font_scale_scroll_w = large.scroll_w;
-        out.hwpx_authoring_font_scale_client_w = large.client_w;
-        out.hwpx_authoring_font_scale_canvas_h = large.canvas_h;
-      } finally {
-        Personalization.setFontScale(scaleBefore);
-        await settleRender(ctx);
-        ctx.win.alert = real;
-      }
-      out.hwpx_authoring_font_scale_restored = ctx.win.getComputedStyle(
-        doc.documentElement).fontSize === pxBefore;
-      out.hwpx_authoring_master_width_stable = ctx.win.getComputedStyle(app)
-        .getPropertyValue("--master-width").trim() === masterBefore;
-    }
-  }
-
-  /* ── ⑧ 한 번도 저장하지 않은 문서의 첫 저장은 **경로를 묻는다**(AC01) ────────── */
-  if (!afford(4000)) return give("예산 부족: 저장 판정");
-  const asked = { count: 0 };
-  const saveStub = stubBridgeInvoke(ctx, "saveAuthoringDocument", "save_authoring_document",
-    () => async () => { asked.count += 1; return null; });   // 취소 = 아무 파일도 쓰지 않는다
-  try {
-    exact(".authoring-head button", "저장").click();
-    await pollFor(ctx, async () => asked.count > 0, DOM_TRIES, DOM_MS);
-  } finally { saveStub.restore(); }
-  out.hwpx_authoring_save_asked_for_path = asked.count === 1;
-  const current = await tab();
-  const refusal = await Bridge.call("authoring", "save",
-    { session_id: sid, revision: current.revision });
-  out.hwpx_authoring_save_needs_path = refusal.needs_path === true && refusal.needs_save_as === true;
-  out.hwpx_authoring_save_path_after = String((await tab()).save_path || "");
-
-  /* 되돌린 문서가 **디스크의 원본과 같은가** — 제품의 보존 비교기로 확정한다(바이트 비교로는
-     rhwp 직렬화 차이와 진짜 손실을 가를 수 없다). 이 자리가 마지막인 이유: 비교 결과가
-     `rhwp_editable` 을 다시 쓰므로, 실패하면 문서가 읽기 전용이 된다. */
-  const source = await Bridge.call("authoring", "external_content", { session_id: sid });
-  const verdict = await Bridge.call("authoring", "rhwp_roundtrip_preflight",
-    { session_id: sid, revision: (await tab()).revision, content: source.content });
-  out.hwpx_authoring_undone_matches_source = verdict.editable === true;
-  out.hwpx_authoring_undone_diagnostics = (verdict.diagnostics || []).slice(0, 6);
+  const create = await runHwpxAuthoringSearchAndCreate(ctx, out, candidate, helpers, mount, lib);
+  const undoOk = await runHwpxAuthoringUndoRedo(ctx, out, candidate, helpers, mount, create.created, create.ok, lib);
+  const renameOk = await runHwpxAuthoringRename(ctx, out, candidate, helpers, undoOk, lib);
+  const modesOk = await runHwpxAuthoringModes(ctx, out, helpers, renameOk, lib);
+  await runHwpxAuthoringKeyboardNav(ctx, out, candidate, helpers, modesOk, lib);
+  await runHwpxAuthoringNarrowWindow(ctx, out, helpers, modesOk, Personalization, lib);
+  await runHwpxAuthoringSavePath(ctx, out, sid, helpers, modesOk, lib);
 }
 
 /** 몰입 표면을 걷고 셸을 되돌린다 — app.py:2058-2065 · 2158-2162 · 3316-3322 의 `finish()` 앞머리.

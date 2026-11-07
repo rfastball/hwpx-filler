@@ -154,9 +154,7 @@ function assertContract(condition, name, message) {
   if (!condition) throw probeError(name, "registration", ERROR_CODES.CONTRACT, message);
 }
 
-function normalizeDefinition(def, index, taken) {
-  const name = def && typeof def.name === "string" ? def.name : `#${index}`;
-  assertContract(def && typeof def === "object", name, "프로브 정의가 객체가 아닙니다.");
+function assertRequiredFields(def, name) {
   for (const field of REQUIRED_FIELDS) {
     assertContract(
       Object.prototype.hasOwnProperty.call(def, field),
@@ -164,8 +162,14 @@ function normalizeDefinition(def, index, taken) {
       `필수 필드 누락: ${field}`,
     );
   }
+}
+
+function assertNameShape(def, name, taken) {
   assertContract(typeof def.name === "string" && def.name.length > 0, name, "name 이 비었습니다.");
   assertContract(!taken.names.has(def.name), name, "같은 이름의 프로브가 이미 있습니다.");
+}
+
+function assertKeysShape(def, name) {
   assertContract(
     Array.isArray(def.keys) && def.keys.length > 0
       && def.keys.every((k) => typeof k === "string" && k.length > 0),
@@ -175,6 +179,9 @@ function normalizeDefinition(def, index, taken) {
   /* 키 충돌은 여기서 세지 않는다 — 모드가 다르면 같은 키를 다른 프로브가 낼 수 있다
      (`set_result` 을 theme_write·font_scale_write 두 프로브가 각자 낸다). 한 모드 안에서의
      충돌만 결함이고, 그 판정은 `plan(mode)` 이 진다. */
+}
+
+function assertClusterOwnerModes(def, name) {
   assertContract(typeof def.cluster === "string" && def.cluster.length > 0, name, "cluster 가 비었습니다.");
   assertContract(OWNERS.includes(def.owner), name, `owner 는 ${OWNERS.join("|")} 중 하나입니다.`);
   assertContract(
@@ -183,6 +190,9 @@ function normalizeDefinition(def, index, taken) {
     name,
     "modes 는 비어 있지 않은 문자열 배열이어야 합니다.",
   );
+}
+
+function assertLegacySiteAndDeadline(def, name) {
   assertContract(
     Number.isInteger(def.legacySite) && def.legacySite > 0,
     name,
@@ -194,7 +204,9 @@ function normalizeDefinition(def, index, taken) {
     name,
     "deadlineMs 는 0 이상의 정수여야 합니다.",
   );
+}
 
+function assertDeadlineBudget(def, name) {
   const legacy = LEGACY_DEADLINES_MS[def.name];
   if (legacy === undefined) {
     assertContract(
@@ -210,21 +222,29 @@ function normalizeDefinition(def, index, taken) {
       `deadlineMs ${def.deadlineMs} 가 레거시 예산 ${legacy} 를 넘습니다 — 예산은 늘리지 않습니다.`,
     );
   }
+}
 
+function normalizeAfter(def, name) {
   const after = def.after === undefined ? [] : def.after;
   assertContract(
     Array.isArray(after) && after.every((a) => typeof a === "string"),
     name,
     "after 는 프로브 이름 문자열 배열이어야 합니다.",
   );
+  return after;
+}
 
+function normalizeRequiresHost(def, name) {
   const requiresHost = def.requiresHost === undefined ? [] : def.requiresHost;
   assertContract(
     Array.isArray(requiresHost) && requiresHost.every((op) => HOST_OPS.includes(op)),
     name,
     `requiresHost 는 HOST_OPS(${HOST_OPS.join(", ")}) 안에서만 고릅니다.`,
   );
+  return requiresHost;
+}
 
+function normalizeHostSetup(def, name, requiresHost) {
   const hostSetup = def.hostSetup === undefined ? null : def.hostSetup;
   if (hostSetup !== null) {
     assertContract(
@@ -238,7 +258,10 @@ function normalizeDefinition(def, index, taken) {
       `hostSetup.op(${hostSetup.op}) 를 requiresHost 에도 적어야 합니다 — 선언과 요청은 같이 삽니다.`,
     );
   }
+  return hostSetup;
+}
 
+function normalizeWaitTimings(def, name) {
   const settleBeforeMs = def.settleBeforeMs === undefined ? 0 : def.settleBeforeMs;
   const cooldownAfterMs = def.cooldownAfterMs === undefined ? 0 : def.cooldownAfterMs;
   for (const [label, value, reasonField] of [
@@ -255,7 +278,10 @@ function normalizeDefinition(def, index, taken) {
       );
     }
   }
+  return { settleBeforeMs, cooldownAfterMs };
+}
 
+function assertOwnerContract(def, name) {
   if (def.owner === "host") {
     assertContract(
       typeof def.hostOp === "string" && HOST_OPS.includes(def.hostOp),
@@ -272,7 +298,9 @@ function normalizeDefinition(def, index, taken) {
     assertContract(typeof def.run === "function", name, "frontend 소유 프로브는 run 이 필요합니다.");
     assertContract(def.hostOp === undefined, name, "frontend 소유 프로브에 hostOp 를 둘 수 없습니다.");
   }
+}
 
+function assertHooksShape(def, name) {
   for (const hook of ["precondition", "setup", "teardown"]) {
     assertContract(
       def[hook] === undefined || typeof def[hook] === "function",
@@ -285,11 +313,13 @@ function normalizeDefinition(def, index, taken) {
     name,
     "completionField 는 문자열입니다.",
   );
+}
 
-  /* 러너의 감시견은 **마지막 안전망**이다. 시한 초과를 스스로 값으로 확정하는 프로브
-     (오프라인 대조가 그렇다 — build.ps1:348-350 이 그 표식 문자열을 읽는다)가 있으면
-     감시견이 그 분기를 가로채 대조가 사라진다. 그런 프로브는 명시로 빠지되, **어떻게
-     경보하는지**를 적어야 한다. 조용히 빠지는 길은 없다. */
+/** 러너의 감시견은 **마지막 안전망**이다. 시한 초과를 스스로 값으로 확정하는 프로브
+ *  (오프라인 대조가 그렇다 — build.ps1:348-350 이 그 표식 문자열을 읽는다)가 있으면
+ *  감시견이 그 분기를 가로채 대조가 사라진다. 그런 프로브는 명시로 빠지되, **어떻게
+ *  경보하는지**를 적어야 한다. 조용히 빠지는 길은 없다. */
+function normalizeHandlesOwnDeadline(def, name) {
   const handlesOwnDeadline = def.handlesOwnDeadline === true;
   if (handlesOwnDeadline) {
     assertContract(
@@ -298,6 +328,28 @@ function normalizeDefinition(def, index, taken) {
       "handlesOwnDeadline 프로브는 deadlineHandling 으로 자기 경보 방식을 적어야 합니다.",
     );
   }
+  return handlesOwnDeadline;
+}
+
+function normalizeDefinition(def, index, taken) {
+  const name = def && typeof def.name === "string" ? def.name : `#${index}`;
+  assertContract(def && typeof def === "object", name, "프로브 정의가 객체가 아닙니다.");
+  assertRequiredFields(def, name);
+  assertNameShape(def, name, taken);
+  assertKeysShape(def, name);
+  assertClusterOwnerModes(def, name);
+  assertLegacySiteAndDeadline(def, name);
+  assertDeadlineBudget(def, name);
+
+  const after = normalizeAfter(def, name);
+  const requiresHost = normalizeRequiresHost(def, name);
+  const hostSetup = normalizeHostSetup(def, name, requiresHost);
+  const { settleBeforeMs, cooldownAfterMs } = normalizeWaitTimings(def, name);
+
+  assertOwnerContract(def, name);
+  assertHooksShape(def, name);
+
+  const handlesOwnDeadline = normalizeHandlesOwnDeadline(def, name);
 
   taken.names.add(def.name);
 

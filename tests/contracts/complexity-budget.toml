@@ -701,11 +701,8 @@ function_complexity = { value = 15, reason = "상시 예외: 선언적 규칙 �
 [budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
 function_complexity = 46
 
-[budget."frontend/src/selftest/probes/boot_routing_overlay.js::createBootRoutingOverlayProbes.setup"]
-function_complexity = 23
-
 [budget."frontend/src/selftest/probes/editor_workbench_data.js"]
-module_statements = { value = 2187, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 e2e 시나리오 나열 모듈" }
+module_statements = { value = 1811, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 e2e 시나리오 나열 모듈" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::createEditorWorkbenchDataProbes.run"]
 function_complexity = { value = 53, reason = "상시 예외: 독립 사례 나열 테스트 — 9개 독립 probe 순회 실행" }
@@ -715,35 +712,15 @@ function_statements = { value = 166, reason = "상시 예외: 독립 사례 나�
 function_complexity = { value = 38, reason = "상시 예외: 독립 사례 나열 테스트 — 접근성 검사 통합 시나리오" }
 function_statements = { value = 148, reason = "상시 예외: 독립 사례 나열 테스트 — 문서변경·선택·검증 순차 단계" }
 
-[budget."frontend/src/selftest/probes/editor_workbench_data.js::probeAuthoringKeyboard"]
-function_complexity = 58
-
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::probeHwpxAuthoring"]
 function_complexity = { value = 41, reason = "상시 예외: 독립 사례 나열 테스트 — 문서→편집→저장→검증 선형 시나리오" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::probeLintpad"]
 function_complexity = { value = 49, reason = "상시 예외: 독립 사례 나열 테스트 — lint 문제/필드/짝 복합 시나리오" }
 
-[budget."frontend/src/selftest/probes/editor_workbench_data.js::runHwpxAuthoringBand"]
-function_complexity = 56
-function_statements = { value = 255, reason = "상시 예외: 독립 사례 나열 테스트 — 편집타입×검증 조합 나열" }
-
-[budget."frontend/src/selftest/probes/job.js"]
-module_statements = { value = 897, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 작업 시나리오 나열 모듈" }
-
-[budget."frontend/src/selftest/probes/job.js::runJobMirror"]
-function_complexity = 63
-function_statements = { value = 230, reason = "상시 예외: 독립 사례 나열 테스트 — 미러링 4단계 시나리오" }
-
 [budget."frontend/src/selftest/probes/job.js::runJobResult"]
 function_complexity = { value = 38, reason = "상시 예외: 독립 사례 나열 테스트 — 필드·레코드·출력 3종 검증" }
 function_statements = { value = 196, reason = "상시 예외: 독립 사례 나열 테스트 — 초기화+3가지 assertion 나열" }
-
-[budget."frontend/src/selftest/probes/react_runtime.js::measureTutorialSurface"]
-function_complexity = 28
-
-[budget."frontend/src/selftest/runner.js::normalizeDefinition"]
-function_complexity = 53
 
 [budget."frontend/src/shell/app.ts::createAppShell"]
 function_complexity = { value = 14, reason = "상시 예외: 순차 배선 — 라우팅·nav·listener 순차 구성" }
