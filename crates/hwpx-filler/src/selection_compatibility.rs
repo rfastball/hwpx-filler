@@ -137,6 +137,41 @@ pub struct CompatibilityEvidence<'a> {
     pub source_policy: Option<&'a str>,
     pub target_policy: &'a str,
 }
+/// Stability of the option's structural fingerprint across every chain hop, or the
+/// first reason it is not stable.
+fn chain_fingerprint_reason(
+    chain_structures: &[Option<&ExecutionTemplateStructure>],
+    slot_id: &str,
+    option_id: &str,
+    target_fp: &str,
+) -> Option<&'static str> {
+    for structure in chain_structures {
+        let Some(structure) = structure else {
+            return Some(EVIDENCE_MISSING);
+        };
+        let Some(hop) = option_compatibility_fingerprint(structure, slot_id, option_id) else {
+            return Some(REMOVED_IN_CHAIN);
+        };
+        if hop != target_fp {
+            return Some(FINGERPRINT_CHANGED);
+        }
+    }
+    None
+}
+/// Stability of the option's content digest across every chain hop (against the final
+/// hop's digest), or the first reason it is not stable.
+fn chain_content_reason(chain_content_digests: &[Option<&str>]) -> Option<&'static str> {
+    let target_content = chain_content_digests.last().and_then(|item| *item);
+    for digest in chain_content_digests {
+        let (Some(digest), Some(target_content)) = (digest, target_content) else {
+            return Some(CONTENT_UNVERIFIED);
+        };
+        if *digest != target_content {
+            return Some(CONTENT_DIGEST_CHANGED);
+        }
+    }
+    None
+}
 pub fn classify_selection(
     slot_id: &str,
     option_id: &str,
@@ -172,25 +207,12 @@ pub fn classify_selection(
     if source_contract_id != Some(target_contract_id) || source_policy != Some(target_policy) {
         return result(REVIEW_REQUIRED, Some(target_fp), POLICY_CHANGED);
     }
-    for structure in chain_structures {
-        let Some(structure) = structure else {
-            return result(REVIEW_REQUIRED, Some(target_fp), EVIDENCE_MISSING);
-        };
-        let Some(hop) = option_compatibility_fingerprint(structure, slot_id, option_id) else {
-            return result(REVIEW_REQUIRED, Some(target_fp), REMOVED_IN_CHAIN);
-        };
-        if hop != target_fp {
-            return result(REVIEW_REQUIRED, Some(target_fp), FINGERPRINT_CHANGED);
-        }
+    if let Some(reason) = chain_fingerprint_reason(chain_structures, slot_id, option_id, &target_fp)
+    {
+        return result(REVIEW_REQUIRED, Some(target_fp), reason);
     }
-    let target_content = chain_content_digests.last().and_then(|item| *item);
-    for digest in chain_content_digests {
-        let (Some(digest), Some(target_content)) = (digest, target_content) else {
-            return result(REVIEW_REQUIRED, Some(target_fp), CONTENT_UNVERIFIED);
-        };
-        if *digest != target_content {
-            return result(REVIEW_REQUIRED, Some(target_fp), CONTENT_DIGEST_CHANGED);
-        }
+    if let Some(reason) = chain_content_reason(chain_content_digests) {
+        return result(REVIEW_REQUIRED, Some(target_fp), reason);
     }
     result(AUTO_KEEP, Some(target_fp), PRESENT_MATCH)
 }

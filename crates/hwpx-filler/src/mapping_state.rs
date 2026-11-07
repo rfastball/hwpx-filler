@@ -357,6 +357,87 @@ fn display_options(source_kind: &str) -> Value {
     )
 }
 
+/// Preview kind/text and empty/error flags from the mapping's own value,
+/// once the row is past the first-row pending/error short-circuit.
+fn resolve_mapping_preview(
+    row: &RowState,
+    record: &Map<String, Value>,
+    now: Option<NaiveDateTime>,
+) -> (&'static str, String, bool, bool) {
+    match row.to_mapping().value_for(record, now) {
+        Err(_) => ("error", String::new(), false, true),
+        Ok(_) if !row.has_content() => ("none", String::new(), false, false),
+        Ok(value)
+            if value.is_empty() && !(row.field_type == "const" && row.constant.is_empty()) =>
+        {
+            (
+                "missing",
+                MISSING_MARKER.replace("{field}", &row.template_field),
+                true,
+                false,
+            )
+        }
+        Ok(value) => ("value", value, false, false),
+    }
+}
+/// Preview kind/text and empty/error flags. `first_row_state` is explicit so
+/// unread data is never shown as missing output.
+fn resolve_preview(
+    row: &RowState,
+    record: &Map<String, Value>,
+    now: Option<NaiveDateTime>,
+    first_row_state: &str,
+) -> (&'static str, String, bool, bool) {
+    if first_row_state == "pending" {
+        return ("pending", PENDING_PREVIEW_MARK.into(), false, false);
+    }
+    if first_row_state == "error" {
+        return ("error", String::new(), false, true);
+    }
+    resolve_mapping_preview(row, record, now)
+}
+/// Source kind/value/missing-label triple for the row's bound source.
+fn resolve_source(row: &RowState, source_fields: &[String]) -> (&'static str, String, String) {
+    let source_kind = row.source_kind();
+    let source_value = match source_kind {
+        "column" => format!("col:{}", row.source),
+        "const" | "today" => format!("sp:{source_kind}"),
+        _ => String::new(),
+    };
+    let source_missing_label = if source_kind == "column" && !source_fields.contains(&row.source) {
+        format!("{} (데이터에 없음)", row.source)
+    } else {
+        String::new()
+    };
+    (source_kind, source_value, source_missing_label)
+}
+/// Human label for the row's confirmation state.
+fn resolve_state_label(auto_confirmed_exact: bool, state: &str) -> &'static str {
+    if auto_confirmed_exact {
+        return "자동확정 · 이름 일치";
+    }
+    match state {
+        "confirmed" => "확인",
+        "suggested" => "제안",
+        _ => "확인 필요",
+    }
+}
+/// Whether a text slice applies to this row's current source/type.
+fn slice_enabled_for(row: &RowState) -> bool {
+    !row.source.is_empty() && SOURCE_CARRIER_TYPES.contains(&row.field_type.as_str())
+}
+/// Display text for the source column/value, preferring the missing-label.
+fn resolve_source_label(source_kind: &str, source_missing_label: &str, row: &RowState) -> String {
+    if !source_missing_label.is_empty() {
+        return source_missing_label.to_string();
+    }
+    match source_kind {
+        "column" => row.source.clone(),
+        "const" => format!("고정값… {}", row.constant).trim_end().into(),
+        "today" => "오늘 날짜".into(),
+        _ => "열을 고르세요".into(),
+    }
+}
 /// Existing editor/library row shape. `first_row_state` is explicit so unread data is never shown as missing output.
 pub fn row_projection(
     row: &RowState,
@@ -370,53 +451,11 @@ pub fn row_projection(
     if !["ready", "pending", "error"].contains(&first_row_state) {
         return Err(format!("알 수 없는 첫 행 상태: {first_row_state}"));
     }
-    let mut preview_error = false;
-    let mut empty = false;
-    let (preview_kind, preview) = if first_row_state == "pending" {
-        ("pending", PENDING_PREVIEW_MARK.into())
-    } else if first_row_state == "error" {
-        preview_error = true;
-        ("error", String::new())
-    } else {
-        match row.to_mapping().value_for(record, now) {
-            Err(_) => {
-                preview_error = true;
-                ("error", String::new())
-            }
-            Ok(_) if !row.has_content() => ("none", String::new()),
-            Ok(value)
-                if value.is_empty() && !(row.field_type == "const" && row.constant.is_empty()) =>
-            {
-                empty = true;
-                (
-                    "missing",
-                    MISSING_MARKER.replace("{field}", &row.template_field),
-                )
-            }
-            Ok(value) => ("value", value),
-        }
-    };
-    let source_kind = row.source_kind();
-    let source_value = match source_kind {
-        "column" => format!("col:{}", row.source),
-        "const" | "today" => format!("sp:{source_kind}"),
-        _ => String::new(),
-    };
-    let source_missing_label = if source_kind == "column" && !source_fields.contains(&row.source) {
-        format!("{} (데이터에 없음)", row.source)
-    } else {
-        String::new()
-    };
+    let (preview_kind, preview, empty, preview_error) =
+        resolve_preview(row, record, now, first_row_state);
+    let (source_kind, source_value, source_missing_label) = resolve_source(row, source_fields);
     let state = row.status();
-    let state_label = if row.auto_confirmed_exact {
-        "자동확정 · 이름 일치"
-    } else {
-        match state {
-            "confirmed" => "확인",
-            "suggested" => "제안",
-            _ => "확인 필요",
-        }
-    };
+    let state_label = resolve_state_label(row.auto_confirmed_exact, state);
     let score = (row.suggestion_score * 1000.0).round_ties_even() / 1000.0;
     let mut projection = json!({
         "index": index, "template_field": row.template_field,
@@ -426,7 +465,7 @@ pub fn row_projection(
         "display_value": format!("{}:{}", row.field_type, row.fmt),
         "slice": row.slice.as_ref().map(TextSlice::to_dict),
         "slice_label": slice_label(row.slice.as_ref()),
-        "slice_enabled": !row.source.is_empty() && SOURCE_CARRIER_TYPES.contains(&row.field_type.as_str()),
+        "slice_enabled": slice_enabled_for(row),
         "slice_methods": slice_methods(row.slice.as_ref()),
         "confirmed": row.confirmed, "touched": row.touched,
         "has_content": row.has_content(),
@@ -439,16 +478,7 @@ pub fn row_projection(
         "contract_reason": "", "source_kind": source_kind,
         "source_value": source_value, "source_missing_label": source_missing_label,
     });
-    let source_label = if !source_missing_label.is_empty() {
-        source_missing_label
-    } else {
-        match source_kind {
-            "column" => row.source.clone(),
-            "const" => format!("고정값… {}", row.constant).trim_end().into(),
-            "today" => "오늘 날짜".into(),
-            _ => "열을 고르세요".into(),
-        }
-    };
+    let source_label = resolve_source_label(source_kind, &source_missing_label, row);
     let display_label = presets(&row.field_type)
         .into_iter()
         .find_map(|(label, code)| (code == row.fmt).then_some(label))

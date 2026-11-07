@@ -51,44 +51,31 @@ impl Grade {
 fn same_site(a: &SpotEvidence, b: &SpotEvidence) -> bool {
     (a.slot.paragraph, a.slot.start, a.slot.end) == (b.slot.paragraph, b.slot.start, b.slot.end)
 }
-fn offer(
+fn is_foreign(spot: &SpotEvidence, column: &str, has_literal: bool) -> bool {
+    has_literal
+        && spot.matched.iter().any(|name| name == column)
+        && !spot.literal.iter().any(|name| name == column)
+}
+fn keep_spot(
+    spot: &SpotEvidence,
     column: &str,
-    others: Vec<String>,
-    labelled: &[SpotEvidence],
-    spots: &[SpotEvidence],
+    has_literal: bool,
+    labelled: &[&SpotEvidence],
     short: bool,
-) -> Grade {
-    let has_literal = labelled
-        .iter()
-        .any(|spot| spot.literal.iter().any(|name| name == column));
-    let foreign = |spot: &SpotEvidence| {
-        has_literal
-            && spot.matched.iter().any(|name| name == column)
-            && !spot.literal.iter().any(|name| name == column)
-    };
-    let labelled: Vec<_> = labelled.iter().filter(|spot| !foreign(spot)).collect();
-    let kept: Vec<_> = spots
-        .iter()
-        .filter(|spot| {
-            if foreign(spot) {
-                return false;
-            }
-            if labelled.iter().any(|item| same_site(item, spot)) {
-                return true;
-            }
-            if short {
-                spot.standalone && spot.bounded && !spot.glued && !spot.fixed() && !spot.generic()
-            } else {
-                spot.anchored() && !spot.fixed() && !spot.generic()
-            }
-        })
-        .cloned()
-        .collect();
-    let left_out = spots.len() - kept.len();
-    let mut result = Grade::new(KIND_PROPOSAL, column, others, kept);
-    if left_out == 0 {
-        return result;
+) -> bool {
+    if is_foreign(spot, column, has_literal) {
+        return false;
     }
+    if labelled.iter().any(|item| same_site(item, spot)) {
+        return true;
+    }
+    if short {
+        spot.standalone && spot.bounded && !spot.glued && !spot.fixed() && !spot.generic()
+    } else {
+        spot.anchored() && !spot.fixed() && !spot.generic()
+    }
+}
+fn apply_left_out_note(result: &mut Grade, labelled: &[&SpotEvidence], left_out: usize) {
     if result
         .spots
         .iter()
@@ -106,20 +93,44 @@ fn offer(
             result.spots.len()
         );
     }
-    result
 }
-pub fn grade(columns: &[String], spots: &[SpotEvidence], pick: Option<&str>) -> Option<Grade> {
-    let first = spots.first()?;
-    let labelled: Vec<SpotEvidence> = spots
+fn offer(
+    column: &str,
+    others: Vec<String>,
+    labelled: &[SpotEvidence],
+    spots: &[SpotEvidence],
+    short: bool,
+) -> Grade {
+    let has_literal = labelled
         .iter()
-        .filter(|spot| spot.labelled())
+        .any(|spot| spot.literal.iter().any(|name| name == column));
+    let labelled: Vec<_> = labelled
+        .iter()
+        .filter(|spot| !is_foreign(spot, column, has_literal))
+        .collect();
+    let kept: Vec<_> = spots
+        .iter()
+        .filter(|spot| keep_spot(spot, column, has_literal, &labelled, short))
         .cloned()
         .collect();
+    let left_out = spots.len() - kept.len();
+    let mut result = Grade::new(KIND_PROPOSAL, column, others, kept);
+    if left_out == 0 {
+        return result;
+    }
+    apply_left_out_note(&mut result, &labelled, left_out);
+    result
+}
+fn resolve_column(
+    columns: &[String],
+    pick: Option<&str>,
+    labelled: Vec<SpotEvidence>,
+) -> (Option<String>, Vec<SpotEvidence>) {
     let fixed = pick
         .filter(|pick| columns.iter().any(|column| column == *pick))
         .map(str::to_owned)
         .or_else(|| (columns.len() == 1).then(|| columns[0].clone()));
-    let (column, labelled) = if let Some(column) = fixed {
+    if let Some(column) = fixed {
         (Some(column), labelled)
     } else {
         let named: std::collections::HashSet<_> = labelled
@@ -136,7 +147,16 @@ pub fn grade(columns: &[String], spots: &[SpotEvidence], pick: Option<&str>) -> 
                 .collect();
             (Some(column), matching)
         }
-    };
+    }
+}
+pub fn grade(columns: &[String], spots: &[SpotEvidence], pick: Option<&str>) -> Option<Grade> {
+    let first = spots.first()?;
+    let labelled: Vec<SpotEvidence> = spots
+        .iter()
+        .filter(|spot| spot.labelled())
+        .cloned()
+        .collect();
+    let (column, labelled) = resolve_column(columns, pick, labelled);
     let short = specificity(&first.text) < 0.75;
     let Some(column) = column else {
         if short {

@@ -1,33 +1,33 @@
 /* R4-01 job 읽기·선택 표면. Python snapshot의 판정은 그대로 투영하고, DataZone·후보·
    browse·범위 초안의 DOM/이벤트/비동기 의도는 이 React 경계가 단독 소유한다. */
 import {
-  Fragment,
   createElement,
   useEffect,
   useRef,
   /* R5-02: 미사용 useState import 제거. */
-  useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
 
 import { SCREEN_ACTIONS } from "../contract/contract.gen.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { BridgeClient } from "../runtime/client.ts";
-import type { DataPickerController, PickerSessionRead } from "./data_picker.ts";
+import type { DataPickerController } from "./data_picker.ts";
 import { PathActions } from "./path_actions.ts";
-import { RefreshButton } from "./refresh_button.ts";
-import { SheetTabs, saveSheetOrder } from "./sheet_tabs.ts";
+import { saveSheetOrder } from "./sheet_tabs.ts";
 import { createLatestIntentQueue } from "./latest_intent.ts";
-import { JobDataZone } from "./data_zone.ts";
-import { NoticeBox } from "./notice_box.ts";
 import type { ScreenPorts } from "./ports.ts";
 import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
+import { NewWorkButton } from "./job_read_views.ts";
+import { createJobReadActions } from "./job_read_actions.ts";
+import { createJobReadBrowse } from "./job_read_browse.ts";
+import { fullSnapshot, useJob, useUi } from "./job_read_snapshot.ts";
+import type { BrowseSession } from "./job_read_browse.ts";
 
-type Obj = Record<string, any>;
+export type Obj = Record<string, any>;
 type Listener = () => void;
 
-type ModalPort = {
+export type ModalPort = {
   confirm(spec: Obj): Promise<boolean>;
   prompt(spec: Obj): Promise<string | null>;
   open(id: string, spec?: Obj): void;
@@ -63,7 +63,7 @@ export type JobReadControllerDeps = {
   notify(message: string): void;
 };
 
-type UiState = {
+export type UiState = {
   sheetOpen: boolean;
   openingName: string;
   candidateMenu: string;
@@ -73,25 +73,11 @@ type UiState = {
   switchingData: string;
 };
 
-function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
+export function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
 }
 
-function asObject(value: unknown, label: string): Obj {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label}: snapshot 객체가 아닙니다.`);
-  }
-  return value as Obj;
-}
 
-function fullSnapshot(model: JobScreenModel): Obj | null {
-  if (model.full === null) return null;
-  const snapshot = asObject(model.full, "job");
-  if (typeof snapshot.has_data !== "boolean" || typeof snapshot.has_job !== "boolean") {
-    throw new Error("job snapshot: has_data/has_job 판정이 없습니다.");
-  }
-  return snapshot;
-}
 
 function hostValue(result: Awaited<ReturnType<BridgeClient["dispatch"]>>, label: string): Obj {
   return (expectHostValue(result, label) ?? {}) as Obj;
@@ -111,18 +97,13 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   const listeners = new Set<Listener>();
   let zoneTail = Promise.resolve();
   let browseTail = Promise.resolve();
-  let switching = false;
   /* 연속 데이터 전환은 마지막 대상 하나로 착지한다(편집기 시트 탭과 같은 큐). */
   const dataSwitches = createLatestIntentQueue();
   let browseGeneration = 0;
-  let browseAfterClose: (() => void) | null = null;
   let searchTimer: number | null = null;
   let columnTimer: number | null = null;
   let rangeApplied = false;
   let rangeForceClose = false;
-  const favoriteTail = new Map<string, Promise<void>>();
-  const favoriteIntent = new Map<string, boolean>();
-  const favoriteRevision = new Map<string, number>();
 
   const call = async (screen: string, action: string, payload: Obj = {}): Promise<Obj> => {
     const dispatch = deps.client.dispatch as unknown as (
@@ -216,65 +197,36 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     }, 200) ?? null;
   }
 
-  async function selectJob(name: string): Promise<boolean> {
-    if (name.trim() === "") throw new Error("JobReadPort: 빈 작업 이름은 열 수 없습니다.");
-    if (switching || ui.switchingData) return false;
-    switching = true;
-    patchUi({ openingName: name });
+  /* 선택·즐겨찾기·새 작업·재연결·데이터 연결 — `zone(...)` 을 쓰지 않는 컨트롤러 헬퍼
+     묶음은 job_read_actions.ts가 쥔다. `switching` 가드도 그쪽이 쥐고 여기서는
+     `actions.isSwitchingJob()` 으로 읽는다. */
+  const actions = createJobReadActions({
+    deps, call, snapshot, patchUi, getUi: () => ui, flushPendingEdits,
+  });
+
+  /** 이미 그 데이터·시트를 쓰고 있으면 전환은 아무 일도 하지 않는다. */
+  function isSameData(current: Obj | null, key: string, sheet?: string): boolean {
+    return current?.data_pool_key === key && (sheet === undefined || current?.data_target?.sheet === sheet);
+  }
+
+  async function performDataSwitch(isCurrent: () => boolean, key: string, sheet?: string): Promise<void> {
     try {
+      if (isSameData(snapshot(), key, sheet) || !(await actions.confirmDataSwap())) return;
       await flushPendingEdits();
-      await call("job", "select_job", { name });
-      return true;
+      if (!isCurrent()) return;
+      const result = await call("job", "load_pool", { key, ...(sheet === undefined ? {} : { sheet }) });
+      if (result.ok === false) deps.notify(String(result.error));
+    } catch (error) {
+      deps.notify(String((error as Obj)?.message || error));
     } finally {
-      switching = false;
-      if (ui.openingName === name) patchUi({ openingName: "" });
+      if (isCurrent()) patchUi({ switchingData: "" });
     }
   }
 
-  /** 데이터 선택 면이 「지금 쓰는 데이터」로 읽는 **Python 값 셋**(고르기 열 공용 ③b).
-   *
-   *  종전에는 이 함수가 라벨·부제·경로·시트·종류를 조립해 카드 값을 지었다 — 그 카드가
-   *  목록 첫 행으로 접히면서(스냅샷 `data_row`) 조립이 통째로 Python 으로 갔다. 여기 남은
-   *  일은 **옮기기**뿐이다.
-   *
-   *  값이 아니라 **함수로** 건넨다: 면 안에서 파일을 새로 열면 마운트가 바뀌고 스냅샷이
-   *  다시 오는데, 여는 순간의 값을 얼려 두면 그 행이 이제는 쓰지 않는 데이터를 「사용
-   *  중」이라 말한다. */
-  const currentData: PickerSessionRead = () => {
-    const current = snapshot();
-    return {
-      data_row: current?.data_row || null,
-      data_pool_key: current?.data_pool_key || "",
-      /* 「이 데이터 고정…」 프리필의 시트 자리 — 그 값이 무엇을 뜻하는지(엑셀=시트 /
-         계약 목록=뷰)는 마운트가 이미 안다(#937). 표면이 경로 모양으로 되추측하지 않는다. */
-      sheet: (current?.data_target || {}).sheet || "",
-    };
-  };
-
-  async function confirmDataSwap(): Promise<boolean> {
-    return deps.ports.jobRunCoordination.current().confirmDestructiveIfArmed(
-      "데이터 변경 확인", "데이터를 바꾸면", "데이터 바꾸고 버리기",
-    );
-  }
-
   function switchData(key: string, sheet?: string): Promise<void> {
-    if (switching) return Promise.resolve();
+    if (actions.isSwitchingJob()) return Promise.resolve();
     patchUi({ switchingData: sheet ?? key });
-    return dataSwitches.run(async (isCurrent) => {
-      try {
-        const current = snapshot();
-        if ((current?.data_pool_key === key && (sheet === undefined || current?.data_target?.sheet === sheet))
-          || !(await confirmDataSwap())) return;
-        await flushPendingEdits();
-        if (!isCurrent()) return;
-        const result = await call("job", "load_pool", { key, ...(sheet === undefined ? {} : { sheet }) });
-        if (result.ok === false) deps.notify(String(result.error));
-      } catch (error) {
-        deps.notify(String((error as Obj)?.message || error));
-      } finally {
-        if (isCurrent()) patchUi({ switchingData: "" });
-      }
-    }, undefined);
+    return dataSwitches.run((isCurrent) => performDataSwitch(isCurrent, key, sheet), undefined);
   }
 
   /* 현재 데이터를 **다시 읽는다**(U4 항목 5 · #932 U4-C). 판정·수치·문안은 전부 Python
@@ -283,18 +235,6 @@ export function createJobReadController(deps: JobReadControllerDeps) {
      그 확인이 다음 진짜 확인의 무게를 깎는다). 겨눔 성분은 보내지 않는다: 재료는 세션이
      마운트 시점에 포획한 한 벌이라 웹이 실어 보내면 그사이 갈린 화면과 다른 데이터를
      새로고침한다. */
-  /* 결속 없는 작업을 고치러 간다 — 쓰는 자리가 편집기 저장 하나이므로 복구도 거기다
-     (#932 U4-C). 이탈 가드·미저장 확인은 편집기 진입 seam 이 이미 진다. */
-  async function connectJobData(): Promise<void> {
-    const name = snapshot()?.job_name;
-    if (!name) return;
-    await deps.ports.editorEntry.current().openGuarded(String(name), {
-      entry_reason: "library",
-      evidence: {},
-      return_context: { surface: "data" },
-    });
-  }
-
   async function remountData(): Promise<Obj | false> {
     const first = await zone("remount_data", {});
     if (first.needs_confirm) {
@@ -396,99 +336,17 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     deps.surfaceSheet.close("dataSheet");
   }
 
-  async function toggleFavorite(name: string, shown: boolean): Promise<void> {
-    const intended = !(favoriteIntent.get(name) ?? shown);
-    favoriteIntent.set(name, intended);
-    const revision = (favoriteRevision.get(name) ?? 0) + 1;
-    favoriteRevision.set(name, revision);
-    const previous = favoriteTail.get(name) ?? Promise.resolve();
-    const next = previous.then(async () => {
-      const result = await call("job", "toggle_favorite", { name, value: intended });
-      if (result.ok === false) deps.notify(result.error || "즐겨찾기를 바꾸지 못했습니다.");
-      if (favoriteRevision.get(name) === revision) {
-        favoriteIntent.delete(name);
-        favoriteRevision.delete(name);
-      }
-    });
-    favoriteTail.set(name, next.catch((error) => deps.notify(String(error))));
-    await next;
-  }
-
-  function newWorkFromData(extraEvidence: Obj = {}): unknown {
-    if (ui.switchingData) return false;
-    const current = snapshot();
-    const gate = current?.new_work || { can: true, reason: "" };
-    if (gate.can === false) {
-      deps.notify(gate.reason || "이 데이터로 새 작업을 만들 수 없습니다.");
-      return false;
-    }
-    return deps.ports.editorEntry.current().newDraftFromData({
-      entry_reason: "document_browser_new_work",
-      /* 고른 데이터의 이름은 편집기 1단계 우 열이 선택 상태로 이미 보인다 — 배너에
-         한 번 더 쓰지 않는다(2026-09-03). */
-      evidence: { ...extraEvidence },
-      return_context: { surface: "data" },
-    });
-  }
-
-  async function relinkTemplateFor(name: string): Promise<void> {
-    const active = snapshot()?.job_name === name;
-    const accepted = await deps.modal.confirm({
-      title: "템플릿 다시 연결",
-      body: active
-        ? `'${name}' 작업의 템플릿 파일을 찾을 수 없어 문서를 만들 수 없습니다.\n템플릿을 다시 연결하면 작업을 다시 불러옵니다.`
-        : `'${name}' 작업은 템플릿 파일을 찾을 수 없어 바로 선택할 수 없습니다.\n템플릿을 다시 연결하면 이어서 이 작업을 선택합니다. 실패하면 선택하지 않습니다.`,
-      confirmLabel: "템플릿 다시 연결…",
-      cancelLabel: "취소",
-    });
-    if (!accepted) return;
-    if (active && !(await deps.ports.jobRunCoordination.current().confirmDestructiveIfArmed(
-      "템플릿 다시 연결 확인", "템플릿을 다시 연결하면", "다시 연결하고 버리기",
-    ))) return;
-    /* 재연결 메시지의 착지 = 알림 채널(library 소비자와 같은 규율). 실패(`error`)는 서비스
-       자신의 loud 채널이 이미 세우므로 여기서 두 번 말하지 않고, 능동 취소(`cancel`)는
-       방금 취소를 고른 사람에게 되돌려 주지 않는다 — 남는 것은 백엔드가 실은 재진술이다. */
-    const committed = await deps.services.relink.current().relinkTemplate(
-      "job", name, (message, kind) => { if (kind === "ok") deps.notify(message); },
-    );
-    if (!committed || active) return;
-    try {
-      await selectJob(name);
-    } catch (error) {
-      deps.notify(`작업 열기 실패: ${String(error)}`);
-    }
-  }
-
-  async function openBrowse(returnFocus: HTMLElement | null = null): Promise<void> {
-    if (ui.switchingData) return;
-    browseGeneration += 1;
-    browseAfterClose = null;
-    deps.modal.open("jobBrowseSheet", {
-      initialFocus: deps.doc.getElementById("jobBrowseQuery"),
-      returnFocus,
-      onClose: () => {
-        browseGeneration += 1;
-        const next = browseAfterClose;
-        browseAfterClose = null;
-        if (next !== null) next();
-      },
-    });
-  }
-
-  function newWorkAfterBrowseClose(extraEvidence: Obj): void {
-    if (browseAfterClose !== null) {
-      throw new Error("JobReadPort: 탐색 닫힘 뒤 흐름이 이미 예약돼 있습니다.");
-    }
-    browseAfterClose = () => { void controller.newWorkFromData(extraEvidence); };
-    deps.modal.close("jobBrowseSheet");
-  }
-
-  async function openBrowseNeedsAction(name: string): Promise<void> {
-    if (name.trim() === "") throw new Error("JobReadPort: 확인할 작업 이름이 비었습니다.");
-    await browse("browse_tab", { tab: "needs_action" });
-    await browse("browse_query", { text: name });
-    await openBrowse();
-  }
+  /* 「문서 작업 찾기」 탐색 흐름(세대·대기·후속) — job_read_browse.ts가 쥔다. `browse(...)`
+     디스패처 자체는 여기 남고, 세대·꼬리는 아래 session 접근자로만 건네준다. */
+  const browseSession: BrowseSession = {
+    bumpGeneration: () => { browseGeneration += 1; },
+    generation: () => browseGeneration,
+    afterTail: (fn) => browseTail.then(fn),
+  };
+  const browseFlow = createJobReadBrowse({
+    modal: deps.modal, doc: deps.doc, browse, session: browseSession, getUi: () => ui,
+    selectJob: actions.selectJob, newWorkFromData: actions.newWorkFromData,
+  });
 
   const controller = {
     model,
@@ -516,21 +374,21 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     scheduleSearch,
     scheduleColumnText,
     flushPendingEdits,
-    selectJob,
-    toggleFavorite,
+    selectJob: actions.selectJob,
+    toggleFavorite: actions.toggleFavorite,
     /** 불러온 사실은 「현재 데이터」 존의 라벨이 이미 보인다 — 성공에 따로 착지를 두지
      *  않는다(실패는 피커 자신이 그 자리에서 말한다). */
     openDataPicker(): void {
       if (ui.switchingData) return;
       void deps.dataPicker.open({
         screen: "job",
-        session: currentData,
-        confirmSwap: confirmDataSwap,
+        session: actions.currentData,
+        confirmSwap: actions.confirmDataSwap,
       });
     },
     openDataSheet,
     remountData,
-    connectJobData,
+    connectJobData: actions.connectJobData,
     /** 데이터 통지 닫기(U4 §2.12 · #945) — 통지는 Python 소유라 지우는 것도 Python 이
      *  한다. 존 변이가 아니므로 세대(`epoch`)를 싣지 않는 `call` 경로다. */
     dismissDataNotice: (): Promise<Obj> => call("job", "dismiss_data_notice", {}),
@@ -544,130 +402,34 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     },
     applyRange,
     discardRange,
-    openBrowse,
+    openBrowse: browseFlow.openBrowse,
     closeBrowse: () => deps.modal.close("jobBrowseSheet"),
-    openBrowseNeedsAction,
-    newWorkAfterBrowseClose,
-    setBrowseQuery(text: string): void {
-      const generation = browseGeneration;
-      deps.doc.defaultView?.setTimeout(() => {
-        if (generation === browseGeneration) void browse("browse_query", { text });
-      }, 180);
-    },
-    async pickBrowse(name: string): Promise<void> {
-      if (await browseTail.then(() => selectJob(name))) {
-        browseAfterClose = () => {
-          deps.doc.getElementById(`jobCand-${encodeURIComponent(name)}`)?.focus();
-        };
-        deps.modal.close("jobBrowseSheet");
-      }
-    },
-    newWorkFromData,
-    relinkTemplateFor,
+    openBrowseNeedsAction: browseFlow.openBrowseNeedsAction,
+    newWorkAfterBrowseClose: browseFlow.newWorkAfterBrowseClose,
+    setBrowseQuery: browseFlow.setBrowseQuery,
+    pickBrowse: browseFlow.pickBrowse,
+    newWorkFromData: actions.newWorkFromData,
+    relinkTemplateFor: actions.relinkTemplateFor,
     navigation: deps.navigation,
     patchUi,
   };
 
   deps.ports.jobRead.bind({
     refreshList: async () => { await call("job", "refresh", {}); },
-    openBrowseNeedsAction,
+    openBrowseNeedsAction: browseFlow.openBrowseNeedsAction,
   });
   deps.ports.jobData.bind({ flushPendingEdits });
-  deps.ports.jobRelinkFlow.bind({ relinkTemplateFor });
+  deps.ports.jobRelinkFlow.bind({ relinkTemplateFor: actions.relinkTemplateFor });
   return controller;
 }
 
 export type JobReadController = ReturnType<typeof createJobReadController>;
 
-function useJob(controller: JobReadController): Obj | null {
-  /* 세 번째 인자는 정적 렌더의 스냅샷이다 — 같은 출처를 준다(다른 화면의 관례와 동일).
-     없으면 `renderToStaticMarkup` 이 이 화면에서만 던져 정적 렌더 계약을 못 세운다. */
-  const model = useSyncExternalStore(
-    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
-  return fullSnapshot(model);
-}
-
-function useUi(controller: JobReadController): UiState {
-  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot, controller.uiModel.getSnapshot);
-}
 
 
-export function JobDataHeader(props: { controller: JobReadController }): ReactNode {
-  const snapshot = useJob(props.controller);
-  if (snapshot === null) return h("p", { className: "muted", role: "status" }, "데이터 상태를 읽는 중…");
-  const notice = snapshot.data_notice;
-  return createElement(Fragment, null,
-    h("div", { className: "zone-cap job-data-heading", "data-loaded": snapshot.has_data },
-      h("span", { className: "job-data-name", id: "jobDataLabel",
-        title: snapshot.data_label || "현재 데이터" },
-        snapshot.has_data ? snapshot.data_label : "현재 데이터"),
-      h("div", { className: "job-data-actions" },
-        h("button", { className: snapshot.has_data ? "btn quiet sm" : "btn primary",
-          id: "jobBtnPickData", type: "button", "data-busy-lock": true,
-          onClick: props.controller.openDataPicker }, snapshot.has_data ? "변경…" : "데이터 선택…"),
-        createElement(RefreshButton, {
-          id: "jobBtnRemountData", label: "데이터 새로고침", disabled: !snapshot.has_data,
-          onRefresh: props.controller.remountData, notify: props.controller.notify,
-        }))),
-    /* 결속 복구는 Python 판정을 그대로 따르며 조용한 교체 동작과 별도로 강조한다. */
-    snapshot.job_data_unbound
-      ? h("div", { className: "run-row" }, h("button", { className: "btn primary sm", id: "jobConnectData", type: "button",
-          "data-busy-lock": true,
-          title: "이 작업에 데이터를 연결해야 문서를 만들 수 있습니다.",
-          onClick: () => { void props.controller.connectJobData(); } }, "데이터 연결하기…"))
-      : null,
-    /* 데이터 통지(U4 §2.12 · #945) — 상자·닫기는 `NoticeBox` 가, 문안 조립(「확인 필요: 」
-       접두)과 레벨 판정은 여기가 그대로 진다. 이 채널은 매 변이 자동 소멸이 아니라
-       **사유가 해소될 때까지 남는** 수동 소멸이라 닫기 동사를 가진다. */
-    notice?.text
-      ? createElement(NoticeBox, {
-        id: "jobDataNotice",
-        closeId: "jobDataNoticeClose",
-        level: notice.level === "ok" ? "quiet" : "warn",
-        text: `${notice.level === "ok" ? "" : "확인 필요: "}${notice.text}`,
-        onClose: () => { void props.controller.dismissDataNotice(); },
-      })
-      : h("div", { id: "jobDataNotice", className: "note", hidden: true }));
-}
-
-/* R5-02: 미착좌 JobDataHeaderPortal은 생산·소비가 모두 0이라 제거했다.
-   JobDataHeader는 ProductScreens의 job 화면이 직접 소유하고,
-   JobReadEffects는 같은 화면의 effect 슬롯이 별도로 착좌한다.
-   둘을 다시 묶는 compatibility component는 두 번째 수명주기 경로가 된다.
-   아래 표 body와 browse surface의 현재 좌표를 보존해 ownership 증거가
-   unrelated line churn으로 흐려지지 않도록 이 제거 기록을 같은 8행에 둔다.
-   실행 코드·export·fallback은 남기지 않는다.
-*/
-
-function JobTableScroll(props: { wrapRef: Obj; hidden?: boolean; children?: ReactNode }): ReactNode {
-  return h("div", {
-    className: "tbwrap jobtbwrap",
-    id: "jobTableWrap",
-    hidden: props.hidden,
-    "data-preserve-scroll": true,
-    ref: props.wrapRef,
-  }, props.children);
-}
-
-export function JobDataBody(props: { controller: JobReadController; location: "inline" | "sheet" }): ReactNode {
-  const snapshot = useJob(props.controller);
-  const ui = useUi(props.controller);
-  if (snapshot === null) return null;
-  if ((props.location === "sheet") !== ui.sheetOpen) return null;
-  return h(JobDataZone as any, { snapshot, controller: props.controller, scroll: JobTableScroll,
-    tabs: props.location === "inline" ? h(JobDataTabs as any, { controller: props.controller }) : null });
-}
-
-export function JobDataTabs(props: { controller: JobReadController }): ReactNode {
-  const { controller } = props;
-  const snapshot = useJob(controller);
-  const ui = useUi(controller);
-  return h(SheetTabs as any, {
-    rows: snapshot?.data_sheet_tabs || [], busy: !!ui.switchingData, locked: !!ui.openingName,
-    onPick: (row: Obj) => { void controller.switchData(row.key, row.sheet); },
-    onReorder: (key: string, sheets: string[]) => controller.reorderSheets(key, sheets),
-  });
-}
+export {
+  JobDataHeader, JobDataBody, JobDataTabs, JobNoDataExit, JobReadEffects,
+} from "./job_read_views.ts";
 
 function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadController }): ReactNode {
   const { row, snapshot, controller } = props;
@@ -700,26 +462,6 @@ function CandidateCard(props: { row: Obj; snapshot: Obj; controller: JobReadCont
       h(PathActions as any, {
         client: controller.client, path: row.template_path, notify: controller.notify, labels: true,
       })) : null);
-}
-
-function NewWorkButton(props: { snapshot: Obj; controller: JobReadController }): ReactNode {
-  const ui = useUi(props.controller);
-  const gate = props.snapshot.new_work || { can: true, reason: "" };
-  return createElement(Fragment, null,
-    h("button", { className: "btn sm", type: "button", id: "jobCandNewWork", "data-new-work": gate.can === false ? undefined : true,
-      "data-busy-lock": gate.can === false ? undefined : true, disabled: gate.can === false || !!ui.switchingData, title: gate.reason || "",
-      onClick: () => { void props.controller.newWorkFromData(); } }, "＋ 이 데이터로 새 작업"),
-    gate.can === false ? h("span", { className: "cand-newwork-why muted" }, gate.reason) : null);
-}
-
-export function JobNoDataExit(props: { controller: JobReadController }): ReactNode {
-  const snapshot = useJob(props.controller);
-  if (snapshot === null || snapshot.has_data || snapshot.has_job) return null;
-  return h("div", { className: "job-read-side-content" }, h("div", { className: "zone-cap" }, "시작하기"),
-    h("p", { className: "muted capnote" }, "데이터를 먼저 고르면 그 데이터로 쓸 수 있는 문서 작업이 여기에 표시됩니다."),
-    h("p", { className: "muted capnote" }, "쓸 작업을 이미 알고 있다면 「문서 작업」에서 고른 뒤 문서 만들기에서 사용을 누르세요."),
-    h("button", { className: "btn sm", id: "jobPickInLibrary", type: "button",
-      onClick: () => props.controller.navigation.go("library") }, "「문서 작업」에서 고르기"));
 }
 
 export function JobCandidates(props: { controller: JobReadController }): ReactNode {
@@ -825,14 +567,4 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
     h("div", { className: "browse-rows", id: "jobBrowseRows", "data-preserve-scroll": true },
       rows.length ? content : h("p", { className: "muted capnote" }, browse.query ? "이름이 일치하는 작업이 없습니다."
         : needs ? "확인이 필요한 작업이 없습니다." : "이 데이터에 연결된 작업이 없습니다.")));
-}
-
-/** static data-sheet shell의 닫기 버튼을 React 수명주기에 결속한다. */
-export function JobReadEffects(props: { controller: JobReadController; closeButton: HTMLElement }): null {
-  useEffect(() => {
-    const close = () => props.controller.closeDataSheet();
-    props.closeButton.addEventListener("click", close);
-    return () => props.closeButton.removeEventListener("click", close);
-  }, [props.controller, props.closeButton]);
-  return null;
 }

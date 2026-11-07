@@ -229,7 +229,8 @@ impl RecordValidationSummary {
             .map(|item| item.marked_record_count)
             .sum()
     }
-    fn validate(&self) -> Result<(), String> {
+    /// Issue/blocked/advisory counts are mutually consistent and never hollow.
+    fn validate_count_consistency(&self) -> Result<(), String> {
         if !self.issues.is_empty() && self.issues.len() != self.issue_count {
             return Err("record validation issue count mismatch".into());
         }
@@ -244,25 +245,38 @@ impl RecordValidationSummary {
         if !self.advisories.is_empty() && self.validated_count == 0 {
             return Err("advisory 는 통과한 record 에서만 선다(표식은 유효 값이다)".into());
         }
+        Ok(())
+    }
+    fn issue_is_invalid(item: &RecordValidationIssue) -> bool {
+        item.record_identity.is_empty()
+            || item.record_display_locator.is_empty()
+            || item.field_id.is_empty()
+            || item.field_display_label.is_empty()
+            || item.message.is_empty()
+            || item.recovery_target.record_identity != item.record_identity
+            || item.recovery_target.field_id.is_empty()
+            || !matches!(item.recovery_target.target_kind.as_str(), "cell" | "row")
+    }
+    fn validate_issues(&self) -> Result<(), String> {
         for item in &self.issues {
-            if item.record_identity.is_empty()
-                || item.record_display_locator.is_empty()
-                || item.field_id.is_empty()
-                || item.field_display_label.is_empty()
-                || item.message.is_empty()
-                || item.recovery_target.record_identity != item.record_identity
-                || item.recovery_target.field_id.is_empty()
-                || !matches!(item.recovery_target.target_kind.as_str(), "cell" | "row")
-            {
+            if Self::issue_is_invalid(item) {
                 return Err("invalid record validation issue".into());
             }
         }
+        Ok(())
+    }
+    fn validate_advisories(&self) -> Result<(), String> {
         if self.advisories.iter().any(|item| {
             item.code.is_empty() || item.field_id.is_empty() || item.marked_record_count == 0
         }) {
             return Err("advisory 는 근거 문서 수가 1 이상이어야 한다(hollow 금지)".into());
         }
         Ok(())
+    }
+    fn validate(&self) -> Result<(), String> {
+        self.validate_count_consistency()?;
+        self.validate_issues()?;
+        self.validate_advisories()
     }
 }
 

@@ -525,6 +525,288 @@ pub struct JudgeCapturedExecutionInput {
     pub captured_at: String,
     pub policy_block: Option<CapturedExecutionPolicyBlock>,
 }
+/// Stage 1: template/policy self-consistency and the fixed execution-base
+/// kind and materialization-base contract this implementation admits.
+fn validate_template_and_policy(
+    template: &CapturedTemplateExecutionInput,
+    policy: &ResolvedSealPolicy,
+) -> Result<(), Box<CaptureExecutionQualificationResult>> {
+    if let Err(error) = template.validate() {
+        return Err(Box::new(context(
+            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+            error.0,
+        )));
+    }
+    if let Err(error) = policy.validate() {
+        return Err(Box::new(context(
+            EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR,
+            error.0,
+        )));
+    }
+    if policy.execution_base_kind != APPLIED_TEMPLATE_CANDIDATE {
+        return Err(Box::new(context(
+            UNSUPPORTED_LOCAL_IMPLEMENTATION,
+            format!(
+                "미지원 execution base kind: {}",
+                python_repr(&Value::String(policy.execution_base_kind.clone()))
+            ),
+        )));
+    }
+    if policy.materialization_base_contract_id != MATERIALIZATION_BASE_CONTRACT_ID {
+        return Err(Box::new(context(
+            EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR,
+            "materialization base contract 가 applied-template-candidate-base/v1 이 아니다",
+        )));
+    }
+    Ok(())
+}
+/// Stage 2: an active policy block short-circuits qualification outright,
+/// unless its recorded profile id disagrees with the requested one.
+fn check_policy_block(
+    policy_block: Option<CapturedExecutionPolicyBlock>,
+    expected_profile_id: &str,
+) -> Result<(), Box<CaptureExecutionQualificationResult>> {
+    let Some(block) = policy_block else {
+        return Ok(());
+    };
+    if block
+        .qualification_profile_id
+        .as_ref()
+        .is_some_and(|profile| profile != expected_profile_id)
+    {
+        return Err(Box::new(context(
+            QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR,
+            "policy block 의 qualification_profile_id 가 요청 profile 과 불일치",
+        )));
+    }
+    Err(Box::new(
+        CaptureExecutionQualificationResult::PolicyBlocked(block),
+    ))
+}
+/// Stage 3: the template must identify the same workspace, work authority,
+/// template application and qualification profile the caller requested.
+fn check_context_match(
+    template: &CapturedTemplateExecutionInput,
+    workspace_instance_id: &str,
+    work_authority_id: &str,
+    expected_template_application_id: &str,
+    expected_profile_id: &str,
+) -> Result<(), Box<CaptureExecutionQualificationResult>> {
+    if template.workspace_instance_id != workspace_instance_id {
+        return Err(Box::new(context(
+            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+            "template workspace 가 요청 workspace 와 불일치",
+        )));
+    }
+    if template.work_authority_id != work_authority_id {
+        return Err(Box::new(context(
+            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+            "template work authority 가 요청 WorkAuthorityId 와 불일치",
+        )));
+    }
+    if template.applied.template_application_id != expected_template_application_id {
+        return Err(Box::new(context(
+            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+            "applied Application 이 expected_template_application_id 와 불일치",
+        )));
+    }
+    if template.qualification.qualification_profile_id != expected_profile_id {
+        return Err(Box::new(context(
+            QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR,
+            "qualification profile 이 expected_profile_id 와 불일치",
+        )));
+    }
+    Ok(())
+}
+/// Stage 4: a captured field binding observation must itself be valid and
+/// must cross-reference the same workspace/authority/application as template.
+fn check_field_binding(
+    template: &CapturedTemplateExecutionInput,
+    field_binding_observation: &FieldBindingObservation,
+) -> Result<(), Box<CaptureExecutionQualificationResult>> {
+    let FieldBindingObservation::Captured(binding) = field_binding_observation else {
+        return Ok(());
+    };
+    if let Err(error) = binding.validate() {
+        return Err(Box::new(context(
+            FIELD_BINDING_INPUT_INTEGRITY_ERROR,
+            error.to_string(),
+        )));
+    }
+    for (actual, expected, detail) in [
+        (
+            &binding.workspace_instance_id,
+            &template.workspace_instance_id,
+            "field binding workspace 가 template 과 불일치",
+        ),
+        (
+            &binding.work_authority_id,
+            &template.work_authority_id,
+            "field binding work authority 가 template 과 불일치",
+        ),
+        (
+            &binding.base_template_application_id,
+            &template.applied.template_application_id,
+            "field binding base Application 이 template 과 불일치",
+        ),
+    ] {
+        if actual != expected {
+            return Err(Box::new(context(
+                FIELD_BINDING_INPUT_INTEGRITY_ERROR,
+                detail,
+            )));
+        }
+    }
+    Ok(())
+}
+/// Stage 5: a captured selection observation must project cleanly and must
+/// cross-reference the same work/application/structure as the template.
+fn check_selection(
+    template: &CapturedTemplateExecutionInput,
+    selection_observation: &SelectionObservation,
+) -> Result<(), Box<CaptureExecutionQualificationResult>> {
+    let SelectionObservation::Captured(selection) = selection_observation else {
+        return Ok(());
+    };
+    let basis = match project_effective_selection(selection) {
+        Ok(basis) => basis,
+        Err(error) => {
+            return Err(Box::new(context(
+                SELECTION_CONTRACT_INTEGRITY_ERROR,
+                error.0,
+            )));
+        }
+    };
+    for (actual, expected, detail) in [
+        (
+            &basis.work_id,
+            &template.work_authority_id,
+            "selection work_id 가 template WorkAuthorityId 와 불일치",
+        ),
+        (
+            &basis.template_application_id,
+            &template.applied.template_application_id,
+            "selection Application 이 template 과 불일치",
+        ),
+        (
+            match selection {
+                SlotSelectionInput::Slotless(item) => &item.structure_projection_schema_version,
+                SlotSelectionInput::Slotted(item) => &item.structure_projection_schema_version,
+            },
+            &template.qualification.structure_projection_schema_version,
+            "selection structure schema 가 qualification context 와 불일치",
+        ),
+        (
+            &basis.template_structure_digest,
+            &template.qualification.template_structure_digest,
+            "selection template_structure_digest 가 qualification context 와 불일치",
+        ),
+    ] {
+        if actual != expected {
+            return Err(Box::new(context(
+                SELECTION_CONTRACT_INTEGRITY_ERROR,
+                detail,
+            )));
+        }
+    }
+    Ok(())
+}
+/// Stage 6: the normalized domain blockers observed on either side, in
+/// selection-then-field-binding order.
+fn collect_blockers(
+    selection_observation: &SelectionObservation,
+    field_binding_observation: &FieldBindingObservation,
+) -> Vec<String> {
+    let mut blockers = Vec::new();
+    if let SelectionObservation::DomainBlocked { blocker_code, .. } = selection_observation {
+        blockers.push(blocker_code.clone());
+    }
+    if let FieldBindingObservation::DomainBlocked { blocker_code, .. } = field_binding_observation {
+        blockers.push(blocker_code.clone());
+    }
+    blockers
+}
+/// The post-checks remainder of a capture judgment: everything still needed
+/// to build either a domain-blocked record or a complete execution input.
+/// Grouping these avoids threading seven loose parameters through stage 7/8.
+struct QualifiedCaptureContext {
+    workspace_instance_id: String,
+    work_authority_id: String,
+    template: CapturedTemplateExecutionInput,
+    selection_observation: SelectionObservation,
+    field_binding_observation: FieldBindingObservation,
+    policy: ResolvedSealPolicy,
+    captured_at: String,
+}
+/// Stage 7 (taken when any blocker was observed): the durable domain-blocked
+/// attempt record, with its own semantic projection and digest.
+fn domain_blocked_result(
+    ctx: QualifiedCaptureContext,
+    blockers: Vec<String>,
+) -> CaptureExecutionQualificationResult {
+    let projection = match build_captured_attempt_semantic_projection(
+        &ctx.template,
+        &ctx.policy,
+        &ctx.selection_observation,
+        &ctx.field_binding_observation,
+    ) {
+        Ok(projection) => projection,
+        Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
+    };
+    let digest = match semantic_projection_digest(&projection) {
+        Ok(digest) => digest,
+        Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
+    };
+    CaptureExecutionQualificationResult::DomainBlocked(Box::new(CapturedExecutionDomainBlock {
+        workspace_instance_id: ctx.workspace_instance_id,
+        work_authority_id: ctx.work_authority_id,
+        template_observation: ctx.template,
+        selection_observation: ctx.selection_observation,
+        field_binding_observation: ctx.field_binding_observation,
+        resolved_seal_policy: ctx.policy,
+        normalized_blockers: blockers,
+        captured_attempt_semantic_projection: projection,
+        captured_at: ctx.captured_at,
+        captured_attempt_digest: digest,
+    }))
+}
+/// Stage 8 (taken when no blocker was observed): the exact execution input,
+/// re-deriving its basis and semantic projection/digest from first principles.
+fn complete_result(ctx: QualifiedCaptureContext) -> CaptureExecutionQualificationResult {
+    let SelectionObservation::Captured(selection) = ctx.selection_observation else {
+        unreachable!()
+    };
+    let FieldBindingObservation::Captured(binding) = ctx.field_binding_observation else {
+        unreachable!()
+    };
+    if let Err(error) = build_exact_execution_basis(&ctx.template, &ctx.policy) {
+        return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0);
+    }
+    let projection = match build_captured_execution_semantic_projection(
+        &ctx.template,
+        &selection,
+        &binding,
+        &ctx.policy,
+    ) {
+        Ok(projection) => projection,
+        Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
+    };
+    let digest = match semantic_projection_digest(&projection) {
+        Ok(digest) => digest,
+        Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
+    };
+    CaptureExecutionQualificationResult::Complete(Box::new(CapturedExecutionInput {
+        workspace_instance_id: ctx.workspace_instance_id,
+        work_authority_id: ctx.work_authority_id,
+        template: ctx.template,
+        selection,
+        field_binding: *binding,
+        resolved_seal_policy: ctx.policy,
+        captured_execution_input_semantic_projection: projection,
+        captured_at: ctx.captured_at,
+        captured_execution_input_digest: digest,
+    }))
+}
 pub fn judge_captured_execution(
     input: JudgeCapturedExecutionInput,
 ) -> CaptureExecutionQualificationResult {
@@ -540,192 +822,41 @@ pub fn judge_captured_execution(
         captured_at,
         policy_block,
     } = input;
-    if let Err(error) = template.validate() {
-        return context(APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR, error.0);
+    if let Err(result) = validate_template_and_policy(&template, &policy) {
+        return *result;
     }
-    if let Err(error) = policy.validate() {
-        return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0);
+    if let Err(result) = check_policy_block(policy_block, &expected_profile_id) {
+        return *result;
     }
-    if policy.execution_base_kind != APPLIED_TEMPLATE_CANDIDATE {
-        return context(
-            UNSUPPORTED_LOCAL_IMPLEMENTATION,
-            format!(
-                "미지원 execution base kind: {}",
-                python_repr(&Value::String(policy.execution_base_kind.clone()))
-            ),
-        );
-    }
-    if policy.materialization_base_contract_id != MATERIALIZATION_BASE_CONTRACT_ID {
-        return context(
-            EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR,
-            "materialization base contract 가 applied-template-candidate-base/v1 이 아니다",
-        );
-    }
-    if let Some(block) = policy_block {
-        if block
-            .qualification_profile_id
-            .as_ref()
-            .is_some_and(|profile| profile != &expected_profile_id)
-        {
-            return context(
-                QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR,
-                "policy block 의 qualification_profile_id 가 요청 profile 과 불일치",
-            );
-        }
-        return CaptureExecutionQualificationResult::PolicyBlocked(block);
-    }
-    if template.workspace_instance_id != workspace_instance_id {
-        return context(
-            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
-            "template workspace 가 요청 workspace 와 불일치",
-        );
-    }
-    if template.work_authority_id != work_authority_id {
-        return context(
-            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
-            "template work authority 가 요청 WorkAuthorityId 와 불일치",
-        );
-    }
-    if template.applied.template_application_id != expected_template_application_id {
-        return context(
-            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
-            "applied Application 이 expected_template_application_id 와 불일치",
-        );
-    }
-    if template.qualification.qualification_profile_id != expected_profile_id {
-        return context(
-            QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR,
-            "qualification profile 이 expected_profile_id 와 불일치",
-        );
-    }
-    if let FieldBindingObservation::Captured(binding) = &field_binding_observation {
-        if let Err(error) = binding.validate() {
-            return context(FIELD_BINDING_INPUT_INTEGRITY_ERROR, error.to_string());
-        }
-        for (actual, expected, detail) in [
-            (
-                &binding.workspace_instance_id,
-                &template.workspace_instance_id,
-                "field binding workspace 가 template 과 불일치",
-            ),
-            (
-                &binding.work_authority_id,
-                &template.work_authority_id,
-                "field binding work authority 가 template 과 불일치",
-            ),
-            (
-                &binding.base_template_application_id,
-                &template.applied.template_application_id,
-                "field binding base Application 이 template 과 불일치",
-            ),
-        ] {
-            if actual != expected {
-                return context(FIELD_BINDING_INPUT_INTEGRITY_ERROR, detail);
-            }
-        }
-    }
-    if let SelectionObservation::Captured(selection) = &selection_observation {
-        let basis = match project_effective_selection(selection) {
-            Ok(basis) => basis,
-            Err(error) => return context(SELECTION_CONTRACT_INTEGRITY_ERROR, error.0),
-        };
-        for (actual, expected, detail) in [
-            (
-                &basis.work_id,
-                &template.work_authority_id,
-                "selection work_id 가 template WorkAuthorityId 와 불일치",
-            ),
-            (
-                &basis.template_application_id,
-                &template.applied.template_application_id,
-                "selection Application 이 template 과 불일치",
-            ),
-            (
-                match selection {
-                    SlotSelectionInput::Slotless(item) => &item.structure_projection_schema_version,
-                    SlotSelectionInput::Slotted(item) => &item.structure_projection_schema_version,
-                },
-                &template.qualification.structure_projection_schema_version,
-                "selection structure schema 가 qualification context 와 불일치",
-            ),
-            (
-                &basis.template_structure_digest,
-                &template.qualification.template_structure_digest,
-                "selection template_structure_digest 가 qualification context 와 불일치",
-            ),
-        ] {
-            if actual != expected {
-                return context(SELECTION_CONTRACT_INTEGRITY_ERROR, detail);
-            }
-        }
-    }
-    let mut blockers = Vec::new();
-    if let SelectionObservation::DomainBlocked { blocker_code, .. } = &selection_observation {
-        blockers.push(blocker_code.clone());
-    }
-    if let FieldBindingObservation::DomainBlocked { blocker_code, .. } = &field_binding_observation
-    {
-        blockers.push(blocker_code.clone());
-    }
-    if !blockers.is_empty() {
-        let projection = match build_captured_attempt_semantic_projection(
-            &template,
-            &policy,
-            &selection_observation,
-            &field_binding_observation,
-        ) {
-            Ok(projection) => projection,
-            Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
-        };
-        let digest = match semantic_projection_digest(&projection) {
-            Ok(digest) => digest,
-            Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
-        };
-        return CaptureExecutionQualificationResult::DomainBlocked(Box::new(
-            CapturedExecutionDomainBlock {
-                workspace_instance_id,
-                work_authority_id,
-                template_observation: template,
-                selection_observation,
-                field_binding_observation,
-                resolved_seal_policy: policy,
-                normalized_blockers: blockers,
-                captured_attempt_semantic_projection: projection,
-                captured_at,
-                captured_attempt_digest: digest,
-            },
-        ));
-    }
-    let SelectionObservation::Captured(selection) = selection_observation else {
-        unreachable!()
-    };
-    let FieldBindingObservation::Captured(binding) = field_binding_observation else {
-        unreachable!()
-    };
-    if let Err(error) = build_exact_execution_basis(&template, &policy) {
-        return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0);
-    }
-    let projection = match build_captured_execution_semantic_projection(
-        &template, &selection, &binding, &policy,
+    if let Err(result) = check_context_match(
+        &template,
+        &workspace_instance_id,
+        &work_authority_id,
+        &expected_template_application_id,
+        &expected_profile_id,
     ) {
-        Ok(projection) => projection,
-        Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
-    };
-    let digest = match semantic_projection_digest(&projection) {
-        Ok(digest) => digest,
-        Err(error) => return context(EXECUTION_PLAN_DEPENDENCY_RESOLUTION_ERROR, error.0),
-    };
-    CaptureExecutionQualificationResult::Complete(Box::new(CapturedExecutionInput {
+        return *result;
+    }
+    if let Err(result) = check_field_binding(&template, &field_binding_observation) {
+        return *result;
+    }
+    if let Err(result) = check_selection(&template, &selection_observation) {
+        return *result;
+    }
+    let blockers = collect_blockers(&selection_observation, &field_binding_observation);
+    let ctx = QualifiedCaptureContext {
         workspace_instance_id,
         work_authority_id,
         template,
-        selection,
-        field_binding: *binding,
-        resolved_seal_policy: policy,
-        captured_execution_input_semantic_projection: projection,
+        selection_observation,
+        field_binding_observation,
+        policy,
         captured_at,
-        captured_execution_input_digest: digest,
-    }))
+    };
+    if !blockers.is_empty() {
+        return domain_blocked_result(ctx, blockers);
+    }
+    complete_result(ctx)
 }
 
 #[cfg(test)]

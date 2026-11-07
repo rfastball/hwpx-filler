@@ -44,6 +44,49 @@ pub struct FieldContract {
     pub shape: String,
     pub length: Option<(u64, u64)>,
 }
+fn validate_binding(binding: &str) -> Result<(), DataContractError> {
+    let digest = binding.strip_prefix("sha256:").ok_or_else(|| {
+        fail(format!(
+            "데이터 계약의 binding 지문 모양이 아닙니다: {}",
+            python_repr(&Value::String(binding.to_owned()))
+        ))
+    })?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(fail(format!(
+            "데이터 계약의 binding 지문 모양이 아닙니다: {}",
+            python_repr(&Value::String(binding.to_owned()))
+        )));
+    }
+    Ok(())
+}
+fn validate_shape_length(shape: &str, length: Option<(u64, u64)>) -> Result<(), DataContractError> {
+    if !SHAPES.contains(&shape) {
+        return Err(fail(format!(
+            "모르는 값 모양 등급: {} (지원: ('empty', 'number', 'date', 'text'))",
+            python_repr(&Value::String(shape.to_owned()))
+        )));
+    }
+    match (shape, length) {
+        ("empty", None) => (),
+        ("empty", Some(_)) => {
+            return Err(fail("값이 없는(empty) 항목에는 길이 범위가 없어야 합니다"));
+        }
+        (_, None) => {
+            return Err(fail(
+                "데이터 계약의 length 는 [최소, 최대] 두 정수여야 합니다",
+            ));
+        }
+        (_, Some((low, high))) if low > high => {
+            return Err(fail("데이터 계약의 length 최소가 최대보다 큽니다"));
+        }
+        _ => (),
+    }
+    Ok(())
+}
 impl FieldContract {
     pub fn validate(&self) -> Result<(), DataContractError> {
         if self.field.is_empty() || self.column.is_empty() {
@@ -51,50 +94,14 @@ impl FieldContract {
                 "데이터 계약의 field·column 는 비어 있지 않은 문자열이어야 합니다",
             ));
         }
-        let digest = self.binding.strip_prefix("sha256:").ok_or_else(|| {
-            fail(format!(
-                "데이터 계약의 binding 지문 모양이 아닙니다: {}",
-                python_repr(&Value::String(self.binding.clone()))
-            ))
-        })?;
-        if digest.len() != 64
-            || !digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(fail(format!(
-                "데이터 계약의 binding 지문 모양이 아닙니다: {}",
-                python_repr(&Value::String(self.binding.clone()))
-            )));
-        }
+        validate_binding(&self.binding)?;
         if self.rows == 0 {
             return Err(fail("데이터 계약의 rows 는 1 이상이어야 합니다"));
         }
         if self.blanks > self.rows || self.failures > self.rows - self.blanks {
             return Err(fail("데이터 계약의 blanks·failures 합이 rows 보다 큽니다"));
         }
-        if !SHAPES.contains(&self.shape.as_str()) {
-            return Err(fail(format!(
-                "모르는 값 모양 등급: {} (지원: ('empty', 'number', 'date', 'text'))",
-                python_repr(&Value::String(self.shape.clone()))
-            )));
-        }
-        match (self.shape.as_str(), self.length) {
-            ("empty", None) => (),
-            ("empty", Some(_)) => {
-                return Err(fail("값이 없는(empty) 항목에는 길이 범위가 없어야 합니다"));
-            }
-            (_, None) => {
-                return Err(fail(
-                    "데이터 계약의 length 는 [최소, 최대] 두 정수여야 합니다",
-                ));
-            }
-            (_, Some((low, high))) if low > high => {
-                return Err(fail("데이터 계약의 length 최소가 최대보다 큽니다"));
-            }
-            _ => (),
-        }
-        Ok(())
+        validate_shape_length(&self.shape, self.length)
     }
     pub fn filled(&self) -> u64 {
         self.rows - self.blanks

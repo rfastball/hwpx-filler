@@ -59,17 +59,55 @@ pub struct DocumentView {
     where_labels: Vec<String>,
     masks: HashMap<usize, Vec<(usize, usize)>>,
 }
+fn push_cell_text(cell_texts: &mut Vec<(CellRef, Vec<String>)>, paragraph: &ParagraphText) {
+    if let Some(cell) = &paragraph.cell {
+        if let Some((_, texts)) = cell_texts.iter_mut().find(|(key, _)| key == cell) {
+            texts.push(paragraph.text.clone())
+        } else {
+            cell_texts.push((cell.clone(), vec![paragraph.text.clone()]));
+        }
+    }
+}
+fn compute_where_label(
+    paragraph: &ParagraphText,
+    numbering: &mut BTreeMap<usize, String>,
+) -> String {
+    if paragraph.cell.is_none()
+        && let Some((level, token)) = leading_marker(&paragraph.text)
+    {
+        numbering.retain(|depth, _| *depth < level);
+        numbering.insert(level, token);
+    }
+    let mut path = numbering.values().cloned().collect::<Vec<_>>().join(" ");
+    path = path.trim_end_matches('.').into();
+    if paragraph.cell.is_some() {
+        path = if path.is_empty() {
+            "표 칸".into()
+        } else {
+            format!("표 칸, {path}")
+        };
+    }
+    path
+}
+fn mask_slot(
+    masks: &mut HashMap<usize, Vec<(usize, usize)>>,
+    paragraphs: &[ParagraphText],
+    slot: &Slot,
+) {
+    let text = &paragraphs[slot.paragraph].text;
+    let span = char_slice(text, slot.start, slot.end);
+    if specificity(&span) >= SPECIFIC || hangul_bounded(text, slot.start, slot.end) {
+        masks
+            .entry(slot.paragraph)
+            .or_default()
+            .push((slot.start, slot.end));
+    }
+}
 impl DocumentView {
     pub fn new(paragraphs: &[ParagraphText], slots: &[Slot]) -> Self {
         let mut cell_texts: Vec<(CellRef, Vec<String>)> = Vec::new();
         for paragraph in paragraphs {
-            if let Some(cell) = &paragraph.cell {
-                if let Some((_, texts)) = cell_texts.iter_mut().find(|(key, _)| key == cell) {
-                    texts.push(paragraph.text.clone())
-                } else {
-                    cell_texts.push((cell.clone(), vec![paragraph.text.clone()]));
-                }
-            }
+            push_cell_text(&mut cell_texts, paragraph);
         }
         let cells = cell_texts
             .into_iter()
@@ -78,33 +116,11 @@ impl DocumentView {
         let mut numbering: BTreeMap<usize, String> = BTreeMap::new();
         let mut where_labels = Vec::new();
         for paragraph in paragraphs {
-            if paragraph.cell.is_none()
-                && let Some((level, token)) = leading_marker(&paragraph.text)
-            {
-                numbering.retain(|depth, _| *depth < level);
-                numbering.insert(level, token);
-            }
-            let mut path = numbering.values().cloned().collect::<Vec<_>>().join(" ");
-            path = path.trim_end_matches('.').into();
-            if paragraph.cell.is_some() {
-                path = if path.is_empty() {
-                    "표 칸".into()
-                } else {
-                    format!("표 칸, {path}")
-                };
-            }
-            where_labels.push(path);
+            where_labels.push(compute_where_label(paragraph, &mut numbering));
         }
         let mut masks: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
         for slot in slots {
-            let text = &paragraphs[slot.paragraph].text;
-            let span = char_slice(text, slot.start, slot.end);
-            if specificity(&span) >= SPECIFIC || hangul_bounded(text, slot.start, slot.end) {
-                masks
-                    .entry(slot.paragraph)
-                    .or_default()
-                    .push((slot.start, slot.end));
-            }
+            mask_slot(&mut masks, paragraphs, slot);
         }
         Self {
             paragraphs: paragraphs.to_vec(),
