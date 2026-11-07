@@ -73,6 +73,9 @@ jobs:
           }
           cargo fetch --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # bridge 계약 테스트는 60초 안에 descriptor 를 돌린다 — 차가운 러너의 첫 컴파일을 미리 끝낸다.
+          cargo build --offline --locked --no-default-features -p hwpx-desktop --example bridge_descriptor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/read_toml.mjs --prepare
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd test

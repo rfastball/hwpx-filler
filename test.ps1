@@ -110,6 +110,9 @@ try {
     # 받아 둔다 — 깨끗한 체크아웃(릴리스 러너 포함)에서도 돈다.
     $code = Invoke-Cargo ('fetch --locked' -split ' ')
     if ($code -ne 0) { exit $code }
+    # bridge 계약 테스트는 60초 안에 descriptor 를 돌린다 — 차가운 체크아웃의 첫 컴파일을 미리 끝낸다.
+    $code = Invoke-Cargo ('build --offline --locked --no-default-features -p hwpx-desktop --example bridge_descriptor' -split ' ')
+    if ($code -ne 0) { exit $code }
     & node scripts/read_toml.mjs --prepare
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & npm.cmd test
