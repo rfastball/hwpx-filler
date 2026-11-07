@@ -74,20 +74,26 @@
  *                             퇴역 좌표 3종의 음성 단언 ·
  *                             `src_cell_h_manual == src_cell_h_suggested`(실렌더 기하).
  *
- * **알면서 그대로 옮긴 취약점 둘**(가리지 않는다):
+ * **알면서 그대로 옮긴 취약점 둘**(가리지 않는다 — ⓑ 는 이식 뒤 별건으로 해소했다):
  *   ⓐ `editor_lib_manage` 의 클릭 5곳은 가시성 단언이 없다. 프로브 click 은 hidden 요소도
  *      통과하므로(F8 교훈) 「눈으로 본 것과 다른 결론」이 날 수 있는 자리다. 고치는 것은 이
  *      이식의 일이 아니다 — 실렌더 계약을 바꾸는 별건이고, 여기서 슬쩍 더하면 이식이
  *      「무엇을 바꿨나」의 한 줄을 잃는다. 아래 CLICK_SITES_WITHOUT_VISIBILITY 에 적어 둔다.
- *   ⓑ `editor_discard_immediate` 의 내부 폴링 상한(60 × 50ms + 300ms)은 레거시 회수 시한
- *      (`_probe_late` 2.5초)보다 **길다**. 레거시는 그래서 아직 pending 인 객체를 그대로
- *      실을 수 있었다(조용한 만료). 시한은 늘리지 않으므로 그 초과는 이제 시끄러운 실패다.
+ *   ⓑ `editor_discard_immediate` 의 레거시 내부 폴링 상한(60 × 50ms + 300ms)은 회수 시한
+ *      (`_probe_late` 2.5초)보다 **길었다**(조용한 만료 — 아직 pending 인 객체가 실렸다).
+ *      이제 내부 대기는 끝점 하나(시한 − 정착 300ms − 여유)를 나눠 쓰는 단계별 `ctx.waitFor`
+ *      라 시한 안에 엄격히 들고, 늦으면 클릭 기준 단계 시각을 실은 시끄러운 실패다. 스텁은
+ *      정리에서 늦은 발신의 착지와 편집 체인 정산을 기다린 **뒤** 되돌린다 — 시한을 넘긴
+ *      발신이 다음 프로브의 실 컨트롤러로 새지 않는다(`editor_edit_chain.js`).
  *
  * 이 모듈은 **비활성(inert)** 이다. 제품 그래프가 import 하지 않고 전역을 쓰지 않으며,
  * import 만으로는 DOM 을 만지지도 리스너를 걸지도 않는다 — 전부 호출 시점에 일어난다.
  */
 
-import { ERROR_CODES } from "../runner.js";
+import { ERROR_CODES, SelftestProbeError } from "../runner.js";
+import {
+  DISCARD_SETTLE_MS, awaitDiscardSteps, createStepClock, observePreChain, teardownStubbedEditor,
+} from "./editor_edit_chain.js";
 import { probePclmRegistration, probeSheetReorder } from "./pclm_registration.js";
 import { probeCardCopyWithHoles, probeCardEdit, readWorkbenchCard } from "./workbench_card.js";
 import {
@@ -1570,6 +1576,7 @@ export function createEditorWorkbenchDataProbes() {
             out.pending = false;
             return { editor_tab_autodiscard: out };
           }
+          ctx.state.clicked = true;
           tab.click();
           /* 정산 + 발신 왕복 + 모달이 뜬다면 뜨고도 남을 시간. 짧게 재고 「안 떴다」고 말하면
              그 음성 대조는 타이밍이 만든 것이지 계약이 만든 것이 아니다. */
@@ -1582,15 +1589,20 @@ export function createEditorWorkbenchDataProbes() {
           out.why = "완료";
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
-        } finally {
-          stub.restore();
         }
         out.pending = false;
         return { editor_tab_autodiscard: out };
       },
+      /* 스텁은 run 이 아니라 여기서 되돌린다 — 늦은 `goto_section` 이 착지하고 편집 체인이
+         빈 **뒤**에. run 끝에서 되돌리면 그 늦은 발신이 다음 프로브의 스텁(또는 실 컨트롤러)에
+         닿는다. */
       teardown(ctx) {
-        if (ctx.state.stub) ctx.state.stub.restore();
-        restoreShell(ctx, ctx.state.out || {});
+        const out = ctx.state.out || { calls: [] };
+        return teardownStubbedEditor(
+          ctx, { service, restoreShell },
+          () => !!ctx.state.clicked && out.calls.indexOf("goto_section") === -1,
+          "goto_section",
+        );
       },
     },
 
@@ -1609,9 +1621,10 @@ export function createEditorWorkbenchDataProbes() {
       legacySite: 3802,
       deadlineMs: 2500,
       deadlineRationale:
-        "공용 `_probe_late` 예산 2.5초 그대로. 프로브 **안**의 폴링 상한(60 × 50ms + 300ms)이"
-        + " 이 예산보다 길다는 것은 레거시의 결함이다 — 지나면 아직 pending 인 객체가 그대로"
-        + " 실렸다. 시한을 늘려 그 결함을 덮지 않는다: 초과는 이제 시끄러운 실패다.",
+        "공용 `_probe_late` 예산 2.5초 그대로. 레거시는 프로브 **안**의 폴링 상한(60 × 50ms"
+        + " + 300ms)이 이 예산보다 길어 아직 pending 인 객체를 그대로 실었다. 시한을 늘려 그"
+        + " 결함을 덮지 않는다: 내부 대기는 끝점 하나(시한 − 정착 300ms − 여유 250ms)를 단계별로"
+        + " 나눠 써 시한 안에 엄격히 들고, 늦으면 클릭 기준 단계 시각을 실은 시끄러운 실패다.",
       completionField: "pending",
       after: ["editor_tab_autodiscard"],
       afterReason: "레거시 드라이버 순서 그대로(3794 → 3802) — 같은 편집기 표면을 잇달아 쓴다.",
@@ -1619,6 +1632,8 @@ export function createEditorWorkbenchDataProbes() {
         const Nav = service(ctx, "Nav");
         const out = { pending: true, calls: [] };
         ctx.state.out = out;
+        const steps = createStepClock(ctx.now);
+        ctx.state.steps = steps;
 
         const clean = editorBase({
           section: "filename",
@@ -1643,11 +1658,17 @@ export function createEditorWorkbenchDataProbes() {
           if (action === "set_name") {
             /* 큐에 든 blur 발신이 **늦게** 도착하는 실제 조건을 그대로 만든다: 응답 전 지연 +
                도착 시 dirty 스냅샷 push(= `#editor-foot` 재구성). */
-            return ctx.sleep(120).then(() => { ctx.push("editor", dirty); return {}; });
+            steps.mark("set_name_arrived");
+            return ctx.sleep(120).then(() => {
+              ctx.push("editor", dirty);
+              steps.mark("set_name_resolved");
+              return {};
+            });
           }
           if (action === "discard_patch") {
             /* 컨트롤러가 되돌린 뒤 밀어 주는 것을 그대로 흉내낸다 — 확인이 없으니 이 push 가
                사용자가 보는 **유일한** 결과다. */
+            steps.mark("discard_patch_arrived");
             ctx.push("editor", clean);
             return Promise.resolve({});
           }
@@ -1665,6 +1686,9 @@ export function createEditorWorkbenchDataProbes() {
             out.pending = false;
             return { editor_discard_immediate: out };
           }
+          /* 타이핑 **전**의 편집 체인 — 앞에서 누가 체인을 붙들고 있었다면 `set_name` 도착이
+             그만큼 늦는다. 기다리지 않고 비는 시각만 찍는다(음수 = 클릭 전에 비었다). */
+          observePreChain(ctx, { service }, steps);
           // ① 클린 세션에 타이핑 — 대기 편집이 서고 버리기가 열린다(1R 계약).
           nameEl.focus();
           typeValue(ctx, nameEl, "공고서 수정");
@@ -1675,44 +1699,47 @@ export function createEditorWorkbenchDataProbes() {
           // ② 곧바로 버리기 클릭. 실제 순서 그대로 blur→change(=큐 적재) 뒤 click 이 온다.
           fire(ctx, nameEl, "change");
           nameEl.blur();
+          steps.start();
           discardOf().click();
 
-          let ticks = 0;
-          for (;;) {
-            await ctx.sleep(50);
-            ticks += 1;
-            if (out.calls.indexOf("discard_patch") !== -1) {
-              await ctx.sleep(300);                 // 되돌린 스냅샷 push 의 재렌더 정착
-              /* ③ 확인은 어디에도 서지 않는다(음성) — 열렸다면 클릭 없이는 닫히지 않으므로
-                    지금 보이는 것으로 충분하다. */
-              const confirmRoot = byId(ctx, "confirmModal");
-              out.confirm_modal_open = confirmRoot !== null
-                && !confirmRoot.classList.contains("hidden");
-              out.call_order = out.calls.join(",");
-              out.flushed_before_discard = out.calls.indexOf("set_name") === 0;
-              /* ④ 되돌린 뒤 정합: 이름이 저장본으로 돌아오고 두 버튼이 함께 잠긴다. */
-              const nm = byId(ctx, "editorName");
-              out.name_value_after_discard = nm ? nm.value : null;
-              const save = ctx.doc.querySelector('#editor-foot [data-act="save"]');
-              out.discard_disabled_after = !!(discardOf() && discardOf().disabled);
-              out.save_disabled_after = !!(save && save.disabled);
-              out.discarded = true;
-              out.why = "완료";
-              break;
-            }
-            if (ticks > 60) { out.why = "버리기 미발신"; break; }
-          }
+          /* 클릭 → `set_name` 도착 → 그 응답 → `discard_patch` 도착을 단계별로 기다린다.
+             늦으면 어느 고리에서 멈췄는지를 실은 deadline_exceeded 로 선다(「버리기 미발신」
+             으로 조용히 완주하던 갈래는 없다). */
+          await awaitDiscardSteps(ctx, steps);
+          await ctx.sleep(DISCARD_SETTLE_MS);       // 되돌린 스냅샷 push 의 재렌더 정착
+          /* ③ 확인은 어디에도 서지 않는다(음성) — 열렸다면 클릭 없이는 닫히지 않으므로
+                지금 보이는 것으로 충분하다. */
+          const confirmRoot = byId(ctx, "confirmModal");
+          out.confirm_modal_open = confirmRoot !== null
+            && !confirmRoot.classList.contains("hidden");
+          out.call_order = out.calls.join(",");
+          out.flushed_before_discard = out.calls.indexOf("set_name") === 0;
+          /* ④ 되돌린 뒤 정합: 이름이 저장본으로 돌아오고 두 버튼이 함께 잠긴다. */
+          const nm = byId(ctx, "editorName");
+          out.name_value_after_discard = nm ? nm.value : null;
+          const save = ctx.doc.querySelector('#editor-foot [data-act="save"]');
+          out.discard_disabled_after = !!(discardOf() && discardOf().disabled);
+          out.save_disabled_after = !!(save && save.disabled);
+          out.timeline_ms = steps.timeline();
+          out.discarded = true;
+          out.why = "완료";
         } catch (thrown) {
+          if (thrown instanceof SelftestProbeError) throw thrown;   // 단계 만료 문안을 지킨다
           ctx.fail(ERROR_CODES.PROBE_THREW, `throw:${thrown && thrown.message}`);
-        } finally {
-          stub.restore();
         }
         out.pending = false;
         return { editor_discard_immediate: out };
       },
+      /* 스텁은 run 이 아니라 여기서 되돌린다 — 늦은 `discard_patch` 가 착지하고 편집 체인이
+         빈 **뒤**에(CI 실측: 시한 뒤 도착한 버리기가 실 컨트롤러에 닿아 다음 프로브의 경보로
+         섰다). */
       teardown(ctx) {
-        if (ctx.state.stub) ctx.state.stub.restore();
-        restoreShell(ctx, ctx.state.out || {});
+        const steps = ctx.state.steps;
+        return teardownStubbedEditor(
+          ctx, { service, restoreShell },
+          () => !!steps && steps.started && !steps.has("discard_patch_arrived"),
+          `discard_patch (클릭 기준: ${steps ? steps.describe() : "기록 없음"})`,
+        );
       },
     },
 
