@@ -433,8 +433,7 @@ function QueueDots(props: { controller: WorkbenchController; card: Obj; degenera
   })));
 }
 
-/** 화면 머리 — 돌아가기·제목·화면 밖으로 나가는 문 둘(연결 편집·템플릿 편집)과 그 판본.
- *  WorkbenchScreen이 쥐던 순수 렌더 조각을 일반 함수로 승격했을 뿐 로직은 그대로다. */
+/** 화면 머리 — 돌아가기·제목·화면 밖으로 나가는 문 둘(연결 편집·템플릿 편집)과 그 판본. */
 function renderWbHeader(
   props: { controller: WorkbenchController; snapshot: Obj; revision: Obj },
 ): ReactNode {
@@ -543,8 +542,7 @@ function renderWbFooter(
       }, "복사")));
 }
 
-/** 작업점이 옮기면 큐 점의 tab stop과 스크롤 위치를 그 점으로 맞춘다 — WorkbenchScreen이
- *  쥐던 effect를 훅으로 승격했을 뿐 의존성·로직은 그대로다. */
+/** 작업점이 옮기면 큐 점의 tab stop과 스크롤 위치를 그 점으로 맞춘다. */
 function useQueueDotFocusSync(
   controller: WorkbenchController, cardOpen: boolean, currentIndex: unknown,
 ): void {

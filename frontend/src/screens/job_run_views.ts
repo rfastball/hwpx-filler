@@ -66,8 +66,7 @@ function renderRecordStatus(props: { controller: JobRunController; wb: Obj }): R
       : null);
 }
 
-/** 「데이터 확인」 구획 — record validation 결과·context error 안내를 짓는다.
- *  `JobWorkbenchStatus`가 쥐던 지역 상수 하나를 모듈 함수로 승격했을 뿐 로직은 그대로다. */
+/** 「데이터 확인」 구획 — record validation 결과·context error 안내를 짓는다. */
 function renderRecordSection(props: { controller: JobRunController; wb: Obj }): ReactNode {
   const { controller, wb } = props;
   if (wb.kind === 'context_error') {

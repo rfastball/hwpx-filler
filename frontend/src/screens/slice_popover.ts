@@ -156,8 +156,7 @@ type Draft = { mode: string; edited: boolean };
 
 /** 팝오버를 칩 곁에 붙인다 — 넘치면 칩을 가리지 않고 높이를 자른다(필터 빌더와 같은 배치
  *  규칙). 칩에 **그린 뒤** 자리를 재므로 layout effect 하나, 그 자리가 늙는 사건(크기·스크롤·
- *  창 크기)마다 다시 재는 effect 하나로 선다 — `SlicePopover`가 쥐던 둘을 훅으로 승격했을
- *  뿐 의존성·순서·로직은 그대로다. */
+ *  창 크기)마다 다시 재는 effect 하나로 선다. */
 function usePopoverPlacement(
   doc: Document,
   rootRef: { current: HTMLDivElement | null },
@@ -209,10 +208,8 @@ function resolveCurrentMethod(methods: Obj[], spec: Obj | null): Obj | null {
   return methods.find((m) => m.mode === spec.mode) || null;
 }
 
-/** 입력 칸의 글자·보이기 선택·커밋 — `SlicePopover`가 쥐던 상태·동작 묶음을 훅으로
- *  승격했을 뿐 로직·순서는 그대로다(최초 state·effect 선언 순서만 바뀐다 — 옮겨진
- *  specKey 리셋 효과는 unmount 효과보다 먼저 서는데, unmount 효과의 설치부가 빈
- *  본문이라 두 효과의 순서는 관찰 가능한 차이를 내지 않는다).
+/** 입력 칸의 글자·보이기 선택·커밋. specKey 리셋 효과가 팝오버의 unmount 효과보다 먼저
+ *  선언되지만, unmount 효과의 설치부는 빈 본문이라 두 효과의 순서는 관찰되지 않는다.
  *
  *  `choose`가 빈 칸으로 초점을 옮기는 자리를 찾느라 `rootRef`를 읽는다 — 팝오버 DOM이지만
  *  이 훅이 함께 받는 이유는 그 조회가 입력 커밋 흐름 자체의 일부이기 때문이다(다른 자리로
@@ -400,8 +397,7 @@ function SlicePopover(props: {
   }
 
   /** 끌어 고른 범위의 후보 응답을 반영한다 — 늦게 온 옛 응답(다른 범위를 고른 뒤 도착)은
-   *  `lastSelection` 대조로 버린다. `propose`의 `.then` 콜백을 이름째 뽑았을 뿐 순서·판정은
-   *  그대로다. */
+   *  `lastSelection` 대조로 버린다. */
   function applyProposeResult(result: Obj, key: string): void {
     if (!alive.current || lastSelection.current !== key) return;
     const candidates = (result.candidates || []) as Obj[];
