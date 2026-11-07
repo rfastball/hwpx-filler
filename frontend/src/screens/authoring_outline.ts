@@ -5,7 +5,7 @@ import { sectionLabel } from "./authoring_primitives.ts";
 import type { Obj, Props } from "./authoring_primitives.ts";
 import { KIND_LABEL, SEVERITY_LABEL, COVERAGE_LABEL, sameFieldMeta, outlineSpine, groupedPath, fieldsInFirstUse,
   outlineKey, outlineCurrent, filterMatch, outlineLabel } from "./authoring_outline_model.ts";
-import type { SpineNode } from "./authoring_outline_model.ts";
+import type { SpineNode, SpineUse } from "./authoring_outline_model.ts";
 import { icon, coverageDot, kindGlyph } from "./icons.ts";
 import { treeKey, roveFocus } from "./authoring_a11y.ts";
 import type { TreeRow } from "./authoring_a11y.ts";
@@ -14,6 +14,31 @@ import { EmptyFields, ProposalOutline } from "./authoring_proposal_view.ts";
 
 type TreeNode = { key: string; label: string; content: ReactNode[]; entry: Obj; kind?: string; highlight?: Obj; open?: boolean; children?: () => TreeNode[] };
 type TreeHandlers = { onSelect(entry: Obj, element: HTMLElement): void; onMenu(entry: Obj, element: HTMLElement, anchor: { x: number; y: number; top?: number }): void };
+
+/** 문맥 메뉴 키(Shift+F10·메뉴 키)의 처리 — 이 줄을 고른 뒤 그 줄 아래에 연다(§6.1). 처리했으면 true. */
+function handleTreeContextMenu(event: any, element: HTMLElement, row: TreeRow & { node: TreeNode }, onMenu: TreeHandlers["onMenu"]): boolean {
+  if (shellShortcut(event) !== "context-menu") return false;
+  event.preventDefault(); event.stopPropagation();
+  const rect = (element.querySelector(".authoring-tree-row") || element).getBoundingClientRect();
+  onMenu(row.node.entry, element, { x: rect.left, y: rect.bottom, top: rect.top });
+  return true;
+}
+/** 키 사건이 선 트리 줄을 가린다 — 없으면(조합 중 포함) null. */
+function resolveTreeRow(event: any, byKey: Map<string, TreeRow & { node: TreeNode }>): { element: HTMLElement; row: TreeRow & { node: TreeNode } } | null {
+  const element = event.target?.closest?.('[role="treeitem"]') as HTMLElement | null;
+  const key = element?.getAttribute("data-tree-key");
+  const row = key ? byKey.get(key) : undefined;
+  if (!element || !row || event.nativeEvent?.isComposing) return null;
+  return { element, row };
+}
+/** treeKey 가 판정한 동작을 그대로 적용한다. */
+function applyTreeAction(action: Obj, element: HTMLElement, row: TreeRow & { node: TreeNode },
+  ctx: { toggle(key: string, open: boolean): void; setFocusKey(key: string): void; elements: { current: Map<string, HTMLElement> }; onSelect: TreeHandlers["onSelect"] }): void {
+  if (action.expand) ctx.toggle(action.expand, true);
+  if (action.collapse) ctx.toggle(action.collapse, false);
+  if (action.focus) { ctx.setFocusKey(action.focus); ctx.elements.current.get(action.focus)?.focus(); }
+  if (action.select) ctx.onSelect(row.node.entry, element);
+}
 
 /** 구조 목록(§3.3·§10)은 APG treeview 다: 한 번의 Tab 으로 들어오고(roving tabindex), ↑↓ 이동·→ 펼침/첫 자식·
  *  ← 접힘/부모·Home·End, Enter·Space 로 고른다. 지금 위치(current — 바깥에서 안쪽으로의 열쇠 경로)는 **보이는 가장 안쪽**
@@ -74,25 +99,16 @@ function OutlineTree({ labelledBy, nodes, current, inactive, onSelect, onMenu, o
       onHighlight(byKey.get(key)?.node.highlight || null);
     },
     onKeyDown: (event: any) => {
-      const element = event.target?.closest?.('[role="treeitem"]') as HTMLElement | null;
-      const key = element?.getAttribute("data-tree-key");
-      const row = key ? byKey.get(key) : undefined;
-      if (!element || !row || event.nativeEvent?.isComposing) return;
+      const resolved = resolveTreeRow(event, byKey);
+      if (!resolved) return;
+      const { element, row } = resolved;
       // Shift+F10·메뉴 키는 이 줄을 고른 뒤 그 줄 아래에 문맥 메뉴를 연다(§6.1) — 셸의 일반 경로로 가지 않는다.
-      if (shellShortcut(event) === "context-menu") {
-        event.preventDefault(); event.stopPropagation();
-        const rect = (element.querySelector(".authoring-tree-row") || element).getBoundingClientRect();
-        onMenu(row.node.entry, element, { x: rect.left, y: rect.bottom, top: rect.top });
-        return;
-      }
+      if (handleTreeContextMenu(event, element, row, onMenu)) return;
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const action = treeKey(event.key, rows, row.key);
       if (!action) return;
       event.preventDefault();
-      if (action.expand) toggle(action.expand, true);
-      if (action.collapse) toggle(action.collapse, false);
-      if (action.focus) { setFocusKey(action.focus); elements.current.get(action.focus)?.focus(); }
-      if (action.select) onSelect(row.node.entry, element);
+      applyTreeAction(action, element, row, { toggle, setFocusKey, elements, onSelect });
     } }, ...nodes.map(render));
 }
 
@@ -122,6 +138,15 @@ function rowContent(kind: "slot" | "option" | "field", name: string, parts: RowP
   ];
 }
 const EMPTY_FIELDS = "필드가 없습니다. 문구를 고르고 「필드로 만들기」를 누르세요.";
+/** 빈 상태 안내(NG-01) 줄: 구조 보기는 필드도 항목도 없을 때만, 필드 보기는 필드가 없을 때만 선다. */
+function outlineStructureEmptyNotice({ controller, item, filtering, analysis, fields, text }:
+  Props & { item: Obj; filtering: boolean; analysis: Obj; fields: Obj[]; text: string }): ReactNode {
+  return !filtering && !(analysis.slots || []).length && !fields.length && h(EmptyFields, { controller, item, text });
+}
+function outlineFieldsEmptyNotice({ controller, item, filtering, fields, text }:
+  Props & { item: Obj; filtering: boolean; fields: Obj[]; text: string }): ReactNode {
+  return !filtering && !fields.length && h(EmptyFields, { controller, item, text });
+}
 
 /** 왼쪽 템플릿 구조(§3.1 UI03·UI04·§3.3 · UX-09): 한 패널의 두 보기.
  *  - 구조: 문서 순서의 척추 — 항목(실선 안내선) 아래 선택(점선 안내선), 필드 사용 위치는 그것을 담은 자리에 잎으로 선다.
@@ -150,47 +175,39 @@ export function Outline({ controller, item, view, counts, onSelect, onMenu, onCo
   const filtering = !!query.trim();
   const problemsOf = (target: string) => counts.get(target) || 0;
 
-  const spineNodes = (list: SpineNode[], matched: boolean): TreeNode[] => list.flatMap((node): TreeNode[] => {
-    if (node.kind === "group") {
-      // 연속 묶음: 기본은 접혀 있고 사용 위치 수와 그 필드들의 문제 수를 모아 보인다. 필터 중에는 일치한 줄만 펼쳐 둔다.
-      const found = filtering ? spineNodes(node.children, matched) : null;
-      if (found && !found.length) return [];
-      const names = [...new Set(node.children.map((use) => String(use.field.name)))];
-      const problems = names.reduce((sum, name) => sum + problemsOf(name), 0);
-      const severity = names.map((name) => severities.get(name)).find((level) => level === "error")
-        ?? names.map((name) => severities.get(name)).find(Boolean);
-      const meta = joined(`사용 위치 ${node.children.length}곳`, problems && `문제 ${problems}`);
-      const first = node.children[0];
-      return [{ key: node.key, kind: "group", label: joined(AUTHORING_COPY.looseUses, meta),
-        content: rowContent("field", AUTHORING_COPY.looseUses, { severity, tag: false, meta }),
-        // 한 필드만 든 묶음에 머물면 그 필드의 사용 위치를 모두 칠한다 — 여러 필드면 칠할 한 대상이 없다.
-        entry: { ...first.occurrence, name: first.field.name, kind: "field" }, open: !!found,
-        ...(names.length === 1 ? { highlight: { kind: "field", id: names[0] } } : {}),
-        children: () => found ?? spineNodes(node.children, true) }];
-    }
-    if (node.kind === "use") {
-      const { field, occurrence, index, total } = node;
-      if (!matched && !filterMatch(query, field.name, occurrence.context)) return [];
-      const problems = problemsOf(field.name);
-      return [{ key: outlineKey.use(field.name, index), kind: "use", label: joined(KIND_LABEL.field, field.name, sameFieldMeta(index, total), problems && `문제 ${problems}`),
-        content: rowContent("field", field.name, { severity: severities.get(field.name), meta: joined(sameFieldMeta(index, total), problems && `문제 ${problems}`) }),
-        entry: { ...occurrence, name: field.name, kind: "field" }, highlight: { kind: "field", id: field.name, index } }];
-    }
-    const own = node.kind === "slot" ? node.slot : node.option;
-    const name = String(own.label || own.id);
-    const self = matched || filterMatch(query, own.label, own.id);
-    const children = filtering ? spineNodes(node.children, self) : null;
-    if (filtering && !self && !children!.length) return [];
-    const problems = problemsOf(own.id);
-    const build = () => children ?? spineNodes(node.children, true);
-    const expandable = filtering ? !!children!.length : node.children.length > 0;
-    if (node.kind === "slot") {
-      const slot = node.slot;
-      return [{ key: outlineKey.slot(slot.id), kind: "slot", label: joined(outlineLabel("slot", slot), slot.location_label, problems && `문제 ${problems}`),
-        content: rowContent("slot", name, { severity: severities.get(slot.id), meta: joined(slot.location_label, problems && `문제 ${problems}`) }),
-        entry: { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }, highlight: { kind: "slot", id: slot.id }, open: true,
-        children: expandable ? build : undefined }];
-    }
+  // 연속 묶음: 기본은 접혀 있고 사용 위치 수와 그 필드들의 문제 수를 모아 보인다. 필터 중에는 일치한 줄만 펼쳐 둔다.
+  const spineGroupNode = (node: Extract<SpineNode, { kind: "group" }>, matched: boolean): TreeNode[] => {
+    const found = filtering ? spineNodes(node.children, matched) : null;
+    if (found && !found.length) return [];
+    const names: string[] = [...new Set(node.children.map((use) => String(use.field.name)))];
+    const problems = names.reduce((sum, name) => sum + problemsOf(name), 0);
+    const severity = names.map((name) => severities.get(name)).find((level) => level === "error")
+      ?? names.map((name) => severities.get(name)).find(Boolean);
+    const meta = joined(`사용 위치 ${node.children.length}곳`, problems && `문제 ${problems}`);
+    const first = node.children[0];
+    return [{ key: node.key, kind: "group", label: joined(AUTHORING_COPY.looseUses, meta),
+      content: rowContent("field", AUTHORING_COPY.looseUses, { severity, tag: false, meta }),
+      // 한 필드만 든 묶음에 머물면 그 필드의 사용 위치를 모두 칠한다 — 여러 필드면 칠할 한 대상이 없다.
+      entry: { ...first.occurrence, name: first.field.name, kind: "field" }, open: !!found,
+      ...(names.length === 1 ? { highlight: { kind: "field", id: names[0] } } : {}),
+      children: () => found ?? spineNodes(node.children, true) }];
+  };
+  const spineUseNode = (node: SpineUse, matched: boolean): TreeNode[] => {
+    const { field, occurrence, index, total } = node;
+    if (!matched && !filterMatch(query, field.name, occurrence.context)) return [];
+    const problems = problemsOf(field.name);
+    return [{ key: outlineKey.use(field.name, index), kind: "use", label: joined(KIND_LABEL.field, field.name, sameFieldMeta(index, total), problems && `문제 ${problems}`),
+      content: rowContent("field", field.name, { severity: severities.get(field.name), meta: joined(sameFieldMeta(index, total), problems && `문제 ${problems}`) }),
+      entry: { ...occurrence, name: field.name, kind: "field" }, highlight: { kind: "field", id: field.name, index } }];
+  };
+  const spineSlotNode = (node: Extract<SpineNode, { kind: "slot" }>, name: string, problems: number, expandable: boolean, build: () => TreeNode[]): TreeNode[] => {
+    const slot = node.slot;
+    return [{ key: outlineKey.slot(slot.id), kind: "slot", label: joined(outlineLabel("slot", slot), slot.location_label, problems && `문제 ${problems}`),
+      content: rowContent("slot", name, { severity: severities.get(slot.id), meta: joined(slot.location_label, problems && `문제 ${problems}`) }),
+      entry: { ...slot, ...slot.location, kind: "slot", slot_id: slot.id }, highlight: { kind: "slot", id: slot.id }, open: true,
+      children: expandable ? build : undefined }];
+  };
+  const spineOptionNode = (node: Extract<SpineNode, { kind: "option" }>, name: string, problems: number, expandable: boolean, build: () => TreeNode[]): TreeNode[] => {
     const { slot, option } = node;
     const state = coverage.get(`${slot.id}\u0000${option.id}`);
     const dot = state ? h("span", { key: "dot", className: "authoring-coverage-dot", "data-state": state, title: COVERAGE_LABEL[state] }, coverageDot(state)) : null;
@@ -199,6 +216,22 @@ export function Outline({ controller, item, view, counts, onSelect, onMenu, onCo
       content: rowContent("option", name, { severity: severities.get(option.id), dot, meta: joined(option.location_label, problems && `문제 ${problems}`) }),
       entry: { ...option, ...option.location, kind: "option", slot_id: slot.id, option_id: option.id }, highlight: { kind: "option", id: option.id, slot_id: slot.id }, open: true,
       children: expandable ? build : undefined }];
+  };
+  const spineSlotOptionNode = (node: Extract<SpineNode, { kind: "slot" }> | Extract<SpineNode, { kind: "option" }>, matched: boolean): TreeNode[] => {
+    const own = node.kind === "slot" ? node.slot : node.option;
+    const name = String(own.label || own.id);
+    const self = matched || filterMatch(query, own.label, own.id);
+    const children = filtering ? spineNodes(node.children, self) : null;
+    if (filtering && !self && !children!.length) return [];
+    const problems = problemsOf(own.id);
+    const build = () => children ?? spineNodes(node.children, true);
+    const expandable = filtering ? !!children!.length : node.children.length > 0;
+    return node.kind === "slot" ? spineSlotNode(node, name, problems, expandable, build) : spineOptionNode(node, name, problems, expandable, build);
+  };
+  const spineNodes = (list: SpineNode[], matched: boolean): TreeNode[] => list.flatMap((node): TreeNode[] => {
+    if (node.kind === "group") return spineGroupNode(node, matched);
+    if (node.kind === "use") return spineUseNode(node, matched);
+    return spineSlotOptionNode(node, matched);
   });
 
   const slotName = (id: string) => { const slot = (analysis.slots || []).find((entry: Obj) => entry.id === id); return slot ? String(slot.label || slot.id) : ""; };
@@ -213,10 +246,12 @@ export function Outline({ controller, item, view, counts, onSelect, onMenu, onCo
         place ? h("span", { key: "meta", className: "authoring-tree-meta", title: place }, place) : null],
       entry: { ...occurrence, name: field.name, kind: "field" }, highlight: { kind: "field", id: field.name, index: at + 1 } };
   };
-  const fieldNodes = fields.flatMap((field: Obj): TreeNode[] => {
+  // 필터 중 이름이 일치하지 않으면 사용 위치 중 문맥이 일치하는 것만 남긴다(없으면 null = 전부).
+  const fieldSearchHits = (byName: boolean, occurrences: Obj[]): { occurrence: Obj; at: number }[] | null =>
+    filtering && !byName ? occurrences.map((occurrence, at) => ({ occurrence, at })).filter(({ occurrence }) => filterMatch(query, occurrence.context)) : null;
+  const fieldNode = (field: Obj): TreeNode[] => {
     const occurrences: Obj[] = field.occurrences || [];
-    const byName = filterMatch(query, field.name);
-    const hits = filtering && !byName ? occurrences.map((occurrence, at) => ({ occurrence, at })).filter(({ occurrence }) => filterMatch(query, occurrence.context)) : null;
+    const hits = fieldSearchHits(filterMatch(query, field.name), occurrences);
     if (hits && !hits.length) return [];
     const problems = problemsOf(field.name);
     return [{ key: outlineKey.field(field.name), kind: "field", label: outlineLabel("field", field, problems),
@@ -224,7 +259,8 @@ export function Outline({ controller, item, view, counts, onSelect, onMenu, onCo
       content: rowContent("field", field.name, { severity: severities.get(field.name), tag: false, meta: joined(`사용 위치 ${field.count ?? 0}곳`, problems && `문제 ${problems}`) }),
       entry: { ...field, kind: "field" }, highlight: { kind: "field", id: field.name }, open: !!hits,
       children: occurrences.length ? () => (hits || occurrences.map((occurrence, at) => ({ occurrence, at }))).map(({ occurrence, at }) => occurrenceNode(field, occurrence, at, occurrences.length)) : undefined }];
-  });
+  };
+  const fieldNodes = fields.flatMap((field: Obj) => fieldNode(field));
   const structureNodes = spineNodes(spine, !filtering);
 
   const tabButton = (key: "structure" | "fields", id: string, label: ReactNode[]) => h("button", { key, type: "button", role: "tab", id, className: "authoring-outline-tab",
@@ -254,8 +290,8 @@ export function Outline({ controller, item, view, counts, onSelect, onMenu, onCo
       tree("structure", "authoring-outline-structure", structureNodes, current.structure),
       // 빈 상태 안내(NG-01)는 첫 행동인 필드 만들기 하나다: 필드도 항목도 없을 때만 선다. 필드가 있고 항목이 없으면 문장을 두지 않는다
       // (선택 기능이 없다는 사실은 알릴 일이 아니다 — 상시 힌트 기본 0). 필드·항목 유무는 Python 투영(analysis)을 읽기만 한다.
-      !filtering && !(analysis.slots || []).length && !fields.length && h(EmptyFields, { controller, item, text: EMPTY_FIELDS })),
+      outlineStructureEmptyNotice({ controller, item, filtering, analysis, fields, text: EMPTY_FIELDS })),
     h("div", { className: "authoring-outline-panel", role: "tabpanel", id: "authoring-outline-fields-panel", "aria-labelledby": "authoring-outline-fields", hidden: tab !== "fields" },
       tree("fields", "authoring-outline-fields", fieldNodes, current.fields),
-      !filtering && !fields.length && h(EmptyFields, { controller, item, text: EMPTY_FIELDS })));
+      outlineFieldsEmptyNotice({ controller, item, filtering, fields, text: EMPTY_FIELDS })));
 }

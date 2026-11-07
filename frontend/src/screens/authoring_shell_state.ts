@@ -12,18 +12,31 @@ export function saveLabel(item: Obj, view: Obj, pending: boolean): string {
 export function readinessText(item: Obj): string {
   return item.readiness?.message || `구조 오류 ${item.readiness?.errors ?? 0}개 · 경고 ${item.readiness?.warnings ?? 0}개`;
 }
+/** 저장·준비 문장 — item 이 없으면 둘 다 빈 문자열이다. */
+function liveSaveFields(item: Obj | undefined, view: Obj, pending: boolean): { save: string; readinessText: string } {
+  return { save: item ? saveLabel(item, view, pending) : "", readinessText: item ? readinessText(item) : "" };
+}
+/** 문서 명령 메모 한 줄 — 적용·실행 취소·다시 실행 중 하나의 문장이다. */
+function commandNoteText(note: Obj | undefined): string {
+  return !note ? "" : note.kind === "apply" ? String(note.label || "") : note.kind === "undo" ? `문서 실행 취소${note.label ? `: ${note.label}` : ""}` : "문서 다시 실행";
+}
+/** 찾기 요약 줄 — 문서가 여럿이면 문서 이름을 붙인다. */
+function searchSummaryText(summaries: Obj[]): string {
+  return summaries.map((entry) => summaries.length > 1 ? `${entry.document} · ${entry.summary}` : entry.summary).join(" · ");
+}
 /** live region 이 비교할 지금의 상태(UX-04). 문장은 Python 의 것과 화면에 이미 선 표지뿐이다. */
 export function liveState(item: Obj | undefined, view: Obj, pending: boolean): LiveState {
   const note = view.commandNote;
   const summaries: Obj[] = view.searchSummaries || [];
+  const saved = liveSaveFields(item, view, pending);
   return {
-    id: item?.id || "", save: item ? saveLabel(item, view, pending) : "", error: !!view.error,
-    readiness: item?.readiness?.state || "", readinessText: item ? readinessText(item) : "",
+    id: item?.id || "", save: saved.save, error: !!view.error,
+    readiness: item?.readiness?.state || "", readinessText: saved.readinessText,
     trial: item?.trial_state || "", trialLabel: item?.trial_state_label || "", notice: view.notice || "",
     command: note?.seq || 0,
-    commandText: !note ? "" : note.kind === "apply" ? String(note.label || "") : note.kind === "undo" ? `문서 실행 취소${note.label ? `: ${note.label}` : ""}` : "문서 다시 실행",
+    commandText: commandNoteText(note),
     search: view.searchSummaries,
-    searchText: summaries.map((entry) => summaries.length > 1 ? `${entry.document} · ${entry.summary}` : entry.summary).join(" · "),
+    searchText: searchSummaryText(summaries),
   };
 }
 
