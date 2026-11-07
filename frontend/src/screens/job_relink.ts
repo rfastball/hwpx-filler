@@ -44,6 +44,47 @@ function relinkScreen(screen: string): RelinkScreen {
 }
 
 export function createJobRelink(deps: JobRelinkDeps): RelinkPort {
+  /** `relink_template` 발신 — 최초 호출과 지연 확인 재호출이 같은 자리를 쓴다(복잡도
+   *  예산 — `relinkTemplate` 분리의 추출 대상). */
+  async function dispatchRelink(
+    target: RelinkScreen, payload: { name: string; path: string; confirm?: boolean },
+  ): Promise<Obj> {
+    return (expectHostValue(
+      await deps.client.dispatch(target, "relink_template", payload), "relink_template",
+    ) ?? {}) as Obj;
+  }
+
+  /** 지연 확인 왕복 — `needs_confirm` 응답이면 재진술을 보이고 확정 뒤 재호출한다.
+   *  거절되면 `null`(복잡도 예산 — `relinkTemplate` 분리의 추출 대상). */
+  async function confirmRelink(
+    target: RelinkScreen, name: string, path: string, res: Obj, say: RelinkNotify,
+  ): Promise<Obj | null> {
+    if (res.needs_confirm !== true) return res;
+    // 조용한 재연결 금지 — 백엔드가 낸 재진술을 그대로 보이고 확정을 받는다.
+    const ok = await deps.modal.confirm({
+      body: `${String(res.confirm_text ?? "")}\n\n계속할까요?`,
+      confirmLabel: "다시 연결", cancelLabel: "취소",
+    });
+    if (!ok) {
+      say("다시 연결을 취소했습니다.", "cancel");
+      return null;
+    }
+    return dispatchRelink(target, { name, path, confirm: true });
+  }
+
+  /** 커밋 응답 판정 — 실패는 loud 로 알리고, 재진술은 호출자 채널로(복잡도 예산 —
+   *  `relinkTemplate` 분리의 추출 대상). */
+  function settleRelinkResult(res: Obj, say: RelinkNotify): boolean {
+    if (res.ok === false) {
+      const error = String(res.error ?? "다시 연결하지 못했습니다.");
+      deps.alarm(error);
+      say(`다시 연결 실패: ${error}`, "error");
+      return false;
+    }
+    if (res.restated) say(String(res.restated), "ok");
+    return true;
+  }
+
   async function relinkTemplate(
     screen: string, name: string, notify?: RelinkNotify,
   ): Promise<boolean> {
@@ -60,35 +101,10 @@ export function createJobRelink(deps: JobRelinkDeps): RelinkPort {
       if (picked === null || picked === undefined || picked === "") return false;
       const path = String(picked);
 
-      let res = (expectHostValue(
-        await deps.client.dispatch(target, "relink_template", { name, path }),
-        "relink_template",
-      ) ?? {}) as Obj;
-
-      if (res.needs_confirm === true) {
-        // 조용한 재연결 금지 — 백엔드가 낸 재진술을 그대로 보이고 확정을 받는다.
-        const ok = await deps.modal.confirm({
-          body: `${String(res.confirm_text ?? "")}\n\n계속할까요?`,
-          confirmLabel: "다시 연결", cancelLabel: "취소",
-        });
-        if (!ok) {
-          say("다시 연결을 취소했습니다.", "cancel");
-          return false;
-        }
-        res = (expectHostValue(
-          await deps.client.dispatch(target, "relink_template", { name, path, confirm: true }),
-          "relink_template",
-        ) ?? {}) as Obj;
-      }
-
-      if (res.ok === false) {
-        const error = String(res.error ?? "다시 연결하지 못했습니다.");
-        deps.alarm(error);
-        say(`다시 연결 실패: ${error}`, "error");
-        return false;
-      }
-      if (res.restated) say(String(res.restated), "ok");
-      return true;
+      const initial = await dispatchRelink(target, { name, path });
+      const res = await confirmRelink(target, name, path, initial, say);
+      if (res === null) return false;
+      return settleRelinkResult(res, say);
     } catch (error) {
       // 예외도 false 다 — 성사 여부를 모르는 채 true 를 내면 호출자가 후속 선택을 태운다.
       deps.alarm(String((error as Obj)?.message ?? error));

@@ -81,6 +81,48 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
     });
   }
 
+  /** `load_data_sheet` 호출 — 지연 확인(`basis`)이 있으면 그 재호출도 같은 자리에서
+   *  짓는다(복잡도 예산 — `pick` 분리의 추출 대상 그 자체). */
+  async function loadDataSheet(
+    current: Session, selected: string[], confirmBasis?: unknown,
+  ): Promise<unknown> {
+    const extra = confirmBasis === undefined ? [] : [{ basis: confirmBasis }];
+    return expectHostValue(
+      await deps.client.invoke("load_data_sheet", current.screen, current.path, selected, ...extra),
+      "load_data_sheet",
+    );
+  }
+
+  /** 지연 확인 왕복 — `needs_confirm` 응답이면 묻고 재호출한 결과를, 아니면 그대로
+   *  돌려준다. 거절됐으면 `null`(복잡도 예산 — `pick` 분리의 추출 대상). */
+  async function resolveConfirmation(
+    current: Session, selected: string[], result: unknown,
+  ): Promise<unknown | null> {
+    if (!(result && typeof result === "object" && (result as Obj).needs_confirm)) return result;
+    const confirmation = result as Obj;
+    if (!(await deps.modal.confirm({
+      body: confirmation.confirm_text, confirmLabel: "등록", cancelLabel: "취소", danger: true,
+    }))) return null;
+    return loadDataSheet(current, selected, confirmation.basis);
+  }
+
+  /** 응답 판정의 착지 — 묶음 결과(일부 실패 포함)와 단일 결과를 가른다(복잡도 예산 —
+   *  `pick` 분리의 추출 대상). */
+  function settleSheetResult(current: Session, result: unknown): void {
+    if (result && typeof result === "object" && Array.isArray((result as Obj).sheets)) {
+      const batch = result as Obj;
+      const failed = batch.sheets.filter((row: Obj) => row.error);
+      if (!failed.length && batch.mount && !batch.error) {
+        current.settle(batch.mount);
+      } else {
+        session = { ...current, picking: false, result: batch };
+        emit();
+      }
+      return;
+    }
+    current.settle(result as DataMountDescriptor | `ERROR:${string}`);
+  }
+
   async function pick(): Promise<void> {
     const current = session;
     if (current === null || current.picking) return;
@@ -89,33 +131,14 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
     session = { ...current, picking: true };
     emit();
     try {
-      let result = expectHostValue(
-        await deps.client.invoke("load_data_sheet", current.screen, current.path, selected),
-        "load_data_sheet",
-      );
-      if (result && typeof result === "object" && (result as Obj).needs_confirm) {
-        const confirmation = result as Obj;
-        if (!(await deps.modal.confirm({ body: confirmation.confirm_text,
-          confirmLabel: "등록", cancelLabel: "취소", danger: true }))) {
-          session = { ...current, picking: false };
-          emit();
-          return;
-        }
-        result = expectHostValue(await deps.client.invoke("load_data_sheet",
-          current.screen, current.path, selected, { basis: confirmation.basis }), "load_data_sheet");
+      const initial = await loadDataSheet(current, selected);
+      const result = await resolveConfirmation(current, selected, initial);
+      if (result === null) {
+        session = { ...current, picking: false };
+        emit();
+        return;
       }
-      if (result && typeof result === "object" && Array.isArray((result as Obj).sheets)) {
-        const batch = result as Obj;
-        const failed = batch.sheets.filter((row: Obj) => row.error);
-        if (!failed.length && batch.mount && !batch.error) {
-          current.settle(batch.mount);
-        } else {
-          session = { ...current, picking: false, result: batch };
-          emit();
-        }
-      } else {
-        current.settle(result as DataMountDescriptor | `ERROR:${string}`);
-      }
+      settleSheetResult(current, result);
     } catch (error) {
       current.settle(`ERROR:${String((error as Obj)?.message || error)}`);
     }
