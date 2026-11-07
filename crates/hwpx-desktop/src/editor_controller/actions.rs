@@ -44,76 +44,84 @@ impl EditorController {
             return Err(format!("이 작업에는 '{section}' 탭이 없습니다.").into());
         }
         if section.is_empty() {
-            let data_changed = (
-                before.data_path.as_str(),
-                before.data_sheet.as_str(),
-                before.data_header_row,
-                before.data_kind.as_str(),
-            ) != base.data_binding();
-            if !data_changed && !before.has_unsaved_work() {
-                return Ok(());
-            }
-            self.restore_job(base.clone())?;
-            let tail = if !data_changed {
-                ""
-            } else if base.has_data_binding() {
-                "\n데이터도 이 작업에 연결된 것으로 되돌렸습니다."
-            } else {
-                "\n고른 데이터도 함께 내려놨습니다."
-            };
-            let mut state = self.state()?;
-            state.section = before.section;
-            state.context = before.context;
-            state.set_notice(
-                format!("바꾼 내용을 버리고 저장된 상태로 되돌렸습니다.{tail}"),
-                "ok",
-            );
-            return Ok(());
+            return self.discard_whole_session(before, base);
         }
         if section == SECTION_FILENAME {
             self.state()?.pattern = base.filename_pattern;
         } else if section == SECTION_BINDING {
-            let mut state = self.state()?;
-            if let Some(schema) = state.schema.clone() {
-                let vocabulary = if state.data_path.is_empty() {
-                    profile_source_vocabulary(&base.mapping)
-                } else {
-                    state.source_fields.clone()
-                };
-                if state.data_path.is_empty() {
-                    state.source_fields = vocabulary.clone();
-                }
-                let mut model =
-                    EditorMappingModel::from_suggestions(&schema, &vocabulary, &HashMap::new());
-                model.apply_profile(&base.mapping, false, true);
-                state.model = Some(model);
-                state.model_key = Some(state.model_key_now());
-            }
+            Self::discard_binding(&mut *self.state()?, &base);
         } else {
-            self.restore_job(base)?;
-            let mut state = self.state()?;
-            state.data_path = before.data_path;
-            state.data_sheet = before.data_sheet;
-            state.data_header_row = before.data_header_row;
-            state.data_kind = before.data_kind;
-            state.data_pool_key = before.data_pool_key;
-            state.source_fields = before.source_fields;
-            state.records = before.records;
-            state.entry_data = before.entry_data;
-            state.job_name = before.job_name;
-            state.context = before.context;
-            state.section = before.section;
-            state.model_key = None;
-            Self::ensure_model(&mut state)?;
+            self.discard_template(before, base)?;
         }
-        let label = match section {
-            SECTION_TEMPLATE => "고르기",
-            SECTION_BINDING => "연결 확인",
-            _ => "이름·저장",
-        };
+        let label = section_label(section);
         self.state()?
             .set_notice(format!("「{label}」 에서 바꾼 것만 되돌렸습니다."), "ok");
         Ok(())
+    }
+    fn discard_whole_session(
+        &self,
+        before: EditorSessionState,
+        base: Job,
+    ) -> Result<(), GraphError> {
+        let data_changed = (
+            before.data_path.as_str(),
+            before.data_sheet.as_str(),
+            before.data_header_row,
+            before.data_kind.as_str(),
+        ) != base.data_binding();
+        if !data_changed && !before.has_unsaved_work() {
+            return Ok(());
+        }
+        self.restore_job(base.clone())?;
+        let tail = if !data_changed {
+            ""
+        } else if base.has_data_binding() {
+            "\n데이터도 이 작업에 연결된 것으로 되돌렸습니다."
+        } else {
+            "\n고른 데이터도 함께 내려놨습니다."
+        };
+        let mut state = self.state()?;
+        state.section = before.section;
+        state.context = before.context;
+        state.set_notice(
+            format!("바꾼 내용을 버리고 저장된 상태로 되돌렸습니다.{tail}"),
+            "ok",
+        );
+        Ok(())
+    }
+    fn discard_binding(state: &mut EditorSessionState, base: &Job) {
+        if let Some(schema) = state.schema.clone() {
+            let vocabulary = if state.data_path.is_empty() {
+                profile_source_vocabulary(&base.mapping)
+            } else {
+                state.source_fields.clone()
+            };
+            if state.data_path.is_empty() {
+                state.source_fields = vocabulary.clone();
+            }
+            let mut model =
+                EditorMappingModel::from_suggestions(&schema, &vocabulary, &HashMap::new());
+            model.apply_profile(&base.mapping, false, true);
+            state.model = Some(model);
+            state.model_key = Some(state.model_key_now());
+        }
+    }
+    fn discard_template(&self, before: EditorSessionState, base: Job) -> Result<(), GraphError> {
+        self.restore_job(base)?;
+        let mut state = self.state()?;
+        state.data_path = before.data_path;
+        state.data_sheet = before.data_sheet;
+        state.data_header_row = before.data_header_row;
+        state.data_kind = before.data_kind;
+        state.data_pool_key = before.data_pool_key;
+        state.source_fields = before.source_fields;
+        state.records = before.records;
+        state.entry_data = before.entry_data;
+        state.job_name = before.job_name;
+        state.context = before.context;
+        state.section = before.section;
+        state.model_key = None;
+        Self::ensure_model(&mut state)
     }
     fn use_pool_data(&self, payload: &Value) -> Value {
         let key = payload["key"].as_str().unwrap_or("");
@@ -310,127 +318,12 @@ impl EditorController {
         action: &str,
         payload: &Value,
     ) -> Result<Value, GraphError> {
+        if let Some(result) = self.session_action(action, payload) {
+            return result;
+        }
         match action {
-            "new_session" => {
-                self.state()?.reset();
-                Ok(Value::Null)
-            }
-            "discard_session" => {
-                let mut state = self.state()?;
-                if !state.editing_origin.is_empty() {
-                    return Err("저장된 작업 편집은 신규 마법사 취소로 닫을 수 없습니다.".into());
-                }
-                state.reset();
-                Ok(Value::Null)
-            }
-            "dismiss_notice" => {
-                self.state()?.set_notice("", "muted");
-                Ok(Value::Null)
-            }
-            "use_library_template" => {
-                let path = payload["path"]
-                    .as_str()
-                    .ok_or("path는 문자열이어야 합니다.")?;
-                if !self.template_live(path)? {
-                    return Err(
-                        "라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요."
-                            .into(),
-                    );
-                }
-                if self.state()?.template_path == path {
-                    return Ok(Value::Null);
-                }
-                self.new_job_session(path)?;
-                Ok(Value::Null)
-            }
-            "goto_section" => {
-                let target = payload["section"]
-                    .as_str()
-                    .ok_or("section은 문자열이어야 합니다.")?;
-                if !SECTIONS.contains(&target) {
-                    return Err(format!("이 작업에는 '{target}' 탭이 없습니다.").into());
-                }
-                let mut discarded = std::collections::HashSet::new();
-                loop {
-                    let blocked = self.state()?.blocking_section(target);
-                    let Some(blocked) = blocked else {
-                        break;
-                    };
-                    if !discarded.insert(blocked.clone()) {
-                        return Err(format!(
-                            "「{blocked}」 에서 바꾼 것을 되돌리지 못해 이동할 수 없습니다."
-                        )
-                        .into());
-                    }
-                    self.discard_patch(&blocked)?;
-                }
-                let mut state = self.state()?;
-                if state.editing_origin.is_empty() {
-                    let here = SECTIONS
-                        .iter()
-                        .position(|section| *section == state.section)
-                        .unwrap_or(0);
-                    let there = SECTIONS
-                        .iter()
-                        .position(|section| *section == target)
-                        .unwrap();
-                    for section in SECTIONS.get(here..there).unwrap_or(&[]) {
-                        if !editor_projection::can_advance(&state, section) {
-                            let label = match *section {
-                                SECTION_TEMPLATE => "고르기",
-                                SECTION_BINDING => "연결 확인",
-                                _ => "이름·저장",
-                            };
-                            return Err(format!(
-                                "「{label}」 조건을 아직 채우지 못해 다음으로 갈 수 없습니다."
-                            )
-                            .into());
-                        }
-                    }
-                }
-                if target == SECTION_BINDING {
-                    Self::ensure_model(&mut state)?;
-                }
-                state.section = target.into();
-                Ok(Value::Null)
-            }
-            "ack_gate" => {
-                let mut state = self.state()?;
-                let gate = state.gate.as_mut().ok_or("확인할 항목이 없습니다.")?;
-                gate.acknowledge(&gate.unmet_tokens.clone());
-                Ok(Value::Null)
-            }
-            "preview_slice" | "propose_slice" => {
-                let state = self.state()?;
-                let model = state
-                    .model
-                    .as_ref()
-                    .ok_or("매핑 모델이 준비되지 않았습니다.")?;
-                let index = mapping_index(payload, true, model.rows.len())?;
-                let row = model
-                    .rows
-                    .get(index)
-                    .ok_or("매핑 행 범위가 올바르지 않습니다.")?;
-                Ok(slice_query(
-                    if action == "preview_slice" {
-                        "preview"
-                    } else {
-                        "propose"
-                    },
-                    &row.template_field,
-                    &row.source,
-                    row.slice.as_ref(),
-                    row.slice_enabled(),
-                    &state.records,
-                    payload,
-                )
-                .map_err(|error| -> GraphError { error.into() })?)
-            }
+            "preview_slice" | "propose_slice" => self.query_slice(action, payload),
             "save" => self.save(payload),
-            "discard_patch" => {
-                self.discard_patch(payload["section"].as_str().unwrap_or(""))?;
-                Ok(Value::Null)
-            }
             "use_pool_data" => Ok(self.use_pool_data(payload)),
             _ => {
                 let mut state = self.state()?;
@@ -438,4 +331,136 @@ impl EditorController {
             }
         }
     }
+    /// Session lifecycle and section navigation; `None` leaves the action to the other handlers.
+    fn session_action(&self, action: &str, payload: &Value) -> Option<Result<Value, GraphError>> {
+        let done = match action {
+            "new_session" => self.state().map(|mut state| state.reset()),
+            "discard_session" => self.discard_session(),
+            "dismiss_notice" => self.state().map(|mut state| state.set_notice("", "muted")),
+            "use_library_template" => self.use_library_template(payload),
+            "goto_section" => self.goto_section(payload),
+            "ack_gate" => self.ack_gate(),
+            "discard_patch" => self.discard_patch(payload["section"].as_str().unwrap_or("")),
+            _ => return None,
+        };
+        Some(done.map(|()| Value::Null))
+    }
+    fn discard_session(&self) -> Result<(), GraphError> {
+        let mut state = self.state()?;
+        if !state.editing_origin.is_empty() {
+            return Err("저장된 작업 편집은 신규 마법사 취소로 닫을 수 없습니다.".into());
+        }
+        state.reset();
+        Ok(())
+    }
+    fn use_library_template(&self, payload: &Value) -> Result<(), GraphError> {
+        let path = payload["path"]
+            .as_str()
+            .ok_or("path는 문자열이어야 합니다.")?;
+        if !self.template_live(path)? {
+            return Err(
+                "라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요.".into(),
+            );
+        }
+        if self.state()?.template_path == path {
+            return Ok(());
+        }
+        self.new_job_session(path)
+    }
+    fn goto_section(&self, payload: &Value) -> Result<(), GraphError> {
+        let target = payload["section"]
+            .as_str()
+            .ok_or("section은 문자열이어야 합니다.")?;
+        if !SECTIONS.contains(&target) {
+            return Err(format!("이 작업에는 '{target}' 탭이 없습니다.").into());
+        }
+        self.discard_blocking_sections(target)?;
+        let mut state = self.state()?;
+        if state.editing_origin.is_empty() {
+            ensure_can_advance(&state, target)?;
+        }
+        if target == SECTION_BINDING {
+            Self::ensure_model(&mut state)?;
+        }
+        state.section = target.into();
+        Ok(())
+    }
+    /// Discards each section patch that blocks `target`, failing when one will not let go.
+    fn discard_blocking_sections(&self, target: &str) -> Result<(), GraphError> {
+        let mut discarded = std::collections::HashSet::new();
+        loop {
+            let blocked = self.state()?.blocking_section(target);
+            let Some(blocked) = blocked else {
+                return Ok(());
+            };
+            if !discarded.insert(blocked.clone()) {
+                return Err(format!(
+                    "「{blocked}」 에서 바꾼 것을 되돌리지 못해 이동할 수 없습니다."
+                )
+                .into());
+            }
+            self.discard_patch(&blocked)?;
+        }
+    }
+    fn ack_gate(&self) -> Result<(), GraphError> {
+        let mut state = self.state()?;
+        let gate = state.gate.as_mut().ok_or("확인할 항목이 없습니다.")?;
+        gate.acknowledge(&gate.unmet_tokens.clone());
+        Ok(())
+    }
+    fn query_slice(&self, action: &str, payload: &Value) -> Result<Value, GraphError> {
+        let state = self.state()?;
+        let model = state
+            .model
+            .as_ref()
+            .ok_or("매핑 모델이 준비되지 않았습니다.")?;
+        let index = mapping_index(payload, true, model.rows.len())?;
+        let row = model
+            .rows
+            .get(index)
+            .ok_or("매핑 행 범위가 올바르지 않습니다.")?;
+        Ok(slice_query(
+            if action == "preview_slice" {
+                "preview"
+            } else {
+                "propose"
+            },
+            &row.template_field,
+            &row.source,
+            row.slice.as_ref(),
+            row.slice_enabled(),
+            &state.records,
+            payload,
+        )
+        .map_err(|error| -> GraphError { error.into() })?)
+    }
+}
+
+fn section_label(section: &str) -> &'static str {
+    match section {
+        SECTION_TEMPLATE => "고르기",
+        SECTION_BINDING => "연결 확인",
+        _ => "이름·저장",
+    }
+}
+
+/// A new draft may only move forward past sections whose conditions are already met.
+fn ensure_can_advance(state: &EditorSessionState, target: &str) -> Result<(), GraphError> {
+    let here = SECTIONS
+        .iter()
+        .position(|section| *section == state.section)
+        .unwrap_or(0);
+    let there = SECTIONS
+        .iter()
+        .position(|section| *section == target)
+        .unwrap();
+    for section in SECTIONS.get(here..there).unwrap_or(&[]) {
+        if !editor_projection::can_advance(state, section) {
+            let label = section_label(section);
+            return Err(
+                format!("「{label}」 조건을 아직 채우지 못해 다음으로 갈 수 없습니다.").into(),
+            );
+        }
+    }
+    Ok(())
 }

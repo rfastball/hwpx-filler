@@ -79,34 +79,8 @@ function_complexity = { value = 34, reason = "상시 예외: 형식 명세 1:1 �
 [budget."crates/hwpx-desktop/src/boot_budget.rs::runtime_version.read"]
 function_complexity = { value = 13, reason = "상시 예외: 단일 책임 가드 나열 — FFI 호출별 에러 체크 가드" }
 
-[budget."crates/hwpx-desktop/src/editor_controller.rs"]
-module_statements = { value = 405, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController"]
-class_methods = { value = 40, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController.data_sheet_tabs"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController.ensure_model"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController.restore_job_with_source"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.discard_patch"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.dispatch_inner"]
-function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 56, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.mapping_action"]
 function_complexity = { value = 21, reason = "상시 예외: 평평한 분배 표 — action→method 1:1 위임 분배" }
-
-[budget."crates/hwpx-desktop/src/editor_controller/save.rs::EditorController.save"]
-function_complexity = { value = 37, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 83, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/editor_projection.rs::snapshot"]
 function_complexity = { value = 14, reason = "상시 예외: 평평한 투영 렌더 — state→view 필드별 선언적 투영" }
