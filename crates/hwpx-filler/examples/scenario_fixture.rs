@@ -56,7 +56,8 @@ fn csv(source: &Source) -> Result<Vec<u8>, Box<dyn Error>> {
                 .join(",")
                 .as_bytes(),
         );
-        bytes.extend_from_slice(b"\r\n");
+        // 저장소 정본은 `.gitattributes`(eol=lf)대로 LF 다.
+        bytes.extend_from_slice(b"\n");
     }
     Ok(bytes)
 }
