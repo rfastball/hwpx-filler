@@ -22,7 +22,7 @@ Node는 `package.json`·`package-lock.json`, Rust는 `Cargo.toml`·`Cargo.lock`�
 HWPX 저작용 rhwp는 `vendor/rhwp/source.json`과 `scripts/build_rhwp.ps1`이 준비한다.
 첫 빌드는 네트워크가 필요하며 앱은 봉인된 Studio·WASM·폰트만 쓴다.
 
-`test.ps1`는 Cargo 잠금 의존 받기 → web build → TOML 파서 준비 → Node 테스트 → 문구 census → 복잡도 예산 → 문서 계약 →
+`test.ps1`는 web build → Cargo 잠금 의존 받기 → TOML 파서 준비 → Node 테스트 → 문구 census → 복잡도 예산 → 문서 계약 →
 Rust workspace → 설치 Chrome 렌더·rhwp 왕복 → 실 Win32 → 네이티브 실창을 실행하고 실패한 단계에서 멈춘다.
 인자는 `-LiveScope`·`-SkipLive`뿐이며 그 밖의 인자는 거절한다. Rust만은 `.\test-rust.ps1`로 검사한다.
 문서 검사 성공을 전체 품질 성공으로 보고하지 않는다.

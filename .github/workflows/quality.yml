@@ -52,11 +52,9 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - name: Prepare pinned Rust web verifier and contract parser
-        # `read_toml.mjs --prepare` 와 npm test 의 bridge descriptor 는 --offline 으로 짓는다 —
-        # 깨끗한 러너에서는 여기서 workspace 잠금 의존 전체를 받아 둔다.
+        # `read_toml.mjs --prepare` 는 --offline 으로 짓는다 — 깨끗한 러너에서는 여기서 잠금 의존을 받아 둔다.
         run: |
           cargo --version
-          cargo fetch --locked
           cargo build --locked -p hwpx-artifact --example read_toml
       - name: Install, build, seal and verify the frontend
         shell: pwsh
@@ -64,7 +62,17 @@ jobs:
         # 둘이 어긋나는 날이 온다(단일 출처).
         run: .\build-web.ps1 -Mode Build -IdentityOut web-artifact-identity.json
       - name: Frontend module suite
+        # web build 가 깐 저장소 지역 toolchain(.cache/rhwp-cargo)을 Node 도구가 고른다 — npm test 의
+        # bridge descriptor 가 --offline 으로 짓기 전에 같은 CARGO_HOME 에 잠금 의존을 받아 둔다.
         run: |
+          $localCargo = Join-Path $PWD '.cache\rhwp-cargo\bin\cargo.exe'
+          if (Test-Path -LiteralPath $localCargo -PathType Leaf) {
+            $env:CARGO_HOME = Join-Path $PWD '.cache\rhwp-cargo'
+            $env:RUSTUP_HOME = Join-Path $PWD '.cache\rhwp-rustup'
+            $env:PATH = (Split-Path -Parent $localCargo) + ';' + $env:PATH
+          }
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/read_toml.mjs --prepare
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd test

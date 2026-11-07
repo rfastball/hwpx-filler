@@ -71,8 +71,9 @@ function Invoke-RuntimePath([scriptblock]$Action, [string]$HomeName = 'isolated-
     }
 }
 
-function Seed-AuthoringCorpus([string]$Home) {
-    $templates = Join-Path $Home 'templates'
+# `$HOME` 은 PowerShell 자동 변수(읽기 전용)라 홈 폴더 변수는 다른 이름을 쓴다.
+function Seed-AuthoringCorpus([string]$HomeRoot) {
+    $templates = Join-Path $HomeRoot 'templates'
     New-Item -ItemType Directory -Path $templates -Force | Out-Null
     $hashes = @{}
     foreach ($name in @(
@@ -97,8 +98,8 @@ function Seed-AuthoringCorpus([string]$Home) {
 
 function Test-NativeWebView([string]$Exe, [string]$Identity, [string]$Label) {
     $output = Join-Path $evidence "$Label-selftest.json"
-    $home = Join-Path $evidence "$Label-home"
-    $sourceHashes = Seed-AuthoringCorpus $home
+    $selftestHome = Join-Path $evidence "$Label-home"
+    $sourceHashes = Seed-AuthoringCorpus $selftestHome
     $oldOutput = $env:HWPX_SELFTEST_OUT
     $oldProbe = $env:HWPX_SELFTEST_OFFLINE_PROBE
     $hadSelection = Test-Path Env:HWPX_SELFTEST_PROBES
@@ -129,7 +130,7 @@ function Test-NativeWebView([string]$Exe, [string]$Identity, [string]$Label) {
     }
     foreach ($name in $sourceHashes.Keys) {
         $source = Join-Path $root "tests/corpus/real/$name"
-        $copy = Join-Path $home "templates/$name"
+        $copy = Join-Path $selftestHome "templates/$name"
         foreach ($file in @($source, $copy)) {
             if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $sourceHashes[$name]) {
                 throw "$Label HWPX selftest 원본 또는 사본이 변경됐습니다: $file"
@@ -194,18 +195,20 @@ New-Item -ItemType Directory -Path $evidence, $dist -Force | Out-Null
 try {
     Push-Location $root
     $locationPushed = $true
-    $cargo = Get-Command cargo.exe -CommandType Application -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if (-not $cargo) {
-        $local = Join-Path $root '.cache/rhwp-cargo/bin/cargo.exe'
-        if (-not (Test-Path -LiteralPath $local -PathType Leaf)) {
-            throw 'Cargo가 없습니다. rust-toolchain.toml의 도구 체인을 먼저 준비하세요.'
-        }
+    # 저장소 지역 toolchain 이 있으면 그것을 쓴다 — 고지 생성기(`cargo metadata --offline`)를
+    # 포함한 Node 도구가 같은 규칙으로 CARGO_HOME 을 고르므로, 빌드가 받은 의존을 그대로 본다.
+    $local = Join-Path $root '.cache/rhwp-cargo/bin/cargo.exe'
+    if (-not $env:CARGO_HOME -and (Test-Path -LiteralPath $local -PathType Leaf)) {
         $env:CARGO_HOME = Join-Path $root '.cache/rhwp-cargo'
         $env:RUSTUP_HOME = Join-Path $root '.cache/rhwp-rustup'
         $env:PATH = (Split-Path -Parent $local) + ';' + $env:PATH
         $cargoPath = $local
-    } else { $cargoPath = $cargo.Source }
+    } else {
+        $cargo = Get-Command cargo.exe -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $cargo) { throw 'Cargo가 없습니다. rust-toolchain.toml의 도구 체인을 먼저 준비하세요.' }
+        $cargoPath = $cargo.Source
+    }
 
     if (-not $SkipCheck) {
         & (Join-Path $root 'test.ps1')
