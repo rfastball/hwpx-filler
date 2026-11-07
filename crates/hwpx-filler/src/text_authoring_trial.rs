@@ -10,7 +10,7 @@ use crate::text_materialization_conformance::{
 };
 use crate::text_render::{SEG_LITERAL, render_segments};
 use crate::text_structure::{
-    drop_lines, marker_lines, scan_text_structure, unselected_option_lines,
+    TextStructureScan, drop_lines, marker_lines, scan_text_structure, unselected_option_lines,
 };
 use crate::text_template_inspection::inspect_txt_qualification;
 use crate::txt_authoring::{trial, trial_document_values};
@@ -36,17 +36,11 @@ fn failed(result: ConformanceResult, prefix: &str) -> Result<(), TxtTrialError> 
     }
 }
 
-pub fn trial_txt_authoring(
-    content: &str,
-    values: &Map<String, Value>,
+/// Every optioned slot needs a valid trial choice, and every chosen slot must exist.
+fn validate_slot_selection(
+    scan: &TextStructureScan,
     selected: &Map<String, Value>,
-) -> Result<Value, TxtTrialError> {
-    let source = content.as_bytes();
-    let inspection = inspect_txt_qualification(source).map_err(|error| fail(error.to_string()))?;
-    let structure = inspection
-        .execution_structure
-        .ok_or_else(|| fail("구조 오류를 수정한 뒤 결과를 시험하세요."))?;
-    let scan = scan_text_structure(content);
+) -> Result<(), TxtTrialError> {
     let mut known = HashSet::new();
     for slot in &scan.slots {
         known.insert(slot.id.as_str());
@@ -66,6 +60,39 @@ pub fn trial_txt_authoring(
     if selected.keys().any(|key| !known.contains(key.as_str())) {
         return Err(fail("존재하지 않는 항목 선택이 있습니다."));
     }
+    Ok(())
+}
+
+/// Field names in first-seen order with how many active segments use each.
+fn segment_field_counts(active: &str) -> Vec<(String, usize)> {
+    let (segments, _) = render_segments(active, &HashMap::new());
+    let mut counts = Vec::<(String, usize)>::new();
+    for segment in segments {
+        if segment.kind == SEG_LITERAL {
+            continue;
+        }
+        let name = python_trim(&segment.name);
+        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| existing == name) {
+            *count += 1;
+        } else {
+            counts.push((name.into(), 1));
+        }
+    }
+    counts
+}
+
+pub fn trial_txt_authoring(
+    content: &str,
+    values: &Map<String, Value>,
+    selected: &Map<String, Value>,
+) -> Result<Value, TxtTrialError> {
+    let source = content.as_bytes();
+    let inspection = inspect_txt_qualification(source).map_err(|error| fail(error.to_string()))?;
+    let structure = inspection
+        .execution_structure
+        .ok_or_else(|| fail("구조 오류를 수정한 뒤 결과를 시험하세요."))?;
+    let scan = scan_text_structure(content);
+    validate_slot_selection(&scan, selected)?;
     let removals = scan
         .slots
         .iter()
@@ -87,19 +114,7 @@ pub fn trial_txt_authoring(
     let mut hidden = marker_lines(&scan);
     hidden.extend(unselected_option_lines(&scan, &chosen));
     let active = drop_lines(content, &hidden);
-    let (segments, _) = render_segments(&active, &HashMap::new());
-    let mut counts = Vec::<(String, usize)>::new();
-    for segment in segments {
-        if segment.kind == SEG_LITERAL {
-            continue;
-        }
-        let name = python_trim(&segment.name);
-        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| existing == name) {
-            *count += 1;
-        } else {
-            counts.push((name.into(), 1));
-        }
-    }
+    let counts = segment_field_counts(&active);
     let names = counts
         .iter()
         .map(|(name, _)| name.clone())
