@@ -41,9 +41,16 @@ import {
   createTokenFactory, disposeBySession, endRun, initialRunState, sessionKeyOf,
 } from "./job_run_state.ts";
 import type { JobRunState } from "./job_run_state.ts";
+import { isManagedHwpx, useRunSnapshot } from "./job_run_snapshot.ts";
 import { openJobInEditor, openTemplateRepairInEditor, TemplateRepairButton } from "./job_template_repair.ts";
+import {
+  applyNotice, composeGuardBody, DELIVERY_DISPOSITION_COPY, gateStep, newTplRequestId,
+  overwriteBody, saveArtifactMessage,
+  TPL_INITIALIZATION_REQUIRED_COPY, TPL_RECHECK_LABEL, TPL_STANDING_FALLBACK_COPY,
+  TPL_STATUS_COPY, TPL_ZONE_CAP_ACTION, TPL_ZONE_CAP_SETTLED, tplCheckRefusalNotice,
+} from "./job_run_copy.ts";
 
-type Obj = Record<string, any>;
+export type Obj = Record<string, any>;
 type Listener = () => void;
 
 type ModalPort = {
@@ -69,97 +76,13 @@ export type JobRunControllerDeps = {
   selectionLine(count: number, filterActive: unknown, inDef: unknown, extra: unknown): string;
 };
 
-/** 게이트 지목의 **어휘 지도** — 링1 이 낸 사유 축 이름 → 그 축을 소유한 구획 캡션.
- *  판정(무엇이 막는가·무엇이 먼저인가)은 게이트가 하고 여기는 이름을 자리로 옮기기만 한다.
- *  표면이 상태를 다시 읽어 지목을 만들면 서열이 두 곳에 살고, 실제로 그렇게 샜다. */
-const GATE_ZONE: Record<string, string> = {
-  no_data: "현재 데이터 · ",
-  no_rows: "현재 데이터 · ",
-  // 결속 부재는 데이터 축이 아니라 **작업 축**이다(#932 U4-C) — 고칠 자리가 피커가 아니라
-  // 편집기라, 데이터 머리에 함께 선 「데이터 연결하기…」가 그 자리다.
-  data_unbound: "현재 데이터 · ",
-  no_candidates: "이 데이터에 사용할 문서 · ",
-  no_job: "이 데이터에 사용할 문서 · ",
-  // 드리프트·미해소 토큰의 지목도 **빈 문자열**이다 — 그 축을 소유하던 「본문 확인」 존은
-  // 존 재편에서 죽었고, 두 사유의 위험 배너도 legacy HWPX 갈래와 함께 걷혔다(#1081 PR2).
-  // 없는 구획을 가리키느니 안 가리킨다(`template_missing` 동형).
-  drift: "",
-  name_tokens: "",
-  // 템플릿 축은 **빈 문자열**이다 — 그 축을 소유하던 「선택한 작업」 존은 죽었고 복구는
-  // 같은 액션바 줄의 연결 상태·재연결이 곁에서 진다. 없는 구획을 가리키느니 안 가리킨다.
-  template_missing: "",
-  template_unreadable: "",
-};
+export {
+  ARTIFACT_REFUSAL_TITLE, saveArtifactMessage, DELIVERY_DISPOSITION_COPY,
+  overwriteBody, composeGuardBody,
+} from "./job_run_copy.ts";
 
-/** 산출물 관찰이 서지 않은 사유의 **제목**(S7-03 · #825, #820 §3). 본문 사유는 Python 이
- *  낸 `detail` 그대로다 — 수치·경로·기대값이 거기 있고, 표면이 다시 지으면 두 벌이 된다.
- *  넷은 서로 겹치지 않는다: 세션에 없다 / 파일이 없다 / 내용이 다르다 / 열리지 않는다. */
-export const ARTIFACT_REFUSAL_TITLE: Record<string, string> = {
-  ARTIFACT_FILE_MISSING: "문서 파일을 찾을 수 없습니다",
-  ARTIFACT_DIGEST_MISMATCH: "문서 내용이 만든 직후와 다릅니다",
-  ARTIFACT_REPARSE_FAILED: "문서를 다시 열지 못했습니다",
-  ARTIFACT_NOT_IN_SESSION: "이 문서는 지금 결과에 없습니다",
-};
 
-/** 「다른 이름으로 저장」 결과 한 줄 — 네 갈래가 서로 다른 문장을 받는다(#820 §3).
- *  `SAVE_COPY_FAILED` 는 관찰 상태와 **독립**이라 '문서가 깨졌다' 로 읽힐 말을 쓰지 않는다. */
-export function saveArtifactMessage(result: Obj): string {
-  const status = String(result.status || "");
-  if (result.ok === true) return `저장했습니다: ${String(result.path || "")}`;
-  if (status === "cancelled") return "저장을 취소했습니다.";
-  if (status === "SAVE_COPY_FAILED") {
-    return `저장하지 못했습니다. ${String(result.detail || "")}`;
-  }
-  const title = ARTIFACT_REFUSAL_TITLE[status] || "문서를 확인하지 못했습니다";
-  return `${title}. ${String(result.detail || "")}`;
-}
-
-export const DELIVERY_DISPOSITION_COPY: Record<string, string> = {
-  WRITE_NEW: "새 파일",
-  WRITE_ADD_SUFFIX: "번호를 붙인 새 파일",
-  WRITE_OVERWRITE: "기존 파일 덮어쓰기",
-};
-
-/* ------------------------------------------------------------------ 순수 합성기 */
-
-/** 덮어쓰기 확인 본문 — 총량·파괴분·신규분을 종류별로 재진술한다(결정 36). */
-export function overwriteBody(res: Obj): string {
-  const names = (res.conflict_names || []) as string[];
-  const more = res.conflict_more ? `\n외 ${res.conflict_more}개` : "";
-  return `${res.total}건을 생성합니다. 이 중 ${res.overwrite_count}건이 기존 파일을 덮어씁니다:\n`
-    + `${names.join("\n")}${more}\n\n나머지 ${res.new_count}건은 새 파일입니다.`;
-}
-
-/** 파괴 전이 가드 본문 — 손실 열거는 **실제로 파기되는 집합**과 일치해야 한다
- *  (과경고도 누락도 거짓말이다). 선택 한 줄은 주입받은 공유 합성기가 낸다. */
-export function composeGuardBody(
-  selectionLine: JobRunControllerDeps["selectionLine"],
-): (g: Obj, verbPhrase: string) => string {
-  return (g, verbPhrase) => {
-    const lost = [selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)];
-    if (g.filter_parts > 0) lost.push(`필터 정의(${g.filter_parts}개 조건)`);
-    const stash = g.filter_parts > 0
-      ? "\n필터 정의는 이 데이터로 돌아오면 「직전 필터 재적용」으로 되살릴 수 있습니다." : "";
-    return `${verbPhrase} 이 세션의 선택이 사라집니다.\n`
-      + `사라지는 것: ${lost.join(" · ")}.${stash}`;
-  };
-}
-
-/** 실행 표면이 작업대인가 — 판정은 Python 이 낸 `run_action.key` 하나를 읽는다. 표면이
- *  확장자·매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다(F6 판정 D). */
-function isCopyWork(s: Obj | null): boolean {
-  return !!(s && s.run_action && s.run_action.key === "workbench");
-}
-
-/** HWPX 문서 생성 작업인가 — 판정은 Python 이 낸 `managed_hwpx` 하나를 읽는다. 문서 생성
- *  경로는 managed 하나라(#1081 PR2) 이 값은 「권위가 선 HWPX 작업」이다. 거짓이면 TXT(복사)·
- *  미선택 표면이거나, 초기 등록이 거절돼 권위가 서지 않은 HWPX 작업이다(그 작업의 생성은
- *  backend 가 초기 등록 거절 문장으로 닫고, 사유는 템플릿 존이 진단과 함께 말한다). */
-function isManagedHwpx(s: Obj | null): boolean {
-  return s?.managed_hwpx === true;
-}
-
-function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
+export function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
 }
 
@@ -195,6 +118,12 @@ export function createJobRunController(deps: JobRunControllerDeps) {
 
   function snapshot(): Obj | null {
     return run.lastFull;
+  }
+
+  /** 응답이 오는 사이 작업이 갈리지 않았는가 — 템플릿 변경 확인·적용 재진술이 같은
+   *  「현재도 같은 작업인가」 질의를 두 번 거듭 짓던 것을 하나로 합친다. */
+  function stillOwner(owner: string): boolean {
+    return String(snapshot()?.job_name || "") === owner;
   }
 
   const guardBody = composeGuardBody(deps.selectionLine);
@@ -555,14 +484,12 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         // 응답이 오는 사이 작업이 갈렸으면 구획에는 싣지 않는다(남의 재진술 차단, 리뷰 P2).
         // 그래도 **알림 채널에는 낸다** — 좌석이 풀리는 거절(work_context_changed)은 존
         // 자체가 사라져 구획이 아무 말도 할 수 없는 자리이기 때문이다.
-        const still = String(snapshot()?.job_name || "") === owner;
-        setTpl({ inFlight: false, requestId: null, notice: still ? notice : "" });
+        setTpl({ inFlight: false, requestId: null, notice: stillOwner(owner) ? notice : "" });
         if (notice) deps.notify(notice);
       } catch (error) {
         // 전송 실패 — 키를 남겨 다음 클릭이 같은 키로 재전송. 단 그사이 작업이 갈렸으면
         // 키는 남의 intent 라 버린다(리뷰 P2 동류 — 상태는 세션 정체를 따른다).
-        const still = String(snapshot()?.job_name || "") === owner;
-        setTpl({ inFlight: false, requestId: still ? requestId : null, notice: "" });
+        setTpl({ inFlight: false, requestId: stillOwner(owner) ? requestId : null, notice: "" });
         deps.notify(`변경사항 확인에 실패했습니다: ${String(error)}`);
       }
     },
@@ -574,8 +501,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         const res = await dispatch("template_apply", { change_token: token });
         // 응답이 오는 사이 작업이 갈렸으면 재진술을 싣지 않는다 — A 의 적용 결과가 B 의
         // 구획에 앉는 경로 차단(리뷰 P2).
-        const still = String(snapshot()?.job_name || "") === owner;
-        setTpl({ inFlight: false, requestId: null, notice: still ? applyNotice(res) : "" });
+        setTpl({ inFlight: false, requestId: null, notice: stillOwner(owner) ? applyNotice(res) : "" });
       } catch (error) {
         setTpl({ ...tpl, inFlight: false });
         deps.notify(`변경사항 적용에 실패했습니다: ${String(error)}`);
@@ -637,20 +563,11 @@ export function useRun(controller: JobRunController): JobRunState & UiState {
   return { ...state, ...ui };
 }
 
-export function useRunSnapshot(controller: JobRunController): Obj | null {
-  return useSyncExternalStore(controller.subscribe, controller.getRun, controller.getRun).lastFull;
-}
 
 /* ------------------------------------------------------------------ 표면 */
 
-export function JobPreflight(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  const p = (s?.preflight || {}) as Obj;
-  if (!s?.has_data || !p.text) return null;
-  const cls = p.level === "ok" ? "quiet" : p.level === "danger" ? "dangerbox" : "warnbox";
-  return h("div", { className: `preflight note ${cls}`, style: { whiteSpace: "pre-line" } },
-    String(p.text));
-}
+export { JobPreflight, JobWorkbenchStatus, JobStatusPill, JobRunCap } from "./job_run_views.ts";
+export { isManagedHwpx, useRunSnapshot } from "./job_run_snapshot.ts";
 
 /* 구 위험 배너(`JobDangerBanner` · `#jobMirror`)와 저장 폴더 한 줄(`JobOutFolderLine` ·
    `#jobOutDirLine`)은 legacy HWPX 생성 갈래의 표면이었다 — 문서 생성이 managed 하나가 되며
@@ -662,111 +579,6 @@ export function JobPreflight(props: { controller: JobRunController }): ReactNode
    말하던 것이라 세 번째 발화였다. 그 수치를 정말 다시 물어야 하는 자리는
    선택을 파기하는 전이의 확인 모달 하나이고, 거기는 `composeGuardBody` 가 공유 합성기
    `selectionLine` 으로 계속 짓는다(그래서 그 합성기는 표면에 이름째 남는다). */
-
-function gateStep(s: Obj, g: Obj): string {
-  if (!g || g.enabled || !g.text) return "";
-  const named = GATE_ZONE[String(g.reason || "")];
-  if (named !== undefined) return named;
-  // 이름 없는 게이트만 자리로 유추한다 — 데이터·행이 안 갖춰졌으면 그게 먼저다.
-  const noRows = !s.has_data || !(Number(s.selected_count) > 0);
-  if (!s.has_job) return noRows ? GATE_ZONE.no_data : GATE_ZONE.no_job;
-  if (noRows) return GATE_ZONE.no_data;
-  return "";
-}
-
-export function JobWorkbenchStatus(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  const wb = (s?.workbench_observation || {}) as Obj;
-  if (!isManagedHwpx(s) || wb.supported !== true) return null;
-  const items = (wb.input_requirements || []) as Obj[];
-  const executionAction = (wb.execution_action || null) as Obj | null;
-  // context error 의 복구 동사(#912 D4). execution_action 과 배타다 — 관찰이 무너진 자리에는
-  // 「현재 설정 확인」이 아니라 복구가 서고, 어느 쪽이든 **backend 가 실은 것만** 그린다.
-  const recoverAction = (wb.recover_action || null) as Obj | null;
-  const recordValidation = (wb.record_validation || {}) as Obj;
-  const recordIssues = (recordValidation.issues || []) as Obj[];
-  const recordAdvisory = String(recordValidation.advisory_notice || '');
-  const hasRecordStatus = recordIssues.length > 0
-    || Number(recordValidation.validated_count || 0) > 0 || !!recordAdvisory;
-  const recordSection = wb.kind === 'context_error'
-    ? createElement(Fragment, null,
-        h('div', { className: 'zone-cap' }, '데이터 확인'),
-        h('p', { className: 'danger capnote' },
-          String(wb.detail || '현재 데이터를 확인할 수 없습니다.')))
-    : !hasRecordStatus ? null : createElement(Fragment, null,
-    h('div', { className: 'zone-cap' }, '데이터 확인'),
-    recordIssues.length
-      ? h('ul', { className: 'plain-list', id: 'jobRecordValidationIssues' },
-          ...recordIssues.map((issue) => h('li', {
-            key: `${String(issue.record_identity)}:${String(issue.field_id)}`,
-          },
-          h('span', null,
-            `${String(issue.record_display_locator)} · ${String(issue.field_display_label)} · `,
-            String(issue.message || '')),
-          h('button', {
-            className: 'btn sm', type: 'button',
-            onClick: () => { void props.controller.recoverRecordIssue(
-              issue.recovery_target as Obj,
-            ); },
-          }, '문제 위치 보기'))))
-      : Number(recordValidation.validated_count || 0) > 0
-        ? h('p', { className: 'muted capnote' },
-          `${Number(recordValidation.validated_count)}건의 데이터를 확인했습니다.`)
-        : null,
-    // 비차단 고지(#957) — blocker 목록과 **다른 줄·다른 색**이다. 문안은 backend 가
-    // 낸 것을 그대로 그린다(수치·판정을 여기서 다시 조립하지 않는다).
-    recordAdvisory
-      ? h('p', { className: 'warn capnote', id: 'jobRecordValidationAdvisory' },
-        recordAdvisory)
-      : null);
-  // U3-03(#876): backend 가 조치 필요만 실어 준다 — 0건이면 라벨까지 포함해 구획을 안 세운다.
-  // 손댈 것이 없는데 「입력이 필요한 항목」이 상시로 서 있으면 그 자체가 잘못된 진술이다.
-  const inputRequirementSection = items.length
-    ? createElement(Fragment, null,
-      h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
-      h("ul", { className: "plain-list", id: "jobInputRequirements" },
-        ...items.map((item) => h("li", {
-          key: String(item.field_id),
-          "data-binding-state": String(item.binding_state || ""),
-        },
-        h("span", null, String(item.display_label || "")),
-        item.action_required === true
-          ? h("button", {
-              className: "btn sm", type: "button",
-              "data-exact-target": String(item.exact_target || ""),
-              onClick: () => { void props.controller.openBindingRequirement(
-                String(item.exact_target || ""), String(item.display_label || "")); },
-            }, "수정…")
-          : null))))
-    : null;
-  /* 「현재 실행 상태」 캡션 + 상태 문안은 걷혔다: `execution_status_phrase` 는 우상단 상태
-     pill(`JobStatusPill`)이 managed 갈래에서 **그대로** 그리는 바로 그 문자열이라, 이 자리에
-     한 벌 더 두면 같은 사실이 한 화면에서 두 번 발화한다. 남는 것은 그 상태를 **바꾸는 동사**
-     둘(`#jobResolveExecution`·`#jobRecoverContext`)이고, 그 좌표는 blocker 어포던스 표가 든다. */
-  return createElement(Fragment, null,
-    inputRequirementSection,
-    executionAction
-      ? h("div", { className: "run-row" },
-          h("button", {
-            className: "btn sm", type: "button", id: "jobResolveExecution",
-            disabled: executionAction.enabled !== true,
-            onClick: () => { void props.controller.resolveExecution(); },
-          }, String(executionAction.label || "")),
-          h("span", { className: "muted capnote" },
-            String(executionAction.disabled_reason || "")))
-      : null,
-    recoverAction
-      ? h("div", { className: "run-row" },
-          h("button", {
-            className: "btn sm", type: "button", id: "jobRecoverContext",
-            disabled: recoverAction.enabled !== true,
-            onClick: () => { void props.controller.recoverContext(); },
-          }, String(recoverAction.label || "")),
-          h("span", { className: "muted capnote" },
-            String(recoverAction.disabled_reason || "")))
-      : null,
-    recordSection);
-}
 
 /** 「생성 예정 문서」 — 만들 문서의 이름·저장 자리·충돌 처분과, 계획이 서지 않은 사유.
  *
@@ -904,125 +716,12 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
     }, busy || s === null ? "" : `${gateStep(s, gate)}${String(gate.text || "")}`));
 }
 
-export function JobStatusPill(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  if (isManagedHwpx(s)) {
-    const wb = (s?.workbench_observation || {}) as Obj;
-    return h("div", {
-      id: "jobStatus", className: "status", "data-level": "idle",
-      "data-status-code": String(wb.execution_status_code || ""),
-    }, String(wb.execution_status_phrase || ""));
-  }
-  let level = "idle";
-  let text = "작업 선택";
-  if (s?.has_job) {
-    if (!s.has_data) { text = "데이터 선택"; }
-    else if (s.gate && s.gate.enabled) { level = "ok"; text = isCopyWork(s) ? "복사 준비" : "생성 준비"; }
-    else {
-      // 「승인 필요」 갈래는 #957 에서 사망했다 — 검토는 더 이상 생성을 막지 않으므로
-      // 이 자리에 규칙축 차단이 서지 않는다. 남는 것은 전부 「확인 필요」다.
-      level = "warn";
-      text = "확인 필요";
-    }
-  }
-  /* 클래스는 `status` 다 — `pill` 이 아니다. 색은 `data-level` **혼자** 내지 않는다:
-     `.status[data-level="ok"|"warn"]`(base.css)이 그 결속이고, `.pill` 계열은 `.pill.ok`
-     처럼 **클래스**로 태를 받는다. `pill` + `data-level` 조합은 어느 쪽에도 안 붙어 속성만
-     살고 색이 죽는다(배경 `--n-track` 과 본문 크기도 함께 잃는다). legacy 의 `div.status`
-     를 그대로 옮긴다 — 이 자리에서 바꿀 것은 생산자뿐이고 표현이 아니다. */
-  return h("div", { id: "jobStatus", className: "status", "data-level": level }, text);
-}
-
-/** 생성 준비 캡션 — 하는 일을 따라간다(TXT 는 파일을 만들지 않는다). */
-export function JobRunCap(props: { controller: JobRunController }): ReactNode {
-  const s = useRunSnapshot(props.controller);
-  if (isManagedHwpx(s)) {
-    return String(s?.workbench_observation?.create_action?.label || "");
-  }
-  return isCopyWork(s) ? "복사 준비" : "생성 준비";
-}
-
 /* ------------------------------------------------------------------ 템플릿 변경(S3-09) */
 
-/** prepare intent 재전송 키 — Python 이 `[A-Za-z0-9._-]{1,64}` 로 fail-closed 검증한다. */
-function newTplRequestId(): string {
-  return `r${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/** 제품 status → 상태 문안. 정본 어휘는 contract.gen.ts 의 TEMPLATE_PREPARATION_STATUSES —
- *  표에 없는 status 는 조용히 비우지 않고 원문을 그대로 보인다(조용한 폴백 금지). */
-export const TPL_STATUS_COPY: Record<string, string> = {
-  checking: "변경사항을 확인하는 중입니다…",
-  ready: "적용할 수 있는 변경사항이 있습니다.",
-  no_change: "변경사항이 없습니다 — 지금 템플릿이 이미 적용된 상태입니다.",
-  invalid: "변경된 템플릿이 검사를 통과하지 못했습니다. 기존 템플릿이 계속 사용됩니다.",
-  error: "확인 중 오류가 났습니다. 다시 확인해 주세요.",
-  interrupted: "확인이 끝나기 전에 중단되었습니다. 다시 확인해 주세요.",
-  source_changed: "확인하는 동안 템플릿 연결이 바뀌었습니다.",
-  changed_while_checking: "확인하는 동안 작업의 템플릿 상태가 바뀌었습니다.",
-  superseded: "새 확인이 시작되어 이 결과는 대체되었습니다.",
-  applied: "확인한 변경사항이 현재 작업에 적용되어 있습니다.",
-  conflict: "확인 이후 작업 상태가 바뀌어 이 변경사항은 적용할 수 없습니다.",
-  rejected: "이 변경사항은 더 이상 적용할 수 없습니다.",
-};
-
-/** 초기 등록 실패 재진술의 **단일 출처** — 존 상태 문안과 확인 거절 재진술이 같은 문장을
- *  쓴다(#804). 존이 그리는 자리와 dispatch 가 답하는 자리가 갈리면 같은 사실을 두 문장이
- *  말하게 되고, 그중 하나가 늙는다. */
-const TPL_INITIALIZATION_REQUIRED_COPY =
-  "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없습니다. "
-  + "템플릿을 수정하거나 다시 연결한 뒤 확인하세요.";
-
-/** [변경사항 확인] 거절(`ok:false`) 한 줄 — **판정은 Python, 문안만 여기**(#804).
- *
- *  백엔드가 `error` 문장을 실어 보냈으면 그것이 정본이라 그대로 쓴다(좌석 해제처럼 사유와
- *  다음 행동을 아는 쪽이 Python 인 경우). 그 밖에는 `reason` 코드를 존이 이미 쓰는 문안으로
- *  옮기고, 표에 없는 사유도 **조용히 비우지 않는다** — 재진술 없는 거절이 곧 막다른 길이다. */
-export function tplCheckRefusalNotice(res: Obj): string {
-  const error = String(res.error ?? "").trim();
-  if (error) return error;
-  const reason = String(res.reason ?? "").trim();
-  if (reason === "initialization_required") return TPL_INITIALIZATION_REQUIRED_COPY;
-  return reason
-    ? `변경사항을 확인하지 못했습니다: ${reason}`
-    : "변경사항을 확인하지 못했습니다.";
-}
-
-/** 존 이름 — 조치가 있을 때만 뜨는 존과 적용 직후 결과 재진술을 구분한다.
- *
- *  종결 이름이 따로 있는 이유: 적용 직후에는 조치가 남지 않았는데도 결과 재진술 때문에 존이
- *  한 번 더 선다. 그 순간까지 「조치 필요」라고 부르면 방금 끝낸 일을 다시 시키는 말이 된다. */
-const TPL_ZONE_CAP_ACTION = "템플릿 조치 필요";
-const TPL_ZONE_CAP_SETTLED = "템플릿 변경사항";
-
-/** 존이 섰는데 status 가 없는 자리는 술어상 없다 — 그래도 **빈 칸으로 새지
- *  않는다**(조용한 폴백 금지). 이 줄이 보이면 술어와 문안 표가 갈렸다는 뜻이다. */
-const TPL_STANDING_FALLBACK_COPY =
-  "템플릿 상태를 확인해 주세요.";
-
-/** FAIL(invalid)과 오류·중단·대체를 다른 행동 문구로 가른다 — 재확인 라벨이 그 분리다. */
-const TPL_RECHECK_LABEL: Record<string, string> = {
-  error: "다시 확인",
-  interrupted: "다시 확인",
-  conflict: "현재 상태로 다시 확인",
-  superseded: "현재 상태로 다시 확인",
-  source_changed: "현재 상태로 다시 확인",
-  changed_while_checking: "현재 상태로 다시 확인",
-};
-
-/** 적용 결과 한 줄 재진술 — TemplateApplyStatus 전집. rollback 경로는 없다(#659). */
-export function applyNotice(res: Obj): string {
-  switch (String(res.status || "")) {
-    case "applied": return "변경사항을 적용했습니다.";
-    case "already_applied": return "이미 적용되어 있는 변경사항입니다.";
-    case "applied_then_advanced":
-      return "이 변경사항은 적용된 뒤 다른 적용이 이어졌습니다. 현재 상태로 다시 확인하세요.";
-    case "conflict": return "확인 이후 작업 상태가 바뀌어 적용하지 못했습니다. 현재 상태로 다시 확인하세요.";
-    case "superseded": return "새 확인이 시작되어 이 변경사항은 대체되었습니다.";
-    case "rejected": return "이 변경사항은 더 이상 적용할 수 없습니다.";
-    default: return `적용 결과: ${String(res.status || "미상")}`;
-  }
-}
+export {
+  TPL_STATUS_COPY, tplCheckRefusalNotice, TPL_ZONE_CAP_ACTION, TPL_ZONE_CAP_SETTLED,
+  TPL_STANDING_FALLBACK_COPY, TPL_RECHECK_LABEL, applyNotice,
+} from "./job_run_copy.ts";
 
 export function useTemplateChangeUi(controller: JobRunController): TemplateChangeUi {
   // 세 번째 인자(server snapshot)는 형제 훅과 같은 값이다 — 없으면 SSR 렌더가 이 구획만

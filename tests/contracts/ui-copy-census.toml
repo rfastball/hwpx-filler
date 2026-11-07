@@ -4060,19 +4060,19 @@ text = "호스트(pywebview)가 없어 {} 를 부를 수 없습니다."
 file = "frontend/src/runtime/adapter.ts"
 text = "호스트에 {} 가 없습니다 — 계약(HOST_METHODS)과 호스트가 어긋났습니다."
 [[sentence]]
-file = "frontend/src/screens/authoring.ts"
+file = "frontend/src/screens/authoring_screen_parts.ts"
 text = "HWPX·TXT 문서를 열거나 새 TXT를 만드세요."
 [[sentence]]
-file = "frontend/src/screens/authoring_controller.ts"
+file = "frontend/src/screens/authoring_controller_trial.ts"
 text = "‘{}’ 필드에 시험값이 이미 있습니다."
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
 text = "끝 위치를 누르세요."
 [[sentence]]
-file = "frontend/src/screens/authoring_controller.ts"
+file = "frontend/src/screens/authoring_controller_apply.ts"
 text = "문서 편집기를 다시 여세요."
 [[sentence]]
-file = "frontend/src/screens/authoring_controller.ts"
+file = "frontend/src/screens/authoring_controller_apply.ts"
 text = "문서가 변경되었습니다. 변경 미리보기를 다시 실행하세요."
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
@@ -4081,13 +4081,13 @@ text = "범위 고르기를 취소했습니다."
 file = "frontend/src/screens/authoring_controller.ts"
 text = "시작 위치를 누르세요."
 [[sentence]]
-file = "frontend/src/screens/authoring_controller.ts"
+file = "frontend/src/screens/authoring_controller_lifecycle.ts"
 text = "저장할 파일이 변경되었거나 이미 존재합니다. 다른 이름으로 저장하세요."
 [[sentence]]
-file = "frontend/src/screens/authoring_controller.ts"
+file = "frontend/src/screens/authoring_controller_lifecycle.ts"
 text = "템플릿과 시험 자료의 미저장 변경을 확인하세요."
 [[sentence]]
-file = "frontend/src/screens/authoring_controller.ts"
+file = "frontend/src/screens/authoring_controller_lifecycle.ts"
 text = "템플릿에 저장하지 않은 변경이 있습니다."
 [[sentence]]
 file = "frontend/src/screens/authoring_controller.ts"
@@ -4154,10 +4154,10 @@ text = "⚠ 불러오는 중입니다. 끝날 때까지 닫을 수 없습니다.
 file = "frontend/src/screens/data_picker.ts"
 text = "데이터 선택 창이 이미 열려 있습니다."
 [[sentence]]
-file = "frontend/src/screens/data_picker.ts"
+file = "frontend/src/screens/data_picker_registration.ts"
 text = "등록하지 못했습니다."
 [[sentence]]
-file = "frontend/src/screens/data_picker.ts"
+file = "frontend/src/screens/data_picker_registration.ts"
 text = "등록하지 못했습니다."
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
@@ -4166,10 +4166,10 @@ text = "불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."
 file = "frontend/src/screens/data_picker.ts"
 text = "시트 선택을 취소했습니다 — 데이터는 그대로입니다."
 [[sentence]]
-file = "frontend/src/screens/data_picker.ts"
+file = "frontend/src/screens/data_picker_registration.ts"
 text = "이름과 파일 경로를 입력하세요."
 [[sentence]]
-file = "frontend/src/screens/data_picker.ts"
+file = "frontend/src/screens/data_picker_registration.ts"
 text = "이름을 입력하세요."
 [[sentence]]
 file = "frontend/src/screens/data_picker.ts"
@@ -4178,31 +4178,31 @@ text = "파일 선택 창에서 파일을 고르세요…"
 file = "frontend/src/screens/data_zone.ts"
 text = "(비우면 조건이 이름이 됩니다)"
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_cells.ts"
 text = "job table segment 형식이 손상됐습니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_cells.ts"
 text = "{}: 객체가 아닙니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "데이터에 행이 없습니다."
 [[sentence]]
 file = "frontend/src/screens/data_zone.ts"
 text = "보기에서만 숨깁니다. 생성에는 그대로 쓰입니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_filter_chips.ts"
 text = "열 {}개 숨김 — 생성에는 그대로 쓰입니다"
 [[sentence]]
 file = "frontend/src/screens/data_zone.ts"
 text = "열 이름을 적어 고르세요"
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "표의 정렬 순서를 바꿉니다. 생성 순서와 파일 이름 순번이 함께 따라갑니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요."
 [[sentence]]
 file = "frontend/src/screens/detail_sheet.ts"
@@ -4242,37 +4242,37 @@ text = "템플릿 상태를 확인할 수 없습니다. 진행할 수 없습니�
 file = "frontend/src/screens/editor.ts"
 text = "템플릿과 데이터를 하나씩 고르세요."
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "(값은 이월). 계속할까요?"
 [[sentence]]
 file = "frontend/src/screens/editor_controller.ts"
 text = "{} 계속할까요?"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_slots.ts"
 text = "{} 되돌릴까요?"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_slots.ts"
 text = "{} 되돌릴까요?"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_slots.ts"
 text = "{} 지금 변환할까요?"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_slots.ts"
 text = "{} 지울까요?"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "{} 확정했거나 직접 편집한 매핑 {}개가 전부 미확정으로 돌아갑니다"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "{}만 바뀌었습니다. {}"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "계속할까요?"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "등록 데이터를 불러올 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "자동 제안을 다시 받을 행이 없습니다. 확정한 {}개는 그대로 둡니다."
 [[sentence]]
 file = "frontend/src/screens/editor_controller.ts"
@@ -4287,16 +4287,16 @@ text = "저장할 수 없습니다."
 file = "frontend/src/screens/editor_controller.ts"
 text = "저장했습니다. '문서 만들기' 로 이동하지 못했습니다:"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "직접 입력한 상수·유형·표시형도 함께 지워집니다."
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "직접 편집한 매핑 {}개가 자동 제안으로 돌아갑니다."
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "템플릿을 찾을 수 없습니다. {}"
 [[sentence]]
-file = "frontend/src/screens/editor_controller.ts"
+file = "frontend/src/screens/editor_controller_selection.ts"
 text = "확정한 {}개는 그대로 둡니다."
 [[sentence]]
 file = "frontend/src/screens/editor_state.ts"
@@ -4399,40 +4399,40 @@ text = "프리셋을 저장하지 못했습니다."
 file = "frontend/src/screens/job_content_selection.ts"
 text = "프리셋을 적용하지 못했습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_actions.ts"
 text = "'{}' 작업은 템플릿 파일을 찾을 수 없어 바로 선택할 수 없습니다. 템플릿을 다시 연결하면 이어서 이 작업을 선택합니다. 실패하면 선택하지 않습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_actions.ts"
 text = "'{}' 작업의 템플릿 파일을 찾을 수 없어 문서를 만들 수 없습니다. 템플릿을 다시 연결하면 작업을 다시 불러옵니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_actions.ts"
 text = "JobReadPort: 빈 작업 이름은 열 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_browse.ts"
 text = "JobReadPort: 탐색 닫힘 뒤 흐름이 이미 예약돼 있습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_browse.ts"
 text = "JobReadPort: 확인할 작업 이름이 비었습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_snapshot.ts"
 text = "job snapshot: has_data/has_job 판정이 없습니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
 text = "{} 다시 읽을까요?"
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_snapshot.ts"
 text = "{}: snapshot 객체가 아닙니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
 text = "검색으로 {}건이 목록에서 빠졌습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_views.ts"
 text = "데이터를 먼저 고르면 그 데이터로 쓸 수 있는 문서 작업이 여기에 표시됩니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_views.ts"
 text = "쓸 작업을 이미 알고 있다면 「문서 작업」에서 고른 뒤 문서 만들기에서 사용을 누르세요."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_actions.ts"
 text = "이 데이터로 새 작업을 만들 수 없습니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
@@ -4441,7 +4441,7 @@ text = "이 데이터에 연결된 문서 작업이 없습니다."
 file = "frontend/src/screens/job_read.ts"
 text = "이 데이터에 연결된 작업이 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_views.ts"
 text = "이 작업에 데이터를 연결해야 문서를 만들 수 있습니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
@@ -4450,7 +4450,7 @@ text = "이름이 일치하는 작업이 없습니다."
 file = "frontend/src/screens/job_read.ts"
 text = "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_actions.ts"
 text = "즐겨찾기를 바꾸지 못했습니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
@@ -4480,55 +4480,55 @@ text = "이 결과는 '{}' 실행입니다. 지금은 그 작업이 열려 있�
 file = "frontend/src/screens/job_result.ts"
 text = "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "{} 이 세션의 선택이 사라집니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "{}{} 나머지 {}건은 새 파일입니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "{}건을 생성합니다. 이 중 {}건이 기존 파일을 덮어씁니다:"
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_views.ts"
 text = "{}건의 데이터를 확인했습니다."
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
 text = "다시 만들 실패 건이 남아 있지 않습니다(데이터나 작업이 그사이 바뀌었습니다)."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "문서 내용이 만든 직후와 다릅니다"
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "문서 파일을 찾을 수 없습니다"
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "문서를 다시 열지 못했습니다"
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "문서를 확인하지 못했습니다"
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
 text = "문제 위치가 현재 표에 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "변경된 템플릿이 검사를 통과하지 못했습니다. 기존 템플릿이 계속 사용됩니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "변경사항을 적용했습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "변경사항을 확인하는 중입니다…"
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "변경사항을 확인하지 못했습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "변경사항이 없습니다 — 지금 템플릿이 이미 적용된 상태입니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "새 확인이 시작되어 이 결과는 대체되었습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "새 확인이 시작되어 이 변경사항은 대체되었습니다."
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
@@ -4543,19 +4543,19 @@ text = "실행 응답에 상관 토큰이 없습니다(계약 위반) — 결과
 file = "frontend/src/screens/job_run.ts"
 text = "이 결과는 '{}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "이 문서는 지금 결과에 없습니다"
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "이 변경사항은 더 이상 적용할 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "이 변경사항은 더 이상 적용할 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "이 변경사항은 적용된 뒤 다른 적용이 이어졌습니다. 현재 상태로 다시 확인하세요."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "이미 적용되어 있는 변경사항입니다."
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
@@ -4564,10 +4564,10 @@ text = "작업대를 열지 못했습니다."
 file = "frontend/src/screens/job_run.ts"
 text = "작업이 선택돼 있지 않습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "저장을 취소했습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "저장하지 못했습니다. {}"
 [[sentence]]
 file = "frontend/src/screens/job_run.ts"
@@ -4576,43 +4576,43 @@ text = "저장하지 못했습니다. {}"
 file = "frontend/src/screens/job_run.ts"
 text = "저장할 문서를 확인할 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "적용할 수 있는 변경사항이 있습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "템플릿 상태를 확인해 주세요."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "템플릿을 수정하거나 다시 연결한 뒤 확인하세요."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "필터 정의는 이 데이터로 돌아오면 「직전 필터 재적용」으로 되살릴 수 있습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_views.ts"
 text = "현재 데이터를 확인할 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인 이후 작업 상태가 바뀌어 이 변경사항은 적용할 수 없습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인 이후 작업 상태가 바뀌어 적용하지 못했습니다. 현재 상태로 다시 확인하세요."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인 중 오류가 났습니다. 다시 확인해 주세요."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인이 끝나기 전에 중단되었습니다. 다시 확인해 주세요."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인하는 동안 작업의 템플릿 상태가 바뀌었습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인하는 동안 템플릿 연결이 바뀌었습니다."
 [[sentence]]
-file = "frontend/src/screens/job_run.ts"
+file = "frontend/src/screens/job_run_copy.ts"
 text = "확인한 변경사항이 현재 작업에 적용되어 있습니다."
 [[sentence]]
 file = "frontend/src/screens/job_run_state.ts"
@@ -4768,7 +4768,7 @@ text = "아직 정해지지 않았습니다 — 폴더를 선택하세요."
 file = "frontend/src/screens/sheet_picker.ts"
 text = "시트 선택 창이 이미 열려 있습니다."
 [[sentence]]
-file = "frontend/src/screens/slice_popover.ts"
+file = "frontend/src/screens/slice_popover_view.ts"
 text = "예시 값: 쓸 부분을 끌어 고르면 방식이 맞춰집니다"
 [[sentence]]
 file = "frontend/src/screens/workbench.ts"

@@ -34,6 +34,11 @@ const callOwners = {
   'src/screens/data_picker.ts': { SCREEN: 'pool' },
   'src/screens/job_read.ts': { zone: 'job' },
   'src/screens/data_zone.ts': { zone: 'job' },
+  'src/screens/data_zone_card_editor.ts': { zone: 'job' },
+  'src/screens/data_zone_filter_builder.ts': { zone: 'job' },
+  'src/screens/data_zone_filter_chips.ts': { zone: 'job' },
+  'src/screens/data_zone_selection.ts': { zone: 'job' },
+  'src/screens/data_zone_table.ts': { zone: 'job' },
   'src/screens/job_column_panel.ts': { zone: 'job' },
   'src/tutorial/panel.ts': { send: 'tutorial' },
 };
