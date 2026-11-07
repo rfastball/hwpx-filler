@@ -323,14 +323,7 @@ fn commit(package: &mut HwpxPackage, planned: &[Planned]) -> Result<(), Authorin
             .map_err(|error| AuthoringFieldError::plain(error.to_string()))?;
         candidates.push((entry, bytes));
     }
-    for (entry, bytes) in candidates {
-        package
-            .entries
-            .iter_mut()
-            .find(|item| item.name == entry)
-            .unwrap()
-            .data = bytes;
-    }
+    install(package, candidates);
     Ok(())
 }
 
@@ -400,10 +393,44 @@ fn ordinal(value: Option<&Value>) -> Option<usize> {
     }
 }
 
-pub fn change_field(
-    package: &mut HwpxPackage,
-    command: &Value,
-) -> Result<usize, AuthoringFieldError> {
+/// A validated rename, relink, or unset of field occurrences.
+struct FieldChange<'a> {
+    command: &'a Value,
+    action: &'a str,
+    /// Every occurrence of `old` changes, not one chosen occurrence.
+    all_named: bool,
+    old: Option<String>,
+    new: Option<String>,
+    replacement: Option<&'a str>,
+}
+
+fn rename_conflict(
+    package: &HwpxPackage,
+    old: &Option<String>,
+    new: &Option<String>,
+) -> Result<(), AuthoringFieldError> {
+    if new == old {
+        return Ok(());
+    }
+    let taken = analysis_fields(package)
+        .map_err(|error| AuthoringFieldError::plain(error.to_string()))?
+        .into_iter()
+        .find(|item| item["name"] == new.as_deref().unwrap_or(""))
+        .map(|item| item["count"].as_u64().unwrap_or(0))
+        .unwrap_or(0);
+    if taken > 0 {
+        return Err(AuthoringFieldError::name_conflict(
+            new.as_deref().unwrap(),
+            taken,
+        ));
+    }
+    Ok(())
+}
+
+fn field_change<'a>(
+    package: &HwpxPackage,
+    command: &'a Value,
+) -> Result<FieldChange<'a>, AuthoringFieldError> {
     let action = command.get("type").and_then(Value::as_str).unwrap_or("");
     if !matches!(action, "rename_field" | "relink_field" | "unset_field") {
         return Err(AuthoringFieldError::plain(format!(
@@ -411,37 +438,125 @@ pub fn change_field(
         )));
     }
     let whole = action == "unset_field" && command.get("occurrences").is_some_and(Value::is_array);
-    let old = if action == "rename_field" || whole {
-        Some(field_name(command.get("old_name"))?)
-    } else {
-        None
-    };
-    let new = if matches!(action, "rename_field" | "relink_field") {
-        Some(field_name(command.get("name"))?)
-    } else {
-        None
-    };
-    if action == "rename_field" && new != old {
-        let taken = analysis_fields(package)
-            .map_err(|error| AuthoringFieldError::plain(error.to_string()))?
-            .into_iter()
-            .find(|item| item["name"] == new.as_deref().unwrap_or(""))
-            .map(|item| item["count"].as_u64().unwrap_or(0))
-            .unwrap_or(0);
-        if taken > 0 {
-            return Err(AuthoringFieldError::name_conflict(
-                new.as_deref().unwrap(),
-                taken,
-            ));
-        }
+    let all_named = action == "rename_field" || whole;
+    let old = all_named
+        .then(|| field_name(command.get("old_name")))
+        .transpose()?;
+    let new = matches!(action, "rename_field" | "relink_field")
+        .then(|| field_name(command.get("name")))
+        .transpose()?;
+    if action == "rename_field" {
+        rename_conflict(package, &old, &new)?;
     }
-    let replacement = if action == "unset_field" {
-        Some(command.get("text").and_then(Value::as_str).ok_or_else(|| {
-            AuthoringFieldError::plain("의미를 해제한 뒤 남길 본문을 입력하세요.".into())
-        })?)
-    } else {
-        None
-    };
+    let replacement = (action == "unset_field")
+        .then(|| {
+            command.get("text").and_then(Value::as_str).ok_or_else(|| {
+                AuthoringFieldError::plain("의미를 해제한 뒤 남길 본문을 입력하세요.".into())
+            })
+        })
+        .transpose()?;
+    Ok(FieldChange {
+        command,
+        action,
+        all_named,
+        old,
+        new,
+        replacement,
+    })
+}
+
+/// The one occurrence the command picked, still at the same pairing and fillable.
+fn chosen_occurrence(
+    command: &Value,
+    view: &XmlView,
+    scan: &EntryFieldScan,
+) -> Result<usize, AuthoringFieldError> {
+    let at = ordinal(command.get("occurrence"))
+        .ok_or_else(|| AuthoringFieldError::plain("필드 사용 위치가 올바르지 않습니다.".into()))?;
+    let field = scan.fields.get(at).ok_or_else(|| {
+        AuthoringFieldError::plain("필드 사용 위치를 찾을 수 없습니다.".into())
+    })?;
+    if let Some(expected) = command.get("pairing_id").filter(|value| !value.is_null())
+        && expected.as_str() != view.attr(field.begin, "id")
+    {
+        return Err(AuthoringFieldError::plain(
+            "고른 필드 사용 위치가 바뀌었습니다. 다시 고르세요.".into(),
+        ));
+    }
+    if !is_fill_target_field_type(field.field_type.as_deref()) {
+        return Err(AuthoringFieldError::plain(
+            "고른 요소는 채울 수 있는 필드가 아닙니다.".into(),
+        ));
+    }
+    Ok(at)
+}
+
+/// The occurrences in one entry that the change edits.
+fn selected_occurrences(
+    change: &FieldChange,
+    entry: &str,
+    view: &XmlView,
+    scan: &EntryFieldScan,
+) -> Result<Vec<usize>, AuthoringFieldError> {
+    let in_entry = change.command.get("entry").and_then(Value::as_str) == Some(entry);
+    if (change.all_named || in_entry) && !scan.pairing_usable() {
+        return Err(pairing_error(scan));
+    }
+    if change.all_named {
+        return Ok(scan
+            .fields
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| {
+                is_fill_target_field_type(field.field_type.as_deref())
+                    && field.raw_name.as_deref().and_then(normalize_field_id) == change.old
+            })
+            .map(|(at, _)| at)
+            .collect());
+    }
+    if in_entry {
+        return Ok(vec![chosen_occurrence(change.command, view, scan)?]);
+    }
+    Ok(Vec::new())
+}
+
+fn occurrence_edits<'a>(
+    change: &'a FieldChange,
+    view: &'a XmlView,
+    scan: &EntryFieldScan,
+    selected: &[usize],
+) -> Vec<FieldOccurrenceEdit<'a>> {
+    selected
+        .iter()
+        .map(|at| FieldOccurrenceEdit {
+            ordinal: *at,
+            pairing_id: view.attr(scan.fields[*at].begin, "id"),
+            change: if change.action == "unset_field" {
+                FieldElementChange::Unset(change.replacement.unwrap())
+            } else {
+                FieldElementChange::Rename(change.new.as_deref().unwrap())
+            },
+        })
+        .collect()
+}
+
+/// Writes every prepared entry; called only after all entries prepared cleanly.
+fn install(package: &mut HwpxPackage, candidates: Vec<(String, Vec<u8>)>) {
+    for (entry, bytes) in candidates {
+        package
+            .entries
+            .iter_mut()
+            .find(|item| item.name == entry)
+            .unwrap()
+            .data = bytes;
+    }
+}
+
+pub fn change_field(
+    package: &mut HwpxPackage,
+    command: &Value,
+) -> Result<usize, AuthoringFieldError> {
+    let change = field_change(package, command)?;
     let mut candidates = Vec::new();
     let mut count = 0;
     for entry in package.content_xml_names() {
@@ -453,57 +568,11 @@ pub fn change_field(
         let view = XmlView::parse(&source.data)
             .map_err(|error| AuthoringFieldError::plain(error.to_string()))?;
         let scan = view.field_occurrences(entry);
-        let applies = action == "rename_field"
-            || whole
-            || command.get("entry").and_then(Value::as_str) == Some(entry);
-        if applies && !scan.pairing_usable() {
-            return Err(pairing_error(&scan));
-        }
-        let mut selected = Vec::new();
-        if action == "rename_field" || whole {
-            for (at, field) in scan.fields.iter().enumerate() {
-                if is_fill_target_field_type(field.field_type.as_deref())
-                    && field.raw_name.as_deref().and_then(normalize_field_id) == old
-                {
-                    selected.push(at);
-                }
-            }
-        } else if command.get("entry").and_then(Value::as_str) == Some(entry) {
-            let at = ordinal(command.get("occurrence")).ok_or_else(|| {
-                AuthoringFieldError::plain("필드 사용 위치가 올바르지 않습니다.".into())
-            })?;
-            let field = scan.fields.get(at).ok_or_else(|| {
-                AuthoringFieldError::plain("필드 사용 위치를 찾을 수 없습니다.".into())
-            })?;
-            if let Some(expected) = command.get("pairing_id").filter(|value| !value.is_null())
-                && expected.as_str() != view.attr(field.begin, "id")
-            {
-                return Err(AuthoringFieldError::plain(
-                    "고른 필드 사용 위치가 바뀌었습니다. 다시 고르세요.".into(),
-                ));
-            }
-            if !is_fill_target_field_type(field.field_type.as_deref()) {
-                return Err(AuthoringFieldError::plain(
-                    "고른 요소는 채울 수 있는 필드가 아닙니다.".into(),
-                ));
-            }
-            selected.push(at);
-        }
+        let selected = selected_occurrences(&change, entry, &view, &scan)?;
         if selected.is_empty() {
             continue;
         }
-        let edits: Vec<_> = selected
-            .iter()
-            .map(|at| FieldOccurrenceEdit {
-                ordinal: *at,
-                pairing_id: view.attr(scan.fields[*at].begin, "id"),
-                change: if action == "unset_field" {
-                    FieldElementChange::Unset(replacement.unwrap())
-                } else {
-                    FieldElementChange::Rename(new.as_deref().unwrap())
-                },
-            })
-            .collect();
+        let edits = occurrence_edits(&change, &view, &scan, &selected);
         let bytes = change_field_occurrences(&source.data, &edits)
             .map_err(|error| AuthoringFieldError::plain(error.to_string()))?;
         candidates.push((entry.to_owned(), bytes));
@@ -514,14 +583,7 @@ pub fn change_field(
             "필드를 찾을 수 없습니다.".into(),
         ));
     }
-    for (entry, bytes) in candidates {
-        package
-            .entries
-            .iter_mut()
-            .find(|item| item.name == entry)
-            .unwrap()
-            .data = bytes;
-    }
+    install(package, candidates);
     Ok(count)
 }
 
