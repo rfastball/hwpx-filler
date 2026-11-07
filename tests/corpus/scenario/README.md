@@ -2,7 +2,7 @@
 
 조달 담당자의 실제 워크플로 한 벌을 재현하는 **자족 fixture 번들**이다. 한 세트의 입찰
 데이터를 여러 형식의 소스에서 읽어, 서로 다른 필드 집합의 템플릿(hwpx 2 + txt 2)에
-채운다. 자동 회귀([`tests/test_scenario_e2e.py`](../../test_scenario_e2e.py))와 GUI 수동
+채운다. 자동 회귀([Rust 생성 검사](../../../crates/hwpx-desktop/src/headless_generation.rs))와 GUI 수동
 QA 가 **같은 파일**을 공유한다.
 
 `corpus/real/`(추출·diff 골든)과 분리된 별도 루트라 골든 파라미터라이즈에 휩쓸리지 않는다.
@@ -38,27 +38,30 @@ scenario/
 | 소스 | 어휘 | 매핑 필요 | 입찰공고서(25) | 구매요청서(10) | txt 기안 |
 |------|------|:---:|:---:|:---:|:---:|
 | `조달_한글.csv` / `.xlsx` | 한글 헤더 = 필드 | ✗ (직접) | 전량 채움 | 부분집합 채움·여분 무시 | 원문 값 |
-| `나라장터_응답.json` | 영문 코드 키 | ✓ `나라장터_매핑.json` | 16필드 채움·9필드 미충족 | — | 서식 값(WYSIWYG) |
+| `나라장터_응답.json` | 영문 코드 키 | ✓ `나라장터_매핑.json` | 16필드 채움·9필드 명시적 비움 | — | 서식 값(WYSIWYG) |
 
 핵심 대비: 한글 CSV 는 세부품명·수량 등 25필드를 **직접** 채우지만, 나라장터 소스엔
-그 값이 원천에 없어 해당 누름틀이 **미충족으로 남는다**(더 풍부한 CSV 를 선호할 실증
+그 값이 원천에 없어 해당 누름틀을 **비움으로 확정한다**(더 풍부한 CSV 를 선호할 실증
 근거). 반대로 나라장터 경로는 매핑이 금액(`45,000,000원`)·일시(개찰일자 `2026. 7. 22.`
 + 개찰시각 `10:00`)를 정규화한다.
 
 ## 자동 회귀
 
-```bash
-pytest tests/test_scenario_e2e.py
+```powershell
+cargo test -p hwpx-desktop --lib headless_generation --locked
+cargo test -p hwpx-desktop --lib text_registry --locked
+cargo test -p hwpx-filler --lib dimensionless_scenario_sheet --locked
+cargo test -p hwpx-filler --lib procurement_templates --locked
 ```
 
 소스 형식 무관(CSV=xlsx) · 직접 매칭 배치 · 부분집합 템플릿 · 매핑 경로 · 얇은 소스
-대비 · txt 렌더 — 실사용 불변식을 Qt 없이 검증한다.
+대비 · txt 렌더 — 실사용 불변식을 창 없이 검증한다.
 
 ## GUI 수동 QA
 
 ```powershell
 $env:HWPXFILLER_HOME = "$PWD\tests\corpus\scenario"   # txt 트랙이 이 폴더를 나열
-python -m hwpxfiller.webapp
+.\run-filler.ps1
 ```
 
 **HWPX 작업 트랙**
@@ -76,10 +79,10 @@ python -m hwpxfiller.webapp
 
 ## CLI 등가
 
-```bash
+```powershell
 # 직접 매칭(한글 CSV → 25필드)
-python -m hwpxfiller.cli --template tests/corpus/scenario/templates/입찰공고서.hwpx \
-    --data tests/corpus/scenario/data/조달_한글.csv \
+.\run-filler.ps1 -Cli --template tests/corpus/scenario/templates/입찰공고서.hwpx `
+    --data tests/corpus/scenario/data/조달_한글.csv `
     --out ./out --pattern "입찰공고서-{{입찰공고번호}}"
 
 # 매핑 경로(나라장터 응답 JSON 은 소스 어댑터/픽스처 경유 — 라이브 API 대신)
@@ -88,14 +91,16 @@ python -m hwpxfiller.cli --template tests/corpus/scenario/templates/입찰공고
 
 ## 결정적 재생성
 
-fixture 한 벌(hwpx 템플릿 2 + csv + xlsx)은 **단일 진실원** 스크립트에서 파생한다:
+fixture 한 벌(hwpx 템플릿 2 + csv + xlsx)은
+[`fixture_source.json`](fixture_source.json)과
+[Rust 생성기](../../../crates/hwpx-filler/examples/scenario_fixture.rs)에서 파생한다:
 
-```bash
-python scripts/gen_scenario_fixtures.py
+```powershell
+cargo run -p hwpx-filler --example scenario_fixture --locked -- --out tests/corpus/scenario
 ```
 
 `form_purchase_v1.hwpx` 스켈레톤(header 스타일·secPr 페이지설정)을 물려받아 본문만 평문
-`{{토큰}}` 문단으로 교체한 뒤 `authoring.compile_document`로 누름틀 컴파일한다(id 는 기존
+`{{토큰}}` 문단으로 교체한 뒤 Rust `compile_document`로 누름틀 컴파일한다(id 는 기존
 정수 id 최댓값 위에서 결정적 할당). CSV(utf-8-sig)·xlsx 는 스크립트에 박힌 3건 데이터에서
 같이 파생돼 두 형식이 동일 레코드를 낸다. `입찰공고서.hwpx`는 corpus/real 재사용에서
 분리해 이 스크립트로 저작하므로 real 골든과 무관하다.

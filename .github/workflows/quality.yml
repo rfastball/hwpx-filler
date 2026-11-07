@@ -7,14 +7,15 @@ name: quality
 # 다른 산출물**을 검증하고 있었다는 사실이다 — 어느 job 이 무엇을 봤는지 말할 수 없었다.
 #
 # 이제 `sealed-web` 하나가 clean checkout 에서 install → build → seal → verify 를 완주하고
-# 같은 Node 설치로 JS 단위를, 같은 봉인 트리로 artifact 계약을 검사한다. 산출물과 그
+# 같은 Node 설치로 프런트 계약을, Rust verifier로 같은 봉인 트리를 검사한다. 산출물과 그
 # 정체성(artifact_id·tree_sha256·source commit)을 올리고, 실제 산출물 소비자는 그것을
 # 내려받아 `VerifyExisting` 으로 되짚는다. 그 검증은 `setup-node` **앞에** 서서 빌드 도구
 # 없이 통과한다 — 순서가 곧 그 주장의 증거다.
 #
-# 실패 영역도 함께 갈린다. 자원 축(pytest marker)이 잡을 나누므로 어느 잡이 빨간지가 곧
-# 무엇이 깨졌는지다: 결정론적 계약 / 실 Win32 / 설치 Chrome 기하 / 실 WebView2 / frozen 배포.
-# 같은 책임은 한 run 에서 정확히 한 번 돈다(종전 native 이중 실행은 축 분리로 사라졌다).
+# 실패 영역도 함께 갈린다. 자원 축이 잡을 나누므로 어느 잡이 빨간지가 곧 무엇이 깨졌는지다:
+# 정적 계약 / Rust workspace / Rust 커버리지 하한 / 실 Win32(ignored Rust) / 설치 Chrome 기하
+# (Node) / 실 WebView2 / 배포본. 같은 책임은 한 run 에서 정확히 한 번 돈다. 제품도 검증
+# 도구도 Rust·Node 로만 돈다.
 #
 # action 은 전부 **full commit SHA** 로 고정한다. 태그는 움직이는 이름이라 같은 워크플로가
 # 어제와 다른 코드를 돌릴 수 있고, 그때 무엇이 바뀌었는지 이 파일은 말해 주지 못한다.
@@ -44,39 +45,40 @@ jobs:
     name: sealed-web (producer)
     runs-on: windows-latest
     timeout-minutes: 15
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
+      - name: Prepare pinned Rust web verifier and contract parser
+        # `read_toml.mjs --prepare` 는 --offline 으로 짓는다 — 깨끗한 러너에서는 여기서 잠금 의존을 받아 둔다.
+        run: |
+          cargo --version
+          cargo build --locked -p hwpx-artifact --example read_toml
       - name: Install, build, seal and verify the frontend
         shell: pwsh
         # Node/npm/Vite 핀 확인은 스크립트가 진다 — 워크플로가 같은 수치를 따로 들고 있으면
         # 둘이 어긋나는 날이 온다(단일 출처).
         run: .\build-web.ps1 -Mode Build -IdentityOut web-artifact-identity.json
       - name: Frontend module suite
-        run: npm.cmd test
-      - name: Sealed artifact contract suite
-        shell: pwsh
-        run: >-
-          uv run --no-sync pytest -q tests/artifact_contract
-          --basetemp="$env:RUNNER_TEMP/artifact-contract"
+        # web build 가 깐 저장소 지역 toolchain(.cache/rhwp-cargo)을 Node 도구가 고른다 — npm test 의
+        # bridge descriptor 가 --offline 으로 짓기 전에 같은 CARGO_HOME 에 잠금 의존을 받아 둔다.
+        run: |
+          $localCargo = Join-Path $PWD '.cache\rhwp-cargo\bin\cargo.exe'
+          if (Test-Path -LiteralPath $localCargo -PathType Leaf) {
+            $env:CARGO_HOME = Join-Path $PWD '.cache\rhwp-cargo'
+            $env:RUSTUP_HOME = Join-Path $PWD '.cache\rhwp-rustup'
+            $env:PATH = (Split-Path -Parent $localCargo) + ';' + $env:PATH
+          }
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # bridge 계약 테스트는 60초 안에 descriptor 를 돌린다 — 차가운 러너의 첫 컴파일을 미리 끝낸다.
+          cargo build --offline --locked --no-default-features -p hwpx-desktop --example bridge_descriptor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/read_toml.mjs --prepare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm.cmd test
       - name: Upload the sealed web artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -94,128 +96,84 @@ jobs:
     name: static
     runs-on: windows-latest
     timeout-minutes: 15
-    # 산출물을 읽지 않는다 — 정적 검사와 저장소 형상 계약만 맡는다. 그래서 생산자를 기다리지
-    # 않는다. Node 는 빌드가 아니라 **파서**로만 들인다: 복잡도 예산
-    # (`tests/repo_contract/test_complexity_budget.py`)이 프런트 소스를 oxc(vite)로 잰다.
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
+    # 산출물을 읽지 않는다 — 정적 검사와 문서·문구·복잡도 계약만 맡는다. 그래서 생산자를
+    # 기다리지 않는다. Node/OXC 와 Rust/syn 은 소스 복잡도·TOML 파서로만 들인다. crate 경계
+    # (architecture.rs)는 rust-kernel 의 workspace 테스트가 진다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # 복잡도 예산의 닫힌 원장은 `origin/master` 와의 merge-base 원장과 견준다. 얕은
           # checkout 에는 그 기준이 없고, 기준 부재는 통과가 아니라 실패다.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev
-      - name: Ruff
-        run: uv run --no-sync ruff check src tests scripts
-      - name: Pyright
-        run: uv run --no-sync pyright
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
       - name: Install the frontend parser toolchain
         run: npm.cmd ci
-      - name: Repository contract suite
-        shell: pwsh
-        run: >-
-          uv run --no-sync pytest -q tests/repo_contract
-          --basetemp="$env:RUNNER_TEMP/repo-contract"
+      - name: Prepare pinned Rust contract parsers
+        run: |
+          cargo --version
+          cargo build --locked -p hwpx-artifact --example read_toml --example complexity_axes
+      - name: Documentation contract
+        run: |
+          node scripts/read_toml.mjs --prepare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/docs_contract.mjs --check
+      - name: Closed JavaScript and Rust complexity budget
+        run: node scripts/complexity_budget.mjs --check
+      - name: Product copy census
+        run: node scripts/ui_copy_census.mjs --check
 
-  pytest-contract:
-    name: pytest-contract (package coverage floor)
+  rust-coverage:
+    name: rust-coverage (package coverage floor)
     runs-on: windows-latest
-    timeout-minutes: 30
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
+    timeout-minutes: 45
+    # 커버리지와 하한은 이 job 이 **혼자** 소유한다. rust-kernel 은 같은 테스트 집합을 계측 없이
+    # 돌려 판정을 내고, 여기서는 계측 빌드(target/coverage)로 패키지별 line·branch 하한만 잰다.
+    # llvm-tools 는 rust-toolchain.toml 의 component 로 첫 cargo 호출 때 설치된다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev
-      - name: Contract suite with Python coverage
-        shell: pwsh
-        # 커버리지와 하한은 이 job 이 **혼자** 소유한다. 저장소 형상과 봉인 산출물 계약은
-        # 각각 static·sealed-web 에서 커버리지 없이 돌아 이 분모와 임계 경로를 흐리지 않는다.
-        run: >-
-          uv run --no-sync pytest -q tests
-          --ignore=tests/repo_contract --ignore=tests/artifact_contract
-          -m "not native and not browser and not live"
-          --junitxml=pytest.xml
-          --cov=hwpxcore --cov=hwpxfiller
-          --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml
-          --basetemp="$env:RUNNER_TEMP/pytest"
-      - name: Enforce package line and branch floors
+      - name: Rust LLVM coverage floors
         shell: pwsh
         run: |
-          uv run --no-sync python scripts/check_package_coverage.py coverage.xml `
-            --config tests/contracts/package-coverage-floors.toml `
-            --markdown-output package-coverage.md
+          .\scripts\rust_coverage.ps1 -MarkdownOutput package-coverage.md
           $gateExit = $LASTEXITCODE
-          Get-Content package-coverage.md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if (Test-Path package-coverage.md) {
+            Get-Content package-coverage.md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
           exit $gateExit
-      - name: Upload pytest and coverage evidence
+      - name: Upload Rust coverage evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pytest-package-coverage
+          name: rust-package-coverage
           path: |
-            pytest.xml
-            coverage.xml
             package-coverage.md
+            target/coverage/llvm-coverage.json
           if-no-files-found: warn
 
   windows-native:
     name: windows-native (real Win32)
     runs-on: windows-latest
-    timeout-minutes: 15
-    # 웹 산출물도 Node 도 쓰지 않는다(실 클립보드·실 최상위 창). 생산자를 기다리지 않는다.
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
+    timeout-minutes: 20
+    # 웹 산출물도 Node 도 쓰지 않는다(실 OLE 아파트·클립보드·최상위 창·자격 증명 저장소).
+    # 생산자를 기다리지 않는다. 이름 목록은 test.ps1 과 같고, 소스의 #[ignore] 집합 전체다
+    # (tests/js/quality_workflow.test.js 가 대조한다).
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev
-      - name: Windows native positive scenarios
+      - name: Real Win32 dialog, clipboard, focus and credential round trips
         shell: pwsh
-        # 옵트아웃을 **같은 단계에서** 걷는다 — 다른 단계에서 걷으면 그 프로세스에만 적용돼
-        # 선언만 남고 결과가 죽는다.
+        # 이름이 하나라도 어긋나면 libtest 는 0개를 돌리고 성공한다 — 실행 수를 직접 확인한다.
         run: |
-          Remove-Item Env:HWPX_SKIP_NATIVE_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync pytest -q -m native --basetemp="$env:RUNNER_TEMP/native"
+          $output = cargo test -p hwpx-desktop --lib --no-default-features --locked -- --ignored --exact `
+            dialogs::win::positive_tests::windows_sta_dialog_result_and_pidl_allocator_round_trip `
+            single_instance::tests::windows_clipboard_and_visible_focus_round_trip `
+            nara_secret_store::tests::windows_credential_store_round_trip
+          $code = $LASTEXITCODE
+          $output
+          if ($code -ne 0) { exit $code }
+          if (-not ($output -match '^test result: ok\. 3 passed;')) { throw '실 Win32 ignored 테스트 3개가 모두 실행되지 않았습니다.' }
 
   browser-render:
     name: browser-render (installed Chrome)
@@ -224,194 +182,166 @@ jobs:
     needs: sealed-web
     # 여기서 나오는 것은 **Chrome 렌더링 증거**다. 실 WebView2 증거가 아니다 — 두 판정을
     # 이름으로도 산출물로도 섞지 않는다.
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sealed-web
           path: .
           digest-mismatch: error
+      - name: Prepare pinned Rust web verifier
+        run: cargo --version
       - name: Verify the downloaded artifact against this checkout
         shell: pwsh
         run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked browser driver
+        # playwright-core 는 설치 Chrome 을 모는 드라이버일 뿐 브라우저를 내려받지 않는다.
+        run: npm.cmd ci --ignore-scripts
+      - name: Build the native rhwp roundtrip fixture
+        run: cargo build --locked -p hwpx-filler --example browser_fixture
       - name: Press-geometry browser precondition
         shell: pwsh
         run: |
-          # 눌림 기하 게이트(tests/test_web_press_geometry.py, U2 §2.11)는 **설치 Chrome** 을
-          # channel="chrome" 으로 몬다 — 브라우저 다운로드 없음. 런타임 부재를 조용히 스킵하지
+          # 눌림 기하·rhwp 왕복 게이트(tests/browser, U2 §2.11)는 **설치 Chrome** 을
+          # channel: 'chrome' 으로 몬다 — 브라우저 다운로드 없음. 런타임 부재를 조용히 스킵하지
           # 않는 규율이라 전제를 여기서 시끄럽게 확인한다. 여기서 죽으면 원인이 한 줄로 보이고,
           # 확인 없이 두면 같은 부재가 테스트 안쪽의 알아보기 힘든 오류로 나온다.
           Remove-Item Env:HWPX_SKIP_MOTION_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(channel='chrome'); print('chrome', b.version); b.close(); p.stop()"
-      - name: Press-geometry suite
+          node --input-type=module -e "import { chromium } from 'playwright-core'; const browser = await chromium.launch({ channel: 'chrome' }); console.log('chrome', browser.version()); await browser.close();"
+      - name: Installed Chrome render and rhwp roundtrip suite
         shell: pwsh
-        run: |
-          Remove-Item Env:HWPX_SKIP_MOTION_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync pytest -q -m browser --basetemp="$env:RUNNER_TEMP/browser"
+        env:
+          HWPX_WEB_ARTIFACT_ROOT: build/web
+          HWPX_BROWSER_FIXTURE_BIN: target/debug/examples/browser_fixture.exe
+        run: node --test --test-concurrency=1 "tests/browser/*.test.js"
 
   live-webview2:
-    name: live-webview2 (real WebView2 session)
+    name: live-webview2 (native WebView2 Quickstart 101)
     runs-on: windows-latest
-    # 바깥 상한은 안쪽 진단보다 **느슨해야** 한다(N-11A 교훈). 그 최악 산술의 항·합은
-    # `tests/_live_budget.py` 가 소유하고, 아래 실값과의 대조는 `tests/repo_contract/
-    # test_quality_workflow.py` 가 기계로 단언한다 — 여기 숫자를 다시 적지 않는다(#912).
     timeout-minutes: 60
-    needs: sealed-web
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
-      # 101 실주행의 보고서·표준출력이 떨어질 자리. 종전에는 pytest 임시 폴더로 가서 잡과
-      # 함께 사라졌다 — 실패한 실주행이 무엇을 봤는지 아무것도 남지 않았다.
-      HWPX_LIVE_EVIDENCE_DIR: ${{ github.workspace }}/live-evidence
+    needs: distribution-webview2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev
-      - name: Download the sealed web artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: sealed-web
-          path: .
+          name: native-gui
+          path: dist/hwpx-filler-web
           digest-mismatch: error
-      - name: Verify the downloaded artifact against this checkout
-        shell: pwsh
-        run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
-      - name: Quickstart 101 live precondition
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Native Quickstart 101 journey and restart
         shell: pwsh
         run: |
-          # 101 실주행 게이트(tests/test_quickstart_101_live.py, #423)의 전제를 **실행 없이**
-          # 확인한다 — Windows 세션·커밋된 101 자산·봉인된 웹 산출물. 완주 자체는 아래 실앱
-          # suite 안에서 한 번만 돈다(실주행을 두 번 태우지 않는다).
-          #
-          # 전제 부재가 테스트 안쪽의 알아보기 힘든 오류로 번역돼 나오면 원인 판독이 늦고,
-          # 옵트아웃이 러너에서만 조용히 켜져 있으면 게이트가 통째로 사라진 채 초록이 된다.
-          Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync python scripts/capture_101_screenshots.py check --preflight
-      - name: Real app suite and Quickstart 101 check
-        shell: pwsh
-        # 제품 단언은 **재시도하지 않는다**. 두 번째 시도가 초록이면 첫 번째 빨강이 무슨
-        # 뜻이었는지 아무도 묻지 않게 되고, 그 상태의 게이트는 이미 게이트가 아니다.
-        run: |
-          Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync pytest -q -m live --maxfail=1 --basetemp="$env:RUNNER_TEMP/live"
-      - name: Collect live diagnostics
-        if: always()
-        shell: pwsh
-        # 실패한 실주행은 임시 홈을 **지우지 않고 남긴다**(하니스 계약). 그 잔재의 진단
-        # 파일만 골라 회수 자리로 옮긴다 — 홈 전체를 올리면 실 문서까지 따라온다.
-        run: |
-          $target = "$env:GITHUB_WORKSPACE/live-evidence"
-          New-Item -ItemType Directory -Force $target | Out-Null
-          Get-ChildItem $env:TEMP -Directory -Filter 'hwpx-101-*' -ErrorAction SilentlyContinue |
-            ForEach-Object {
-              $leftover = $_
-              Get-ChildItem $leftover.FullName -Recurse -File `
-                -Include '_live101_hang_stacks.txt', '_live101_result.json' `
-                -ErrorAction SilentlyContinue |
-                ForEach-Object {
-                  Copy-Item $_.FullName (Join-Path $target "$($leftover.Name)-$($_.Name)") -Force
-                }
-            }
-          Get-ChildItem $target -File -ErrorAction SilentlyContinue |
-            ForEach-Object { "수집: $($_.Name) ($($_.Length) bytes)" }
+          .\scripts\run_native_live101.ps1 `
+            -Exe dist/hwpx-filler-web/hwpx-filler-web.exe `
+            -EvidenceDir live-evidence
       - name: Upload live evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: live-webview2-evidence
-          path: live-evidence
+          path: |
+            live-evidence/journey/**
+            live-evidence/restart/**
+            !live-evidence/home/**
           if-no-files-found: warn
 
   distribution-webview2:
-    name: distribution-webview2 (frozen exe)
+    name: distribution-webview2 (native exe)
     runs-on: windows-latest
     timeout-minutes: 30
     needs: sealed-web
-    # frozen 제품·실 WebView2·loopback origin·외부망 격리를 판정한다. Node 를 **설치하지
-    # 않는다** — 번들 경계 검사(Node 런타임·frontend source 재유입 금지)가 PATH 에서도
-    # 참인 상태로 돈다.
-    env:
-      PYTHONUTF8: "1"
-      PYTHONIOENCODING: utf-8
+    # 봉인 소비는 Node 설치 전에 실행한다. Node는 고지 생성의 빌드 도구이며
+    # 실 WebView2 프로세스는 Node 없는 PATH에서 돌린다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.11.28"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
-          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
-          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
-          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
-          save-cache: ${{ github.job == 'distribution-webview2' }}
-      - name: Install locked build environment
-        run: uv sync --locked --all-extras --group dev --group build
       - name: Download the sealed web artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sealed-web
           path: .
           digest-mismatch: error
+      - name: Prepare pinned Rust web verifier
+        run: cargo --version
+      - name: Verify sealed artifact without Node
+        shell: pwsh
+        run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked notice inputs
+        run: npm ci --ignore-scripts
       - name: Build and self-check all portable distributions
         shell: pwsh
         run: >-
-          .\packaging\build.ps1 -Target all
+          .\packaging\build_native.ps1 -Target all -SkipCheck
           -WebMode VerifyExisting -ExpectWebIdentity web-artifact-identity.json
+          -EvidenceDir build/native-package-evidence-ci
+      - name: Verify native restart and display persistence
+        shell: pwsh
+        run: >-
+          .\scripts\verify_native_restart.ps1
+          -Exe dist/hwpx-filler-web/hwpx-filler-web.exe
+          -EvidenceDir build/native-restart-evidence-ci
+      - name: Verify native selftest capability boundary
+        shell: pwsh
+        run: >-
+          .\scripts\verify_native_capability.ps1
+          -Exe dist/hwpx-filler-web/hwpx-filler-web.exe
+          -EvidenceDir build/native-capability-evidence-ci
+      - name: Upload verified native GUI for the live resource owner
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-gui
+          path: dist/hwpx-filler-web
+          include-hidden-files: true
+          if-no-files-found: error
       - name: Upload packaging evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distribution-webview2-evidence
-          # 패키징이 내는 증거 13파일(산출물 동일성·packaged selftest·외부망 양성/음성 대조·
-          # 검증 요약·wheel·두 PYZ archive). 제품 홈 두 개는 뺀다 — 실행 잔재라 증거가 아니다.
+          # 봉인 원본/배포본, notice, WebView2 증거를 올리고 격리 홈은 제외한다.
           path: |
-            build/n03-package-evidence-*/**
-            !build/n03-package-evidence-*/home-network-control/**
-            !build/n03-package-evidence-*/home-offline/**
+            build/native-package-evidence-ci/**
+            !build/native-package-evidence-ci/*-home/**
+            build/native-restart-evidence-ci/**
+            build/native-capability-evidence-ci/**
           if-no-files-found: warn
+
+  rust-kernel:
+    name: Rust workspace
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check Rust workspace
+        shell: pwsh
+        run: .\test-rust.ps1
 
   quality-gate:
     name: quality-gate
     runs-on: ubuntu-latest
     # 브랜치 보호가 겨눌 **하나의 이름**. 잡을 늘리거나 이름을 바꿔도 보호 설정을 따라
     # 고치지 않게 여기서 모은다. 대신 열거가 계약이다 — 필수 job 하나가 목록에서 빠지면
-    # `tests/repo_contract/test_quality_workflow.py` 가 멈춘다.
+    # `tests/js/quality_workflow.test.js` 가 멈춘다.
     if: always()
     needs:
       - sealed-web
       - static
-      - pytest-contract
+      - rust-coverage
       - windows-native
       - browser-render
       - live-webview2
       - distribution-webview2
+      - rust-kernel
     steps:
       - name: Refuse anything that is not a success
         shell: bash

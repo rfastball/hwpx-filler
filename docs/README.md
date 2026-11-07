@@ -47,7 +47,6 @@
 
 ## 실행 가능한 원장
 
-- [모듈 의존 좌표](../tests/contracts/module-rings.toml)
 - [패키지 coverage 하한](../tests/contracts/package-coverage-floors.toml)
 - [사용자 문장 원장](../tests/contracts/ui-copy-census.toml)
 - [공개 경계·vendor 계약](../tests/architecture_contract.toml)

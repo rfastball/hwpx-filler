@@ -63,6 +63,7 @@
 
 ## 재수확
 
-`.secrets/nara_service_key` 로 다시 긁으려면 `python scripts/build_nara_testset.py`
+`.secrets/nara_service_key` 로 다시 긁으려면 저장소 루트에서
+`cargo run -p hwpx-desktop --example nara_fixture --no-default-features --locked --`
 (`--dry-run` 으로 미리보기). **라이브 취득이라 비결정적** — 재실행은 그 시점 공고로 새
 세트를 만든다(이 `mulpum.json` 이 동결본). 취득 창은 최대 1개월. 갱신 시 위 매니페스트도 손본다.

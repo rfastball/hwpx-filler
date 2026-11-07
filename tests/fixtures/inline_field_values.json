@@ -1,0 +1,51 @@
+{
+  "typed_fields": "<hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"구간\"/></hp:ctrl></hp:run><hp:run><hp:t>구간 글</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"CLICK_HERE\" name=\"계약명\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run><hp:run><hp:t>값 뒤</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"3\" type=\"HYPERLINK\" name=\"링크\"/></hp:ctrl></hp:run><hp:run><hp:t>https://example.invalid</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"3\"/></hp:ctrl></hp:run></hp:p>",
+  "empty_fields": "<hp:p><hp:run charPrIDRef=\"1\"><hp:ctrl><hp:fieldBegin name=\"가\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run><hp:run><hp:t> 사이 </hp:t></hp:run><hp:run charPrIDRef=\"2\"><hp:ctrl><hp:fieldBegin name=\"나\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run charPrIDRef=\"3\"><hp:ctrl><hp:fieldBegin name=\"다\"/></hp:ctrl><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"라\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>",
+  "materialization": {
+    "sources": {
+      "mimetype": "application/hwp+zip",
+      "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin type=\"CLICK_HERE\" name=\"본문\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin type=\"CLICK_HERE\" name=\"줄\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p></hs:sec>"
+    },
+    "native_primitive_contract_id": "hwpx-native-primitive/v1",
+    "ordered_operations": [
+      {
+        "op": "APPLY_FIELD_BINDING",
+        "field_id": "본문"
+      },
+      {
+        "op": "APPLY_FIELD_BINDING",
+        "field_id": "줄"
+      }
+    ],
+    "active_field_requirements": [
+      {
+        "field_id": "본문",
+        "expected_active_occurrence_count": 1,
+        "value_expression": {
+          "kind": "FROM_SOURCE",
+          "source_key": "k본문",
+          "format_kind": null,
+          "format_code": "",
+          "document_content_value_policy_id": "document-content-value/v1"
+        }
+      },
+      {
+        "field_id": "줄",
+        "expected_active_occurrence_count": 1,
+        "value_expression": {
+          "kind": "CONSTANT",
+          "canonical_value": {
+            "kind": "TEXT",
+            "text": "첫\r\n둘"
+          },
+          "format_code": null,
+          "document_content_value_policy_id": "document-content-value/v1"
+        }
+      }
+    ],
+    "values": {
+      "본문": "가\t나\n다 라",
+      "줄": "첫\r\n둘"
+    }
+  }
+}

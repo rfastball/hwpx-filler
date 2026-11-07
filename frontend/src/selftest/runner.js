@@ -137,7 +137,7 @@ export const LEGACY_FIXED_SLEEPS_MS = Object.freeze({
 export const LEGACY_BUDGET = Object.freeze({
   fixedSleepTotalMs: 9800,
   worstCaseMs: 68000,
-  processTimeoutMs: 90000, // tests/test_web_selftest_gate.py:31
+  processTimeoutMs: 90000, // 이전 Python 하니스의 측정 기준선
   headroomMs: 22000,
 });
 

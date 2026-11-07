@@ -1,0 +1,3209 @@
+{
+  "current": [
+    {
+      "name": "test_configuration_status_mapping[structure0-selections0-contract0-NOT_APPLICABLE]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": []
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NOT_APPLICABLE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": false,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_status_mapping[structure1-selections1-contract1-NEEDS_SELECTION]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 1,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_status_mapping[structure2-selections2-contract2-HAS_BROKEN_SELECTIONS]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "Z"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "HAS_BROKEN_SELECTIONS",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "SELECTED_OPTION_REMOVED"
+          ],
+          "missing_selection_count": 0,
+          "broken_selection_count": 1,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "SELECTED_OPTION_REMOVED",
+            "declared_option_ids": [
+              "Z"
+            ],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [
+              {
+                "kind": "SELECTED_OPTION_REMOVED",
+                "option_id": "Z"
+              }
+            ],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "SELECTED_OPTION_REMOVED",
+            "option_id": null
+          },
+          {
+            "slot_id": "s",
+            "kind": "SELECTED_OPTION_REMOVED",
+            "option_id": "Z"
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_status_mapping[structure3-selections3-contract3-HAS_BROKEN_SELECTIONS]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                },
+                {
+                  "id": "B",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A",
+                  "B"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "HAS_BROKEN_SELECTIONS",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "CARDINALITY_VIOLATION"
+          ],
+          "missing_selection_count": 0,
+          "broken_selection_count": 1,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "CARDINALITY_VIOLATION",
+            "declared_option_ids": [
+              "A",
+              "B"
+            ],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              },
+              {
+                "option_id": "B",
+                "display_text": "라벨 미지정 (ID: B)",
+                "selected": true,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "CARDINALITY_VIOLATION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_status_mapping[structure4-selections4-contract4-HAS_BROKEN_SELECTIONS]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "HAS_BROKEN_SELECTIONS",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "NO_AVAILABLE_OPTIONS"
+          ],
+          "missing_selection_count": 0,
+          "broken_selection_count": 1,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "NO_AVAILABLE_OPTIONS",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "NO_AVAILABLE_OPTIONS",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_status_mapping[structure5-selections5-contract5-HAS_BROKEN_SELECTIONS]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/x",
+            "selection_set_schema_version": "s",
+            "canonical_encoding_version": "c",
+            "default_selection_policy": "MANY",
+            "supported_selection_policies": [
+              "MANY"
+            ],
+            "created_semantics_version": "v"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "HAS_BROKEN_SELECTIONS",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "UNSUPPORTED_SELECTION_POLICY"
+          ],
+          "missing_selection_count": 0,
+          "broken_selection_count": 1,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": null,
+            "status": "UNSUPPORTED_SELECTION_POLICY",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "UNSUPPORTED_SELECTION_POLICY",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_status_mapping[structure6-selections6-contract6-SLOT_SELECTIONS_COMPLETE]",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_missing_and_broken_distinct_when_both_present",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "m",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            },
+            {
+              "id": "c",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                },
+                {
+                  "id": "B",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "c",
+                "selected_option_ids": [
+                  "A",
+                  "B"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "HAS_BROKEN_SELECTIONS",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION",
+            "CARDINALITY_VIOLATION"
+          ],
+          "missing_selection_count": 1,
+          "broken_selection_count": 1,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "m",
+            "display_text": "라벨 미지정 (ID: m)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          },
+          {
+            "slot_id": "c",
+            "display_text": "라벨 미지정 (ID: c)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "CARDINALITY_VIOLATION",
+            "declared_option_ids": [
+              "A",
+              "B"
+            ],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              },
+              {
+                "option_id": "B",
+                "display_text": "라벨 미지정 (ID: B)",
+                "selected": true,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "m",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          },
+          {
+            "slot_id": "c",
+            "kind": "CARDINALITY_VIOLATION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_configuration_presence_distinguishes_absence_from_tombstone",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": {
+          "schema_version": "work-slot-configuration-v1",
+          "work_id": "w1",
+          "configurations": [
+            {
+              "work_id": "w1",
+              "base_template_application_id": "A1",
+              "version": 1,
+              "selections": {
+                "selections": []
+              },
+              "declared_selection_digest": "sha256:2d907f21148c6bafa2ccc28548e97a8d7e60ec9ada6841b7d073a8809ce23c1f",
+              "origin": "EMPTY",
+              "reconciled_from_application_id": null,
+              "reconciled_from_version": null,
+              "reconciled_from_declared_selection_digest": null,
+              "created_at": "2026-08-16T00:00:00Z",
+              "updated_at": "2026-08-16T00:00:00Z"
+            }
+          ]
+        },
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": true,
+        "configuration_version": 1,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 1,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_slot_option_projection_selected_effective_and_fields",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s1",
+              "shared_fields": [
+                "sh1"
+              ],
+              "options": [
+                {
+                  "id": "o1",
+                  "fields": [
+                    "f1",
+                    "f2"
+                  ],
+                  "label": "기본 표지"
+                },
+                {
+                  "id": "o2",
+                  "fields": [
+                    "f3"
+                  ],
+                  "label": null
+                }
+              ],
+              "label": "표지 유형"
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s1",
+                "selected_option_ids": [
+                  "o1"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s1",
+            "display_text": "표지 유형",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "o1"
+            ],
+            "effective_option_ids": [
+              "o1"
+            ],
+            "options": [
+              {
+                "option_id": "o1",
+                "display_text": "기본 표지",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": [
+                  "f1",
+                  "f2"
+                ]
+              },
+              {
+                "option_id": "o2",
+                "display_text": "라벨 미지정 (ID: o2)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": [
+                  "f3"
+                ]
+              }
+            ],
+            "shared_field_ids": [
+              "sh1"
+            ],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_slots_follow_template_order",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "b",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            },
+            {
+              "id": "a",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 2,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "b",
+            "display_text": "라벨 미지정 (ID: b)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          },
+          {
+            "slot_id": "a",
+            "display_text": "라벨 미지정 (ID: a)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "b",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          },
+          {
+            "slot_id": "a",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_detached_selection_informational_and_clearable",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              },
+              {
+                "slot_id": "Z",
+                "selected_option_ids": [
+                  "C"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 1,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [
+          {
+            "slot_id": "Z",
+            "selected_option_ids": [
+              "C"
+            ],
+            "clearable": true,
+            "status": "SLOT_REMOVED"
+          }
+        ],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [
+          {
+            "slot_id": "Z",
+            "kind": "SLOT_REMOVED",
+            "option_id": null
+          }
+        ],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_zero_slots_still_shows_detached_selection",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": []
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "Z",
+                "selected_option_ids": [
+                  "C"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NOT_APPLICABLE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 1,
+          "slot_selections_complete": false
+        },
+        "slots": [],
+        "detached_selections": [
+          {
+            "slot_id": "Z",
+            "selected_option_ids": [
+              "C"
+            ],
+            "clearable": true,
+            "status": "SLOT_REMOVED"
+          }
+        ],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [
+          {
+            "slot_id": "Z",
+            "kind": "SLOT_REMOVED",
+            "option_id": null
+          }
+        ],
+        "zone_actionable": false,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_savable_selection_is_the_save_gate_itself",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": {
+          "schema_version": "work-slot-configuration-v1",
+          "work_id": "w1",
+          "configurations": [
+            {
+              "work_id": "w1",
+              "base_template_application_id": "A1",
+              "version": 1,
+              "selections": {
+                "selections": []
+              },
+              "declared_selection_digest": "sha256:2d907f21148c6bafa2ccc28548e97a8d7e60ec9ada6841b7d073a8809ce23c1f",
+              "origin": "EMPTY",
+              "reconciled_from_application_id": null,
+              "reconciled_from_version": null,
+              "reconciled_from_declared_selection_digest": null,
+              "created_at": "2026-08-30T00:00:00",
+              "updated_at": "2026-08-30T00:00:00"
+            }
+          ]
+        },
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": true,
+        "configuration_version": 1,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_savable_selection_is_the_save_gate_itself",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": {
+          "schema_version": "work-slot-configuration-v1",
+          "work_id": "w1",
+          "configurations": [
+            {
+              "work_id": "w1",
+              "base_template_application_id": "A1",
+              "version": 2,
+              "selections": {
+                "selections": [
+                  {
+                    "slot_id": "s",
+                    "selected_option_ids": [
+                      "A"
+                    ]
+                  }
+                ]
+              },
+              "declared_selection_digest": "sha256:31cf168241f05723c56da0bbea69cf0d8c1e6da4270b164a93cc9d42fff7218f",
+              "origin": "EMPTY",
+              "reconciled_from_application_id": null,
+              "reconciled_from_version": null,
+              "reconciled_from_declared_selection_digest": null,
+              "created_at": "2026-08-30T00:00:00",
+              "updated_at": "2026-08-30T00:01:00"
+            }
+          ]
+        },
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": true,
+        "configuration_version": 2,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": true,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_settled_slot_is_the_one_with_nothing_left_to_do",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                },
+                {
+                  "id": "B",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              },
+              {
+                "option_id": "B",
+                "display_text": "라벨 미지정 (ID: B)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_summary_and_blocking_items",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "m",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            },
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              },
+              {
+                "slot_id": "Z",
+                "selected_option_ids": [
+                  "C"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 1,
+          "broken_selection_count": 0,
+          "detached_selection_count": 1,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "m",
+            "display_text": "라벨 미지정 (ID: m)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          },
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [
+          {
+            "slot_id": "Z",
+            "selected_option_ids": [
+              "C"
+            ],
+            "clearable": true,
+            "status": "SLOT_REMOVED"
+          }
+        ],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "m",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [
+          {
+            "slot_id": "Z",
+            "kind": "SLOT_REMOVED",
+            "option_id": null
+          }
+        ],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_blocking_index_carries_secondary_diagnostic_option_id",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                },
+                {
+                  "id": "B",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A",
+                  "Z"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "HAS_BROKEN_SELECTIONS",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "CARDINALITY_VIOLATION"
+          ],
+          "missing_selection_count": 0,
+          "broken_selection_count": 1,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "CARDINALITY_VIOLATION",
+            "declared_option_ids": [
+              "A",
+              "Z"
+            ],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              },
+              {
+                "option_id": "B",
+                "display_text": "라벨 미지정 (ID: B)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [
+              {
+                "kind": "SELECTED_OPTION_REMOVED",
+                "option_id": "Z"
+              }
+            ],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "CARDINALITY_VIOLATION",
+            "option_id": null
+          },
+          {
+            "slot_id": "s",
+            "kind": "SELECTED_OPTION_REMOVED",
+            "option_id": "Z"
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_reconciliation_changes_present_only_with_delta",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": {
+          "source_application": "A0",
+          "source_version": 2,
+          "source_selections": {
+            "selections": [
+              {
+                "slot_id": "old",
+                "selected_option_ids": [
+                  "X"
+                ]
+              }
+            ]
+          },
+          "source_structure": {
+            "root_fields": [],
+            "slots": [
+              {
+                "id": "old",
+                "shared_fields": [],
+                "options": [
+                  {
+                    "id": "X",
+                    "fields": [],
+                    "label": null
+                  }
+                ],
+                "label": null
+              }
+            ]
+          },
+          "target_application": "A1"
+        },
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": {
+          "source_application_id": "A0",
+          "source_configuration_version": 2,
+          "target_application_id": "A1",
+          "added_slot_ids": [
+            "s"
+          ],
+          "removed_slot_ids": [
+            "old"
+          ],
+          "added_option_refs": [],
+          "removed_option_refs": [],
+          "removed_selected_option_refs": [
+            [
+              "old",
+              "X"
+            ]
+          ],
+          "preserved_selection_refs": [],
+          "slot_order_changed": false,
+          "option_order_changes": []
+        },
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_reconciliation_changes_surface_reorder_only_delta",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "t",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            },
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "B",
+                  "fields": [],
+                  "label": null
+                },
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "B"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": {
+          "source_application": "A0",
+          "source_version": 1,
+          "source_selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "source_structure": {
+            "root_fields": [],
+            "slots": [
+              {
+                "id": "s",
+                "shared_fields": [],
+                "options": [
+                  {
+                    "id": "A",
+                    "fields": [],
+                    "label": null
+                  },
+                  {
+                    "id": "B",
+                    "fields": [],
+                    "label": null
+                  }
+                ],
+                "label": null
+              },
+              {
+                "id": "t",
+                "shared_fields": [],
+                "options": [
+                  {
+                    "id": "A",
+                    "fields": [],
+                    "label": null
+                  }
+                ],
+                "label": null
+              }
+            ]
+          },
+          "target_application": "A1"
+        },
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 1,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "t",
+            "display_text": "라벨 미지정 (ID: t)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          },
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "B"
+            ],
+            "effective_option_ids": [
+              "B"
+            ],
+            "options": [
+              {
+                "option_id": "B",
+                "display_text": "라벨 미지정 (ID: B)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": []
+              },
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": {
+          "source_application_id": "A0",
+          "source_configuration_version": 1,
+          "target_application_id": "A1",
+          "added_slot_ids": [],
+          "removed_slot_ids": [],
+          "added_option_refs": [],
+          "removed_option_refs": [],
+          "removed_selected_option_refs": [],
+          "preserved_selection_refs": [
+            [
+              "s",
+              "A"
+            ]
+          ],
+          "slot_order_changed": true,
+          "option_order_changes": [
+            "s"
+          ]
+        },
+        "blocking_items": [
+          {
+            "slot_id": "t",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_dto_serializes_to_primitives",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [
+                "sh1"
+              ],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [
+                    "f1"
+                  ],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              },
+              {
+                "slot_id": "Z",
+                "selected_option_ids": [
+                  "C"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": {
+          "source_application": "A0",
+          "source_version": 1,
+          "source_selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "source_structure": {
+            "root_fields": [],
+            "slots": [
+              {
+                "id": "s",
+                "shared_fields": [
+                  "sh1"
+                ],
+                "options": [
+                  {
+                    "id": "A",
+                    "fields": [
+                      "f1"
+                    ],
+                    "label": null
+                  }
+                ],
+                "label": null
+              }
+            ]
+          },
+          "target_application": "A1"
+        },
+        "retained": null
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [],
+          "missing_selection_count": 0,
+          "broken_selection_count": 0,
+          "detached_selection_count": 1,
+          "slot_selections_complete": true
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "라벨 미지정 (ID: s)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "RESOLVED",
+            "declared_option_ids": [
+              "A"
+            ],
+            "effective_option_ids": [
+              "A"
+            ],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": true,
+                "effective": true,
+                "structurally_associated_field_ids": [
+                  "f1"
+                ]
+              }
+            ],
+            "shared_field_ids": [
+              "sh1"
+            ],
+            "diagnostics": [],
+            "settled": true
+          }
+        ],
+        "detached_selections": [
+          {
+            "slot_id": "Z",
+            "selected_option_ids": [
+              "C"
+            ],
+            "clearable": true,
+            "status": "SLOT_REMOVED"
+          }
+        ],
+        "reconciliation_changes": {
+          "source_application_id": "A0",
+          "source_configuration_version": 1,
+          "target_application_id": "A1",
+          "added_slot_ids": [],
+          "removed_slot_ids": [],
+          "added_option_refs": [],
+          "removed_option_refs": [],
+          "removed_selected_option_refs": [],
+          "preserved_selection_refs": [
+            [
+              "s",
+              "A"
+            ]
+          ],
+          "slot_order_changed": false,
+          "option_order_changes": []
+        },
+        "blocking_items": [],
+        "informational_changes": [
+          {
+            "slot_id": "Z",
+            "kind": "SLOT_REMOVED",
+            "option_id": null
+          }
+        ],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_retained_selections_separate_the_three_fates_and_name_what_survives",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s-keep",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "o-keep",
+                  "fields": [],
+                  "label": "추정가격 표시"
+                }
+              ],
+              "label": "공고 상세"
+            },
+            {
+              "id": "s-broken",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "o-other",
+                  "fields": [],
+                  "label": "다른 것"
+                }
+              ],
+              "label": "표지"
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s-keep",
+                "selected_option_ids": [
+                  "o-keep"
+                ]
+              },
+              {
+                "slot_id": "s-broken",
+                "selected_option_ids": [
+                  "o-gone"
+                ]
+              },
+              {
+                "slot_id": "s-gone",
+                "selected_option_ids": [
+                  "o-x"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        }
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 2,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s-keep",
+            "display_text": "공고 상세",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "o-keep",
+                "display_text": "추정가격 표시",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          },
+          {
+            "slot_id": "s-broken",
+            "display_text": "표지",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "o-other",
+                "display_text": "다른 것",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s-keep",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          },
+          {
+            "slot_id": "s-broken",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": [
+          {
+            "slot_id": "s-keep",
+            "slot_display_text": "공고 상세",
+            "option_ids": [
+              "o-keep"
+            ],
+            "fate": "RESOLVED"
+          },
+          {
+            "slot_id": "s-broken",
+            "slot_display_text": "표지",
+            "option_ids": [
+              "o-gone"
+            ],
+            "fate": "SELECTED_OPTION_REMOVED"
+          },
+          {
+            "slot_id": "s-gone",
+            "slot_display_text": null,
+            "option_ids": [
+              "o-x"
+            ],
+            "fate": "SLOT_REMOVED"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_retained_selections_skip_slots_the_user_never_answered",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s1",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            },
+            {
+              "id": "s2",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "B",
+                  "fields": [],
+                  "label": null
+                }
+              ],
+              "label": null
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s1",
+                "selected_option_ids": [
+                  "A"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        }
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 2,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s1",
+            "display_text": "라벨 미지정 (ID: s1)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "라벨 미지정 (ID: A)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          },
+          {
+            "slot_id": "s2",
+            "display_text": "라벨 미지정 (ID: s2)",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "B",
+                "display_text": "라벨 미지정 (ID: B)",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s1",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          },
+          {
+            "slot_id": "s2",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": [
+          {
+            "slot_id": "s1",
+            "slot_display_text": "라벨 미지정 (ID: s1)",
+            "option_ids": [
+              "A"
+            ],
+            "fate": "RESOLVED"
+          }
+        ]
+      }
+    },
+    {
+      "name": "test_retained_selections_stay_json_safe",
+      "input": {
+        "structure": {
+          "root_fields": [],
+          "slots": [
+            {
+              "id": "s",
+              "shared_fields": [],
+              "options": [
+                {
+                  "id": "A",
+                  "fields": [],
+                  "label": "가"
+                }
+              ],
+              "label": "ㄱ"
+            }
+          ]
+        },
+        "resolution": {
+          "selections": {
+            "selections": []
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        },
+        "configuration": null,
+        "source_delta": null,
+        "retained": {
+          "selections": {
+            "selections": [
+              {
+                "slot_id": "s",
+                "selected_option_ids": [
+                  "A"
+                ]
+              },
+              {
+                "slot_id": "z",
+                "selected_option_ids": [
+                  "Q"
+                ]
+              }
+            ]
+          },
+          "contract": {
+            "contract_id": "slot-selection/v1",
+            "selection_set_schema_version": "slot-selection-set/v1",
+            "canonical_encoding_version": "slot-selection-canonical/v1",
+            "default_selection_policy": "EXACTLY_ONE",
+            "supported_selection_policies": [
+              "EXACTLY_ONE"
+            ],
+            "created_semantics_version": "s4-selection-semantics/v1"
+          }
+        }
+      },
+      "expected": {
+        "view_status": "CURRENT",
+        "configuration_status": "NEEDS_SELECTION",
+        "context_error": null,
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": {
+          "blocking_kinds": [
+            "MISSING_REQUIRED_SELECTION"
+          ],
+          "missing_selection_count": 1,
+          "broken_selection_count": 0,
+          "detached_selection_count": 0,
+          "slot_selections_complete": false
+        },
+        "slots": [
+          {
+            "slot_id": "s",
+            "display_text": "ㄱ",
+            "selection_policy": "EXACTLY_ONE",
+            "status": "MISSING_REQUIRED_SELECTION",
+            "declared_option_ids": [],
+            "effective_option_ids": [],
+            "options": [
+              {
+                "option_id": "A",
+                "display_text": "가",
+                "selected": false,
+                "effective": false,
+                "structurally_associated_field_ids": []
+              }
+            ],
+            "shared_field_ids": [],
+            "diagnostics": [],
+            "settled": false
+          }
+        ],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [
+          {
+            "slot_id": "s",
+            "kind": "MISSING_REQUIRED_SELECTION",
+            "option_id": null
+          }
+        ],
+        "informational_changes": [],
+        "zone_actionable": true,
+        "savable_selection": false,
+        "retained_selections": [
+          {
+            "slot_id": "s",
+            "slot_display_text": "ㄱ",
+            "option_ids": [
+              "A"
+            ],
+            "fate": "RESOLVED"
+          },
+          {
+            "slot_id": "z",
+            "slot_display_text": null,
+            "option_ids": [
+              "Q"
+            ],
+            "fate": "SLOT_REMOVED"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "name": "test_context_error_has_no_normal_projection",
+      "input": {
+        "context_error_code": "STALE_TEMPLATE_APPLICATION",
+        "context_error_detail": "요청 Application A1 ..."
+      },
+      "expected": {
+        "view_status": "CONTEXT_ERROR",
+        "configuration_status": "NOT_APPLICABLE",
+        "context_error": "STALE_TEMPLATE_APPLICATION",
+        "context_error_detail": "요청 Application A1 ...",
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": null,
+        "slots": [],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": false,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_context_error_claims_neither_axis",
+      "input": {
+        "context_error_code": "TEMPLATE_INITIALIZATION_REQUIRED",
+        "context_error_detail": null
+      },
+      "expected": {
+        "view_status": "CONTEXT_ERROR",
+        "configuration_status": "NOT_APPLICABLE",
+        "context_error": "TEMPLATE_INITIALIZATION_REQUIRED",
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": null,
+        "slots": [],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": false,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_dto_serializes_to_primitives",
+      "input": {
+        "context_error_code": "BOOM",
+        "context_error_detail": null
+      },
+      "expected": {
+        "view_status": "CONTEXT_ERROR",
+        "configuration_status": "NOT_APPLICABLE",
+        "context_error": "BOOM",
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": null,
+        "slots": [],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": false,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    },
+    {
+      "name": "test_retained_selections_are_absent_when_there_is_no_previous_story",
+      "input": {
+        "context_error_code": "STALE_TEMPLATE_APPLICATION",
+        "context_error_detail": null
+      },
+      "expected": {
+        "view_status": "CONTEXT_ERROR",
+        "configuration_status": "NOT_APPLICABLE",
+        "context_error": "STALE_TEMPLATE_APPLICATION",
+        "context_error_detail": null,
+        "configuration_present": false,
+        "configuration_version": null,
+        "summary": null,
+        "slots": [],
+        "detached_selections": [],
+        "reconciliation_changes": null,
+        "blocking_items": [],
+        "informational_changes": [],
+        "zone_actionable": false,
+        "savable_selection": false,
+        "retained_selections": []
+      }
+    }
+  ],
+  "settled": [
+    {
+      "name": "test_choose_content_target_is_excluded_by_the_predicate_itself",
+      "input": {
+        "slot_status": "MISSING_REQUIRED_SELECTION",
+        "effective_option_ids": [
+          "A"
+        ],
+        "diagnostics": [],
+        "has_retained_note": false
+      },
+      "expected": false
+    },
+    {
+      "name": "test_choose_content_target_is_excluded_by_the_predicate_itself",
+      "input": {
+        "slot_status": "SELECTED_OPTION_REMOVED",
+        "effective_option_ids": [
+          "A"
+        ],
+        "diagnostics": [],
+        "has_retained_note": false
+      },
+      "expected": false
+    },
+    {
+      "name": "test_choose_content_target_is_excluded_by_the_predicate_itself",
+      "input": {
+        "slot_status": "NO_AVAILABLE_OPTIONS",
+        "effective_option_ids": [
+          "A"
+        ],
+        "diagnostics": [],
+        "has_retained_note": false
+      },
+      "expected": false
+    },
+    {
+      "name": "test_choose_content_target_is_excluded_by_the_predicate_itself",
+      "input": {
+        "slot_status": "CARDINALITY_VIOLATION",
+        "effective_option_ids": [
+          "A"
+        ],
+        "diagnostics": [],
+        "has_retained_note": false
+      },
+      "expected": false
+    },
+    {
+      "name": "test_retained_note_keeps_its_slot_open",
+      "input": {
+        "slot_status": "RESOLVED",
+        "effective_option_ids": [
+          "A"
+        ],
+        "diagnostics": [],
+        "has_retained_note": true
+      },
+      "expected": false
+    },
+    {
+      "name": "test_retained_note_keeps_its_slot_open",
+      "input": {
+        "slot_status": "RESOLVED",
+        "effective_option_ids": [
+          "A"
+        ],
+        "diagnostics": [],
+        "has_retained_note": false
+      },
+      "expected": true
+    },
+    {
+      "name": "test_settled_needs_a_value_to_show_in_the_collapsed_line",
+      "input": {
+        "slot_status": "RESOLVED",
+        "effective_option_ids": [],
+        "diagnostics": [],
+        "has_retained_note": false
+      },
+      "expected": false
+    }
+  ],
+  "zone": [
+    {
+      "name": "test_zone_actionable_stands_wherever_the_choose_content_instruction_points",
+      "input": {
+        "slots": [],
+        "configuration_status": "NEEDS_SELECTION"
+      },
+      "expected": true
+    },
+    {
+      "name": "test_zone_actionable_stands_wherever_the_choose_content_instruction_points",
+      "input": {
+        "slots": [],
+        "configuration_status": "HAS_BROKEN_SELECTIONS"
+      },
+      "expected": true
+    },
+    {
+      "name": "test_zone_actionable_stands_wherever_the_choose_content_instruction_points",
+      "input": {
+        "slots": [],
+        "configuration_status": "SLOT_SELECTIONS_COMPLETE"
+      },
+      "expected": false
+    },
+    {
+      "name": "test_zone_actionable_stands_wherever_the_choose_content_instruction_points",
+      "input": {
+        "slots": [],
+        "configuration_status": "NOT_APPLICABLE"
+      },
+      "expected": false
+    }
+  ]
+}

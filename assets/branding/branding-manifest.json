@@ -1,5 +1,5 @@
 {
-  "generator_sha256": "6e97ef8ecb174c5178ddcd8b4cb25527d3dbe392b442e4d648acabd1150911a0",
+  "generator_sha256": "7e5bfee1d9a56ce77147565fc05abee80fd8a26dcceb67bc52fe2bbfb59190e7",
   "inputs": {
     "assets/branding/document-narmi-mark-micro.svg": "0b90af126f8b61f1fff4c044d3a331834b5f1d0ccb6020a6ac06462e5dd3e4e5",
     "assets/branding/document-narmi-mark-micro-reversed.svg": "de42ff1742ee835ecf90dd6e997121a041e2ce3865ec499b7b38dc82ad747e18",
@@ -10,8 +10,8 @@
     "assets/branding/document-narmi-lockup.svg": "49995a2e8dd2762533352d69917b36eed8ead4c26c801bce310198ea4b35a694"
   },
   "files": {
-    "assets/branding/document-narmi-mark-full.png": "45ab11e4cd918bd9de3b64848ef4cc71cd013847eebb022f29f73db4d6061382",
-    "assets/branding/document-narmi-board.png": "5a8287fb228c5450c590bcfe123f3630a0865e09e9e32fe7bb9427738d8e76a8",
-    "packaging/hwpx-filler.ico": "1acbb9e969b64c4e3e62ea0d6c6eb6ff8b8e87a6422fcbc8574dcf862bab9083"
+    "assets/branding/document-narmi-mark-full.png": "eecc660798ce954d668baf55630e22c1247dc688b5bece6f6e9da4277c8aac15",
+    "assets/branding/document-narmi-board.png": "77c3752e2a9100cc18097f1cc4d6e74424e95c0ad1a95ab3fa230122b24333fd",
+    "packaging/hwpx-filler.ico": "4060126b8b609cdb09c1e91ee8e63e589b7e76cada21e60e9fad692c4b0dfb66"
   }
 }

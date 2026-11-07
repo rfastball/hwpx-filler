@@ -12,7 +12,7 @@
  *
  * `vite` 가 내주는 `parseAst`(oxc). `tests/js/n10_global_hygiene.test.js` 가 이미 쓰는 것과
  * 같은 파서라 새 devDependency 가 없다. 부재는 조용한 스킵이 아니라 **사유를 말하는 실패**다 —
- * Node·npm 은 이 저장소의 빌드 전제조건이고 CI contract 잡은 pytest 앞에서 프런트 툴체인을
+ * Node·npm 은 이 저장소의 빌드 전제조건이고 이 추출기를 부르는 CI 잡은 먼저 프런트 툴체인을
  * 설치한다.
  *
  * ## 이 파일이 저장소 안에 있어야 하는 이유
@@ -36,7 +36,7 @@ try {
 } catch (thrown) {
   throw new Error(
     "프런트 툴체인(`vite`)을 못 불렀습니다 — `npm ci` 가 먼저입니다. 이 추출기를 도는 게이트"
-    + "(pytest contract 집합)는 Node 를 전제하므로 부재는 스킵 사유가 아니라 실패입니다: "
+    + "(복잡도 예산·Node 계약 테스트)는 Node 를 전제하므로 부재는 스킵 사유가 아니라 실패입니다: "
     + `${thrown.message}`,
   );
 }

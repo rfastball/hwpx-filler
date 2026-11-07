@@ -127,15 +127,15 @@
 유용하지만 일상 작업에는 앱을 권장합니다. 파일 이름 규칙의 `{{필드}}`는 템플릿 필드 이름입니다.
 
 ```powershell
-uv run hwpxfiller --template T.hwpx --fields
-uv run hwpxfiller --template T.hwpx --data data.xlsx --out .\out --pattern "공고서-{{계약명}}" --ledger
-uv run hwpxfiller schema T.hwpx --out schema.json
-uv run hwpxfiller lint T.hwpx
+.\run-filler.ps1 -Cli --template T.hwpx --fields
+.\run-filler.ps1 -Cli --template T.hwpx --data data.xlsx --out .\out --pattern "공고서-{{계약명}}" --ledger
+.\run-filler.ps1 -Cli schema T.hwpx --out schema.json
+.\run-filler.ps1 -Cli lint T.hwpx
 ```
 
 앱과 달리 CLI는 빈 값이 있으면 생성을 막습니다. `--ack-empty`를 주면 미입력 표식을 넣고
 진행합니다. 같은 이름의 파일은 `--overwrite`를 줄 때만 덮어쓰며, 원장은 `--ledger`를 줄
-때만 남깁니다. 전체 명령은 `uv run hwpxfiller --help`에서 확인할 수 있습니다.
+때만 남깁니다. 전체 명령은 `.\run-filler.ps1 -Cli --help`에서 확인할 수 있습니다.
 
 ## 자매 도구: hwpxdiff
 
@@ -145,23 +145,22 @@ hwpxdiff는 문서를 *읽고 견주는* 도구입니다.
 
 ## 개발
 
-`.python-version`의 Python과 의존성은 [`uv`](https://docs.astral.sh/uv/)가 관리합니다. 프런트엔드는
-`.node-version`의 Node와 `package.json`에 고정된 npm을 사용합니다. 첫 웹 빌드는 HWPX 편집기
-rhwp의 원천과 도구를 준비하느라 네트워크가 필요합니다.
+앱·CLI와 검증 도구는 `rust-toolchain.toml`의 Rust를 사용합니다. React 프런트엔드는
+`.node-version`의 Node와 `package.json`에 고정된 npm을 사용합니다. 렌더 검사에는 설치된 Chrome이
+필요합니다. 첫 웹 빌드는 HWPX 편집기 rhwp의 원천과 도구를 준비하느라 네트워크가 필요합니다.
 
 ```powershell
-uv python install
-uv sync --locked --all-extras --group dev --group build
+npm ci
 
-.\run-filler.ps1        # 프런트 빌드 후 소스 앱 실행
+.\run-filler.ps1        # 봉인된 프런트 빌드 후 Rust/Tauri 소스 앱 실행
 .\run-filler.ps1 -Cli --help
 .\build-web.ps1         # 프런트만 빌드(101 실습 런처 전)
-.\test.ps1              # web build → Node 테스트 → Ruff → Pyright → pytest
+.\test.ps1              # web build → Node·문서 → Rust → Chrome 렌더 → 실 Win32 → WebView2 실창
 .\build.ps1             # GUI 포터블 빌드 + self-check
 .\package-installer.ps1 # Inno Setup 설치본
 ```
 
-제품 `hwpxfiller`는 형식 kernel `hwpxcore` 위에 서며 의존은 `hwpxfiller → hwpxcore`로만
+Rust 제품 `hwpx-filler`는 형식 kernel `hwpx-core` 위에 서며 의존은 `hwpx-desktop → hwpx-filler → hwpx-core`로만
 흐릅니다. kernel은 제품 로직이나 환경 효과 없이 HWPX bytes만 파싱·직렬화합니다.
 
 - [개발·빌드·배포 환경](CONTRIBUTING.md#development)

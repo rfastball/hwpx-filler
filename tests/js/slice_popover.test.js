@@ -1,10 +1,10 @@
 /* 「가공」 칩·팝오버(`slice_popover.ts`) — 판정은 하나도 여기 없다.
  *
- * 입력은 Python 투영 그대로다(`fixtures/slice_popover.json` — `tests/test_slice_popover_fixture.py`
- * 가 `slice_assist` 로 다시 지어 대조한다). 이 파일이 재는 것은 넷이다: ①방식 문장 조각을 Python
+ * 입력은 Rust의 `mapping_state`·`editor_slice` 테스트가 실제 투영과 대조하는
+ * `fixtures/slice_popover.json`이다. 이 파일이 재는 것은 넷이다: ①방식 문장 조각을 Rust
  * 순서대로 그리는가(글자·입력 칸·몇째 선택, 접근 이름) ②입력 글자를 명세로 모으는 규약 — 불완전은
- * 보내지 않고, 새 명세는 Python 이 준 빠짐 처리 기본값(원본 그대로)을 싣고, 지금 명세를 고치면
- * 그 빠짐 처리를 잇는다 ③미리보기·후보 꼬리표·빈 값 표식·빠짐 처리 단추가 Python 값 그대로 서는가
+ * 보내지 않고, 새 명세는 Rust가 준 빠짐 처리 기본값(원본 그대로)을 싣고, 지금 명세를 고치면
+ * 그 빠짐 처리를 잇는다 ③미리보기·후보 꼬리표·빈 값 표식·빠짐 처리 단추가 Rust 값 그대로 서는가
  * ④칩의 잠김·문장·접근 이름. */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -42,7 +42,7 @@ const PORT = {
 
 /* ---- ① 방식 목록 ---- */
 
-test("방식 목록 — 두 무리와 문장 조각을 Python 순서대로 그린다", () => {
+test("방식 목록 — 두 무리와 문장 조각을 Rust 순서대로 그린다", () => {
   assert.deepEqual(FIXTURE.methods.map((group) => group.label), ["일부만 쓰기", "글자 고치기"]);
   assert.deepEqual(METHODS.map((item) => item.mode),
     ["before", "after", "between", "split", "head", "tail", "chars", "replace", "remove"]);
@@ -60,7 +60,7 @@ test("방식 목록 — 두 무리와 문장 조각을 Python 순서대로 그�
   assert.equal(radios.length, 9);
 });
 
-test("몇째 선택지는 Python 이 낸다 — 저장된 흔치 않은 번째도 선다", () => {
+test("몇째 선택지는 Rust가 낸다 — 저장된 흔치 않은 번째도 선다", () => {
   const plain = view();
   assert.ok(plain.includes(">첫째<") && plain.includes(">마지막<"));
   assert.ok(!plain.includes("다섯째"));
@@ -88,7 +88,7 @@ test("명세 모으기 — 불완전은 null, 글자 칸의 공백 한 칸은 �
     { mode: "remove", find: "(VAT 포함)" });
 });
 
-test("빠짐 처리 — 새 명세는 Python 기본값(원본 그대로), 같은 방식을 고치면 지금 값을 잇는다", () => {
+test("빠짐 처리 — 새 명세는 Rust 기본값(원본 그대로), 같은 방식을 고치면 지금 값을 잇는다", () => {
   const before = method("before");
   const after = method("after");
   assert.equal(before.on_missing, "keep");
@@ -143,7 +143,7 @@ test("가공 없음 — 안내 한 문장, 예시 값은 흐린 원본, 빈 행�
   assert.match(markup, /data-act="slice-clear"[^>]*disabled=""/, "지울 가공이 없다");
 });
 
-test("가공 있음 — 남긴 자리·결과·요약·빠짐 처리 단추가 Python 값 그대로 선다", () => {
+test("가공 있음 — 남긴 자리·결과·요약·빠짐 처리 단추가 Rust 값 그대로 선다", () => {
   const spec = FIXTURE.preview_before.slice;
   assert.deepEqual(spec, { mode: "before", delimiter: "원", on_missing: "keep" });
   const markup = view({ spec, preview: FIXTURE.preview_before, selected: "before", inputs: seedInputs(spec) });
@@ -175,7 +175,7 @@ test("후보 꼬리표 — 맞는 방식 줄에 N/M행 맞음과 툴팁", () => 
   assert.match(markup, /<span class="slice-tag bad" title="맞는 행: 값 있는 4행 중 1행">1\/4행 맞음<\/span>/);
 });
 
-test("후보 없음 — Python 문장이 안내 자리를 대신한다", () => {
+test("후보 없음 — Rust 문장이 안내 자리를 대신한다", () => {
   assert.deepEqual(FIXTURE.propose_none.candidates, []);
   const markup = view({ message: FIXTURE.propose_none.message });
   assert.ok(markup.includes("고른 부분에 맞는 방식이 없습니다. 방식을 직접 고르세요."));
@@ -192,7 +192,7 @@ test("머리·바닥 — 필드 이름·데이터 열, 닫기·가공 지우기�
 
 /* ---- ④ 칩 ---- */
 
-test("칩 — 문장은 Python 값, 없으면 점선 칩, 잠긴 행은 disabled(웹 재판정 0)", () => {
+test("칩 — 문장은 Rust 값, 없으면 점선 칩, 잠긴 행은 disabled(웹 재판정 0)", () => {
   const chip = (row) => renderToStaticMarkup(createElement(SliceCell, {
     row, field: "공고번호", port: PORT, chipProps: { "data-act": "row-slice", "data-index": 0 },
   }));

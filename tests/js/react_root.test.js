@@ -4,7 +4,7 @@
    그 기계를 직접 잰다: createRoot 요청이 정확히 한 번인가, 커밋-키 가드가 무는가,
    unmount 정산이 정확히 한 번인가. 렌더 실물은 흉내 내지 않는다(가짜 React 금지 —
    기록자는 호출 사실만 기록한다). 실 WebView2 커밋의 증거는
-   `tests/test_web_selftest_gate.py`, 마커 판정은 이 파일의 runtime-marker 계약이 진다.
+   `scripts/verify_native_selftest.mjs`, 마커 판정은 이 파일의 runtime-marker 계약이 진다.
 
    `.ts` 모듈을 그대로 싣는 것 자체가 계약의 일부다: Node 24 의 type stripping 이 제품
    파일을 무변환으로 실어야 node 게이트와 Vite 빌드가 같은 파일을 본다(`.tsx` 는 이

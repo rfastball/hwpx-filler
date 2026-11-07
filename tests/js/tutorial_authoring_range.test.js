@@ -1,7 +1,7 @@
 /* Test delta brief
  * Unique risk: a range beat (#1136) asks for a text range the user cannot see, or the editor paints a range the
  * host did not resolve (another tab, a paused lesson, a stale projection).
- * Existing owner: tests/test_tutorial_walk.py proves the host's range and its tolerant completion check; this file
+ * Existing owner: crates/hwpx-desktop/tests/tutorial_walk.rs proves the host's range and its tolerant completion check; this file
  * proves the shell carries it unchanged and the template editor paints exactly it.
  * Selected layer: Node, pure functions and the authoring controller harness shape; no resource launches.
  */

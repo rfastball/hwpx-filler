@@ -1,0 +1,7 @@
+{
+  "boot_ms": 75000,
+  "surface_ms": 600000,
+  "hard_stop_margin_ms": 15000,
+  "cleanup_ms": 15000,
+  "parent_slack_ms": 30000
+}

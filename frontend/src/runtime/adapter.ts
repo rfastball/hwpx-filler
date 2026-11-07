@@ -56,7 +56,7 @@ function classify(value: unknown): HostResult {
          bridge.js 의 같은 자리(봉투 손상 throw)와 같은 엄격도, 형태만 typed 다. */
       return failure({
         kind: "rejection-envelope-malformed",
-        message: "Python dispatch 거절 봉투가 손상되었습니다.",
+        message: "Rust dispatch 거절 봉투가 손상되었습니다.",
       });
     }
     const body = rejection as { name?: unknown; message: string };

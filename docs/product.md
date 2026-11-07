@@ -24,7 +24,7 @@ web
 
 ### Operating Context
 
-Windows pywebview/WebView2 안에서 실행하는 웹 UI다. 브라우저 SaaS나 모바일 제품이 아니다.
+Windows Tauri 2/WebView2 안에서 실행하는 React UI다. 브라우저 SaaS나 모바일 제품이 아니다.
 문서 만들기와 문서 작업에서 템플릿·연결·파일명을 구성한다. 구체적인 개체와 저장·실행
 규칙은 [작업 흐름](workflow.md)이 소유한다. 자동화용 CLI(`hwpxfiller`)는 같은 생성 경로를
 창 없이 실행하며 `--ledger` 원장은 화면과 같은 `managed-delivery/v1` 형식이다.
@@ -67,7 +67,7 @@ WebView2 Runtime이다. 생성에는 한글 프로그램이 필요 없지만 결
 | 온보딩 튜토리얼 | 상단 진입·첫 사용자 초대, 같은 앱 안의 집중 연습 과정 | 원본 4개만 GUI에 동봉. 연습 환경·실제 조작으로 진행하고 종료 시 기존 작업으로 복귀. 안내·파일·학습 기록 초기화는 분리 |
 | 나라장터 API | 웹 UI 비노출 | 어댑터·CLI 접합부 보존. 운영 환경·인증·응답 계약과 수요 확인 |
 
-[packaging/verify_specs.py](../packaging/verify_specs.py)는 [튜토리얼 원본](../examples/tutorial)의
+[packaging/assemble_native.ps1](../packaging/assemble_native.ps1)는 [튜토리얼 원본](../examples/tutorial)의
 정확한 동봉 범위를 검사한다. 과거 [온보딩 예제](../examples/onboarding)는 비동봉 유지 자산이며,
 [별도 실습](../examples/quickstart-101/README.md)과 배포 튜토리얼도 다르다. 기존 데이터 풀의
 나라장터 항목은 숨기지 않고 미지원 사유를 알린다.
@@ -84,9 +84,10 @@ API 테스트는 키나 실 서비스 대신 fixture를 사용한다.
 템플릿 저작 작업대는 HWPX·TXT만 열며 HWP 가져오기와 macOS 지원은 제공하지 않는다.
 
 HWPX 입력은 엔트리 payload를 읽기 전에 ZIP central directory 선언값으로 자원 한도를 잰다
-([`HwpxPackageLimits`](../src/hwpxcore/package.py)). 파일 1 GiB, ZIP 엔트리 4,096개,
+([`PackageLimits`](../crates/hwpx-core/src/package/budget.rs)). 파일 1 GiB, ZIP 엔트리 4,096개,
 엔트리당 비압축 256 MiB, 비압축 합계 1 GiB, 비압축 1 MiB를 넘는 엔트리의 압축률 500:1이 상한이다.
 넘으면 `HWPX 자원 한도 초과:` 뒤에 관측값과 한도를 붙여 열기를 거절하며 일부만 읽어 쓰지 않는다.
 선언보다 짧은 엔트리, 암호화·패치 데이터 플래그, STORED·DEFLATED 밖의 압축 방식도 거절한다.
-테스트 corpus와 예제의 실측은 모든 한도의 1% 미만이다. Excel·CSV 입력에는 아직 규모 한도가 없다.
+테스트 corpus와 예제는 엔트리 수·비압축 합계 한도의 1% 이하, 압축률 한도의 20% 이하임을 검사한다.
+Excel·CSV 입력에는 아직 규모 한도가 없다.
 

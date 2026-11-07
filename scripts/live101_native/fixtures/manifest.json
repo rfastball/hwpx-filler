@@ -1,0 +1,17 @@
+{
+  "base": {
+    "path": "examples/quickstart-101/templates/발주요청서.hwpx",
+    "size": 13583,
+    "sha256": "cf5181ba864ff8f9deb625701cc7fa87e2896c1904fac15a3bc260cba01570ec"
+  },
+  "initial": {
+    "path": "initial.hwpx",
+    "size": 14078,
+    "sha256": "8672c231c68551c9d024e12b0cb31ccb54b0f79a8d1181efa0c0eadcd342adcc"
+  },
+  "successor": {
+    "path": "successor.hwpx",
+    "size": 13951,
+    "sha256": "d1868fc91968556926cd84cd6cada790f161ab2357dd1128004bd50441e7bb28"
+  }
+}

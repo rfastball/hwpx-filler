@@ -3,16 +3,16 @@
   canonical frontend 산출물을 만들거나(Build), 이미 있는 산출물의 봉인을 검증한다(VerifyExisting).
 
 .DESCRIPTION
-  제품 Python 코드는 웹 빌드를 수행하지 않는다. 소스 실행·테스트·패키징 러너가 이 파일을
+  제품 런타임은 웹 빌드를 수행하지 않는다. 소스 실행·테스트·패키징 러너가 이 파일을
   먼저 호출해 `frontend/ -> build/web/` 전이를 명시적으로 완주한다.
 
   모드는 **이름 있는 계약**이다(N-11B). 종전의 `-SkipInstall` 은 "설치만 건너뛴다"는 불리언이라
   호출자가 무엇을 얻는지 이름으로 말하지 못했고, 실제 호출자는 0명이었다.
 
   - `Build`          — Node/npm/Vite 핀을 확인하고 `npm ci` → `vite build` → seal → verify.
-  - `VerifyExisting` — 빌드 도구를 하나도 부르지 않고 이미 있는 `build/web/` 의 봉인만
+  - `VerifyExisting` — Node/npm/Vite를 부르지 않고 이미 있는 `build/web/` 의 봉인만
     검증한다. **Node/npm 이 없어도 된다**: 봉인 검증은 트리와 현재 checkout 을 대조할 뿐
-    빌드 도구를 탐색하지 않는다. CI 소비자 job 이 이 모드로 돈다.
+    Node/npm/Vite를 탐색하지 않는다. CI 소비자 job 이 이 모드로 돈다.
 
 .PARAMETER IdentityOut
   검증된 산출물의 정체성(artifact_id·tree_sha256·source commit)을 JSON 으로 쓴다.
@@ -113,14 +113,13 @@ else {
     # 통과하는 것이 "소비자는 다시 만들지 않는다"의 실물 증거다.
     Push-Location $root
     try {
-        & uv run --no-sync python (Join-Path $root 'scripts\seal_web_artifact.py') `
-            --verify @verifyArgs
+        & (Join-Path $root 'scripts\run_web_artifact.ps1') -Verify @verifyArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     finally {
         Pop-Location
     }
-    $summary = 'web seal verified — 기존 build/web 재사용(빌드 도구 미호출)'
+    $summary = 'web seal verified — 기존 build/web 재사용(Node/npm/Vite 미호출)'
 }
 
 $trackedBuildFiles = @(git -C $root ls-files -- 'build/web')

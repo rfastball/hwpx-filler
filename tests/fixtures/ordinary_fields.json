@@ -1,0 +1,200 @@
+{
+  "grammar": [
+    {
+      "name": "top_level_paragraph",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"CLICK_HERE\" name=\"입찰공고번호\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"><hp:parameters cnt=\"3\" name=\"\"><hp:integerParam name=\"Prop\">9</hp:integerParam><hp:stringParam name=\"Command\" xml:space=\"preserve\">Clickhere:set:53:Direction:wstring:10:{{입찰공고번호}} HelpState:wstring:0:  </hp:stringParam><hp:stringParam name=\"Direction\">{{입찰공고번호}}</hp:stringParam></hp:parameters></hp:fieldBegin></hp:ctrl></hp:run><hp:run><hp:t>{{입찰공고번호}}</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "입찰공고번호"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "header_body_paragraph",
+      "entry": "Contents/header0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"CLICK_HERE\" name=\"머리말\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"2\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "머리말"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "footer_body_paragraph",
+      "entry": "Contents/footer0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"3\" type=\"CLICK_HERE\" name=\"꼬리말\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"3\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "꼬리말"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "table_cell_sublist_paragraph",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"4\" type=\"CLICK_HERE\" name=\"표셀\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"4\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "표셀"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "table_caption_sublist_paragraph",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:tbl><hp:caption><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"34\" type=\"CLICK_HERE\" name=\"표캡션\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"34\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:caption><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "표캡션"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "multiple_runs_and_value_fragments",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"5\" type=\"CLICK_HERE\" name=\"파편\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>정보</hp:t></hp:run><hp:run><hp:t>시스템</hp:t><hp:t> 구축</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"5\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "파편"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "multiple_fields_in_one_paragraph",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"6\" type=\"CLICK_HERE\" name=\"첫째\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"6\" fieldid=\"627272811\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"7\" type=\"CLICK_HERE\" name=\"둘째\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"7\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "첫째",
+        "둘째"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "begin_end_in_same_run",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"8\" type=\"CLICK_HERE\" name=\"한런\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"8\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "한런"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "empty_field",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"9\" type=\"CLICK_HERE\" name=\"빈필드\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"9\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "빈필드"
+      ],
+      "unsupported_kind": null
+    },
+    {
+      "name": "paragraph_crossing",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"20\" type=\"CLICK_HERE\" name=\"문단횡단\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"20\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "문단횡단"
+      ],
+      "unsupported_kind": "paragraph-crossing"
+    },
+    {
+      "name": "container_crossing",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"21\" type=\"CLICK_HERE\" name=\"컨테이너횡단\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"21\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "컨테이너횡단"
+      ],
+      "unsupported_kind": "unsupported-container-crossing"
+    },
+    {
+      "name": "nested_fields",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"22\" type=\"CLICK_HERE\" name=\"바깥\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"23\" type=\"CLICK_HERE\" name=\"안쪽\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"23\" fieldid=\"627272811\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"22\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "바깥",
+        "안쪽"
+      ],
+      "unsupported_kind": "nested-field"
+    },
+    {
+      "name": "nested_fields_across_lanes",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"31\" type=\"CLICK_HERE\" name=\"바깥\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"32\" type=\"CLICK_HERE\" name=\"안쪽\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"32\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"31\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "바깥",
+        "안쪽"
+      ],
+      "unsupported_kind": "nested-field"
+    },
+    {
+      "name": "ambiguous_end",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"24\" type=\"CLICK_HERE\" name=\"첫째\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"24\" type=\"CLICK_HERE\" name=\"둘째\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"24\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "첫째",
+        "둘째"
+      ],
+      "unsupported_kind": "ambiguous-end"
+    },
+    {
+      "name": "foreign_namespace",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><x:ctrl><x:fieldBegin id=\"25\" type=\"CLICK_HERE\" name=\"외부\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></x:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"25\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "외부"
+      ],
+      "unsupported_kind": "non-native-field-control"
+    },
+    {
+      "name": "marker_outside_control",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:fieldBegin id=\"26\" type=\"CLICK_HERE\" name=\"제어밖\" fieldid=\"627272811\"/><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"26\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "제어밖"
+      ],
+      "unsupported_kind": "unsupported-control-shape"
+    },
+    {
+      "name": "mixed_pair_identity",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"27\" type=\"CLICK_HERE\" name=\"혼합ID\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "혼합ID"
+      ],
+      "unsupported_kind": "orphan-end"
+    },
+    {
+      "name": "unmatched_begin",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"30\" type=\"CLICK_HERE\" name=\"미종료\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "미종료"
+      ],
+      "unsupported_kind": "unmatched-begin"
+    },
+    {
+      "name": "bookmark_id_collision",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"28\" type=\"CLICK_HERE\" name=\"일반\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldBegin id=\"28\" type=\"BOOKMARK\" name=\"구조\"/></hp:ctrl></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"28\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "일반"
+      ],
+      "unsupported_kind": "ambiguous-end"
+    },
+    {
+      "name": "non_run_lane_gap",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"29\" type=\"CLICK_HERE\" name=\"런간격\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:linesegarray/><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"29\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hs:sec>",
+      "raw_names": [
+        "런간격"
+      ],
+      "unsupported_kind": "unsupported-traversal-lane"
+    },
+    {
+      "name": "detached_cell_shape",
+      "entry": "Contents/section0.xml",
+      "xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" xmlns:x=\"urn:unsupported-field\"><hp:tc><hp:subList><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"33\" type=\"CLICK_HERE\" name=\"가짜 셀\" editable=\"1\" dirty=\"1\" zorder=\"-1\" fieldid=\"627272811\" metaTag=\"\"/></hp:ctrl></hp:run><hp:run><hp:t>값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"33\" fieldid=\"627272811\"/></hp:ctrl></hp:run></hp:p></hp:subList></hp:tc></hs:sec>",
+      "raw_names": [
+        "가짜 셀"
+      ],
+      "unsupported_kind": "unsupported-traversal-lane"
+    }
+  ],
+  "normalized_ids": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"  {{ x{{계약명}} &quot;A&quot;&#x9;'B' }}  \"/></hp:ctrl></hp:run><hp:run><hp:t>구값1</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"x{{계약명}} &quot;A&quot; 'B'\"/></hp:ctrl></hp:run><hp:run><hp:t>구값2</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"{{ }}\"/></hp:ctrl></hp:run><hp:run><hp:t>무효</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"{{{{중첩}}}}\"/></hp:ctrl></hp:run><hp:run><hp:t>중첩구값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p></hs:sec>",
+  "bookmark_in_field": "\n    <hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\"\n            xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\">\n      <hp:p><hp:run>\n        <hp:ctrl><hp:fieldBegin id=\"9\" type=\"CLICK_HERE\" name=\"계약명\"/></hp:ctrl>\n        <hp:t>앞</hp:t>\n        <hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"구조\"/></hp:ctrl>\n        <hp:t>중간</hp:t>\n        <hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl>\n        <hp:t>뒤</hp:t>\n        <hp:ctrl><hp:fieldEnd beginIDRef=\"9\"/></hp:ctrl>\n      </hp:run></hp:p>\n    </hs:sec>\n    ",
+  "hyperlinks": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1737418110\" type=\"HYPERLINK\" name=\"\" editable=\"0\" dirty=\"1\" fieldid=\"627600491\"/></hp:ctrl></hp:run><hp:run><hp:t>https://www.law.go.kr</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1737418110\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"9\" type=\"HYPERLINK\" name=\"링크1\"/></hp:ctrl></hp:run><hp:run><hp:t>http://www.law.go.kr</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"9\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"계약명\"/></hp:ctrl></hp:run><hp:run><hp:t>기존값</hp:t></hp:run><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p></hs:sec>"
+}

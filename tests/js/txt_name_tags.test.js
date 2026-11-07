@@ -144,7 +144,7 @@ test("FB-03: problem underlines stay their own layer over a name tag (IDE-05 lay
 });
 
 test("FB-03: TXT name tags speak the HWPX editor's colours — semantic tokens equal the rhwp overlay palette", () => {
-  const tokens = JSON.parse(readFileSync(new URL("../../src/hwpxfiller/viewmodel/design_tokens.json", import.meta.url), "utf8"));
+  const tokens = JSON.parse(readFileSync(new URL("../../frontend/design-tokens.json", import.meta.url), "utf8"));
   const patch = readFileSync(new URL("../../vendor/rhwp/patches/authoring.patch", import.meta.url), "utf8");
   for (const kind of ["field", "slot", "option"]) {
     const rhwp = patch.match(new RegExp(`--rhwp-semantic-${kind}: (#[0-9a-f]{6});`, "i"));

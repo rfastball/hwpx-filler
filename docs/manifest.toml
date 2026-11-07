@@ -1,4 +1,4 @@
-# 읽기·작성 목적지와 검토 입력. 구조 정책은 docs_contract.py가 검사한다.
+# 읽기·작성 목적지와 검토 입력. 구조 정책은 docs_contract.mjs가 검사한다.
 schema = "docs-contract/v2"
 
 [[document]]
@@ -49,7 +49,7 @@ kind = "generated"
 role = "runtime-reference"
 title = "런타임 참조"
 max_lines = 400
-tests = ["tests/repo_contract/test_documentation_contract.py", "tests/repo_contract/test_architecture.py"]
+tests = ["tests/js/documentation_contract.test.js", "tests/js/quality_workflow.test.js"]
 
 [[document]]
 path = "PRODUCT.md"
@@ -65,9 +65,9 @@ role = "user-entry"
 title = "사용자 소개·실행"
 max_lines = 230
 sources = ["docs/product.md"]
-tests = ["tests/test_job.py"]
-source_sha256 = "eb69979837ec8c464badf23de0b1f4e44df74e6bd046e3689748ae373a2a0fd2"
-body_sha256 = "dae16dde030f8292969d4ebb509b979592787d17b61c0598d21e3c5082aa7620"
+tests = ["crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/tests/cli.rs"]
+source_sha256 = "eb3e46b841ac67457a7c064965f0ce23869031e58ae8394269e458edd1f0af52"
+body_sha256 = "98c913dd7e1ab1116d3a1bb506eb4a79d08e415f0a1ce44eac35927da755a832"
 
 [[document]]
 path = "AGENTS.md"
@@ -76,9 +76,9 @@ role = "agents-entry"
 title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
-tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "da92c0ee900d9510beee804342274031b4ead2e4a2fe513fada99ac275f80073"
-body_sha256 = "637293d174af842bc01ba7e5ae56890a21f85a53acb7b3361edd1b1154d7523c"
+tests = ["tests/js/documentation_contract.test.js"]
+source_sha256 = "59dfda11c9483d854ba6f6fb05e2cffc1a8a38b83265a31ee8f3cc86709a8a95"
+body_sha256 = "4309d4dde9355230c525d1a558f0aab2e1c841d272aef715090c186087c4a6a5"
 
 [[document]]
 path = "docs/reference/ui-gallery.html"
@@ -86,18 +86,10 @@ kind = "current"
 role = "ui-gallery"
 title = "시각 부품 갤러리"
 max_lines = 600
-sources = ["frontend/css/*.css", "src/hwpxfiller/viewmodel/design_tokens.json"]
-tests = ["tests/repo_contract/test_contrast_wcag.py"]
-source_sha256 = "384804fc70d9be8e570a281db07a8f484f47468819cdc41e0eb29dab4688454a"
-body_sha256 = "0220fd674f2a5d6d0add5e6b4afeff8006c181a517aff07e7aa6f1cbba9b0fea"
-
-[[document]]
-path = "tests/contracts/module-rings.toml"
-kind = "machine"
-role = "module-rings"
-title = "모듈 의존 좌표"
-max_lines = 600
-tests = ["tests/repo_contract/test_module_rings.py"]
+sources = ["frontend/css/*.css", "frontend/design-tokens.json"]
+tests = ["tests/js/design_tokens.test.js"]
+source_sha256 = "73968fa94dd91cff684392c2b64c5cadbd704a603bafdb48edde853c9d46fe49"
+body_sha256 = "594634452f86289e63e4fb0a6ca4c111a4f8747b5d490fbdf00709c4183ce0c6"
 
 [[document]]
 path = "tests/contracts/package-coverage-floors.toml"
@@ -105,7 +97,7 @@ kind = "machine"
 role = "coverage-floors"
 title = "패키지 coverage 하한"
 max_lines = 100
-tests = ["tests/repo_contract/test_package_coverage_gate.py"]
+tests = ["crates/hwpx-desktop/examples/check_rust_coverage.rs"]
 
 [[document]]
 path = "tests/contracts/ui-copy-census.toml"
@@ -114,7 +106,7 @@ role = "ui-copy-census"
 title = "사용자 문장 원장"
 # 저작 작업대(#1015)가 domain/external 저작 문장을 census 범위에 넣어 원장이 커졌다.
 max_lines = 5200
-tests = ["tests/repo_contract/test_ui_copy_census.py"]
+tests = ["tests/js/ui_copy_census.test.js"]
 
 [[document]]
 path = "tests/architecture_contract.toml"
@@ -122,7 +114,7 @@ kind = "machine"
 role = "architecture-contract"
 title = "공개 경계·vendor 계약"
 max_lines = 500
-tests = ["tests/repo_contract/test_p3_forbidden_edges.py"]
+tests = ["tests/js/frontend_build_graph.test.js"]
 
 [[document]]
 path = "docs/evidence/hwpx-ranges.md"
@@ -143,138 +135,138 @@ why_separate = "메타데이터 carrier의 별도 wire format과 보존성 관�
 [[topic]]
 id = "product-purpose"
 document = "docs/product.md"
-sources = ["pyproject.toml", "src/hwpxfiller/cli.py"]
-tests = ["tests/test_job.py"]
-source_sha256 = "db749830bc628e2ada646cb546c6e60d3dd30a2977b9a333552d945d91417022"
-body_sha256 = "a3ae61c2fc1f49c6b6bb6ca48d847e3fb11597c375440a64a44b46b8c471cf7a"
+sources = ["crates/hwpx-desktop/Cargo.toml", "crates/hwpx-desktop/src/bin/documentnarmi.rs", "crates/hwpx-desktop/src/bin/hwpxfiller.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/*.rs", "crates/hwpx-desktop/src/headless_generation.rs"]
+tests = ["crates/hwpx-filler/src/job.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/src/bin/hwpxfiller.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/generate_run.rs", "crates/hwpx-desktop/tests/cli.rs"]
+source_sha256 = "943332a0ffe0a33525d5dc3f350ca2df06418e90a734f850f788e3f3c6253578"
+body_sha256 = "6f90a8ce9c579894f117da7939ae50a4cefd9815baa6865024f3ff5d39e2edd3"
 
 [[topic]]
 id = "product-scope"
 document = "docs/product.md"
-sources = ["packaging/verify_specs.py", "packaging/hwpx_filler_web.spec", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial_lessons.py", "src/hwpxfiller/webapp/screen_pool.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxcore/package.py", "src/hwpxfiller/external/hwpx_package_io.py", "frontend/src/react/*.ts", "frontend/index.html"]
-tests = ["tests/repo_contract/test_packaging_contract.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_package_budget.py"]
-source_sha256 = "d32e90b1cd7571950d1c42c50e2672366260c95e8bba0c7833f2e5034d34208f"
-body_sha256 = "14c9d2ed7adcb710c45f52d57bea44ca804b8e9e90852aaa02561571cd2988cd"
+sources = ["packaging/assemble_native.ps1", "crates/hwpx-desktop/src/packaged_selfcheck.rs", "crates/hwpx-desktop/src/onboarding_*.rs", "crates/hwpx-desktop/src/tutorial_lessons.rs", "crates/hwpx-desktop/src/tutorial_lessons.json", "crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/pool_controller/*.rs", "crates/hwpx-desktop/src/template_controller.rs", "crates/hwpx-desktop/src/template_groups.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-core/src/package.rs", "crates/hwpx-core/src/package/*.rs", "crates/hwpx-desktop/src/library_observation.rs", "frontend/src/react/*.ts", "frontend/index.html"]
+tests = ["tests/js/native_packaging_contract.test.js", "crates/hwpx-filler/examples/onboarding_fixture.rs", "crates/hwpx-desktop/src/onboarding_state.rs", "crates/hwpx-core/src/package.rs", "crates/hwpx-desktop/src/library_observation.rs"]
+source_sha256 = "7172a1dacbd7c6f71cfd7437b4eab95e6236456fecc9f6b53c7b5049e79a41f2"
+body_sha256 = "04c027a6b1faec01211df4db429e79186c8d85f8a5a74909f62f6aa258179d39"
 
 [[topic]]
 id = "architecture-boundaries"
 document = "docs/architecture.md"
-sources = ["tests/contracts/module-rings.toml", "tests/architecture_contract.toml", "src/hwpxfiller/application/*.py"]
-tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_module_rings.py"]
-source_sha256 = "120c9dd61d9901bfb3e19c0f30874e5b2805a5f6ec9b718aaeb651074989a8d9"
-body_sha256 = "def065da12bed16bc77d2f19bb1204686e73363dfbee599027e54520ed0ad455"
+sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
+tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
+source_sha256 = "d3aebbcb34cc49fdb392a92d938627dfb037589eb1c3a50d65e8de2c713a48d7"
+body_sha256 = "0faeb20d797961ad20e0dce979ee7f6425ba669ac368513e5becc332df63cf9a"
 
 [[topic]]
 id = "architecture-runtime"
 document = "docs/architecture.md"
-sources = ["src/hwpxfiller/webapp/app.py", "src/hwpxfiller/webapp/workspace_*.py", "src/hwpxfiller/webapp/action_registry.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/host/native/dialogs.py", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
-tests = ["tests/repo_contract/test_architecture.py", "tests/repo_contract/test_bridge_contract.py", "tests/repo_contract/test_p3_forbidden_edges.py", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_native_positive.py"]
-source_sha256 = "67a1ec0b0e0c6a233357e36ea92efa52f65e990c10d32188a05c2631d71eef62"
-body_sha256 = "f2c2b9aaed88e78b656aac38de3b1a1e2cf090191d3e8c7bd591a2c351d34637"
+sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
+tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
+source_sha256 = "fce21f578a708428acf866c5b3a68775e49d630f83dcd0ae64f9e1366d5ce48e"
+body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
 [[topic]]
 id = "architecture-authority"
 document = "docs/architecture.md"
-sources = ["src/hwpxfiller/external/*template_inspection.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*token*.py", "src/hwpxfiller/application/execution_composition.py", "src/hwpxfiller/application/execution_contract_set.py", "src/hwpxfiller/application/seal_execution_plan.py", "src/hwpxfiller/application/record_validation.py", "src/hwpxfiller/application/generation_delivery.py", "src/hwpxfiller/webapp/action_registry.py"]
-tests = ["tests/repo_contract/test_control_surface_reduction.py", "tests/test_control_plane_evidence.py", "tests/test_slot_configuration_product.py", "tests/test_execution_composition.py", "tests/test_execution_contract_set.py"]
-source_sha256 = "e2929ab50118c712d7470e9480c2e6f2fc7502668d101d37dae07e609e1aa34f"
+sources = ["crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/slot_configuration_*.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-desktop/src/slot_token.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-desktop/src/action_registry.json"]
+tests = ["crates/hwpx-artifact/tests/architecture.rs", "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-filler/src/canonical_execution_encoding.rs", "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-filler/src/execution_composition.rs", "crates/hwpx-filler/src/execution_contract_set.rs"]
+source_sha256 = "4d7bf471b6e0d43fb1e1ecddcf63a0e55bfa358c8836613457b4f3181e402ef8"
 body_sha256 = "15274c7d47244e6e0538b3f66c15f6df2fa241c3a003b2208094f82c94449056"
 
 [[topic]]
 id = "workflow-definition"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/screen_editor.py", "src/hwpxfiller/webapp/editor*.py", "frontend/src/screens/editor*.ts", "src/hwpxfiller/viewmodel/*editor*.py", "src/hwpxfiller/viewmodel/edit_session.py", "src/hwpxfiller/domain/job.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/application/*field_binding*.py", "src/hwpxfiller/external/job_store.py", "src/hwpxfiller/external/job_binding_projection.py", "src/hwpxfiller/external/seal_execution_plan_service.py", "src/hwpxfiller/external/seal_execution_capture_runner.py", "src/hwpxfiller/domain/format_engine.py", "src/hwpxfiller/domain/field_induction/transforms.py", "src/hwpxfiller/domain/data_contract*.py", "src/hwpxfiller/viewmodel/contract_confirm.py"]
-tests = ["tests/test_webapp_editor.py", "tests/test_job_editor_state.py", "tests/test_application_jobs.py", "tests/test_seal_execution_plan_service.py", "tests/test_webapp_binding_confirm_journey.py", "tests/test_format_engine.py", "tests/test_value_format_matrix.py", "tests/test_data_contract.py", "tests/test_editor_data_contract.py", "tests/js/editor_contract_reason.test.js"]
-source_sha256 = "39f98d7685233d409081a24a6315ec9a9c24f86340918d653cbc985bde123a72"
+sources = ["crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/editor_*.rs", "crates/hwpx-desktop/src/editor_controller/*.rs", "frontend/src/screens/editor*.ts", "crates/hwpx-filler/src/editor_*.rs", "crates/hwpx-filler/src/mapping_state.rs", "crates/hwpx-filler/src/job.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-filler/src/field_binding*.rs", "crates/hwpx-filler/src/field_binding/*.rs", "crates/hwpx-filler/src/job_binding_projection.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-filler/src/execution_capture.rs", "crates/hwpx-filler/src/format_engine.rs", "crates/hwpx-filler/src/field_induction.rs", "crates/hwpx-filler/src/data_contract*.rs"]
+tests = ["crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-filler/src/editor_save_policy.rs","crates/hwpx-desktop/src/job_registry.rs","crates/hwpx-desktop/src/job_management.rs","crates/hwpx-desktop/src/seal_execution_service.rs","crates/hwpx-filler/src/format_engine.rs","crates/hwpx-desktop/src/editor_controller.rs","crates/hwpx-filler/src/mapping_state.rs","crates/hwpx-desktop/src/workbench_controller.rs","crates/hwpx-desktop/src/bin/hwpxfiller.rs","crates/hwpx-filler/src/data_contract.rs","tests/js/editor_contract_reason.test.js"]
+source_sha256 = "d1e291831b695d0e5425bd4686b489ed859c82280ac8de7d561dd401087c91c2"
 body_sha256 = "6b4f28aa40e3067bd9f5be2f544e2ba4310c2990859bb17533dc81c6ad1c0267"
 
 [[topic]]
 id = "workflow-template"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/external/template_change.py", "src/hwpxfiller/external/applied_template_asset.py", "src/hwpxfiller/webapp/slot_configuration_product.py", "src/hwpxfiller/application/*configuration*.py", "src/hwpxfiller/application/*template*.py", "src/hwpxfiller/application/preset_command.py", "src/hwpxfiller/webapp/screen_authoring.py", "src/hwpxfiller/domain/template_authoring*.py", "src/hwpxfiller/external/*authoring*.py", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
-tests = ["tests/test_work_slot_configuration.py", "tests/test_webapp_job_preset.py", "tests/test_webapp_job_binding_review.py", "tests/test_template_authoring.py", "tests/test_webapp_authoring.py", "tests/js/authoring.test.js", "tests/js/txt_name_tags.test.js", "tests/test_authoring.py", "tests/test_webapp_template_change.py"]
-source_sha256 = "1f0f39ff145234aa19dfee32bfaf7007131cd67b47c9635b9aa1838e9fa6195b"
-body_sha256 = "cba066448aa8422a2395d1eb2c73b1c3fe637752b1b112603a27238f36f6631f"
+sources = ["crates/hwpx-desktop/src/template_change_coordinator.rs", "crates/hwpx-desktop/src/applied_template_asset.rs", "crates/hwpx-desktop/src/slot_configuration_*.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-filler/src/*configuration*.rs", "crates/hwpx-filler/src/*template*.rs", "crates/hwpx-desktop/src/preset_registry.rs", "crates/hwpx-filler/src/preset*.rs", "crates/hwpx-desktop/src/authoring_*.rs", "crates/hwpx-filler/src/*authoring*.rs", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
+tests = ["crates/hwpx-filler/src/work_slot_configuration.rs", "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/job_hwpx_panel.rs", "crates/hwpx-desktop/src/current_execution_preparation.rs", "crates/hwpx-filler/src/txt_authoring.rs", "crates/hwpx-desktop/src/authoring_controller.rs", "tests/js/authoring.test.js", "tests/js/txt_name_tags.test.js", "crates/hwpx-filler/src/authoring.rs", "crates/hwpx-filler/src/rhwp_preflight.rs", "crates/hwpx-desktop/src/template_change_coordinator.rs"]
+source_sha256 = "80a66a412efa6b4f643ed80a4c0e8250e2bb6c32298b9ea10eede2e3c41db637"
+body_sha256 = "fe2bc41c19c53e324b1371f389a4cfe9032e4f78a41086b2540083feca37e30c"
 
 [[topic]]
 id = "workflow-data"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/active_work_session.py", "src/hwpxfiller/webapp/data_zone.py", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/job_presentation.py", "src/hwpxfiller/application/jobs.py", "src/hwpxfiller/viewmodel/selection_state.py", "src/hwpxfiller/viewmodel/filter_state.py", "src/hwpxfiller/webapp/registered_data.py", "src/hwpxfiller/host/pclm_registration.py", "src/hwpxfiller/data/pclm.py", "src/hwpxfiller/external/dataset_store.py", "frontend/src/screens/sheet_tabs.ts", "frontend/src/screens/registration_sheets.ts", "frontend/src/screens/registration_dialog.ts", "src/hwpxfiller/webapp/contract_binding.py", "src/hwpxfiller/external/contract_data_binding.py"]
-tests = ["tests/test_webapp_job.py", "tests/test_filter_state.py", "tests/test_data_pclm.py", "tests/test_webapp_pool.py", "tests/test_webapp_editor_sheet_tabs.py", "tests/js/editor_sheet_tabs.test.js", "tests/test_work_package_autobind.py", "tests/test_contract_binding.py"]
-source_sha256 = "68bae73e0778787f5e581dbf9b73fc296e1748659aede6c53093fce4bc47b5a9"
-body_sha256 = "c7dde3a408276e98ebc187850a3a1325685c2a8c4459eb4c470f9b7ac31df885"
+sources = ["crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/pool_controller/*.rs", "crates/hwpx-desktop/src/registered_contract_data.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-filler/src/data_pclm.rs", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-filler/src/active_work_state.rs", "crates/hwpx-filler/src/work_candidates.rs", "crates/hwpx-desktop/src/job_data_*.rs", "crates/hwpx-desktop/src/job_session_gate.rs", "crates/hwpx-desktop/src/generation_gate.rs", "crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/job_screen.rs", "crates/hwpx-desktop/src/job_actions.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-filler/src/job_presentation.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-filler/src/selection_state.rs", "crates/hwpx-filler/src/filter_state.rs", "crates/hwpx-filler/src/filter_primitives.rs", "crates/hwpx-desktop/src/dataset_registry.rs", "crates/hwpx-desktop/src/dataset_registry/*.rs", "crates/hwpx-filler/src/dataset_pool.rs", "frontend/src/screens/sheet_tabs.ts", "frontend/src/screens/registration_sheets.ts", "frontend/src/screens/registration_dialog.ts", "crates/hwpx-desktop/src/contract_data_binding.rs", "crates/hwpx-desktop/src/work_package_autobind.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/data_contract_check.rs"]
+tests = ["crates/hwpx-filler/src/filter_state.rs", "crates/hwpx-filler/src/data_pclm.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/editor_controller.rs", "tests/js/editor_sheet_tabs.test.js", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-desktop/src/contract_data_binding.rs", "crates/hwpx-desktop/src/work_package_autobind.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/data_contract_check.rs"]
+source_sha256 = "7e6bc476a90b404e44087ea25c49608be9a2290b448a882abd140f8ffeef58c6"
+body_sha256 = "ca53d8900c02ee88db02d7311bd0cace8fb08d5f41d8b6f001a95e8eb4b47abe"
 
 [[topic]]
 id = "workflow-generation"
 document = "docs/workflow.md"
-sources = ["frontend/src/screens/job*.ts", "src/hwpxfiller/webapp/screen_job.py", "src/hwpxfiller/webapp/screens.py", "src/hwpxfiller/webapp/*execution*.py", "src/hwpxfiller/webapp/*run*.py", "src/hwpxfiller/application/*execution*.py", "src/hwpxfiller/application/generation*.py", "src/hwpxfiller/application/create_request.py", "src/hwpxfiller/application/*seal*.py", "src/hwpxfiller/application/*prepare*.py", "src/hwpxfiller/external/managed_generation.py", "src/hwpxfiller/external/materialization_start_gate.py", "src/hwpxfiller/external/materialization_runner.py", "src/hwpxfiller/external/delivery_coordinator.py", "src/hwpxfiller/domain/output_name.py"]
-tests = ["tests/test_webapp_job.py", "tests/test_webapp_job_concurrency.py", "tests/test_work_slot_configuration.py", "tests/test_generation_delivery.py", "tests/test_materialization_runner.py", "tests/test_materialization_start_gate.py"]
-source_sha256 = "7b2e3bb019a9c7f360169e2d7d91f694a2fc7fe2ae7c921b6641b44b33344ada"
-body_sha256 = "abae58c23b7529b3ffd1006506495072db343c665ff25302cab5d8ceea2cd319"
+sources = ["crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/current_execution_preparation.rs", "frontend/src/screens/job*.ts", "crates/hwpx-desktop/src/job_screen.rs", "crates/hwpx-desktop/src/job_actions.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-desktop/src/job_panel.rs", "crates/hwpx-filler/src/*execution*.rs", "crates/hwpx-filler/src/generation*.rs", "crates/hwpx-filler/src/run_request.rs", "crates/hwpx-filler/src/run_delivery_intent.rs", "crates/hwpx-filler/src/*seal*.rs", "crates/hwpx-filler/src/prepare_*.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-filler/src/materialization_*.rs", "crates/hwpx-filler/src/output_name*.rs", "crates/hwpx-core/src/structural_boundary.rs", "crates/hwpx-core/src/bookmark_region.rs", "crates/hwpx-core/src/bookmark_region/*.rs"]
+tests = ["crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-desktop/src/job_run_result.rs","crates/hwpx-desktop/src/current_execution_preparation.rs","crates/hwpx-desktop/src/job_registry.rs","crates/hwpx-filler/src/work_slot_configuration.rs","crates/hwpx-filler/src/generation_delivery.rs","crates/hwpx-filler/src/materialization_runner.rs","crates/hwpx-desktop/src/managed_generation_service.rs"]
+source_sha256 = "3559ae07db1ddb65c9f1983a32f64c6f7aeda3209ab0692fc628e9ee0002fb88"
+body_sha256 = "3cbf1e371c919a70d620434c53b0ae0a6474f3c5b4282f97b5604e9267c6ca2e"
 
 [[topic]]
 id = "workflow-results"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/screen_workbench.py", "src/hwpxfiller/webapp/artifact_view_session.py", "src/hwpxfiller/webapp/job_execution_session.py", "src/hwpxfiller/webapp/txt_materialization.py", "frontend/src/screens/workbench*.ts", "src/hwpxfiller/application/document_creation_workbench.py", "src/hwpxfiller/application/fresh_execution_observation.py", "frontend/src/selftest/probes/job.js", "frontend/src/selftest/probes/job_artifact_snapshot.js"]
-tests = ["tests/test_webapp_job_artifact_view.py", "tests/test_txt_materialization.py", "tests/test_web_selftest_gate.py"]
-source_sha256 = "3c51a88b3b1b76108831eee6d41592b765721565e604367e4f3e205465bc06cf"
+sources = ["crates/hwpx-desktop/src/artifact_observation.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/workbench_controller.rs", "crates/hwpx-desktop/src/workbench_materialization.rs", "frontend/src/screens/job_artifact.ts", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "crates/hwpx-desktop/src/job_execution.rs", "frontend/src/screens/workbench*.ts", "crates/hwpx-filler/src/document_creation_workbench.rs", "crates/hwpx-filler/src/fresh_execution_observation.rs", "frontend/src/selftest/probes/job.js", "frontend/src/selftest/probes/job_artifact_snapshot.js"]
+tests = ["crates/hwpx-desktop/src/managed_generation_service.rs","crates/hwpx-desktop/src/workbench_controller.rs","crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-desktop/src/job_run_result.rs"]
+source_sha256 = "68fdc2b32256f88b8d19088fe8ee28798f1de56500026b756a55153f0fcb68d6"
 body_sha256 = "74338865f1b57ecb80c0d0210e73c4a585b368a7ceeefc0bc217b0f336a92e5c"
 
 [[topic]]
 id = "workflow-storage"
 document = "docs/workflow.md"
-sources = ["src/hwpxfiller/webapp/screen_library.py", "src/hwpxfiller/webapp/screen_template.py", "src/hwpxfiller/webapp/screen_tutorial.py", "src/hwpxfiller/webapp/onboarding*.py", "src/hwpxfiller/viewmodel/tutorial*.py", "src/hwpxfiller/external/tutorial_practice.py", "src/hwpxfiller/external/tutorial_workspace.py", "src/hwpxfiller/host/locations.py", "src/hwpxfiller/external/settings.py", "src/hwpxfiller/external/template_root.py", "src/hwpxfiller/domain/*folder*.py", "src/hwpxfiller/domain/template_root_default.py", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts", "src/hwpxfiller/domain/work_package.py", "src/hwpxfiller/domain/copy_name.py", "src/hwpxfiller/application/work_package_*.py", "src/hwpxfiller/external/work_package_*.py", "src/hwpxfiller/webapp/work_package_panel.py", "frontend/src/screens/work_package.ts"]
-tests = ["tests/test_template_root.py", "tests/test_output_folder_default.py", "tests/test_output_folder_zone.py", "tests/test_webapp_tutorial.py", "tests/test_tutorial_sandbox.py", "tests/test_onboarding_assets.py", "tests/test_tutorial_state.py", "tests/test_tutorial_walk.py", "tests/test_work_package.py", "tests/test_work_package_io.py", "tests/test_work_package_transfer.py", "tests/test_work_package_install.py", "tests/test_webapp_work_package.py", "tests/js/work_package.test.js"]
-source_sha256 = "f368e33e6344b94980218d37c45cb5544f8f9df19454683abbaa71a1d15ffc04"
-body_sha256 = "38372ea8ddd8571b7e579c35993aa147ca8b055cdbe1d46c8f01a4467d77e36f"
+sources = ["crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-desktop/src/template_groups.rs", "crates/hwpx-desktop/src/example_pack.rs", "crates/hwpx-desktop/src/settings_store.rs", "crates/hwpx-desktop/src/shell_settings.rs", "crates/hwpx-desktop/src/job_remembered.rs", "crates/hwpx-desktop/src/template_controller.rs", "crates/hwpx-desktop/src/onboarding_*.rs", "crates/hwpx-desktop/src/tutorial_*.rs", "crates/hwpx-desktop/src/tutorial_lessons.json", "crates/hwpx-desktop/src/legacy_practice.rs", "crates/hwpx-desktop/src/locations.rs", "crates/hwpx-desktop/src/template_root.rs", "crates/hwpx-filler/src/template_library_state.rs", "crates/hwpx-filler/src/output_folder_default.rs", "crates/hwpx-desktop/src/job_panel.rs", "frontend/src/screens/settings_sheet.ts", "frontend/src/screens/library.ts", "crates/hwpx-filler/src/work_package.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/copy_name.rs", "crates/hwpx-desktop/src/work_package_io.rs", "crates/hwpx-desktop/src/work_package_install.rs", "crates/hwpx-desktop/src/work_package_sources.rs", "frontend/src/screens/work_package.ts"]
+tests = ["crates/hwpx-desktop/src/template_groups.rs", "crates/hwpx-desktop/src/example_pack.rs", "crates/hwpx-desktop/src/settings_store.rs", "crates/hwpx-desktop/src/shell_settings.rs", "crates/hwpx-desktop/src/job_remembered.rs", "crates/hwpx-desktop/src/template_root.rs", "crates/hwpx-filler/src/template_library_state.rs", "crates/hwpx-desktop/src/library_observation.rs", "crates/hwpx-filler/src/output_folder_default.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-filler/examples/onboarding_fixture.rs", "crates/hwpx-desktop/src/onboarding_state.rs", "crates/hwpx-desktop/tests/tutorial_walk.rs", "crates/hwpx-filler/src/work_package.rs", "crates/hwpx-desktop/src/work_package_io.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-desktop/src/template_files.rs", "crates/hwpx-desktop/src/work_package_install.rs", "crates/hwpx-desktop/src/work_package_sources.rs", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-desktop/src/native_methods.rs", "tests/js/work_package.test.js"]
+source_sha256 = "e52713cb88136285f898a51da80938ae41901d8d16a24c48d96202ecb236014d"
+body_sha256 = "42b3c6828170aab0dd9010f5526c9fd28b66555f418e045b595591b206107751"
 
 [[topic]]
 id = "ui-terms"
 document = "docs/ui-style.md"
-sources = ["src/hwpxfiller/viewmodel/file_filters.py", "src/hwpxfiller/viewmodel/work_mode.py", "src/hwpxfiller/domain/identity_summary.py", "src/hwpxfiller/domain/job.py", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts", "tests/fixtures/identity_summary_nara.json"]
-tests = ["tests/repo_contract/test_ui_copy_census.py", "tests/test_identity_summary.py"]
-source_sha256 = "37787dccc0d56111e537fcd93f85e63ef3b95dfb194717b1e49a441ec27d6402"
-body_sha256 = "892b434a55938108ec8d363c2115014fbe346066f22c455be1a5e7cb3a724d69"
+sources = ["crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-filler/src/data_source.rs", "crates/hwpx-filler/src/home_state.rs", "crates/hwpx-filler/src/identity_summary.rs", "crates/hwpx-filler/src/job.rs", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts", "tests/fixtures/identity_summary_nara.json"]
+tests = ["tests/js/ui_copy_census.test.js", "crates/hwpx-filler/src/identity_summary.rs"]
+source_sha256 = "8ded3c4a906c82cf9e74e940b6dda1df6164b144c3898903c6ec760011b4f1e7"
+body_sha256 = "8708810ab933e7f6f64d9b419dcba937c0b2727305982db8e5533780fe33cd55"
 
 [[topic]]
 id = "ui-copy"
 document = "docs/ui-style.md"
-sources = ["scripts/ui_copy_census.py"]
-tests = ["tests/repo_contract/test_ui_copy_census.py"]
-source_sha256 = "4dbff348c88130a42a548bc9e642b8a9ecb3e74902b241be5f2733394c0377e5"
-body_sha256 = "fbe2e268093bcd3f2abd7763431f31c003e1817b74a26fad3488967559d630a1"
+sources = ["scripts/ui_copy_census.mjs", "crates/hwpx-artifact/examples/ui_copy_literals.rs", "tests/contracts/ui-copy-census.toml"]
+tests = ["tests/js/ui_copy_census.test.js"]
+source_sha256 = "42705737fd30225dfe174f9f934eec2b36287f4841661fef9971cb90efbfc7af"
+body_sha256 = "fdbc4edebdd5edbdb5bd52af907a46f4adb8527f0346b3c84271fde0b0111358"
 
 [[topic]]
 id = "ui-visual"
 document = "docs/ui-style.md"
-sources = ["src/hwpxfiller/viewmodel/design_tokens.json", "scripts/gen_design_tokens.py", "frontend/css/*.css", "frontend/src/screens/authoring_layout.ts", "frontend/src/screens/authoring_proposal_view.ts", "frontend/src/tutorial/panel.ts", "frontend/src/tutorial/spotlight.ts", "vendor/rhwp/patches/authoring.patch"]
-tests = ["tests/repo_contract/test_contrast_wcag.py", "tests/test_web_press_geometry.py", "tests/test_web_selftest_gate.py", "tests/js/authoring_layout.test.js", "tests/js/authoring_render.test.js", "tests/js/tutorial_panel.test.js"]
-source_sha256 = "7c4fa93345d610da08136051cb5a52cad4d0eb81f000b224afbce42f32ddbb27"
-body_sha256 = "5f244e9993763d552793453e08569cc1837ac50955cd472c73d6878b51f8bf02"
+sources = ["scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/verify_native_restart.ps1", "frontend/design-tokens.json", "scripts/gen_design_tokens.mjs", "frontend/css/*.css", "frontend/src/screens/authoring_layout.ts", "frontend/src/screens/authoring_proposal_view.ts", "frontend/src/tutorial/panel.ts", "frontend/src/tutorial/spotlight.ts", "vendor/rhwp/patches/authoring.patch"]
+tests = ["tests/js/design_tokens.test.js", "tests/browser/browser_resource.test.js", "tests/js/authoring_layout.test.js", "tests/js/authoring_render.test.js", "tests/js/tutorial_panel.test.js"]
+source_sha256 = "30c4b800965505e1498e2a82b992015128d8351218e8d807a53ac852f3f3b2c2"
+body_sha256 = "d5a771613b44926e8c58fea5187baff192a655fb47d3616851cb8d28c647ab90"
 
 [[topic]]
 id = "development"
 document = "CONTRIBUTING.md"
-sources = [".python-version", ".node-version", "pyproject.toml", "package.json", "test.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/reconcile_shipped_copies.py"]
-tests = ["tests/repo_contract/test_quality_workflow.py", "tests/repo_contract/test_packaging_contract.py"]
-source_sha256 = "edf6b5f09d3b0207db142056bf17fd02773c29761e0d9147c2c66e73901b7c8e"
-body_sha256 = "a60ff73d9e896ea57cfac1804d787463026c63450c5fc529b8a4f3170f01de00"
+sources = [".node-version", "package.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "test.ps1", "test-rust.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", "packaging/build_native.ps1", "packaging/assemble_native.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/run_web_artifact.ps1", "scripts/complexity_budget.mjs", "scripts/check_release_version.mjs", "scripts/selftest_http_proxy.mjs", "scripts/verify_cli_bundle.mjs", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/live_scope_native.mjs", "scripts/run_native_live_scope.ps1", "tests/contracts/live-scopes.toml", "scripts/rust_coverage.ps1", "crates/hwpx-desktop/examples/check_rust_coverage.rs", "crates/hwpx-artifact/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
+tests = ["tests/js/quality_workflow.test.js", "tests/js/native_packaging_contract.test.js", "tests/js/complexity_budget.test.js", "tests/js/live_scope_native.test.js"]
+source_sha256 = "42a486e32a271e09386b7f3ad08c94fc33c94e5a431d98ddc606fdc334ae84f9"
+body_sha256 = "8e14e1b0e65dccb9bbe825b696be544f49d32c5480c45a4b3c4a027d16f354a0"
 
 [[topic]]
 id = "changes"
 document = "CONTRIBUTING.md"
-sources = ["AGENTS.md", "conftest.py", "tests/conftest.py", "test.ps1"]
-tests = ["tests/repo_contract/test_architecture.py"]
-source_sha256 = "87d8f57c56e26c083e9e569b2bf4e727c974a1c3a1d123a6efbdceb6884dfdf2"
-body_sha256 = "3420f9f9f10f928652e2afc5b08f4278e4ed9a32212aa286b588eb5bef529774"
+sources = ["AGENTS.md", "test.ps1", "scripts/complexity_budget.mjs"]
+tests = ["tests/js/quality_workflow.test.js", "tests/js/complexity_budget.test.js"]
+source_sha256 = "44e2dc5c06acc9dd484ad117e0ed1e2b02fca1788ec7beabef54b06a264221e9"
+body_sha256 = "cef3314f7b0e3f44b26b025bfb52e41c00092247d6a7505ff7b7a27ad3344e27"
 
 [[topic]]
 id = "documentation"
 document = "CONTRIBUTING.md"
-sources = ["scripts/docs_contract.py", ".github/workflows/quality.yml"]
-tests = ["tests/repo_contract/test_documentation_contract.py"]
-source_sha256 = "aa0aa7861dd5143bc235d9dbb104bad378a278d066a4844bfc1f623a461fd10c"
-body_sha256 = "2583be20ae728c271f27072fd32f26055efa573b13c9e0b93e534991a5c062bf"
+sources = ["scripts/docs_contract*.mjs", "scripts/docs_runtime.mjs", "scripts/read_toml.mjs", "crates/hwpx-artifact/examples/read_toml.rs", ".github/workflows/quality.yml"]
+tests = ["tests/js/documentation_contract.test.js"]
+source_sha256 = "1f4f8df5fa7843974dcf72d612ab165a7c81f02a84cb4b0bad698bb70a7c2161"
+body_sha256 = "8d0d0c03147a674b2a6cafebc529214202a7eb7d048bebe0c98ce5d6a445f70f"
 
 [[support]]
 path = "examples/quickstart-101/README.md"

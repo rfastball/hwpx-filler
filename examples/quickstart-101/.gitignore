@@ -8,9 +8,9 @@ settings.json
 webview/
 webapp-alerts.log
 
-# 라이브 실행 하니스(scripts/capture_101_screenshots.py · scripts/live101/)의 임시 산출.
-# 실패한 실행은 증거를 **남기므로**(_live101_hang_stacks.txt) 무시 목록이 그것까지 덮어야
-# 한다 — 안 그러면 진단 파일이 커밋 후보로 떠서 다음 사람이 지우거나 실수로 커밋한다.
+# 퇴역한 라이브 실행 하니스의 임시 산출. 지금의 native 하니스(scripts/capture_101_screenshots.ps1)는
+# 증거를 지정한 폴더에 쓰지만, 예전 실행이 남긴 진단 파일(_live101_hang_stacks.txt 등)이
+# 커밋 후보로 뜨지 않도록 무시 목록은 남긴다.
 _capture_*
 _live101_*
 

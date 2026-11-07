@@ -1,128 +1,133 @@
 # 코드에서 생성한 런타임 참조
 
-> 생성물: `uv run python scripts/docs_contract.py --write`. 직접 편집하지 않는다.
+> 생성물: `node scripts/docs_contract.mjs --write`. 직접 편집하지 않는다.
 > 선언·등록 목록이다. 채널이나 메서드가 있다는 사실은 사용자 기능의 노출을 뜻하지 않는다.
 
 ## 환경 선언
 
 | 항목 | 선언 | 원천 |
 |---|---|---|
-| 제품 버전 | `0.15.0` | [pyproject.toml](../../pyproject.toml) |
-| Python 요구 범위 | `>=3.13,<3.14` | [pyproject.toml](../../pyproject.toml) |
-| Python pin | `3.13` | [.python-version](../../.python-version) |
+| 제품 버전 | `0.15.0` | [crates/hwpx-desktop/Cargo.toml](../../crates/hwpx-desktop/Cargo.toml) |
 | Node pin | `24.18.1` | [.node-version](../../.node-version) |
 | Node engine | `24.18.1` | [package.json](../../package.json) |
 | npm engine | `11.16.0` | [package.json](../../package.json) |
 | package manager | `npm@11.16.0` | [package.json](../../package.json) |
+| Rust pin | `1.93.1` | [rust-toolchain.toml](../../rust-toolchain.toml) |
+| Rust components | `clippy, rustfmt, llvm-tools` | [rust-toolchain.toml](../../rust-toolchain.toml) |
+| Cargo workspace | `crates/hwpx-core, crates/hwpx-filler, crates/hwpx-artifact, crates/hwpx-desktop` | [Cargo.toml](../../Cargo.toml) |
 
 ## 진입점
 
-| 종류 | 명령 | Python 대상 |
+| 종류 | 명령 | 대상 |
 |---|---|---|
-| scripts | `hwpxfiller` | `hwpxfiller.cli:main` |
-| gui-scripts | `hwpx-filler-web` | `hwpxfiller.webapp.app:main` |
+| Cargo binary | `hwpxfiller` | [src/bin/hwpxfiller.rs](../../crates/hwpx-desktop/src/bin/hwpxfiller.rs) |
+| Cargo binary | `documentnarmi` | [src/bin/documentnarmi.rs](../../crates/hwpx-desktop/src/bin/documentnarmi.rs) |
+
+Rust CLI:
+
+```powershell
+.\run-filler.ps1 -Cli --template T.hwpx --data data.csv --out out --ledger
+cargo run --locked -p hwpx-desktop --bin hwpxfiller --no-default-features -- --template T.hwpx --fields
+cargo run --locked -p hwpx-desktop --bin hwpxfiller --no-default-features -- schema T.hwpx --out schema.json
+cargo run --locked -p hwpx-desktop --bin hwpxfiller --no-default-features -- drift OLD.hwpx NEW.hwpx
+```
 
 ## 품질 CI
 
 원천: [quality.yml](../../.github/workflows/quality.yml). 실제 설정의 등록 목록이다.
 
-- Jobs: `sealed-web`, `static`, `pytest-contract`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `quality-gate`
-- `quality-gate.needs`: `sealed-web`, `static`, `pytest-contract`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`
+- Jobs: `sealed-web`, `static`, `rust-coverage`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `rust-kernel`, `quality-gate`
+- `quality-gate.needs`: `sealed-web`, `static`, `rust-coverage`, `windows-native`, `browser-render`, `live-webview2`, `distribution-webview2`, `rust-kernel`
 
-## WebFrontend 공개 메서드
+## Native host 공개 메서드
 
-원천: [app.py](../../src/hwpxfiller/webapp/app.py)의 클래스 AST.
-host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js](../../frontend/js/bridge.js)와
-독립 브리지 계약 테스트로 대조한다.
+원천: [host_contract.json](../../crates/hwpx-desktop/src/host_contract.json).
+직접 호출의 인자·선택 여부를 Rust 라우터도 같은 표에서 검증한다.
 
 | 메서드 | 인자 |
 |---|---|
-| `authoring_cases_file` | `session_id: str, action: str` |
-| `cancel_window_close` | `` |
-| `close_guard_state` | `` |
-| `confirm_window_close` | `` |
-| `copy_clipboard` | `screen: str, token: 'str &#124; None'=None` |
-| `copy_path` | `path: str` |
-| `dispatch` | `screen: str, action: str, payload: 'dict &#124; None'=None` |
-| `export_authoring_result` | `session_id: str, revision: int` |
-| `generate` | `screen: str, confirm_overwrite: bool=False, run_token: str=''` |
-| `import_template_file` | `screen: str` |
-| `initial` | `screen: str` |
-| `load_data_sheet` | `screen: str, path: str, sheet: str &#124; list[str], confirmation: dict &#124; None=None` |
-| `new_job_from_data` | `context: 'dict &#124; None'=None` |
-| `open_authoring_document` | `path: str='', as_template: bool=False` |
-| `open_job_in_editor` | `name: str, context: 'dict &#124; None'=None` |
-| `open_path` | `path: str` |
-| `pick_data_file` | `screen: str` |
-| `pick_output_folder` | `screen: str` |
+| `initial` | `screen` |
+| `dispatch` | `screen, action, payload = None` |
+| `pick_data_file` | `screen` |
+| `open_authoring_document` | `path = None, as_template = None` |
+| `save_authoring_document` | `session_id, revision` |
+| `authoring_cases_file` | `session_id, action` |
+| `export_authoring_result` | `session_id, revision` |
+| `load_data_sheet` | `screen, path, sheet, confirmation = None` |
+| `import_template_file` | `screen` |
+| `copy_clipboard` | `screen, token = None` |
+| `pick_output_folder` | `screen` |
+| `pick_templates_root` | `screen` |
+| `generate` | `screen, confirm_overwrite = None, run_token = None` |
+| `open_job_in_editor` | `name, context = None` |
+| `new_job_from_data` | `context = None` |
+| `reveal_corrupt_job` | `path` |
 | `pick_pool_data_file` | `` |
 | `pick_template_path` | `` |
-| `pick_templates_root` | `screen: str` |
-| `pick_work_package_path` | `action: str` |
-| `reveal_corrupt_job` | `path: str` |
-| `reveal_path` | `path: str` |
-| `save_artifact_as` | `ordinal: object` |
-| `save_authoring_document` | `session_id: str, revision: int` |
-| `set_authoring_width` | `panel: str, width: int` |
-| `set_font_scale` | `scale: str` |
-| `set_master_width` | `width: int` |
-| `set_theme` | `mode: str` |
+| `pick_work_package_path` | `action` |
+| `open_path` | `path` |
+| `reveal_path` | `path` |
+| `copy_path` | `path` |
+| `save_artifact_as` | `ordinal` |
+| `set_theme` | `mode` |
+| `set_font_scale` | `scale` |
+| `set_master_width` | `width` |
+| `set_authoring_width` | `panel, width` |
+| `close_guard_state` | `` |
+| `close_flush_required` | `` |
+| `confirm_window_close` | `` |
+| `cancel_window_close` | `` |
 
-## Selftest 전용 공개 메서드
+## 시험 전용 호스트 채널
 
-원천: [selftest_api.py](../../src/hwpxfiller/webapp/selftest_api.py)의 SelftestHostFacade.
-제품 WebFrontend의 메서드가 아니다. selftest 권한·수명 검사를 거치는 별도 경계다.
-
-| 메서드 | 인자 |
-|---|---|
-| `claim_state` | `` |
-| `selftest_claim` | `version: object=None, token: object=None` |
-| `selftest_host_op` | `op: object=None, payload: object=None, token: object=None` |
+[Tauri 호스트](../../crates/hwpx-desktop/src/tauri_host.rs)는 시험 능력이 있는 실행에서만
+`selftest_claim`(version)과 `selftest_host_op`(op, payload)를 받는다.
+이 채널은 공개 host 메서드 목록과 분리되며 일반 실행에서는 거절한다.
 
 ## Dispatch registry
 
-원천: [action_registry.py](../../src/hwpxfiller/webapp/action_registry.py).
-공유 dictionary expansion을 포함한다. 직접 host 호출의 payload 검증은 이 표 밖이다.
+원천: [action_registry.json](../../crates/hwpx-desktop/src/action_registry.json).
+직접 host 호출의 payload 검증은 이 표 밖이다.
 
 ### authoring
 
 | 액션 | 필수 키 | 선택 키 |
 |---|---|---|
 | `activate` | `session_id` | — |
-| `apply_job` | `session_id`, `revision`, `job_name`, `change_token` | — |
-| `case_remove` | `session_id`, `revision`, `name` | — |
-| `case_upsert` | `session_id`, `revision`, `name`, `values`, `selected` | — |
+| `apply_job` | `change_token`, `job_name`, `revision`, `session_id` | — |
+| `case_remove` | `name`, `revision`, `session_id` | — |
+| `case_upsert` | `name`, `revision`, `selected`, `session_id`, `values` | — |
 | `check_external` | `session_id` | — |
 | `close` | `session_id` | `force` |
-| `commands` | `session_id`, `revision`, `selection` | `context` |
+| `commands` | `revision`, `selection`, `session_id` | `context` |
 | `content` | `session_id` | — |
-| `copy` | `session_id`, `revision`, `selector` | — |
+| `copy` | `revision`, `selector`, `session_id` | — |
 | `external_content` | `session_id` | — |
-| `impact` | `session_id`, `revision` | — |
-| `locate` | `session_id`, `revision`, `selection` | `target` |
+| `impact` | `revision`, `session_id` | — |
+| `locate` | `revision`, `selection`, `session_id` | `target` |
 | `new` | `media` | `content` |
-| `prepare_apply` | `session_id`, `revision`, `job_name` | — |
-| `preview` | `session_id`, `revision`, `command` | — |
-| `preview_paste` | `session_id`, `revision`, `clipboard_token`, `destination`, `with_meaning` | — |
-| `propose_dismiss` | `session_id`, `revision`, `group_id` | — |
-| `propose_fields` | `session_id`, `revision` | `pool_key`, `sheet`, `row` |
-| `propose_make` | `session_id`, `revision`, `group_id` | `spot_id` |
-| `propose_make_all` | `session_id`, `revision` | — |
+| `prepare_apply` | `job_name`, `revision`, `session_id` | — |
+| `preview` | `command`, `revision`, `session_id` | — |
+| `preview_paste` | `clipboard_token`, `destination`, `revision`, `session_id`, `with_meaning` | — |
+| `propose_dismiss` | `group_id`, `revision`, `session_id` | — |
+| `propose_fields` | `revision`, `session_id` | `pool_key`, `row`, `sheet` |
+| `propose_make` | `group_id`, `revision`, `session_id` | `spot_id` |
+| `propose_make_all` | `revision`, `session_id` | — |
 | `propose_off` | `session_id` | — |
-| `propose_pick_column` | `session_id`, `revision`, `group_id`, `column` | — |
-| `reload` | `session_id`, `revision` | `force` |
-| `remember_view` | `session_id`, `revision`, `selection`, `mode` | — |
-| `rhwp_roundtrip_preflight` | `session_id`, `revision`, `content` | — |
-| `rhwp_unverified` | `session_id`, `revision`, `detail` | — |
-| `same_text` | `session_id`, `revision`, `selection` | — |
-| `save` | `session_id`, `revision` | — |
+| `propose_pick_column` | `column`, `group_id`, `revision`, `session_id` | — |
+| `reload` | `revision`, `session_id` | `force` |
+| `remember_view` | `mode`, `revision`, `selection`, `session_id` | — |
+| `rhwp_roundtrip_preflight` | `content`, `revision`, `session_id` | — |
+| `rhwp_unverified` | `detail`, `revision`, `session_id` | — |
+| `same_text` | `revision`, `selection`, `session_id` | — |
+| `save` | `revision`, `session_id` | — |
 | `save_cases` | `session_id` | — |
-| `search` | `session_id`, `revision`, `query`, `kind` | — |
+| `search` | `kind`, `query`, `revision`, `session_id` | — |
 | `syntax` | `session_id` | — |
-| `trial` | `session_id`, `revision` | — |
-| `trial_fill_names` | `session_id`, `revision` | — |
-| `trial_input` | `session_id`, `revision`, `values`, `selected` | — |
-| `update` | `session_id`, `revision`, `content` | — |
+| `trial` | `revision`, `session_id` | — |
+| `trial_fill_names` | `revision`, `session_id` | — |
+| `trial_input` | `revision`, `selected`, `session_id`, `values` | — |
+| `update` | `content`, `revision`, `session_id` | — |
 
 ### editor
 
@@ -137,13 +142,13 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `mapping_reset_stakes` | — | `cause` |
 | `new_session` | — | — |
 | `preview_slice` | `index` | `sample` |
-| `propose_slice` | `index`, `sample`, `start`, `end` | — |
+| `propose_slice` | `end`, `index`, `sample`, `start` | — |
 | `restore_confirmed` | — | — |
 | `resuggest_all` | — | — |
 | `revert_source` | `index` | — |
 | `save` | — | `confirm_overwrite`, `confirmed_overwrite_text` |
-| `set_confirmed` | `index`, `confirmed` | — |
-| `set_const` | `index`, `const` | — |
+| `set_confirmed` | `confirmed`, `index` | — |
+| `set_const` | `const`, `index` | — |
 | `set_display` | `index`, `type` | `fmt` |
 | `set_name` | `name` | — |
 | `set_pattern` | `pattern` | — |
@@ -166,18 +171,18 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `browse_tab` | — | `tab` |
 | `cancel_generation` | — | — |
 | `count_filter_state` | `state` | — |
-| `create_filter_preset` | `name`, `state` | `from_adhoc`, `epoch` |
+| `create_filter_preset` | `name`, `state` | `epoch`, `from_adhoc` |
 | `delete_filter_preset` | `name` | `epoch` |
 | `dismiss_data_notice` | — | — |
 | `filter_clear` | — | `epoch` |
 | `filter_clear_col` | `column` | `epoch` |
-| `filter_col_range` | `column` | `first`, `second`, `joiner`, `epoch` |
-| `filter_col_text` | `column` | `text`, `epoch` |
-| `filter_col_values` | `column` | `values`, `epoch` |
+| `filter_col_range` | `column` | `epoch`, `first`, `joiner`, `second` |
+| `filter_col_text` | `column` | `epoch`, `text` |
+| `filter_col_values` | `column` | `epoch`, `values` |
 | `filter_panel` | `column` | — |
 | `filter_prune` | `column` | `epoch` |
 | `filter_reapply` | — | `epoch` |
-| `filter_search` | — | `text`, `epoch` |
+| `filter_search` | — | `epoch`, `text` |
 | `guard_state` | — | — |
 | `hide_column` | `column` | `epoch` |
 | `list_filter_columns` | — | `query` |
@@ -192,7 +197,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `refresh` | — | — |
 | `refresh_observation` | — | — |
 | `refresh_slot_configuration` | — | `configuration_token` |
-| `relink_template` | `name` | `path`, `confirm` |
+| `relink_template` | `name` | `confirm`, `path` |
 | `remount_data` | — | `confirm` |
 | `rename_job` | `name` | `new` |
 | `resolve_execution` | — | — |
@@ -200,7 +205,7 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `select_failed` | — | — |
 | `select_job` | `name` | `confirm` |
 | `select_range` | `indices`, `value` | `epoch` |
-| `select_slot_option` | `configuration_token`, `slot_id`, `option_id`, `request_id` | — |
+| `select_slot_option` | `configuration_token`, `option_id`, `request_id`, `slot_id` | — |
 | `set_all` | — | `epoch` |
 | `set_none` | — | `epoch` |
 | `set_selected_only` | `value` | — |
@@ -221,11 +226,11 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `clone_job` | `name` | — |
 | `delete_corrupt` | `path` | `confirm` |
 | `delete_job` | `name` | `confirm` |
-| `export_work_package` | `path` | `names`, `confirm` |
-| `import_work_package` | `path`, `basis` | — |
+| `export_work_package` | `path` | `confirm`, `names` |
+| `import_work_package` | `basis`, `path` | — |
 | `inspect_work_package` | `path` | — |
 | `refresh` | — | `select` |
-| `relink_template` | `name` | `path`, `confirm` |
+| `relink_template` | `name` | `confirm`, `path` |
 | `select_work` | — | `name` |
 | `set_mode` | — | `mode` |
 | `set_query` | — | `text` |
@@ -239,14 +244,14 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 |---|---|---|
 | `activate` | `key` | — |
 | `archive` | `key` | — |
-| `delete` | `key` | `confirm`, `basis` |
+| `delete` | `key` | `basis`, `confirm` |
 | `inspect_sheets` | `path` | `kind` |
 | `refresh` | — | — |
-| `register_excel` | `name`, `path` | `sheet`, `sheets`, `note`, `confirm`, `basis` |
-| `register_pclm` | `name`, `db`, `view` | `views`, `note`, `confirm`, `basis`, `key` |
-| `relink` | `key`, `path` | `sheet`, `sheets`, `note`, `name`, `confirm`, `basis` |
+| `register_excel` | `name`, `path` | `basis`, `confirm`, `note`, `sheet`, `sheets` |
+| `register_pclm` | `db`, `name`, `view` | `basis`, `confirm`, `key`, `note`, `views` |
+| `relink` | `key`, `path` | `basis`, `confirm`, `name`, `note`, `sheet`, `sheets` |
 | `reorder_sheets` | `key`, `sheets` | — |
-| `resolve_duplicate` | `keep` | `confirm`, `basis` |
+| `resolve_duplicate` | `keep` | `basis`, `confirm` |
 | `review` | `key` | — |
 
 ### tpl
@@ -272,10 +277,10 @@ host 내부 소비용 메서드도 포함한다. 실제 웹 호출은 [bridge.js
 | `exit` | — | `transition_token` |
 | `later` | — | — |
 | `next` | — | — |
-| `observe_ui` | `scenario_id`, `checkpoint`, `anchor` | — |
-| `observe_ui_closed` | `scenario_id`, `checkpoint`, `anchor` | — |
+| `observe_ui` | `anchor`, `checkpoint`, `scenario_id` | — |
+| `observe_ui_closed` | `anchor`, `checkpoint`, `scenario_id` | — |
 | `pause` | — | — |
-| `preflight` | `screen`, `action` | `scenario_id`, `destination_screen` |
+| `preflight` | `action`, `screen` | `destination_screen`, `scenario_id` |
 | `reset_progress` | `confirm` | — |
 | `restart` | `scenario_id` | `transition_token` |
 | `resume` | — | `transition_token` |

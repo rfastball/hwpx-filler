@@ -1,6 +1,6 @@
-/* 복잡도 예산의 JS/TS 측정기 — `scripts/complexity_measure.py` 의 짝.
+/* 복잡도 예산의 JS/TS 측정기 — `scripts/complexity_budget.mjs` 의 입력.
  *
- * 범위·등급·원장 판정은 전부 Python 쪽이 소유하고, 여기는 **받은 파일을 재기만** 한다.
+ * 범위·등급·원장 판정은 complexity_budget.mjs가 소유하고, 여기는 받은 파일을 재기만 한다.
  * stdin 으로 `{"root": "<저장소>", "files": ["frontend/src/a.ts", ...]}` 를 받아 stdout 에
  * 단위 배열(JSON)을 낸다. 파싱 실패는 조용히 건너뛰지 않고 파일 이름과 함께 죽는다.
  *
@@ -11,14 +11,14 @@
  * 는 `lang` 옵션으로 읽는다(무옵션은 TS 문법에서 죽는다). 이 파일은 `node_modules` 를
  * 해소하려고 저장소 트리 안에 산다.
  *
- * ## 세는 규칙(Python 측과 같은 뜻)
+ * ## 세는 규칙(Rust 측 `crates/hwpx-artifact/examples/complexity_axes.rs` 와 같은 뜻)
  *
  * - 문장: ESTree 문장·선언 노드. `BlockStatement`·`EmptyStatement` 는 그릇이라 세지 않고,
  *   지시어(`"use strict"`)는 독스트링처럼 빼며, `for (const x …)` 머리의 선언과 선언을 감싼
  *   `export` 껍데기는 이중 계산하지 않는다.
  * - 분기점: `if`·삼항·`for`/`for…in`/`for…of`·`while`/`do`·`catch`·`case`(`default` 제외)·
  *   논리 연산자(`&&`·`||`·`??`, 이항 노드라 n개 피연산자 → n−1)·논리 대입(`||=` 등).
- *   옵셔널 체이닝(`?.`)은 세지 않는다 — Python 쪽에 대응이 없어 두 언어의 뜻을 맞춘다.
+ *   옵셔널 체이닝(`?.`)은 세지 않는다 — Rust 측도 `?` 연산자를 세지 않아 두 언어의 뜻을 맞춘다.
  * - 함수 단위: 이름이 서는 함수만 — 선언·이름 있는 함수식·변수/대입/객체 프로퍼티/클래스
  *   멤버의 값·`export default`. 화면은 JSX 문법 없이 `createElement(type, props, …)`(가져오기
  *   별칭·전달 래퍼 `h`)로 그리므로, props 객체 리터럴의 함수 값(`h("button", { onClick: () => … })`)

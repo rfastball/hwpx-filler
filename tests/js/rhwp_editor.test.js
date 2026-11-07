@@ -1,9 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mountRhwp, hostAppearance } from "../../frontend/src/editorview/rhwp_editor.ts";
 import { RhwpEditor } from "../../frontend/vendor/rhwp/editor/index.js";
 
 const b64 = (text) => Buffer.from(text, "utf8").toString("base64");
+
+test("Quickstart corpus copies are byte-identical to the shipped first-open templates", () => {
+  for (const name of ["구매요청서.hwpx", "발주요청서.hwpx"]) {
+    const corpus = readFileSync(new URL(`../corpus/quickstart/${name}`, import.meta.url));
+    const shipped = readFileSync(new URL(`../../examples/quickstart-101/templates/${name}`, import.meta.url));
+    assert.deepEqual(corpus, shipped, name);
+  }
+});
 
 /** Pinned-Studio stand-in that models the vendored embedded read-only gate: while read-only,
  *  user input is rejected (`input-handler.isOperationAllowedInEditMode`) but a host transaction

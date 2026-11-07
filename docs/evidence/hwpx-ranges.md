@@ -6,8 +6,9 @@
 
 > **문서 상태:** 형식 관측 증거
 > **권위 범위:** structural range 설계 전 format-kernel 관찰, corpus 증거와 미해결 질문
-> **후속 정본:** production 동작·지원 범위는 `src/hwpxcore/bookmark_region.py`, 회귀 oracle은
-> `tests/test_bookmark_regions.py`; native evidence와 Q1~Q7 판정은 이 문서
+> **후속 정본:** production 동작과 회귀 검사는 `crates/hwpx-core/src/bookmark_region.rs`와 하위 모듈,
+> 거절 입력은 `tests/fixtures/bookmark_region_refusals.json`이 소유한다. 아래 Python 경로와 검사 수치는
+> 원관측 당시의 기록이며 그 도구는 Python 구현 퇴역으로 제거되었다. native evidence와 Q1~Q7 판정은 이 문서가 소유한다.
 > **편집 정책:** 새 native evidence가 생길 때만 판정과 근거를 함께 갱신
 
 ## 1. 범위와 방법
@@ -32,7 +33,7 @@ S0 관찰 단계에서는 Slot 기능이나 structural range production API를 �
 
 - `HwpxPackage.from_bytes()`는 ZIP 엔트리를 메모리에 순서대로 읽고 OCF `mimetype` 규칙을 검증한다.
 - `HwpxPackage.to_bytes()`는 `mimetype`을 첫 STORED 엔트리로 쓰고 timestamp를 고정한다. 같은 열린
-  package의 반복 직렬화와 serialize/reparse 결과는 기존 `tests/test_package.py`가 고정한다.
+  package의 반복 직렬화와 serialize/reparse 결과는 [Rust 패키지 검사](../../crates/hwpx-core/src/package.rs)가 고정한다.
 - `section_xml_names()`는 `sectionN.xml`만 숫자순으로 반환한다.
 - XML은 `lxml.etree.XMLParser(remove_blank_text=False, resolve_entities=False)`로 읽는다.
 - 변형된 section은 `serialize_modified_section()`이 `linesegarray`를 제거한 뒤 UTF-8로 직렬화한다.

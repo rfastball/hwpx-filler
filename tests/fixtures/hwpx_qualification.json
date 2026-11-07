@@ -1,0 +1,572 @@
+{
+  "cases": [
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"duplicate\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"SLOT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"slot\", \"label\": \"지급 안내\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>S</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"shared_before\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"9\" type=\"BOOKMARK\" name=\"PLAIN\"/></hp:ctrl><hp:t>P</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"shared_plain\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>PE</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"9\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"OPTION_A\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"a\", \"label\": \"성과급\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>A</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"option_a\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>AE</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"shared_between\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"3\" type=\"BOOKMARK\" name=\"OPTION_B\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot_option\", \"id\": \"b\", \"label\": \"특별수당\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>B</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"option_b\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>BE</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"3\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"shared_after\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>SE</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"4\" type=\"BOOKMARK\" name=\"SLOT_2\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"slot_2\", \"label\": \"추가 안내\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>S2</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"second_shared\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>S2E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"4\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"duplicate\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "field-ownership-1",
+      "structure": {
+        "root_fields": [
+          "duplicate",
+          "duplicate"
+        ],
+        "slots": [
+          {
+            "id": "slot",
+            "shared_fields": [
+              "shared_before",
+              "shared_plain",
+              "shared_between",
+              "shared_after"
+            ],
+            "options": [
+              {
+                "id": "a",
+                "fields": [
+                  "option_a"
+                ],
+                "label": "성과급"
+              },
+              {
+                "id": "b",
+                "fields": [
+                  "option_b"
+                ],
+                "label": "특별수당"
+              }
+            ],
+            "label": "지급 안내"
+          },
+          {
+            "id": "slot_2",
+            "shared_fields": [
+              "second_shared"
+            ],
+            "options": [],
+            "label": "추가 안내"
+          }
+        ]
+      },
+      "diagnostics": [],
+      "execution_structure": {
+        "projection_schema_version": "hwpx-structure-projection-v4",
+        "product_structure": {
+          "root_fields": [
+            "duplicate",
+            "duplicate"
+          ],
+          "slots": [
+            {
+              "id": "slot",
+              "shared_fields": [
+                "shared_before",
+                "shared_plain",
+                "shared_between",
+                "shared_after"
+              ],
+              "options": [
+                {
+                  "id": "a",
+                  "fields": [
+                    "option_a"
+                  ],
+                  "label": "성과급"
+                },
+                {
+                  "id": "b",
+                  "fields": [
+                    "option_b"
+                  ],
+                  "label": "특별수당"
+                }
+              ],
+              "label": "지급 안내"
+            },
+            {
+              "id": "slot_2",
+              "shared_fields": [
+                "second_shared"
+              ],
+              "options": [],
+              "label": "추가 안내"
+            }
+          ]
+        },
+        "field_occurrences": [
+          {
+            "field_id": "duplicate",
+            "occurrence_ordinal": 0,
+            "owner_kind": "ROOT",
+            "owner_slot_id": null,
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 1,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "shared_before",
+            "occurrence_ordinal": 0,
+            "owner_kind": "SLOT_SHARED",
+            "owner_slot_id": "slot",
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 4,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "shared_plain",
+            "occurrence_ordinal": 0,
+            "owner_kind": "SLOT_SHARED",
+            "owner_slot_id": "slot",
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 7,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "option_a",
+            "occurrence_ordinal": 0,
+            "owner_kind": "OPTION",
+            "owner_slot_id": "slot",
+            "owner_option_id": "a",
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 11,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "shared_between",
+            "occurrence_ordinal": 0,
+            "owner_kind": "SLOT_SHARED",
+            "owner_slot_id": "slot",
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 14,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "option_b",
+            "occurrence_ordinal": 0,
+            "owner_kind": "OPTION",
+            "owner_slot_id": "slot",
+            "owner_option_id": "b",
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 17,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "shared_after",
+            "occurrence_ordinal": 0,
+            "owner_kind": "SLOT_SHARED",
+            "owner_slot_id": "slot",
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 20,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "second_shared",
+            "occurrence_ordinal": 0,
+            "owner_kind": "SLOT_SHARED",
+            "owner_slot_id": "slot_2",
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 24,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          },
+          {
+            "field_id": "duplicate",
+            "occurrence_ordinal": 1,
+            "owner_kind": "ROOT",
+            "owner_slot_id": null,
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 27,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          }
+        ],
+        "option_regions": [
+          {
+            "slot_id": "slot",
+            "option_id": "a",
+            "content_entry_id": "Contents/section0.xml",
+            "begin_order": 10,
+            "end_order": 13,
+            "owner_relation_facts": [
+              {
+                "relation": "target_owner_slot",
+                "slot_id": "slot",
+                "coincidence": "INTERIOR"
+              },
+              {
+                "relation": "target_owner_content_entry",
+                "content_entry_id": "Contents/section0.xml"
+              }
+            ],
+            "retained_content_relation_facts": [
+              {
+                "field_id": "duplicate",
+                "occurrence_ordinal": 0,
+                "owner_kind": "ROOT",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_before",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_plain",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_between",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "AFTER"
+              },
+              {
+                "field_id": "option_b",
+                "occurrence_ordinal": 0,
+                "owner_kind": "OPTION",
+                "position": "AFTER"
+              },
+              {
+                "field_id": "shared_after",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "AFTER"
+              },
+              {
+                "field_id": "second_shared",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "AFTER"
+              },
+              {
+                "field_id": "duplicate",
+                "occurrence_ordinal": 1,
+                "owner_kind": "ROOT",
+                "position": "AFTER"
+              }
+            ],
+            "removal_capability_ref": "remove-option/v1"
+          },
+          {
+            "slot_id": "slot",
+            "option_id": "b",
+            "content_entry_id": "Contents/section0.xml",
+            "begin_order": 16,
+            "end_order": 19,
+            "owner_relation_facts": [
+              {
+                "relation": "target_owner_slot",
+                "slot_id": "slot",
+                "coincidence": "INTERIOR"
+              },
+              {
+                "relation": "target_owner_content_entry",
+                "content_entry_id": "Contents/section0.xml"
+              }
+            ],
+            "retained_content_relation_facts": [
+              {
+                "field_id": "duplicate",
+                "occurrence_ordinal": 0,
+                "owner_kind": "ROOT",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_before",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_plain",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "option_a",
+                "occurrence_ordinal": 0,
+                "owner_kind": "OPTION",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_between",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "BEFORE"
+              },
+              {
+                "field_id": "shared_after",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "AFTER"
+              },
+              {
+                "field_id": "second_shared",
+                "occurrence_ordinal": 0,
+                "owner_kind": "SLOT_SHARED",
+                "position": "AFTER"
+              },
+              {
+                "field_id": "duplicate",
+                "occurrence_ordinal": 1,
+                "owner_kind": "ROOT",
+                "position": "AFTER"
+              }
+            ],
+            "removal_capability_ref": "remove-option/v1"
+          }
+        ],
+        "removal_target_relations": [
+          {
+            "left_option_ref": {
+              "slot_id": "slot",
+              "option_id": "a"
+            },
+            "right_option_ref": {
+              "slot_id": "slot",
+              "option_id": "b"
+            },
+            "relation": "DISJOINT"
+          }
+        ],
+        "content_entries": [
+          {
+            "content_entry_id": "Contents/section0.xml",
+            "envelope_class": "section-body/v1",
+            "envelope_capability_facts": {
+              "retains_admissible_envelope": true,
+              "handles_empty_edges": true,
+              "preserves_owner_marker": true,
+              "coincident_boundary_admissible": true
+            }
+          }
+        ],
+        "global_composition_facts": {
+          "crossing_free": true,
+          "resolver_stability_facts": {
+            "remaining_target_resolvable_after_removal": true,
+            "active_field_resolvable_after_removal": true,
+            "field_write_preserves_identity": true
+          },
+          "admitted_relation_profile": "unadmitted"
+        }
+      }
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"contains\"/></hp:ctrl><hp:t>OLD</hp:t><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"SLOT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"slot\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>IN</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-1",
+      "structure": null,
+      "diagnostics": [
+        "field-contains-selection-boundary",
+        "product-selection-not-removable"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"crosses\"/></hp:ctrl><hp:t>OLD</hp:t><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"SLOT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"slot\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>IN</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>END</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-2",
+      "structure": null,
+      "diagnostics": [
+        "field-crosses-selection-boundary",
+        "product-selection-not-removable"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"A\"/></hp:ctrl><hp:ctrl><hp:fieldBegin id=\"2\" type=\"BOOKMARK\" name=\"B\"/></hp:ctrl><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl><hp:ctrl><hp:fieldEnd beginIDRef=\"2\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"looks_root\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-3",
+      "structure": null,
+      "diagnostics": [
+        "crossing-range",
+        "unresolved-field-owner"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"BAD\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"future\", \"id\": \"bad\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>B</hp:t></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"inside_bad\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-4",
+      "structure": null,
+      "diagnostics": [
+        "unknown-kind",
+        "unresolved-field-owner"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"BAD_ID\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>B</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>E</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-5",
+      "structure": null,
+      "diagnostics": [
+        "invalid-id"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-6",
+      "structure": null,
+      "diagnostics": [
+        "invalid-field-id"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"broken\"/></hp:ctrl><hp:t>X</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "ownership-refusal-7",
+      "structure": null,
+      "diagnostics": [
+        "field-unmatched-begin"
+      ],
+      "execution_structure": null
+    },
+    {
+      "invalid_bytes": "not a zip",
+      "name": "ownership-refusal-8",
+      "structure": null,
+      "diagnostics": [
+        "invalid-hwpx-package"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1737418110\" type=\"HYPERLINK\" name=\"\" editable=\"0\" dirty=\"1\" fieldid=\"627600491\"/></hp:ctrl><hp:t>https://www.law.go.kr</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1737418110\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin type=\"CLICK_HERE\" name=\"\"/></hp:ctrl><hp:t>수요기관명</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "unnamed-field-1",
+      "structure": null,
+      "diagnostics": [
+        "invalid-field-id"
+      ],
+      "execution_structure": null,
+      "message_parts": [
+        "Contents/section0.xml",
+        "2번째 필드",
+        "수요기관명",
+        "지정하거나"
+      ]
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"blocked\"/></hp:ctrl><hp:t>OLD<hp:outer><hp:inner/></hp:outer></hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "native-blocker-1",
+      "structure": null,
+      "diagnostics": [
+        "field-not-fillable"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1\" type=\"BOOKMARK\" name=\"SLOT\"><hp:metaTag>{\"hwpxFiller\": {\"kind\": \"slot\", \"id\": \"slot\"}, \"name\": \"#hf\"}</hp:metaTag></hp:fieldBegin></hp:ctrl><hp:t>IN<hp:markpenBegin/></hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>END</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "native-blocker-2",
+      "structure": null,
+      "diagnostics": [
+        "product-selection-not-removable"
+      ],
+      "execution_structure": null
+    },
+    {
+      "entries": {
+        "mimetype": "application/hwp+zip",
+        "Contents/section0.xml": "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\" xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\"><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1737418110\" type=\"HYPERLINK\" name=\"\" editable=\"0\" dirty=\"1\" fieldid=\"627600491\"/></hp:ctrl><hp:t>https://www.law.go.kr</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1737418110\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin name=\"계약명\"/></hp:ctrl><hp:t>값</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:ctrl><hp:fieldBegin id=\"1745692334\" type=\"HYPERLINK\" name=\"\" editable=\"0\" dirty=\"1\" fieldid=\"627600491\"/></hp:ctrl><hp:t>http://www.law.go.kr</hp:t><hp:ctrl><hp:fieldEnd beginIDRef=\"1745692334\"/></hp:ctrl></hp:run></hp:p><hp:p><hp:run><hp:t>TAIL</hp:t></hp:run></hp:p></hs:sec>"
+      },
+      "name": "hyperlinks-1",
+      "structure": {
+        "root_fields": [
+          "계약명"
+        ],
+        "slots": []
+      },
+      "diagnostics": [],
+      "execution_structure": {
+        "projection_schema_version": "hwpx-structure-projection-v4",
+        "product_structure": {
+          "root_fields": [
+            "계약명"
+          ],
+          "slots": []
+        },
+        "field_occurrences": [
+          {
+            "field_id": "계약명",
+            "occurrence_ordinal": 0,
+            "owner_kind": "ROOT",
+            "owner_slot_id": null,
+            "owner_option_id": null,
+            "content_entry_id": "Contents/section0.xml",
+            "structural_order": 3,
+            "native_value_target_class": "hwpx-field-value/v1",
+            "resolver_contract_id": "hwpx-field-resolver/v1"
+          }
+        ],
+        "option_regions": [],
+        "removal_target_relations": [],
+        "content_entries": [
+          {
+            "content_entry_id": "Contents/section0.xml",
+            "envelope_class": "section-body/v1",
+            "envelope_capability_facts": {
+              "retains_admissible_envelope": true,
+              "handles_empty_edges": true,
+              "preserves_owner_marker": true,
+              "coincident_boundary_admissible": true
+            }
+          }
+        ],
+        "global_composition_facts": {
+          "crossing_free": true,
+          "resolver_stability_facts": {
+            "remaining_target_resolvable_after_removal": true,
+            "active_field_resolvable_after_removal": true,
+            "field_write_preserves_identity": true
+          },
+          "admitted_relation_profile": "unadmitted"
+        }
+      }
+    }
+  ]
+}

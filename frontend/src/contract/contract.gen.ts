@@ -1,17 +1,11 @@
-/* 자동 생성 — 손으로 고치지 않는다 (scripts/gen_bridge_contract.py · R2-02 #406).
- *
- * 정본: webapp/action_registry.py · webapp/product_api.py · webapp/app.py(WebFrontend)
- * · frontend/src/product_api.js(PRODUCT_ERROR_CODES). 드리프트 게이트:
- * tests/repo_contract/test_bridge_contract.py (재생성 바이트 비교 + 생성기 비경유 독립 오러클).
- *
- * v1 계약의 payload 값 타입은 **키 집합**이다 — 값은 도메인 컨트롤러 소유라 unknown
- * 이 정직한 번역이고, 더 좁히면 그게 조용한 추측이다(action_registry.py:16). */
+/* 자동 생성 — 손으로 고치지 않는다 (scripts/gen_bridge_contract.mjs).
+ * 정본: Rust bridge_descriptor, action_registry.json, host_contract.json, frontend/src/product_api.js.
+ * payload 값 타입의 정본은 제품 컨트롤러이며 이 표는 허용 키 집합을 투영한다. */
 
 export const PRODUCT_PROTOCOL = "hwpx-product";
 
 export const PRODUCT_VERSION = 1;
 
-/* 순서가 계약이다 — 파사드 describe() 배열과 같은 순서로 읽힌다(product_api.py:60). */
 export const PRODUCT_CAPABILITIES = [
   "snapshot",
   "close-request",
@@ -21,10 +15,7 @@ export const PRODUCT_CAPABILITIES = [
 
 export type ProductCapability = (typeof PRODUCT_CAPABILITIES)[number];
 
-/* Python 어댑터(kebab)와 제품 JS(snake)의 오류 어휘는 **경로가 다르다**: kebab 은
- * Python 이 웹→Python·Python→웹 왕복을 판정하며 내는 코드, snake 는 제품 파사드
- * deliver() 가 돌려주는 코드다. 통합·번역은 이 단계 비소유 — 여기는 사실의 등재다. */
-export const PYTHON_ERROR_CODES = [
+export const HOST_ERROR_CODES = [
   "facade-absent",
   "evaluate-failed",
   "descriptor-malformed",
@@ -39,7 +30,7 @@ export const PYTHON_ERROR_CODES = [
   "adapter-internal",
 ] as const;
 
-export type PythonErrorCode = (typeof PYTHON_ERROR_CODES)[number];
+export type HostErrorCode = (typeof HOST_ERROR_CODES)[number];
 
 export const JS_PRODUCT_ERROR_CODES = [
   "malformed_request",
@@ -52,9 +43,6 @@ export const JS_PRODUCT_ERROR_CODES = [
 
 export type JsProductErrorCode = (typeof JS_PRODUCT_ERROR_CODES)[number];
 
-/* 템플릿 변경 확인·적용의 제품 status 어휘(S3-09 #659) — 내부 Preparation/Change/Apply
- * 상태의 투영이고 정본은 application/template_change_product.py 다. 내부 어휘를 웹이
- * 직접 보지 않는다(opaque Product Contract). */
 export const TEMPLATE_PREPARATION_STATUSES = [
   "checking",
   "ready",
@@ -87,199 +75,198 @@ export const DISPATCH_REJECTION_KEY = "__hwpx_dispatch_rejection_v1__";
 
 export const DISPATCH_REJECTION_FIELDS = ["name", "message"] as const;
 
-/* 화면×액션×payload 키 — validate_dispatch 가 거절의 정본이고 이 표는 그 타입 투영이다. */
 export const SCREEN_ACTIONS = {
   authoring: {
-    new: { required: ["media"], optional: ["content"] },
     activate: { required: ["session_id"], optional: [] },
-    content: { required: ["session_id"], optional: [] },
-    update: { required: ["content", "revision", "session_id"], optional: [] },
-    preview: { required: ["command", "revision", "session_id"], optional: [] },
-    copy: { required: ["revision", "selector", "session_id"], optional: [] },
-    preview_paste: { required: ["clipboard_token", "destination", "revision", "session_id", "with_meaning"], optional: [] },
-    rhwp_roundtrip_preflight: { required: ["content", "revision", "session_id"], optional: [] },
-    rhwp_unverified: { required: ["detail", "revision", "session_id"], optional: [] },
-    remember_view: { required: ["mode", "revision", "selection", "session_id"], optional: [] },
-    trial_input: { required: ["revision", "selected", "session_id", "values"], optional: [] },
-    trial_fill_names: { required: ["revision", "session_id"], optional: [] },
-    trial: { required: ["revision", "session_id"], optional: [] },
-    search: { required: ["kind", "query", "revision", "session_id"], optional: [] },
-    same_text: { required: ["revision", "selection", "session_id"], optional: [] },
-    locate: { required: ["revision", "selection", "session_id"], optional: ["target"] },
-    commands: { required: ["revision", "selection", "session_id"], optional: ["context"] },
-    syntax: { required: ["session_id"], optional: [] },
-    case_upsert: { required: ["name", "revision", "selected", "session_id", "values"], optional: [] },
-    case_remove: { required: ["name", "revision", "session_id"], optional: [] },
-    save_cases: { required: ["session_id"], optional: [] },
-    save: { required: ["revision", "session_id"], optional: [] },
-    check_external: { required: ["session_id"], optional: [] },
-    external_content: { required: ["session_id"], optional: [] },
-    reload: { required: ["revision", "session_id"], optional: ["force"] },
-    close: { required: ["session_id"], optional: ["force"] },
-    impact: { required: ["revision", "session_id"], optional: [] },
-    prepare_apply: { required: ["job_name", "revision", "session_id"], optional: [] },
     apply_job: { required: ["change_token", "job_name", "revision", "session_id"], optional: [] },
+    case_remove: { required: ["name", "revision", "session_id"], optional: [] },
+    case_upsert: { required: ["name", "revision", "selected", "session_id", "values"], optional: [] },
+    check_external: { required: ["session_id"], optional: [] },
+    close: { required: ["session_id"], optional: ["force"] },
+    commands: { required: ["revision", "selection", "session_id"], optional: ["context"] },
+    content: { required: ["session_id"], optional: [] },
+    copy: { required: ["revision", "selector", "session_id"], optional: [] },
+    external_content: { required: ["session_id"], optional: [] },
+    impact: { required: ["revision", "session_id"], optional: [] },
+    locate: { required: ["revision", "selection", "session_id"], optional: ["target"] },
+    new: { required: ["media"], optional: ["content"] },
+    prepare_apply: { required: ["job_name", "revision", "session_id"], optional: [] },
+    preview: { required: ["command", "revision", "session_id"], optional: [] },
+    preview_paste: { required: ["clipboard_token", "destination", "revision", "session_id", "with_meaning"], optional: [] },
+    propose_dismiss: { required: ["group_id", "revision", "session_id"], optional: [] },
     propose_fields: { required: ["revision", "session_id"], optional: ["pool_key", "row", "sheet"] },
     propose_make: { required: ["group_id", "revision", "session_id"], optional: ["spot_id"] },
     propose_make_all: { required: ["revision", "session_id"], optional: [] },
-    propose_dismiss: { required: ["group_id", "revision", "session_id"], optional: [] },
-    propose_pick_column: { required: ["column", "group_id", "revision", "session_id"], optional: [] },
     propose_off: { required: ["session_id"], optional: [] },
-  },
-  library: {
-    set_view: { required: [], optional: ["view"] },
-    set_mode: { required: [], optional: ["mode"] },
-    set_query: { required: [], optional: ["text"] },
-    clear_filters: { required: [], optional: [] },
-    select_work: { required: [], optional: ["name"] },
-    toggle_favorite: { required: ["name", "value"], optional: [] },
-    delete_job: { required: ["name"], optional: ["confirm"] },
-    undo_delete_job: { required: [], optional: [] },
-    clone_job: { required: ["name"], optional: [] },
-    relink_template: { required: ["name"], optional: ["confirm", "path"] },
-    refresh: { required: [], optional: ["select"] },
-    delete_corrupt: { required: ["path"], optional: ["confirm"] },
-    export_work_package: { required: ["path"], optional: ["confirm", "names"] },
-    inspect_work_package: { required: ["path"], optional: [] },
-    import_work_package: { required: ["basis", "path"], optional: [] },
+    propose_pick_column: { required: ["column", "group_id", "revision", "session_id"], optional: [] },
+    reload: { required: ["revision", "session_id"], optional: ["force"] },
+    remember_view: { required: ["mode", "revision", "selection", "session_id"], optional: [] },
+    rhwp_roundtrip_preflight: { required: ["content", "revision", "session_id"], optional: [] },
+    rhwp_unverified: { required: ["detail", "revision", "session_id"], optional: [] },
+    same_text: { required: ["revision", "selection", "session_id"], optional: [] },
+    save: { required: ["revision", "session_id"], optional: [] },
+    save_cases: { required: ["session_id"], optional: [] },
+    search: { required: ["kind", "query", "revision", "session_id"], optional: [] },
+    syntax: { required: ["session_id"], optional: [] },
+    trial: { required: ["revision", "session_id"], optional: [] },
+    trial_fill_names: { required: ["revision", "session_id"], optional: [] },
+    trial_input: { required: ["revision", "selected", "session_id", "values"], optional: [] },
+    update: { required: ["content", "revision", "session_id"], optional: [] },
   },
   editor: {
-    use_library_template: { required: ["path"], optional: [] },
-    new_session: { required: [], optional: [] },
-    discard_session: { required: [], optional: [] },
-    goto_section: { required: ["section"], optional: [] },
-    discard_patch: { required: [], optional: ["section"] },
     ack_gate: { required: [], optional: [] },
+    confirm_suggested: { required: [], optional: [] },
+    discard_patch: { required: [], optional: ["section"] },
+    discard_session: { required: [], optional: [] },
     dismiss_notice: { required: [], optional: [] },
-    use_pool_data: { required: ["key"], optional: ["sheet"] },
+    goto_section: { required: ["section"], optional: [] },
     mapping_reset_stakes: { required: [], optional: ["cause"] },
-    set_source: { required: ["index", "source"], optional: [] },
-    revert_source: { required: ["index"], optional: [] },
-    resuggest_all: { required: [], optional: [] },
-    set_display: { required: ["index", "type"], optional: ["fmt"] },
-    set_slice: { required: ["index"], optional: ["slice"] },
+    new_session: { required: [], optional: [] },
     preview_slice: { required: ["index"], optional: ["sample"] },
     propose_slice: { required: ["end", "index", "sample", "start"], optional: [] },
-    set_const: { required: ["const", "index"], optional: [] },
-    set_confirmed: { required: ["confirmed", "index"], optional: [] },
-    confirm_suggested: { required: [], optional: [] },
-    unconfirm_all: { required: [], optional: [] },
     restore_confirmed: { required: [], optional: [] },
-    step_preview: { required: ["delta"], optional: [] },
+    resuggest_all: { required: [], optional: [] },
+    revert_source: { required: ["index"], optional: [] },
+    save: { required: [], optional: ["confirm_overwrite", "confirmed_overwrite_text"] },
+    set_confirmed: { required: ["confirmed", "index"], optional: [] },
+    set_const: { required: ["const", "index"], optional: [] },
+    set_display: { required: ["index", "type"], optional: ["fmt"] },
     set_name: { required: ["name"], optional: [] },
     set_pattern: { required: ["pattern"], optional: [] },
-    save: { required: [], optional: ["confirm_overwrite", "confirmed_overwrite_text"] },
+    set_slice: { required: ["index"], optional: ["slice"] },
+    set_source: { required: ["index", "source"], optional: [] },
+    step_preview: { required: ["delta"], optional: [] },
+    unconfirm_all: { required: [], optional: [] },
+    use_library_template: { required: ["path"], optional: [] },
+    use_pool_data: { required: ["key"], optional: ["sheet"] },
   },
   job: {
-    toggle_record: { required: ["index", "value"], optional: ["epoch"] },
-    select_range: { required: ["indices", "value"], optional: ["epoch"] },
-    set_all: { required: [], optional: ["epoch"] },
-    set_none: { required: [], optional: ["epoch"] },
-    filter_search: { required: [], optional: ["epoch", "text"] },
-    filter_col_text: { required: ["column"], optional: ["epoch", "text"] },
-    filter_col_values: { required: ["column"], optional: ["epoch", "values"] },
-    filter_col_range: { required: ["column"], optional: ["epoch", "first", "joiner", "second"] },
-    filter_prune: { required: ["column"], optional: ["epoch"] },
-    filter_clear: { required: [], optional: ["epoch"] },
-    filter_clear_col: { required: ["column"], optional: ["epoch"] },
-    filter_reapply: { required: [], optional: ["epoch"] },
-    create_filter_preset: { required: ["name", "state"], optional: ["epoch", "from_adhoc"] },
-    update_filter_preset: { required: ["name", "new_name", "state"], optional: ["epoch"] },
-    toggle_filter_preset: { required: ["name"], optional: ["epoch"] },
-    delete_filter_preset: { required: ["name"], optional: ["epoch"] },
-    hide_column: { required: ["column"], optional: ["epoch"] },
-    unhide_columns: { required: [], optional: ["epoch"] },
-    filter_panel: { required: ["column"], optional: [] },
-    count_filter_state: { required: ["state"], optional: [] },
-    list_filter_columns: { required: [], optional: ["query"] },
-    load_pool: { required: ["key"], optional: ["sheet"] },
-    guard_state: { required: [], optional: [] },
-    refresh: { required: [], optional: [] },
-    remount_data: { required: [], optional: ["confirm"] },
-    set_view_order: { required: ["value"], optional: ["epoch"] },
-    open_workbench: { required: [], optional: [] },
-    range_draft_open: { required: [], optional: [] },
-    range_draft_apply: { required: [], optional: [] },
-    range_draft_cancel: { required: [], optional: [] },
-    artifact_open: { required: ["ordinal"], optional: [] },
+    apply_selection_preset: { required: ["configuration_token", "preset_key"], optional: [] },
     artifact_close: { required: [], optional: [] },
     artifact_content: { required: [], optional: [] },
-    set_selected_only: { required: ["value"], optional: [] },
-    select_job: { required: ["name"], optional: ["confirm"] },
-    toggle_favorite: { required: ["name", "value"], optional: [] },
-    prefer_work: { required: ["name"], optional: [] },
-    browse_tab: { required: [], optional: ["tab"] },
+    artifact_open: { required: ["ordinal"], optional: [] },
     browse_query: { required: [], optional: ["text"] },
-    dismiss_data_notice: { required: [], optional: [] },
-    relink_template: { required: ["name"], optional: ["confirm", "path"] },
-    template_check: { required: ["request_id"], optional: [] },
-    template_apply: { required: ["change_token"], optional: [] },
-    open_slot_configuration: { required: [], optional: [] },
-    refresh_slot_configuration: { required: [], optional: ["configuration_token"] },
-    select_slot_option: { required: ["configuration_token", "option_id", "request_id", "slot_id"], optional: [] },
-    save_selection_preset: { required: ["configuration_token", "name"], optional: ["confirmed_overwrite_key"] },
-    apply_selection_preset: { required: ["configuration_token", "preset_key"], optional: [] },
-    recover_record_issue: { required: ["target"], optional: [] },
-    resolve_execution: { required: [], optional: [] },
-    refresh_observation: { required: [], optional: [] },
-    rename_job: { required: ["name"], optional: ["new"] },
+    browse_tab: { required: [], optional: ["tab"] },
     cancel_generation: { required: [], optional: [] },
+    count_filter_state: { required: ["state"], optional: [] },
+    create_filter_preset: { required: ["name", "state"], optional: ["epoch", "from_adhoc"] },
+    delete_filter_preset: { required: ["name"], optional: ["epoch"] },
+    dismiss_data_notice: { required: [], optional: [] },
+    filter_clear: { required: [], optional: ["epoch"] },
+    filter_clear_col: { required: ["column"], optional: ["epoch"] },
+    filter_col_range: { required: ["column"], optional: ["epoch", "first", "joiner", "second"] },
+    filter_col_text: { required: ["column"], optional: ["epoch", "text"] },
+    filter_col_values: { required: ["column"], optional: ["epoch", "values"] },
+    filter_panel: { required: ["column"], optional: [] },
+    filter_prune: { required: ["column"], optional: ["epoch"] },
+    filter_reapply: { required: [], optional: ["epoch"] },
+    filter_search: { required: [], optional: ["epoch", "text"] },
+    guard_state: { required: [], optional: [] },
+    hide_column: { required: ["column"], optional: ["epoch"] },
+    list_filter_columns: { required: [], optional: ["query"] },
+    load_pool: { required: ["key"], optional: ["sheet"] },
+    open_slot_configuration: { required: [], optional: [] },
+    open_workbench: { required: [], optional: [] },
+    prefer_work: { required: ["name"], optional: [] },
+    range_draft_apply: { required: [], optional: [] },
+    range_draft_cancel: { required: [], optional: [] },
+    range_draft_open: { required: [], optional: [] },
+    recover_record_issue: { required: ["target"], optional: [] },
+    refresh: { required: [], optional: [] },
+    refresh_observation: { required: [], optional: [] },
+    refresh_slot_configuration: { required: [], optional: ["configuration_token"] },
+    relink_template: { required: ["name"], optional: ["confirm", "path"] },
+    remount_data: { required: [], optional: ["confirm"] },
+    rename_job: { required: ["name"], optional: ["new"] },
+    resolve_execution: { required: [], optional: [] },
+    save_selection_preset: { required: ["configuration_token", "name"], optional: ["confirmed_overwrite_key"] },
     select_failed: { required: [], optional: [] },
+    select_job: { required: ["name"], optional: ["confirm"] },
+    select_range: { required: ["indices", "value"], optional: ["epoch"] },
+    select_slot_option: { required: ["configuration_token", "option_id", "request_id", "slot_id"], optional: [] },
+    set_all: { required: [], optional: ["epoch"] },
+    set_none: { required: [], optional: ["epoch"] },
+    set_selected_only: { required: ["value"], optional: [] },
+    set_view_order: { required: ["value"], optional: ["epoch"] },
+    template_apply: { required: ["change_token"], optional: [] },
+    template_check: { required: ["request_id"], optional: [] },
+    toggle_favorite: { required: ["name", "value"], optional: [] },
+    toggle_filter_preset: { required: ["name"], optional: ["epoch"] },
+    toggle_record: { required: ["index", "value"], optional: ["epoch"] },
+    unhide_columns: { required: [], optional: ["epoch"] },
+    update_filter_preset: { required: ["name", "new_name", "state"], optional: ["epoch"] },
   },
-  workbench: {
-    step: { required: ["delta"], optional: [] },
-    set_current: { required: ["index"], optional: [] },
-    toggle_advance: { required: ["value"], optional: [] },
+  library: {
+    clear_filters: { required: [], optional: [] },
+    clone_job: { required: ["name"], optional: [] },
+    delete_corrupt: { required: ["path"], optional: ["confirm"] },
+    delete_job: { required: ["name"], optional: ["confirm"] },
+    export_work_package: { required: ["path"], optional: ["confirm", "names"] },
+    import_work_package: { required: ["basis", "path"], optional: [] },
+    inspect_work_package: { required: ["path"], optional: [] },
+    refresh: { required: [], optional: ["select"] },
+    relink_template: { required: ["name"], optional: ["confirm", "path"] },
+    select_work: { required: [], optional: ["name"] },
+    set_mode: { required: [], optional: ["mode"] },
+    set_query: { required: [], optional: ["text"] },
     set_view: { required: [], optional: ["view"] },
-    set_target_font: { required: [], optional: ["font"] },
-    set_fullwidth: { required: ["value"], optional: [] },
-    copy_precheck: { required: [], optional: [] },
-    set_card_text: { required: ["index", "text"], optional: [] },
-    revert_card: { required: ["index"], optional: [] },
-    leave_guard: { required: [], optional: [] },
-    close: { required: [], optional: [] },
+    toggle_favorite: { required: ["name", "value"], optional: [] },
+    undo_delete_job: { required: [], optional: [] },
   },
   pool: {
-    reorder_sheets: { required: ["key", "sheets"], optional: [] },
-    refresh: { required: [], optional: [] },
-    review: { required: ["key"], optional: [] },
-    archive: { required: ["key"], optional: [] },
     activate: { required: ["key"], optional: [] },
+    archive: { required: ["key"], optional: [] },
     delete: { required: ["key"], optional: ["basis", "confirm"] },
     inspect_sheets: { required: ["path"], optional: ["kind"] },
+    refresh: { required: [], optional: [] },
     register_excel: { required: ["name", "path"], optional: ["basis", "confirm", "note", "sheet", "sheets"] },
     register_pclm: { required: ["db", "name", "view"], optional: ["basis", "confirm", "key", "note", "views"] },
     relink: { required: ["key", "path"], optional: ["basis", "confirm", "name", "note", "sheet", "sheets"] },
+    reorder_sheets: { required: ["key", "sheets"], optional: [] },
     resolve_duplicate: { required: ["keep"], optional: ["basis", "confirm"] },
+    review: { required: ["key"], optional: [] },
   },
   tpl: {
-    refresh: { required: [], optional: [] },
-    install_examples: { required: [], optional: ["confirm"] },
-    remove_examples: { required: [], optional: ["confirm"] },
     compile: { required: ["path"], optional: ["confirm"] },
+    install_examples: { required: [], optional: ["confirm"] },
+    refresh: { required: [], optional: [] },
+    remove_examples: { required: [], optional: ["confirm"] },
     review: { required: ["path"], optional: [] },
-    slot_rename: { required: ["path", "slot_id"], optional: ["label"] },
     slot_decompile: { required: ["path", "slot_id"], optional: ["confirm"] },
     slot_decompile_all: { required: ["path"], optional: ["confirm"] },
     slot_remove: { required: ["path", "slot_id"], optional: ["confirm"] },
+    slot_rename: { required: ["path", "slot_id"], optional: ["label"] },
   },
   tutorial: {
-    preflight: { required: ["action", "screen"], optional: ["destination_screen", "scenario_id"] },
+    cleanup: { required: ["token"], optional: [] },
+    cleanup_preview: { required: [], optional: [] },
     exit: { required: [], optional: ["transition_token"] },
     later: { required: [], optional: [] },
-    start: { required: ["scenario_id"], optional: ["transition_token"] },
-    select: { required: ["scenario_id"], optional: ["transition_token"] },
-    pause: { required: [], optional: [] },
-    skip: { required: [], optional: [] },
-    resume: { required: [], optional: ["transition_token"] },
-    restart: { required: ["scenario_id"], optional: ["transition_token"] },
     next: { required: [], optional: [] },
     observe_ui: { required: ["anchor", "checkpoint", "scenario_id"], optional: [] },
     observe_ui_closed: { required: ["anchor", "checkpoint", "scenario_id"], optional: [] },
-    cleanup_preview: { required: [], optional: [] },
-    cleanup: { required: ["token"], optional: [] },
+    pause: { required: [], optional: [] },
+    preflight: { required: ["action", "screen"], optional: ["destination_screen", "scenario_id"] },
     reset_progress: { required: ["confirm"], optional: [] },
+    restart: { required: ["scenario_id"], optional: ["transition_token"] },
+    resume: { required: [], optional: ["transition_token"] },
+    select: { required: ["scenario_id"], optional: ["transition_token"] },
     set_entry_visible: { required: ["visible"], optional: [] },
+    skip: { required: [], optional: [] },
+    start: { required: ["scenario_id"], optional: ["transition_token"] },
+  },
+  workbench: {
+    close: { required: [], optional: [] },
+    copy_precheck: { required: [], optional: [] },
+    leave_guard: { required: [], optional: [] },
+    revert_card: { required: ["index"], optional: [] },
+    set_card_text: { required: ["index", "text"], optional: [] },
+    set_current: { required: ["index"], optional: [] },
+    set_fullwidth: { required: ["value"], optional: [] },
+    set_target_font: { required: [], optional: ["font"] },
+    set_view: { required: [], optional: ["view"] },
+    step: { required: ["delta"], optional: [] },
+    toggle_advance: { required: ["value"], optional: [] },
   },
 } as const;
 
@@ -287,44 +274,44 @@ export type ScreenName = keyof typeof SCREEN_ACTIONS;
 
 export type ActionName<S extends ScreenName> = keyof (typeof SCREEN_ACTIONS)[S] & string;
 
-/* WebFrontend js_api 공개 표면 — 클래스 본문 정의 순서 그대로. */
 export const HOST_METHODS = [
   "initial",
   "dispatch",
-  "set_theme",
-  "set_font_scale",
-  "set_master_width",
-  "set_authoring_width",
-  "import_template_file",
-  "pick_templates_root",
   "pick_data_file",
-  "load_data_sheet",
-  "copy_clipboard",
-  "pick_output_folder",
-  "generate",
-  "close_guard_state",
-  "confirm_window_close",
-  "cancel_window_close",
-  "pick_pool_data_file",
-  "pick_template_path",
-  "pick_work_package_path",
   "open_authoring_document",
   "save_authoring_document",
   "authoring_cases_file",
   "export_authoring_result",
-  "reveal_corrupt_job",
-  "copy_path",
-  "reveal_path",
-  "open_path",
-  "save_artifact_as",
+  "load_data_sheet",
+  "import_template_file",
+  "copy_clipboard",
+  "pick_output_folder",
+  "pick_templates_root",
+  "generate",
   "open_job_in_editor",
   "new_job_from_data",
+  "reveal_corrupt_job",
+  "pick_pool_data_file",
+  "pick_template_path",
+  "pick_work_package_path",
+  "open_path",
+  "reveal_path",
+  "copy_path",
+  "save_artifact_as",
+  "set_theme",
+  "set_font_scale",
+  "set_master_width",
+  "set_authoring_width",
+  "close_guard_state",
+  "close_flush_required",
+  "confirm_window_close",
+  "cancel_window_close",
 ] as const;
 
 export type HostMethodName = (typeof HOST_METHODS)[number];
 
-/* 웹 소비자 0 인 host-internal 표면의 기록 — 지우지도 승격하지도 않는다(패킷 §4.1). */
 export const HOST_INTERNAL_METHODS = [
+  "close_flush_required",
 ] as const;
 
 export type HostInternalMethodName = (typeof HOST_INTERNAL_METHODS)[number];
@@ -332,39 +319,37 @@ export type HostInternalMethodName = (typeof HOST_INTERNAL_METHODS)[number];
 export interface HostApi {
   initial(screen: unknown): unknown;
   dispatch(screen: unknown, action: unknown, payload?: unknown): unknown;
-  set_theme(mode: unknown): unknown;
-  set_font_scale(scale: unknown): unknown;
-  set_master_width(width: unknown): unknown;
-  set_authoring_width(panel: unknown, width: unknown): unknown;
-  import_template_file(screen: unknown): unknown;
-  pick_templates_root(screen: unknown): unknown;
   pick_data_file(screen: unknown): unknown;
-  load_data_sheet(screen: unknown, path: unknown, sheet: unknown, confirmation?: unknown): unknown;
-  copy_clipboard(screen: unknown, token?: unknown): unknown;
-  pick_output_folder(screen: unknown): unknown;
-  generate(screen: unknown, confirm_overwrite?: unknown, run_token?: unknown): unknown;
-  close_guard_state(): unknown;
-  confirm_window_close(): unknown;
-  cancel_window_close(): unknown;
-  pick_pool_data_file(): unknown;
-  pick_template_path(): unknown;
-  pick_work_package_path(action: unknown): unknown;
   open_authoring_document(path?: unknown, as_template?: unknown): unknown;
   save_authoring_document(session_id: unknown, revision: unknown): unknown;
   authoring_cases_file(session_id: unknown, action: unknown): unknown;
   export_authoring_result(session_id: unknown, revision: unknown): unknown;
-  reveal_corrupt_job(path: unknown): unknown;
-  copy_path(path: unknown): unknown;
-  reveal_path(path: unknown): unknown;
-  open_path(path: unknown): unknown;
-  save_artifact_as(ordinal: unknown): unknown;
+  load_data_sheet(screen: unknown, path: unknown, sheet: unknown, confirmation?: unknown): unknown;
+  import_template_file(screen: unknown): unknown;
+  copy_clipboard(screen: unknown, token?: unknown): unknown;
+  pick_output_folder(screen: unknown): unknown;
+  pick_templates_root(screen: unknown): unknown;
+  generate(screen: unknown, confirm_overwrite?: unknown, run_token?: unknown): unknown;
   open_job_in_editor(name: unknown, context?: unknown): unknown;
   new_job_from_data(context?: unknown): unknown;
+  reveal_corrupt_job(path: unknown): unknown;
+  pick_pool_data_file(): unknown;
+  pick_template_path(): unknown;
+  pick_work_package_path(action: unknown): unknown;
+  open_path(path: unknown): unknown;
+  reveal_path(path: unknown): unknown;
+  copy_path(path: unknown): unknown;
+  save_artifact_as(ordinal: unknown): unknown;
+  set_theme(mode: unknown): unknown;
+  set_font_scale(scale: unknown): unknown;
+  set_master_width(width: unknown): unknown;
+  set_authoring_width(panel: unknown, width: unknown): unknown;
+  close_guard_state(): unknown;
+  close_flush_required(): unknown;
+  confirm_window_close(): unknown;
+  cancel_window_close(): unknown;
 }
 
-/* 문서 만들기 작업대 blocker 계열(SX-01 #724 §3) — 정의 순서가 곧 우선순위 기반이다.
- * 정본: application/document_creation_vocabulary.py. React 가 이 순서를 재구현하지 않는다
- * (blocker 합성은 backend Product 계약이 진다). */
 export const DOCUMENT_CREATION_BLOCKERS = [
   "SELECT_DATA",
   "SELECT_RECORDS",
@@ -386,8 +371,6 @@ export const DOCUMENT_CREATION_BLOCKERS = [
 
 export type DocumentCreationBlocker = (typeof DOCUMENT_CREATION_BLOCKERS)[number];
 
-/* Primary Action 코드 — 우선순위 순서(#724 §3). 첫 원소가 최우선, 마지막이
- * CREATE_DOCUMENTS. 표시층은 이 순서를 재계산하지 않고 backend 가 고른 하나를 소비한다. */
 export const PRIMARY_ACTIONS = [
   "RECOVER_CONTEXT",
   "SELECT_DATA",
@@ -407,9 +390,6 @@ export const PRIMARY_ACTIONS = [
 
 export type PrimaryAction = (typeof PRIMARY_ACTIONS)[number];
 
-/* 작업대 execution status 7상태(SX-03 #726 §3) — orchestration+sealability+
- * admission verdict 의 재라벨. 정본: application/workbench_execution_status.py. 표시층은
- * 이 코드를 재판정하지 않고 backend 가 파생한 하나를 소비한다(문안은 STATUS_PHRASE 정본). */
 export const WORKBENCH_EXECUTION_STATUSES = [
   "NO_EVIDENCE",
   "CHECKING",
@@ -422,7 +402,6 @@ export const WORKBENCH_EXECUTION_STATUSES = [
 
 export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];
 
-/* RunDeliveryIntent collision policy(#724 §8) — 기본 ADD_SUFFIX, overwrite 는 명시 선택. */
 export const COLLISION_POLICIES = [
   "ADD_SUFFIX",
   "FAIL",
@@ -430,3 +409,5 @@ export const COLLISION_POLICIES = [
 ] as const;
 
 export type CollisionPolicy = (typeof COLLISION_POLICIES)[number];
+
+export const SESSION_DATA_KEY = "session" as const;

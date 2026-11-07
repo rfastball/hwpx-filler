@@ -1,23 +1,6 @@
-# P3-07 permanent public-surface and vendor-containment contract.
+# P3-07 permanent frontend vendor-containment contract.
+# Rust crate 경계(hwpx-core 환경 효과·안쪽 의존)는 `crates/hwpx-artifact/tests/architecture.rs` 가 진다.
 schema = "architecture-contract/v1"
-
-[product_vendor_import]
-"hwpxfiller.domain.authoring" = [
-  "lxml.etree",
-]
-"hwpxfiller.domain.fields" = [
-  "lxml.etree",
-]
-"hwpxfiller.domain.schema" = [
-  "lxml.etree",
-]
-
-[public_surface]
-hwpxcore = [
-  "Document",
-  "extract_document",
-]
-hwpxfiller = []
 
 # CodeMirror 6 는 **TXT 저작 린트메모장 한 자리**에만 산다(S10-05 #862). 배치 경로가 파일
 # 하나인 것이 봉쇄의 얼굴이다 — react 처럼 디렉터리로 넓히면 「편집기가 필요하니 여기도」가

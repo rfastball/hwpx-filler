@@ -19,14 +19,12 @@
 import { createElement } from "react";
 import type { ReactNode } from "react";
 import { RefreshButton } from "./refresh_button.ts";
+import { SESSION_DATA_KEY } from "../contract/contract.gen.ts";
 
 type Obj = Record<string, any>;
 
-/** 지금 쓰고 있는 데이터가 목록 맨 위에 서는 행의 키 — Python 이 짓는 값과 **같은 글자**여야
- *  한다(`webapp/pool_column.SESSION_DATA_KEY`). 이 키를 든 행은 풀 항목이 아니라 상태 동사가
- *  없고 다시 고를 수도 없다(이미 그것을 쓰고 있다). 소비자가 셋(편집기 우 열·데이터 선택
- *  다이얼로그·행 계약 자신)이라 행 계약이 사는 이 파일이 든다. */
-export const SESSION_DATA_KEY = "session";
+/** 현재 데이터 행의 키는 Rust 계약에서 생성한다. 세션 행은 등록 항목의 동사를 갖지 않는다. */
+export { SESSION_DATA_KEY };
 
 /** 드래그 결속(U6-B) — 고르기 화면에서만 선다. 다이얼로그 호스트는 넘기지 않는다. */
 export type PoolDragBinding = {

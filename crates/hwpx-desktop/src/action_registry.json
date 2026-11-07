@@ -1,0 +1,1219 @@
+{
+  "authoring": {
+    "activate": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "apply_job": {
+      "optional": [],
+      "required": [
+        "change_token",
+        "job_name",
+        "revision",
+        "session_id"
+      ]
+    },
+    "case_remove": {
+      "optional": [],
+      "required": [
+        "name",
+        "revision",
+        "session_id"
+      ]
+    },
+    "case_upsert": {
+      "optional": [],
+      "required": [
+        "name",
+        "revision",
+        "selected",
+        "session_id",
+        "values"
+      ]
+    },
+    "check_external": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "close": {
+      "optional": [
+        "force"
+      ],
+      "required": [
+        "session_id"
+      ]
+    },
+    "commands": {
+      "optional": [
+        "context"
+      ],
+      "required": [
+        "revision",
+        "selection",
+        "session_id"
+      ]
+    },
+    "content": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "copy": {
+      "optional": [],
+      "required": [
+        "revision",
+        "selector",
+        "session_id"
+      ]
+    },
+    "external_content": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "impact": {
+      "optional": [],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "locate": {
+      "optional": [
+        "target"
+      ],
+      "required": [
+        "revision",
+        "selection",
+        "session_id"
+      ]
+    },
+    "new": {
+      "optional": [
+        "content"
+      ],
+      "required": [
+        "media"
+      ]
+    },
+    "prepare_apply": {
+      "optional": [],
+      "required": [
+        "job_name",
+        "revision",
+        "session_id"
+      ]
+    },
+    "preview": {
+      "optional": [],
+      "required": [
+        "command",
+        "revision",
+        "session_id"
+      ]
+    },
+    "preview_paste": {
+      "optional": [],
+      "required": [
+        "clipboard_token",
+        "destination",
+        "revision",
+        "session_id",
+        "with_meaning"
+      ]
+    },
+    "propose_dismiss": {
+      "optional": [],
+      "required": [
+        "group_id",
+        "revision",
+        "session_id"
+      ]
+    },
+    "propose_fields": {
+      "optional": [
+        "pool_key",
+        "row",
+        "sheet"
+      ],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "propose_make": {
+      "optional": [
+        "spot_id"
+      ],
+      "required": [
+        "group_id",
+        "revision",
+        "session_id"
+      ]
+    },
+    "propose_make_all": {
+      "optional": [],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "propose_off": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "propose_pick_column": {
+      "optional": [],
+      "required": [
+        "column",
+        "group_id",
+        "revision",
+        "session_id"
+      ]
+    },
+    "reload": {
+      "optional": [
+        "force"
+      ],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "remember_view": {
+      "optional": [],
+      "required": [
+        "mode",
+        "revision",
+        "selection",
+        "session_id"
+      ]
+    },
+    "rhwp_roundtrip_preflight": {
+      "optional": [],
+      "required": [
+        "content",
+        "revision",
+        "session_id"
+      ]
+    },
+    "rhwp_unverified": {
+      "optional": [],
+      "required": [
+        "detail",
+        "revision",
+        "session_id"
+      ]
+    },
+    "same_text": {
+      "optional": [],
+      "required": [
+        "revision",
+        "selection",
+        "session_id"
+      ]
+    },
+    "save": {
+      "optional": [],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "save_cases": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "search": {
+      "optional": [],
+      "required": [
+        "kind",
+        "query",
+        "revision",
+        "session_id"
+      ]
+    },
+    "syntax": {
+      "optional": [],
+      "required": [
+        "session_id"
+      ]
+    },
+    "trial": {
+      "optional": [],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "trial_fill_names": {
+      "optional": [],
+      "required": [
+        "revision",
+        "session_id"
+      ]
+    },
+    "trial_input": {
+      "optional": [],
+      "required": [
+        "revision",
+        "selected",
+        "session_id",
+        "values"
+      ]
+    },
+    "update": {
+      "optional": [],
+      "required": [
+        "content",
+        "revision",
+        "session_id"
+      ]
+    }
+  },
+  "editor": {
+    "ack_gate": {
+      "optional": [],
+      "required": []
+    },
+    "confirm_suggested": {
+      "optional": [],
+      "required": []
+    },
+    "discard_patch": {
+      "optional": [
+        "section"
+      ],
+      "required": []
+    },
+    "discard_session": {
+      "optional": [],
+      "required": []
+    },
+    "dismiss_notice": {
+      "optional": [],
+      "required": []
+    },
+    "goto_section": {
+      "optional": [],
+      "required": [
+        "section"
+      ]
+    },
+    "mapping_reset_stakes": {
+      "optional": [
+        "cause"
+      ],
+      "required": []
+    },
+    "new_session": {
+      "optional": [],
+      "required": []
+    },
+    "preview_slice": {
+      "optional": [
+        "sample"
+      ],
+      "required": [
+        "index"
+      ]
+    },
+    "propose_slice": {
+      "optional": [],
+      "required": [
+        "end",
+        "index",
+        "sample",
+        "start"
+      ]
+    },
+    "restore_confirmed": {
+      "optional": [],
+      "required": []
+    },
+    "resuggest_all": {
+      "optional": [],
+      "required": []
+    },
+    "revert_source": {
+      "optional": [],
+      "required": [
+        "index"
+      ]
+    },
+    "save": {
+      "optional": [
+        "confirm_overwrite",
+        "confirmed_overwrite_text"
+      ],
+      "required": []
+    },
+    "set_confirmed": {
+      "optional": [],
+      "required": [
+        "confirmed",
+        "index"
+      ]
+    },
+    "set_const": {
+      "optional": [],
+      "required": [
+        "const",
+        "index"
+      ]
+    },
+    "set_display": {
+      "optional": [
+        "fmt"
+      ],
+      "required": [
+        "index",
+        "type"
+      ]
+    },
+    "set_name": {
+      "optional": [],
+      "required": [
+        "name"
+      ]
+    },
+    "set_pattern": {
+      "optional": [],
+      "required": [
+        "pattern"
+      ]
+    },
+    "set_slice": {
+      "optional": [
+        "slice"
+      ],
+      "required": [
+        "index"
+      ]
+    },
+    "set_source": {
+      "optional": [],
+      "required": [
+        "index",
+        "source"
+      ]
+    },
+    "step_preview": {
+      "optional": [],
+      "required": [
+        "delta"
+      ]
+    },
+    "unconfirm_all": {
+      "optional": [],
+      "required": []
+    },
+    "use_library_template": {
+      "optional": [],
+      "required": [
+        "path"
+      ]
+    },
+    "use_pool_data": {
+      "optional": [
+        "sheet"
+      ],
+      "required": [
+        "key"
+      ]
+    }
+  },
+  "job": {
+    "apply_selection_preset": {
+      "optional": [],
+      "required": [
+        "configuration_token",
+        "preset_key"
+      ]
+    },
+    "artifact_close": {
+      "optional": [],
+      "required": []
+    },
+    "artifact_content": {
+      "optional": [],
+      "required": []
+    },
+    "artifact_open": {
+      "optional": [],
+      "required": [
+        "ordinal"
+      ]
+    },
+    "browse_query": {
+      "optional": [
+        "text"
+      ],
+      "required": []
+    },
+    "browse_tab": {
+      "optional": [
+        "tab"
+      ],
+      "required": []
+    },
+    "cancel_generation": {
+      "optional": [],
+      "required": []
+    },
+    "count_filter_state": {
+      "optional": [],
+      "required": [
+        "state"
+      ]
+    },
+    "create_filter_preset": {
+      "optional": [
+        "epoch",
+        "from_adhoc"
+      ],
+      "required": [
+        "name",
+        "state"
+      ]
+    },
+    "delete_filter_preset": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "dismiss_data_notice": {
+      "optional": [],
+      "required": []
+    },
+    "filter_clear": {
+      "optional": [
+        "epoch"
+      ],
+      "required": []
+    },
+    "filter_clear_col": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "column"
+      ]
+    },
+    "filter_col_range": {
+      "optional": [
+        "epoch",
+        "first",
+        "joiner",
+        "second"
+      ],
+      "required": [
+        "column"
+      ]
+    },
+    "filter_col_text": {
+      "optional": [
+        "epoch",
+        "text"
+      ],
+      "required": [
+        "column"
+      ]
+    },
+    "filter_col_values": {
+      "optional": [
+        "epoch",
+        "values"
+      ],
+      "required": [
+        "column"
+      ]
+    },
+    "filter_panel": {
+      "optional": [],
+      "required": [
+        "column"
+      ]
+    },
+    "filter_prune": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "column"
+      ]
+    },
+    "filter_reapply": {
+      "optional": [
+        "epoch"
+      ],
+      "required": []
+    },
+    "filter_search": {
+      "optional": [
+        "epoch",
+        "text"
+      ],
+      "required": []
+    },
+    "guard_state": {
+      "optional": [],
+      "required": []
+    },
+    "hide_column": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "column"
+      ]
+    },
+    "list_filter_columns": {
+      "optional": [
+        "query"
+      ],
+      "required": []
+    },
+    "load_pool": {
+      "optional": [
+        "sheet"
+      ],
+      "required": [
+        "key"
+      ]
+    },
+    "open_slot_configuration": {
+      "optional": [],
+      "required": []
+    },
+    "open_workbench": {
+      "optional": [],
+      "required": []
+    },
+    "prefer_work": {
+      "optional": [],
+      "required": [
+        "name"
+      ]
+    },
+    "range_draft_apply": {
+      "optional": [],
+      "required": []
+    },
+    "range_draft_cancel": {
+      "optional": [],
+      "required": []
+    },
+    "range_draft_open": {
+      "optional": [],
+      "required": []
+    },
+    "recover_record_issue": {
+      "optional": [],
+      "required": [
+        "target"
+      ]
+    },
+    "refresh": {
+      "optional": [],
+      "required": []
+    },
+    "refresh_observation": {
+      "optional": [],
+      "required": []
+    },
+    "refresh_slot_configuration": {
+      "optional": [
+        "configuration_token"
+      ],
+      "required": []
+    },
+    "relink_template": {
+      "optional": [
+        "confirm",
+        "path"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "remount_data": {
+      "optional": [
+        "confirm"
+      ],
+      "required": []
+    },
+    "rename_job": {
+      "optional": [
+        "new"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "resolve_execution": {
+      "optional": [],
+      "required": []
+    },
+    "save_selection_preset": {
+      "optional": [
+        "confirmed_overwrite_key"
+      ],
+      "required": [
+        "configuration_token",
+        "name"
+      ]
+    },
+    "select_failed": {
+      "optional": [],
+      "required": []
+    },
+    "select_job": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "select_range": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "indices",
+        "value"
+      ]
+    },
+    "select_slot_option": {
+      "optional": [],
+      "required": [
+        "configuration_token",
+        "option_id",
+        "request_id",
+        "slot_id"
+      ]
+    },
+    "set_all": {
+      "optional": [
+        "epoch"
+      ],
+      "required": []
+    },
+    "set_none": {
+      "optional": [
+        "epoch"
+      ],
+      "required": []
+    },
+    "set_selected_only": {
+      "optional": [],
+      "required": [
+        "value"
+      ]
+    },
+    "set_view_order": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "value"
+      ]
+    },
+    "template_apply": {
+      "optional": [],
+      "required": [
+        "change_token"
+      ]
+    },
+    "template_check": {
+      "optional": [],
+      "required": [
+        "request_id"
+      ]
+    },
+    "toggle_favorite": {
+      "optional": [],
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "toggle_filter_preset": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "toggle_record": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "index",
+        "value"
+      ]
+    },
+    "unhide_columns": {
+      "optional": [
+        "epoch"
+      ],
+      "required": []
+    },
+    "update_filter_preset": {
+      "optional": [
+        "epoch"
+      ],
+      "required": [
+        "name",
+        "new_name",
+        "state"
+      ]
+    }
+  },
+  "library": {
+    "clear_filters": {
+      "optional": [],
+      "required": []
+    },
+    "clone_job": {
+      "optional": [],
+      "required": [
+        "name"
+      ]
+    },
+    "delete_corrupt": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "delete_job": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "export_work_package": {
+      "optional": [
+        "confirm",
+        "names"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "import_work_package": {
+      "optional": [],
+      "required": [
+        "basis",
+        "path"
+      ]
+    },
+    "inspect_work_package": {
+      "optional": [],
+      "required": [
+        "path"
+      ]
+    },
+    "refresh": {
+      "optional": [
+        "select"
+      ],
+      "required": []
+    },
+    "relink_template": {
+      "optional": [
+        "confirm",
+        "path"
+      ],
+      "required": [
+        "name"
+      ]
+    },
+    "select_work": {
+      "optional": [
+        "name"
+      ],
+      "required": []
+    },
+    "set_mode": {
+      "optional": [
+        "mode"
+      ],
+      "required": []
+    },
+    "set_query": {
+      "optional": [
+        "text"
+      ],
+      "required": []
+    },
+    "set_view": {
+      "optional": [
+        "view"
+      ],
+      "required": []
+    },
+    "toggle_favorite": {
+      "optional": [],
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "undo_delete_job": {
+      "optional": [],
+      "required": []
+    }
+  },
+  "pool": {
+    "activate": {
+      "optional": [],
+      "required": [
+        "key"
+      ]
+    },
+    "archive": {
+      "optional": [],
+      "required": [
+        "key"
+      ]
+    },
+    "delete": {
+      "optional": [
+        "basis",
+        "confirm"
+      ],
+      "required": [
+        "key"
+      ]
+    },
+    "inspect_sheets": {
+      "optional": [
+        "kind"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "refresh": {
+      "optional": [],
+      "required": []
+    },
+    "register_excel": {
+      "optional": [
+        "basis",
+        "confirm",
+        "note",
+        "sheet",
+        "sheets"
+      ],
+      "required": [
+        "name",
+        "path"
+      ]
+    },
+    "register_pclm": {
+      "optional": [
+        "basis",
+        "confirm",
+        "key",
+        "note",
+        "views"
+      ],
+      "required": [
+        "db",
+        "name",
+        "view"
+      ]
+    },
+    "relink": {
+      "optional": [
+        "basis",
+        "confirm",
+        "name",
+        "note",
+        "sheet",
+        "sheets"
+      ],
+      "required": [
+        "key",
+        "path"
+      ]
+    },
+    "reorder_sheets": {
+      "optional": [],
+      "required": [
+        "key",
+        "sheets"
+      ]
+    },
+    "resolve_duplicate": {
+      "optional": [
+        "basis",
+        "confirm"
+      ],
+      "required": [
+        "keep"
+      ]
+    },
+    "review": {
+      "optional": [],
+      "required": [
+        "key"
+      ]
+    }
+  },
+  "tpl": {
+    "compile": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "install_examples": {
+      "optional": [
+        "confirm"
+      ],
+      "required": []
+    },
+    "refresh": {
+      "optional": [],
+      "required": []
+    },
+    "remove_examples": {
+      "optional": [
+        "confirm"
+      ],
+      "required": []
+    },
+    "review": {
+      "optional": [],
+      "required": [
+        "path"
+      ]
+    },
+    "slot_decompile": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "path",
+        "slot_id"
+      ]
+    },
+    "slot_decompile_all": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "path"
+      ]
+    },
+    "slot_remove": {
+      "optional": [
+        "confirm"
+      ],
+      "required": [
+        "path",
+        "slot_id"
+      ]
+    },
+    "slot_rename": {
+      "optional": [
+        "label"
+      ],
+      "required": [
+        "path",
+        "slot_id"
+      ]
+    }
+  },
+  "tutorial": {
+    "cleanup": {
+      "optional": [],
+      "required": [
+        "token"
+      ]
+    },
+    "cleanup_preview": {
+      "optional": [],
+      "required": []
+    },
+    "exit": {
+      "optional": [
+        "transition_token"
+      ],
+      "required": []
+    },
+    "later": {
+      "optional": [],
+      "required": []
+    },
+    "next": {
+      "optional": [],
+      "required": []
+    },
+    "observe_ui": {
+      "optional": [],
+      "required": [
+        "anchor",
+        "checkpoint",
+        "scenario_id"
+      ]
+    },
+    "observe_ui_closed": {
+      "optional": [],
+      "required": [
+        "anchor",
+        "checkpoint",
+        "scenario_id"
+      ]
+    },
+    "pause": {
+      "optional": [],
+      "required": []
+    },
+    "preflight": {
+      "optional": [
+        "destination_screen",
+        "scenario_id"
+      ],
+      "required": [
+        "action",
+        "screen"
+      ]
+    },
+    "reset_progress": {
+      "optional": [],
+      "required": [
+        "confirm"
+      ]
+    },
+    "restart": {
+      "optional": [
+        "transition_token"
+      ],
+      "required": [
+        "scenario_id"
+      ]
+    },
+    "resume": {
+      "optional": [
+        "transition_token"
+      ],
+      "required": []
+    },
+    "select": {
+      "optional": [
+        "transition_token"
+      ],
+      "required": [
+        "scenario_id"
+      ]
+    },
+    "set_entry_visible": {
+      "optional": [],
+      "required": [
+        "visible"
+      ]
+    },
+    "skip": {
+      "optional": [],
+      "required": []
+    },
+    "start": {
+      "optional": [
+        "transition_token"
+      ],
+      "required": [
+        "scenario_id"
+      ]
+    }
+  },
+  "workbench": {
+    "close": {
+      "optional": [],
+      "required": []
+    },
+    "copy_precheck": {
+      "optional": [],
+      "required": []
+    },
+    "leave_guard": {
+      "optional": [],
+      "required": []
+    },
+    "revert_card": {
+      "optional": [],
+      "required": [
+        "index"
+      ]
+    },
+    "set_card_text": {
+      "optional": [],
+      "required": [
+        "index",
+        "text"
+      ]
+    },
+    "set_current": {
+      "optional": [],
+      "required": [
+        "index"
+      ]
+    },
+    "set_fullwidth": {
+      "optional": [],
+      "required": [
+        "value"
+      ]
+    },
+    "set_target_font": {
+      "optional": [
+        "font"
+      ],
+      "required": []
+    },
+    "set_view": {
+      "optional": [
+        "view"
+      ],
+      "required": []
+    },
+    "step": {
+      "optional": [],
+      "required": [
+        "delta"
+      ]
+    },
+    "toggle_advance": {
+      "optional": [],
+      "required": [
+        "value"
+      ]
+    }
+  }
+}

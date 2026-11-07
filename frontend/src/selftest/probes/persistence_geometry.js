@@ -55,7 +55,7 @@ export const PERSISTENCE_GEOMETRY_KEYS = Object.freeze([
  * offsetParent 는 전부 문서 안이라 프런트가 잰다. resize 는 문서 밖이라 호스트가 한다.
  */
 export const GEOMETRY_OWNERSHIP_DECISION = Object.freeze({
-  site: "src/hwpxfiller/webapp/app.py:3634",
+  site: "crates/hwpx-desktop/src/native_selftest.rs:251",
   decision: "host",
   rule: "문서 안(DOM·CSSOM·computed style·레이아웃 박스)은 frontend, 문서 밖(네이티브 창 프레임·"
     + "프로세스·디스크·아티팩트 정체성)은 host.",
@@ -105,7 +105,20 @@ const FILE_PROTOCOL = "file".concat(":");
 function measureResources(ctx) {
   const win = ctx.win;
   const pageUrl = new win.URL(win.location.href);
-  const resources = win.performance.getEntriesByType("resource").map((entry) => entry.name);
+  const ipcOrigin = ["http:", "", "ipc.localhost"].join("/");
+  // Tauri records its private invoke transport as a resource timing entry.
+  // It is an IPC message, not a fetched web asset; keep external URLs visible.
+  const resources = win.performance.getEntriesByType("resource")
+    .map((entry) => entry.name)
+    .filter((value) => {
+      if (!win.__TAURI__?.core?.invoke) return true;
+      try {
+        const url = new win.URL(value, pageUrl);
+        return !(url.origin === ipcOrigin && url.pathname === "/product_call");
+      } catch (_) {
+        return true;
+      }
+    });
   const forbidden = resources.filter((value) => {
     let resource;
     try {

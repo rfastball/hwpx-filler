@@ -1,12 +1,680 @@
 # 복잡도 예산 동결 원장 — 상한을 넘는 단위만, 실측값을 동결 상한으로 적는다.
 #
 # 이 파일은 **내려가기만** 한다. 실패를 고치는 길은 원장 상향이 아니라 책임 분리다.
-# 상한·측정 규칙: scripts/complexity_measure.py · 판정·작성기: scripts/complexity_budget.py
-#   uv run python scripts/complexity_budget.py --tighten   # 줄어든 값 내리기·낡은 항목 지우기
+# 측정: scripts/complexity_axes.mjs + crates/hwpx-artifact/examples/complexity_axes.rs
+# 판정·작성: node scripts/complexity_budget.mjs --check|--tighten
 # 불가피한 상향·신규 항목은 그 항목을 표로 쓰고 새 이슈를 단다(탈출구):
 #   function_complexity = { value = 14, override = "#1234", reason = "왜 지금 쪼갤 수 없는가" }
 
 schema = "complexity-budget/v1"
+
+[budget."crates/hwpx-core/src/authoring_edit.rs"]
+module_statements = { value = 348, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::apply_one"]
+function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::clip_run"]
+function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::clip_t"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::compile_field_tokens"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::layout"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::max_numeric_id"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/authoring_edit.rs::replacement"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/marker_edit.rs::insert_marker_paragraphs"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_admission.rs::BookmarkRemovalBlockerKind.as_str"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_authoring.rs::change_field_occurrences"]
+function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_authoring.rs::create_field_ranges"]
+function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_authoring.rs::insert_boundary"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_authoring.rs::preflight"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_authoring.rs::simple_field_content"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_transfer.rs"]
+module_statements = { value = 341, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_transfer.rs::paste_bookmark_block"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_transfer.rs::paste_field"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 76, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_transfer.rs::selected_texts"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/native_transfer.rs::supported_paragraph"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/package.rs::directory_start"]
+function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/package.rs::preflight_directory"]
+function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 86, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/package.rs::zip64_locations"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/shape_text.rs::shape_blocks"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/structural_boundary.rs::StructuralDiagnosticKind.as_str"]
+function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/xml_dom.rs"]
+module_statements = { value = 342, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/xml_dom.rs::XmlDocument.write_node_with_scope"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-core/src/xml_dom.rs::parse_xml"]
+function_complexity = { value = 63, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 113, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/examples/check_rust_coverage.rs::assignments"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/examples/check_rust_coverage.rs::evaluate"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/examples/nara_fixture.rs::curate"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/applied_template_asset.rs::AppliedTemplateAsset.adopt"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/documentnarmi.rs::start"]
+function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 84, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_args"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_drift"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_render"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_schema"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_template_option"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::render_text"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::run"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::tests.parses_native_commands_and_default_generation"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs::parse"]
+function_complexity = { value = 34, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs::prepare_generation"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/boot_budget.rs::runtime_version.read"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/current_execution_preparation.rs::prepare_current_records"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller.rs"]
+module_statements = { value = 405, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController"]
+class_methods = { value = 40, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController.data_sheet_tabs"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController.ensure_model"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller.rs::EditorController.restore_job_with_source"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.discard_patch"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.dispatch_inner"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 56, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.mapping_action"]
+function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_controller/save.rs::EditorController.save"]
+function_complexity = { value = 37, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 83, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/editor_projection.rs::snapshot"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/example_pack.rs::ExamplePack.install"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/example_pack.rs::ExamplePack.remove"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/host_common.rs::call"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_actions.rs::JobController.dispatch"]
+function_complexity = { value = 73, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 107, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_controller.rs::JobController"]
+class_methods = { value = 29, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_controller.rs::JobController.restore_active_after_data_change"]
+function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_controller.rs::JobController.select_job"]
+function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_data_filters.rs::MountedData.seed_presets"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_generation.rs::JobController.generate_with_lease"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_hwpx_panel.rs::JobController.panel_record_and_delivery"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_hwpx_panel.rs::JobController.prepare_hwpx_panel"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_management.rs::JobController.remount_data"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_panel.rs::JobController.prepare_panel"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 74, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_registry.rs::JobRegistry"]
+class_methods = { value = 31, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_registry.rs::tests.transaction_preserves_revision_and_collision_and_isolates_corruption"]
+function_statements = { value = 121, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/job_run_result.rs::project"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/legacy_practice.rs::LegacyPractice.cleanup_locked_with"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/legacy_practice.rs::LegacyPractice.validate"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController"]
+class_methods = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController.relink_job_template"]
+function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController.update"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/nara_transport.rs::windows.fetch"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/native_methods.rs"]
+module_statements = { value = 323, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/native_methods.rs::NativeMethods.call_inner"]
+function_complexity = { value = 68, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 149, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/native_methods.rs::NativeMethods.register_data_sheets"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/native_methods.rs::validate_host_call"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs"]
+module_statements = { value = 337, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController"]
+class_methods = { value = 27, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController.enter"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController.loss"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController.observe_product"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController.restore_screen"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController.rewind_on_entry"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_controller.rs::OnboardingController.rewind_unmet_inputs"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_match_authoring.rs::match_event"]
+function_complexity = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_product.rs::editor_event"]
+function_complexity = { value = 142, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 59, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_product.rs::job_event"]
+function_complexity = { value = 76, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 70, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_state.rs::OnboardingState.preflight"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_state.rs::OnboardingState.resources"]
+function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/onboarding_state.rs::OnboardingState.transition_context"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/pool_controller.rs::PoolController.perform"]
+function_complexity = { value = 33, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 74, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/pool_controller.rs::PoolController.register_excel"]
+function_complexity = { value = 31, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/pool_controller.rs::PoolController.register_pclm"]
+function_complexity = { value = 40, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 60, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/pool_controller.rs::PoolController.relink"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/product_api.rs::preferences_outcome"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/tauri_host.rs::run_shell"]
+function_complexity = { value = 35, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 122, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/template_change_coordinator.rs::TemplateChangeCoordinator"]
+class_methods = { value = 27, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/template_change_coordinator.rs::TemplateChangeCoordinator.check_for_seated_context"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/template_controller.rs::TemplateController.review"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/template_controller.rs::TemplateController.slot_action"]
+function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/tutorial_seed.rs::seed_mapping"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/tutorial_workspace.rs::TutorialWorkspace.seed"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/tutorial_workspace.rs::TutorialWorkspace.sweep"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/web_assets.rs::WebAssets.get"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/src/workspace_runtime.rs::RuntimeBuilder.build_inner"]
+function_statements = { value = 68, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-desktop/tests/tutorial_walk.rs::all_eight_lessons_walk_product_graph_and_isolate_output"]
+function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/examples/fixture_common/legacy_zip.rs::write"]
+function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/authoring.rs::classify_composite"]
+function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/authoring.rs::paragraph_model"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/authoring.rs::scan_paragraph"]
+function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/data_contract.rs::FieldContract.validate"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/dataset_pool.rs::reference_summary"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/document_creation_workbench.rs::RecordValidationSummary.validate"]
+function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/document_creation_workbench.rs::compose_blockers"]
+function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/document_creation_workbench.rs::compose_document_creation_workbench"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/editor_mapping.rs"]
+module_statements = { value = 382, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/editor_mapping.rs::EditorMappingModel"]
+class_methods = { value = 38, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/editor_slice.rs::candidate_specs"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/editor_slice.rs::preview"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/editor_slice.rs::propose"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/execution_capture.rs::judge_captured_execution"]
+function_complexity = { value = 36, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/execution_composition.rs::admit_composition_premises"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/execution_composition.rs::c2"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/execution_composition.rs::c6"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/execution_contract_set.rs::verify_sealed_plan_integrity"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction.rs::boundary_ok"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction.rs::number_grouping"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction.rs::render_transform"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction.rs::renderings"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction_evidence.rs::DocumentView.new"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction_grading.rs::grade"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction_grading.rs::offer"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction_labels.rs::label_matches"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_induction_labels.rs::static_cue"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_proposal_reading.rs::cell_ref"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/field_proposal_reading.rs::walk"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/fields.rs::FieldDocument.set_field"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/fields.rs::try_fill_simple_batch"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/filter_state.rs"]
+module_statements = { value = 642, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/filter_state.rs::FilterModel"]
+class_methods = { value = 60, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/filter_state.rs::FilterModel.apply_state"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/filter_state.rs::FilterModel.normalize_preset_state"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/filter_state.rs::FilterView.stratified_sample"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/filter_state.rs::short_condition"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/format_engine.rs::amount_template"]
+function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/format_engine.rs::reserved_date"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/format_engine.rs::strftime_with_precision"]
+function_complexity = { value = 43, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/generation_delivery.rs::build_delivery_binding_basis"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/generation_delivery.rs::resolve_current"]
+function_complexity = { value = 33, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 100, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/generation_delivery.rs::resolve_delivery_field_value"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_availability.rs::available_commands_hwpx"]
+function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 58, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_availability.rs::shared_reasons"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_commands.rs::dispatch"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_commands.rs::remove_region"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_fields.rs::change_field"]
+function_complexity = { value = 28, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 54, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_preview.rs::preview_content_context"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 54, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::control_count"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::field_range_refusal"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::simple_field_content"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_regions.rs::adjust_region"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_regions.rs::create_region"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_regions.rs::rename_region"]
+function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_search.rs::same_text_hwpx"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_search.rs::stray_token_problems"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_syntax.rs::syntax_view_hwpx"]
+function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_transfer.rs::block_paste"]
+function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_transfer.rs::field_error"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_authoring_trial.rs::trial_hwpx"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_product_inspection.rs::inspect_product_bookmarks"]
+function_complexity = { value = 37, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 80, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/hwpx_structure.rs::marker_has_object"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/identity_summary.rs::identity_summary"]
+function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/mapping.rs::MappingProfile.from_dict"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/mapping_state.rs::row_projection"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/mapping_state.rs::slice_label"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/materialization_conformance.rs::apply_execution_operations_in_memory"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/materialization_conformance.rs::verify_materialization_postconditions_parts"]
+function_complexity = { value = 28, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/nara.rs::NaraStdDataSource.records_checked"]
+function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/nara.rs::page_meta"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/nara.rs::parse"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/nara.rs::validate_range"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/output_name.rs::parse_filename_pattern"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/output_name.rs::render_output_name"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/schema_drift.rs::longest_match"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/selection_compatibility.rs::classify_selection"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/slot_configuration_context.rs::chain"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/structure_scan.rs::StructureDiagnosticKind.as_str"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/structure_scan.rs::token_matches"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/template_authoring.rs::authoring_lint"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/template_authoring.rs::command_name"]
+function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/template_change_product.rs::product_preparation_status"]
+function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/text_authoring_trial.rs::trial_txt_authoring"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.from_dict"]
+function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.locate"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.to_dict"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.validate"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs"]
+module_statements = { value = 890, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::available_commands"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::block_edits"]
+function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::confirm_tier"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::field_edits"]
+function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::line_block_children"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::project"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 103, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::region_edits"]
+function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::repair_suggestion"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::shared_reasons"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::suggest_field_name"]
+function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring.rs::trial"]
+function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring_transfer.rs::capture_txt"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+
+[budget."crates/hwpx-filler/src/txt_authoring_transfer.rs::paste_txt"]
+function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."frontend/js/popover.js::place"]
 function_complexity = 11
@@ -398,62 +1066,6 @@ function_complexity = 46
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]
 function_complexity = 29
 
-[budget."packaging/verify_specs.py::declared_hidden_imports"]
-function_complexity = 11
-
-[budget."packaging/verify_specs.py::main"]
-function_complexity = 18
-
-[budget."scripts/build_nara_testset.py::curate"]
-function_complexity = 24
-
-[budget."scripts/build_nara_testset.py::main"]
-function_complexity = 12
-
-[budget."scripts/capture_101_screenshots.py::_land"]
-function_complexity = 17
-
-[budget."scripts/capture_101_screenshots.py::main"]
-function_complexity = 22
-function_statements = 56
-
-[budget."scripts/check_package_coverage.py::evaluate"]
-function_complexity = 17
-
-[budget."scripts/check_package_coverage.py::load_floors"]
-function_complexity = 13
-
-[budget."scripts/docs_contract.py"]
-module_statements = 552
-
-[budget."scripts/docs_contract.py::acknowledge_review"]
-function_complexity = 17
-
-[budget."scripts/docs_contract.py::check"]
-function_complexity = 38
-
-[budget."scripts/docs_contract.py::inventory"]
-function_complexity = 66
-function_statements = 74
-
-[budget."scripts/docs_contract.py::link_problems"]
-function_complexity = 12
-
-[budget."scripts/docs_contract.py::link_targets"]
-function_complexity = 15
-
-[budget."scripts/docs_contract.py::registry"]
-function_complexity = 20
-
-[budget."scripts/docs_contract.py::render_index"]
-function_complexity = 13
-
-[budget."scripts/docs_contract.py::render_reference"]
-function_complexity = 12
-
-[budget."scripts/docs_contract.py::route"]
-function_complexity = 15
-
 [budget."scripts/extract_js_ast_axes.mjs"]
 module_statements = 463
 
@@ -476,810 +1088,34 @@ function_complexity = 11
 function_complexity = 60
 function_statements = 66
 
-[budget."scripts/gen_bridge_contract.py::extract_app_contract"]
-function_complexity = 34
+[budget."scripts/live101_native/cdp.mjs::NativePage.close"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/gen_bridge_contract.py::render_contract"]
-function_complexity = 11
+[budget."scripts/live101_native/cdp.mjs::connectNativePage"]
+function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 53, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/driver.py"]
-module_statements = 424
+[budget."scripts/live101_native/fixtures.mjs::Staging.data"]
+function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/driver.py::_run_with_home.drive"]
-function_complexity = 11
+[budget."scripts/live101_native/journey.mjs::runJourney"]
+function_statements = { value = 55, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/driver.py::_run_with_home.stage_data"]
-function_complexity = 13
+[budget."scripts/live101_native/legacy.mjs::runLegacy"]
+function_statements = { value = 138, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/report.py::judge"]
-function_complexity = 48
-function_statements = 68
+[budget."scripts/live101_native/run.mjs::main"]
+function_complexity = { value = 32, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 68, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/scenario.py"]
-module_statements = 492
+[budget."scripts/live101_native/run.mjs::options"]
+function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/scenario.py::run"]
-function_statements = 166
+[budget."scripts/live101_native/verdict.mjs::judgeLegacy"]
+function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."scripts/live101/scenario.py::run_sx"]
-function_complexity = 40
-function_statements = 204
-
-[budget."scripts/ui_copy_census.py::census"]
-function_complexity = 12
-
-[budget."scripts/ui_copy_census.py::scan_js"]
-function_complexity = 32
-function_statements = 66
-
-[budget."src/hwpxcore/bookmark_region.py"]
-module_statements = 416
-
-[budget."src/hwpxcore/bookmark_region.py::_parse_sections"]
-function_complexity = 17
-
-[budget."src/hwpxcore/bookmark_region.py::_remove_marker"]
-function_complexity = 15
-
-[budget."src/hwpxcore/bookmark_region.py::create_bookmark_region"]
-function_complexity = 45
-function_statements = 69
-
-[budget."src/hwpxcore/bookmark_region.py::remove_top_level_paragraph"]
-function_complexity = 20
-
-[budget."src/hwpxcore/field_occurrence.py::paragraph_container"]
-function_complexity = 18
-
-[budget."src/hwpxcore/field_occurrence.py::resolve_field_occurrences"]
-function_complexity = 60
-function_statements = 114
-
-[budget."src/hwpxcore/native_admission.py"]
-module_statements = 425
-
-[budget."src/hwpxcore/native_admission.py::_payload_outside"]
-function_complexity = 13
-
-[budget."src/hwpxcore/native_admission.py::apply_field_fill"]
-function_complexity = 17
-
-[budget."src/hwpxcore/native_admission.py::build_native_admission_index"]
-function_complexity = 24
-
-[budget."src/hwpxcore/native_admission.py::inspect_native_capabilities"]
-function_complexity = 38
-
-[budget."src/hwpxcore/native_admission.py::plan_bookmark_removal"]
-function_complexity = 46
-function_statements = 59
-
-[budget."src/hwpxcore/native_admission.py::plan_field_fill"]
-function_complexity = 18
-
-[budget."src/hwpxcore/structural_boundary.py::_bookmark_pairs"]
-function_complexity = 32
-function_statements = 65
-
-[budget."src/hwpxcore/structural_boundary.py::_scan_entry"]
-function_complexity = 25
-
-[budget."src/hwpxcore/text_extract.py::_blocks_from_paragraph"]
-function_complexity = 20
-
-[budget."src/hwpxfiller/application/dataset_pool.py"]
-module_statements = 306
-
-[budget."src/hwpxfiller/application/dataset_pool.py::DatasetPoolViewModel"]
-class_methods = 30
-
-[budget."src/hwpxfiller/application/dataset_pool.py::reference_summary"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/application/document_creation_workbench.py"]
-module_statements = 319
-
-[budget."src/hwpxfiller/application/document_creation_workbench.py::RecordValidationSummary.__post_init__"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/application/document_creation_workbench.py::compose_blockers"]
-function_complexity = 20
-
-[budget."src/hwpxfiller/application/execution_capture.py::_cross_reference_error"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/application/execution_capture.py::judge_captured_execution"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/application/execution_compilation.py::_resolve_selected"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/execution_compilation.py::qualify_and_compile_execution"]
-function_complexity = 24
-function_statements = 67
-
-[budget."src/hwpxfiller/application/execution_composition.py::_premise_c2"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/application/execution_composition.py::_premise_c4"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/application/execution_composition.py::_premise_c6"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/application/execution_contract_set.py::_verify_requirement_operation_bijection"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/execution_structure.py"]
-module_statements = 485
-
-[budget."src/hwpxfiller/application/execution_structure.py::_validate_occurrences"]
-function_complexity = 32
-
-[budget."src/hwpxfiller/application/execution_structure.py::_validate_structure_invariants"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/application/execution_structure.py::build_execution_structure"]
-function_complexity = 20
-
-[budget."src/hwpxfiller/application/generation_delivery.py"]
-module_statements = 342
-
-[budget."src/hwpxfiller/application/generation_delivery.py::_resolve_current"]
-function_complexity = 45
-function_statements = 89
-
-[budget."src/hwpxfiller/application/generation_delivery.py::resolve_delivery_field_value"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/application/record_validation.py::_evaluate_review"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/selection_compatibility.py::classify_selection"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/application/selection_compatibility.py::option_compatibility_fingerprint"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/application/slot_configuration_context.py::_resolve_verified_chain"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/application/slot_configuration_projection.py::project_current_slot_configuration"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/application/slot_configuration_projection.py::project_retained_selections"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/application/slot_reconciliation.py::_compatibility_gated_selections"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/slot_reconciliation.py::derive_reconciliation_source_delta"]
-function_complexity = 22
-
-[budget."src/hwpxfiller/application/slot_reconciliation.py::resolve_slot_configuration"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/application/slot_selection_input.py::plan_capture"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/application/slot_token.py::open_configuration_token"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/template_qualification.py::qualify_template"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/application/work_slot_configuration.py::WorkSlotConfigurationDraft.__post_init__"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/application/work_template_state.py::validate_aggregate"]
-function_complexity = 22
-
-[budget."src/hwpxfiller/cli.py"]
-module_statements = 385
-
-[budget."src/hwpxfiller/cli.py::_load_records"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/cli.py::_report_generation"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/cli.py::_run"]
-function_complexity = 40
-function_statements = 91
-
-[budget."src/hwpxfiller/data/excel.py::ExcelDataSource._append_record"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/data/excel.py::ExcelDataSource._load_xlsx"]
-function_complexity = 24
-
-[budget."src/hwpxfiller/data/factory.py::source_for_binding"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/data/nara.py::NaraStdDataSource._records_paginated"]
-function_complexity = 20
-function_statements = 53
-
-[budget."src/hwpxfiller/data/nara.py::NaraStdDataSource.parse"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/domain/authoring.py"]
-module_statements = 602
-
-[budget."src/hwpxfiller/domain/authoring.py::_StructureReader.read_paragraph"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/domain/authoring.py::_build_paragraph_model"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/domain/authoring.py::_classify_paragraph_tokens"]
-function_complexity = 27
-
-[budget."src/hwpxfiller/domain/authoring.py::_clip_t"]
-function_complexity = 21
-
-[budget."src/hwpxfiller/domain/authoring.py::_compile_simple_group"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/domain/authoring.py::_process_paragraph"]
-function_complexity = 35
-
-[budget."src/hwpxfiller/domain/authoring.py::_run_shape"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/domain/authoring.py::compile_document"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/domain/authoring.py::insert_marker_paragraphs"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/domain/canonical_execution_encoding.py::_encode_value"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/domain/dataset_reference.py::reference_sheets"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/domain/field_binding.py"]
-module_statements = 324
-
-[budget."src/hwpxfiller/domain/field_binding.py::FieldBindingRule.__post_init__"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/domain/field_binding.py::_encode_rule"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/domain/identity_summary.py::identity_summary"]
-function_complexity = 21
-
-[budget."src/hwpxfiller/domain/job.py::advance_revisions"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/domain/lint.py::diff_schema"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/domain/output_name.py::parse_filename_pattern"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/domain/preset.py::_normalize_provenance"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/domain/schema.py::_walk_content.walk"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/domain/schema.py::extract_schema"]
-function_complexity = 33
-function_statements = 71
-
-[budget."src/hwpxfiller/domain/template_authoring.py"]
-module_statements = 649
-
-[budget."src/hwpxfiller/domain/template_authoring.py::_line_block_children"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/domain/template_authoring.py::_project"]
-function_complexity = 35
-function_statements = 80
-
-[budget."src/hwpxfiller/domain/template_authoring.py::_repair_suggestion"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/domain/template_authoring.py::_target_name"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/domain/template_authoring.py::analyze"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/domain/template_authoring.py::available_commands"]
-function_complexity = 35
-
-[budget."src/hwpxfiller/domain/template_authoring.py::command_label"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/domain/template_authoring.py::confirm_tier"]
-function_complexity = 20
-
-[budget."src/hwpxfiller/domain/template_authoring.py::created_target"]
-function_complexity = 23
-
-[budget."src/hwpxfiller/domain/template_authoring.py::renamed_target"]
-function_complexity = 23
-
-[budget."src/hwpxfiller/domain/template_authoring.py::same_text_sites"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/domain/template_authoring.py::shared_reasons"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/domain/template_authoring.py::suggest_field_name"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/domain/template_authoring.py::target_availability"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/domain/template_authoring.py::trial"]
-function_complexity = 27
-
-[budget."src/hwpxfiller/domain/text_slice.py::TextSlice.__post_init__"]
-function_complexity = 24
-
-[budget."src/hwpxfiller/domain/text_slice.py::TextSlice.locate"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/domain/text_structure.py::_marker_spans"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::_field_paste"]
-function_complexity = 44
-function_statements = 81
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::_txt_capture"]
-function_complexity = 29
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::_txt_paste"]
-function_complexity = 31
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::capture_semantic"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/external/authoring_transfer.py::paste_semantic"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/dataset_store.py::DatasetPoolRegistry"]
-class_methods = 30
-
-[budget."src/hwpxfiller/external/delivery_coordinator.py::deliver_current_documents"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/external/example_pack.py::install"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/example_pack.py::removal_plan"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/example_pack.py::remove"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/headless_generation.py::run_headless_generation"]
-function_complexity = 32
-function_statements = 51
-
-[budget."src/hwpxfiller/external/hwpx_product_inspection.py::_inspect_slot_snapshot"]
-function_complexity = 23
-
-[budget."src/hwpxfiller/external/hwpx_product_inspection.py::_product_tag"]
-function_complexity = 34
-function_statements = 59
-
-[budget."src/hwpxfiller/external/hwpx_product_inspection.py::_project_slots"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/hwpx_product_inspection.py::inspect_product_bookmarks"]
-function_complexity = 51
-function_statements = 84
-
-[budget."src/hwpxfiller/external/hwpx_qualification.py::_analyze_hwpx_detail"]
-function_complexity = 56
-function_statements = 141
-
-[budget."src/hwpxfiller/external/hwpx_qualification.py::_build_execution_structure"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/hwpx_qualification.py::_product_observation_consistent"]
-function_complexity = 22
-
-[budget."src/hwpxfiller/external/hwpx_structure_ops.py"]
-module_statements = 308
-
-[budget."src/hwpxfiller/external/hwpx_structure_ops.py::_create_structure_regions"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/hwpx_structure_ops.py::_structure_preflight"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/external/hwpx_structure_ops.py::decompile_slot"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/job_store.py"]
-module_statements = 335
-
-[budget."src/hwpxfiller/external/job_store.py::JobRegistry"]
-class_methods = 32
-
-[budget."src/hwpxfiller/external/job_store.py::_rules_values_or_raise"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/external/managed_generation.py::run_managed_generation"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/external/materialization_conformance.py::verify_materialization_postconditions"]
-function_complexity = 32
-function_statements = 60
-
-[budget."src/hwpxfiller/external/materialization_conformance.py::verify_structure_bytes_consistency"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/prepare_orchestration_runner.py::_admission_gate"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/prepare_orchestration_runner.py::_apply_integrity"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/external/prepare_orchestration_runner.py::apply_prepared_change_under_fence"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/external/settings.py"]
-module_statements = 330
-
-[budget."src/hwpxfiller/external/settings.py::load_last_data_source"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/external/settings.py::load_window_geometry"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/settings.py::save_last_data_source"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/external/settings.py::save_tutorial_manifest"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/external/slot_command_runner.py::_apply_selection_preset_under_fence"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/external/slot_command_runner.py::_mutate_under_fence"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/external/template_change.py::TemplateChangeCoordinator"]
-class_methods = 28
-
-[budget."src/hwpxfiller/external/text_materialization_conformance.py::apply_txt_execution_plan_in_memory"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/external/text_materialization_conformance.py::trial_txt_authoring"]
-function_complexity = 20
-
-[budget."src/hwpxfiller/external/text_materialization_conformance.py::verify_txt_materialization_postconditions"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/external/text_template_inspection.py::_execution_structure_from_text"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/text_template_inspection.py::_structure_from_text"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/external/tutorial_practice.py::PracticeFiles._cleanup_locked"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/viewmodel/edit_session.py"]
-module_statements = 393
-
-[budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation._save_locked"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/viewmodel/edit_session.py::EditSaveOperation.save"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/viewmodel/edit_session.py::EditSession.apply_mapping_action"]
-function_complexity = 29
-function_statements = 66
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py"]
-module_statements = 649
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel"]
-class_methods = 65
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.apply_state"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.normalize_preset_state"]
-function_complexity = 29
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.preset_status"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterModel.set_range"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::FilterView.stratified_sample"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::_short_condition"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/viewmodel/filter_state.py::sniff_column_kinds"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/viewmodel/home_state.py"]
-module_statements = 346
-
-[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel"]
-class_methods = 29
-
-[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel._library_pool"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel.library_counts"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/viewmodel/home_state.py::HomeViewModel.library_sections"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/viewmodel/home_state.py::JobRow.from_job"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/viewmodel/home_state.py::library_health_causes"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/viewmodel/job_editor_state.py::validate_save"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/viewmodel/mapping_state.py"]
-module_statements = 491
-
-[budget."src/hwpxfiller/viewmodel/mapping_state.py::MappingModel"]
-class_methods = 45
-
-[budget."src/hwpxfiller/viewmodel/mapping_state.py::row_projection"]
-function_complexity = 18
-
-[budget."src/hwpxfiller/viewmodel/review_state.py::review_requirement"]
-function_complexity = 21
-
-[budget."src/hwpxfiller/viewmodel/run_state.py::RunViewModel._compose_preflight"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/viewmodel/slice_assist.py::_candidate_specs"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/viewmodel/slice_assist.py::preview_slice"]
-function_complexity = 32
-
-[budget."src/hwpxfiller/viewmodel/slice_assist.py::propose_slices"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/viewmodel/slice_assist.py::slice_label"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/viewmodel/template_manager_state.py"]
-module_statements = 389
-
-[budget."src/hwpxfiller/viewmodel/template_manager_state.py::TemplateManagerViewModel"]
-class_methods = 43
-
-[budget."src/hwpxfiller/viewmodel/tutorial_lessons.py::LessonProgress.snapshot"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/viewmodel/tutorial_state.py::TutorialViewModel"]
-class_methods = 25
-
-[budget."src/hwpxfiller/web_artifact.py"]
-module_statements = 451
-
-[budget."src/hwpxfiller/web_artifact.py::_load_seal"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/web_artifact.py::_studio_output_closure"]
-function_complexity = 23
-
-[budget."src/hwpxfiller/web_artifact.py::_validate_studio_local_references"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/web_artifact.py::_verify_output_tree"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/active_work_session.py::ActiveWorkSession"]
-class_methods = 21
-
-[budget."src/hwpxfiller/webapp/active_work_session.py::ActiveWorkSession.reconcile_data_transition"]
-function_complexity = 22
-
-[budget."src/hwpxfiller/webapp/app.py"]
-module_statements = 675
-
-[budget."src/hwpxfiller/webapp/app.py::WebFrontend"]
-class_methods = 38
-
-[budget."src/hwpxfiller/webapp/app.py::WebFrontend._register_data_sheets"]
-function_complexity = 31
-
-[budget."src/hwpxfiller/webapp/app.py::WebFrontend.load_data_sheet"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/app.py::main"]
-function_complexity = 27
-function_statements = 89
-
-[budget."src/hwpxfiller/webapp/blocker_affordance.py::BlockerAffordance.validate"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/webapp/data_zone.py"]
-module_statements = 437
-
-[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession"]
-class_methods = 76
-
-[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession._do_list_filter_columns"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession.selection_guard"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/webapp/data_zone.py::JobDataSession.zone_sections"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/document_run_coordinator.py::DocumentRunCoordinator.run_managed"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession"]
-class_methods = 37
-
-[budget."src/hwpxfiller/webapp/job_execution_session.py::JobExecutionSession.resolve_delivery"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/job_presentation.py::serialize_observation"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/live_run.py::_check_drive_arity"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/live_run.py::validate"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/webapp/managed_run_result.py::project_managed_run_result"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController"]
-class_methods = 34
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._observe_product"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/onboarding.py::OnboardingController._snapshot"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/webapp/product_api.py::preferences_outcome"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py"]
-module_statements = 1098
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController"]
-class_methods = 94
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._clean_selection"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._context_label"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_impact"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_locate"]
-function_complexity = 60
-function_statements = 65
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_locate.hits"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._do_search"]
-function_complexity = 30
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._locate_target"]
-function_complexity = 41
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._problems_here"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._problems_here.hit"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/screen_authoring.py::AuthoringController._section_entries"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/webapp/screen_job.py"]
-module_statements = 902
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController"]
-class_methods = 109
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._capture_current_selected_records"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._current_record_validation"]
-function_complexity = 16
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._do_recover_record_issue"]
-function_complexity = 25
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._do_select_job"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._generate_managed_locked"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._prepare_base_panel"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController._prepare_hwpx_panel"]
-function_complexity = 13
-
-[budget."src/hwpxfiller/webapp/screen_job.py::JobController.workbench_observation"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/screen_library.py::LibraryController"]
-class_methods = 23
-
-[budget."src/hwpxfiller/webapp/screen_library.py::LibraryController._pairing_detail"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController"]
-class_methods = 25
-
-[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_register_excel"]
-function_complexity = 27
-
-[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_register_pclm"]
-function_complexity = 31
-
-[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._do_relink"]
-function_complexity = 19
-
-[budget."src/hwpxfiller/webapp/screen_pool.py::PoolController._registration_sheets"]
-function_complexity = 14
-
-[budget."src/hwpxfiller/webapp/screen_template.py::TemplateController"]
-class_methods = 33
-
-[budget."src/hwpxfiller/webapp/screen_workbench.py::WorkbenchController"]
-class_methods = 37
-
-[budget."src/hwpxfiller/webapp/screen_workbench.py::WorkbenchController.snapshot"]
-function_complexity = 15
-
-[budget."src/hwpxfiller/webapp/screens.py::_pipeline_has_nara_source"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/screens.py::pool_reference_quad"]
-function_complexity = 12
-
-[budget."src/hwpxfiller/webapp/screens.py::relink_job_template"]
-function_complexity = 17
-
-[budget."src/hwpxfiller/webapp/selftest_api.py"]
-module_statements = 572
-
-[budget."src/hwpxfiller/webapp/selftest_api.py::classify_poll"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/slot_configuration_product.py::SlotConfigurationProduct"]
-class_methods = 25
-
-[budget."src/hwpxfiller/webapp/template_groups.py::TemplateGroupModel.rename_group"]
-function_complexity = 11
-
-[budget."src/hwpxfiller/webapp/txt_materialization.py::TxtMaterializationService.materialize_record"]
-function_complexity = 13
+[budget."scripts/live101_native/verdict.mjs::judgePhase"]
+function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."tests/js/authoring.test.js"]
 module_statements = 1787
@@ -1289,69 +1125,3 @@ module_statements = 1308
 
 [budget."tests/js/n06_editor.test.js"]
 module_statements = 1131
-
-[budget."tests/repo_contract/test_architecture.py::test_screen_controllers_stay_transport_thin"]
-function_complexity = 36
-
-[budget."tests/repo_contract/test_architecture.py::test_web_controllers_use_ring1_public_seams"]
-function_complexity = 28
-
-[budget."tests/repo_contract/test_dispatch_payload_contract.py::test_literal_frontend_payloads_match_the_registered_schema"]
-function_complexity = 22
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_dynamic_import_names"]
-function_complexity = 21
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_facade_exports"]
-function_complexity = 21
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_facade_exports.visit"]
-function_complexity = 22
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_frontend_vendor_import_violations"]
-function_complexity = 21
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_kernel_effect_edges"]
-function_complexity = 49
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_public_definitions.visit"]
-function_complexity = 27
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_vendor_integrations"]
-function_complexity = 32
-
-[budget."tests/repo_contract/test_p3_forbidden_edges.py::_vendor_public_type_edges.visit"]
-function_complexity = 22
-
-[budget."tests/test_authoring.py"]
-module_statements = 1589
-
-[budget."tests/test_hwpx_structure_probe.py::test_native_bookmark_encodings_and_durability_observations"]
-function_complexity = 43
-
-[budget."tests/test_job.py"]
-module_statements = 1057
-
-[budget."tests/test_web_authoring_layout.py::test_authoring_columns_scale_and_narrow_sheet"]
-function_complexity = 22
-
-[budget."tests/test_web_selftest_gate.py"]
-module_statements = 1309
-
-[budget."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
-class_methods = 83
-
-[budget."tests/test_webapp_authoring.py"]
-module_statements = 1070
-
-[budget."tests/test_webapp_authoring.py::test_outline_targets_locate_by_identity_with_domain_availability"]
-function_complexity = 23
-
-[budget."tests/test_webapp_editor.py"]
-module_statements = 2123
-
-[budget."tests/test_webapp_job.py"]
-module_statements = 3792
-
-[budget."tests/test_webapp_job_binding_review.py"]
-module_statements = 967
