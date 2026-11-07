@@ -53,6 +53,16 @@ export async function workTemplate(home, name) {
   return template;
 }
 
+function dropField(current, kind) {
+  const text = current.toString('utf8').replace(/^\ufeff/, '').replace(/\r\n/g, '\n');
+  const lines = text.trimEnd().split('\n').map(line => line.split(','));
+  const index = lines[0].indexOf('공고명');
+  if (lines.length < 2 || index < 0) throw new Error('SX-05 CSV field is missing');
+  if (kind === 'blank') lines[1][index] = '';
+  else for (const row of lines) row.splice(index, 1);
+  return `\ufeff${lines.map(row => row.join(',')).join('\n')}\n`;
+}
+
 export class Staging {
   constructor(home, manifest) {
     this.home = home;
@@ -88,13 +98,7 @@ export class Staging {
     }
     if (!['blank', 'release'].includes(kind)) throw new Error(`unknown SX-05 data stage ${kind}`);
     const current = await readFile(source);
-    const text = current.toString('utf8').replace(/^\ufeff/, '').replace(/\r\n/g, '\n');
-    const lines = text.trimEnd().split('\n').map(line => line.split(','));
-    const index = lines[0].indexOf('공고명');
-    if (lines.length < 2 || index < 0) throw new Error('SX-05 CSV field is missing');
-    if (kind === 'blank') lines[1][index] = '';
-    else for (const row of lines) row.splice(index, 1);
-    const output = `\ufeff${lines.map(row => row.join(',')).join('\n')}\n`;
+    const output = dropField(current, kind);
     if (kind === 'blank') {
       this.sourceBackup ??= current;
       await atomicBytes(source, Buffer.from(output, 'utf8'));

@@ -20,6 +20,15 @@
  * 스크래치패드에 두면 Node 가 `vite` 를 해소하지 못한다(`ERR_MODULE_NOT_FOUND`, 실증).
  * 추출기는 `node_modules` 와 같은 트리에 살아야 한다.
  *
+ * ## 파일 분리(책임 분리)
+ *
+ * 모듈 문장 예산을 넘겨 `scripts/extract_js_ast/*.mjs` 로 쪼갰다 — 파서 로딩(`runtime.mjs`) ·
+ * 범위·경로·정규식(`scope.mjs`) · JS/MJS 쪽 모듈 상태(`js_axes.mjs`) · TS AST 1차 판독(`ts_core.mjs`) ·
+ * 심볼 신원(`identity.mjs`) · DOM 팩토리 별칭(`dom_factory.mjs`) · 리스너 짝짓기(`listener_tracking.mjs`) ·
+ * `typescriptAxes`의 방문자 판독(`visit_handlers.mjs`). `domFactoryOrigin`·`expressionIdentity`·
+ * `jsTemplateIds` 세 함수는 평평한 분배 표로 이미 사유가 선 상시 예외라 여기 그대로 남는다 —
+ * 원장 ident(`scripts/extract_js_ast_axes.mjs::<이름>`)가 이 파일 이름에 묶여 있어서다.
+ *
  * ## 출력
  *
  * stdout 에 JSON 하나. 키는 축 이름이고 값은 **정렬된 멤버 키 배열**이다. 멤버 키가 원장의
@@ -27,36 +36,22 @@
  *
  *   node scripts/extract_js_ast_axes.mjs [--repo-root <path>]
  */
-import { readFileSync, globSync, statSync } from "node:fs";
-import { extname, join, resolve, sep } from "node:path";
-
-let parseAst;
-try {
-  ({ parseAst } = await import("vite"));
-} catch (thrown) {
-  throw new Error(
-    "프런트 툴체인(`vite`)을 못 불렀습니다 — `npm ci` 가 먼저입니다. 이 추출기를 도는 게이트"
-    + "(복잡도 예산·Node 계약 테스트)는 Node 를 전제하므로 부재는 스킵 사유가 아니라 실패입니다: "
-    + `${thrown.message}`,
-  );
-}
-
-let ts;
-let TypeScriptAPI;
-let TypeScriptSymbolFlags;
-try {
-  ts = await import("typescript/unstable/ast");
-  ({
-    API: TypeScriptAPI,
-    SymbolFlags: TypeScriptSymbolFlags,
-  } = await import("typescript/unstable/sync"));
-} catch (thrown) {
-  throw new Error(
-    "TypeScript compiler API를 못 불렀습니다 — 제품 코드 DOM·state·listener 축은 정규식이 아니라 "
-    + "parser를 전제로 합니다. `npm ci`가 먼저입니다: "
-    + `${thrown.message}`,
-  );
-}
+import { extname, resolve, sep } from "node:path";
+import { parseAst, ts, TypeScriptAPI } from "./extract_js_ast/runtime.mjs";
+import {
+  lineIndex, OXC_SUFFIXES, PRODUCT_SCOPE, REACT_HOST_PREFIXES, SELFTEST_SCOPE, sources, walk,
+  ID_ATTR,
+} from "./extract_js_ast/scope.mjs";
+import { jsModuleState, mutableDeclarators, topLevelFunctionBody } from "./extract_js_ast/js_axes.mjs";
+import {
+  constStringBindings, normalizedNodeText, propertyName, tsModuleState, unwrapExpression,
+} from "./extract_js_ast/ts_core.mjs";
+import { collectDomFactoryAliases } from "./extract_js_ast/dom_factory.mjs";
+import { aliasKey, collectIterationBindings, symbolProvenance } from "./extract_js_ast/identity.mjs";
+import { computeCleanupGaps } from "./extract_js_ast/listener_tracking.mjs";
+import {
+  handleAssignment, handleCallExpression, handleJsxAttribute, handleStringToken,
+} from "./extract_js_ast/visit_handlers.mjs";
 
 /* ── 인자 ─────────────────────────────────────────────────────────── */
 
@@ -74,79 +69,6 @@ function parseArgs(argv) {
   return { repoRoot };
 }
 
-/* ── 공통 ─────────────────────────────────────────────────────────── */
-
-/** 파일 오프셋 → 1-기반 줄 번호. 좌표가 원장 증거의 단위라 반올림하지 않는다. */
-function lineIndex(source) {
-  const starts = [0];
-  for (let i = 0; i < source.length; i += 1) {
-    if (source[i] === "\n") starts.push(i + 1);
-  }
-  return (offset) => {
-    let low = 0;
-    let high = starts.length - 1;
-    while (low < high) {
-      const mid = (low + high + 1) >> 1;
-      if (starts[mid] <= offset) low = mid;
-      else high = mid - 1;
-    }
-    return low + 1;
-  };
-}
-
-const SKIP_KEYS = new Set(["type", "start", "end", "range", "loc", "parent"]);
-
-function walk(node, visit) {
-  if (!node || typeof node !== "object") return;
-  if (Array.isArray(node)) {
-    for (const child of node) walk(child, visit);
-    return;
-  }
-  if (typeof node.type === "string") visit(node);
-  for (const key of Object.keys(node)) {
-    if (!SKIP_KEYS.has(key)) walk(node[key], visit);
-  }
-}
-
-/* ── 범위 ──────────────────────────────────────────────────────────
- *
- * 확장자를 열거하지 않는다. 정적 폐포 계약(#490)이 코드가 **아닌** 접미사만 들고, 제품
- * 프런트 전수에서 그것을 감산한다. 새 `.tsx`·다음 코드 형식은 자동 편입되며, 파서가 못
- * 읽는 형식이면 조용히 누락되지 않고 실패한다.
- */
-const STATIC_CLOSURE = JSON.parse(readFileSync(
-  new URL("../tests/static_closure_contract.json", import.meta.url),
-  "utf8",
-));
-const NON_CODE_SUFFIXES = STATIC_CLOSURE.non_code_suffixes;
-const PRODUCT_SCOPE = ["frontend/**/*"];
-const OXC_SUFFIXES = new Set([".js", ".mjs"]);
-const SELFTEST_SCOPE = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"];
-const SELFTEST_PREFIX = "frontend/src/selftest/";
-/* R5-99 B1·S1 뒤 이 목록이 가리는 것은 **리스너 대칭 잔차 하나**다 — DOM 생성 술어는
-   제품 폐포 전체를 보고, 여기는 React effect cleanup 계약의 정의역(overlay·shell·screens)만
-   남는다. 선언 scope(원장·게이트)와 이 목록은 같은 셋이어야 한다 — 어긋나면 S1 재발. */
-const REACT_HOST_PREFIXES = [
-  "frontend/src/overlay/",
-  "frontend/src/shell/",
-  "frontend/src/screens/",
-];
-
-/** 멤버 키는 **저장소 상대 POSIX 경로**다 — OS 마다 달라지면 원장이 못 산다. */
-function sources(root, patterns, { excludeSelftest = false, excludeNonCode = false } = {}) {
-  const seen = new Map();
-  for (const pattern of [].concat(patterns)) {
-    for (const raw of globSync(pattern, { cwd: root })) {
-      const rel = raw.split(sep).join("/");
-      if (!statSync(join(root, rel)).isFile()) continue;
-      if (excludeSelftest && rel.startsWith(SELFTEST_PREFIX)) continue;
-      if (excludeNonCode && NON_CODE_SUFFIXES.some((suffix) => rel.endsWith(suffix))) continue;
-      if (!seen.has(rel)) seen.set(rel, { rel, text: readFileSync(join(root, rel), "utf8") });
-    }
-  }
-  return [...seen.values()].sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
-}
-
 /* ── 축 1: JS 가 만드는 id 사이트 ────────────────────────────────────
  *
  * AST 가 리터럴 노드를 고르고, 속성 판독은 **앵커 정규식**이다. 「AST 로 닫힌다」가 아니다 —
@@ -155,9 +77,10 @@ function sources(root, patterns, { excludeSelftest = false, excludeNonCode = fal
  *
  * 단위는 이름이 아니라 **사이트**다. 완전 동적 3건은 이름이 소스에 없으므로 이름을 단위로
  * 잡으면 그 셋이 영영 미분류이거나 조용히 빠진다.
+ *
+ * 상시 예외(복잡도 13): 2개 노드 종류(TemplateLiteral·Literal) 독립 추출 — `scripts/extract_js_ast`
+ * 로 이식해도 ident 가 바뀌므로 이 파일에 둔다.
  */
-const ID_ATTR = /(?<![\w-])id="([^"]*)$|(?<![\w-])id="([^"]*)"/g;
-
 function jsTemplateIds(root, patterns, options) {
   const rows = [];
   for (const { rel, text } of sources(root, patterns, options)) {
@@ -189,76 +112,6 @@ function jsTemplateIds(root, patterns, options) {
         }
       }
     });
-  }
-  return rows.sort();
-}
-
-/* ── 축 2: 모듈 스코프 가변 상태 ─────────────────────────────────────
- *
- * 스코프 = Program 최상위 ∪ **export 된 최상위 함수**(= 구성 1회 팩토리)의 body 최상위.
- * 구조분해는 바인딩 이름을 전부 편다. `const` 는 세지 않는다 — 가변성이 병이라는 기존 판단을
- * 승계한다(완료된 범용 DOM census가 쓰던 가변 상태 예산과 같은 전제).
- *
- * 사각: 「비-export 최상위 함수」를 지역으로 보는 판단. 그 함수가 사실 1회 호출 팩토리면 놓친다.
- * `exported` 조건을 뒤집으면 그 사각의 **오늘 크기**가 나온다 — 그것이 `js_nonexported_fn_state`.
- */
-function bindingNames(pattern, out = []) {
-  if (!pattern) return out;
-  switch (pattern.type) {
-    case "Identifier":
-      out.push(pattern);
-      break;
-    case "ObjectPattern":
-      for (const property of pattern.properties) {
-        bindingNames(property.value ?? property.argument, out);
-      }
-      break;
-    case "ArrayPattern":
-      for (const element of pattern.elements) bindingNames(element, out);
-      break;
-    case "AssignmentPattern":
-      bindingNames(pattern.left, out);
-      break;
-    case "RestElement":
-      bindingNames(pattern.argument, out);
-      break;
-    default:
-      break;
-  }
-  return out;
-}
-
-/** `exported` 를 뒤집으면 사각 프로브가 된다 — 한 함수가 값과 그 값의 사각을 함께 낸다. */
-function topLevelFunctionBody(statement, { exported }) {
-  const isExport = statement.type === "ExportNamedDeclaration"
-    || statement.type === "ExportDefaultDeclaration";
-  if (isExport !== exported) return null;
-  const declaration = isExport ? statement.declaration : statement;
-  return declaration?.type === "FunctionDeclaration" ? declaration.body.body : null;
-}
-
-function mutableDeclarators(body) {
-  return (body || [])
-    .filter((s) => s.type === "VariableDeclaration" && s.kind !== "const")
-    .flatMap((s) => s.declarations.flatMap((d) => bindingNames(d.id)));
-}
-
-function jsModuleState(root, patterns, options = {}) {
-  const { exported = true, includeProgram = true, ...scopeOptions } = options;
-  const rows = [];
-  for (const { rel, text } of sources(root, patterns, scopeOptions)) {
-    if (!OXC_SUFFIXES.has(extname(rel))) continue;
-    const lineOf = lineIndex(text);
-    const program = parseAst(text, { sourceFilename: rel });
-    const hits = [
-      ...(includeProgram ? mutableDeclarators(program.body) : []),
-      ...program.body.flatMap(
-        (s) => mutableDeclarators(topLevelFunctionBody(s, { exported })),
-      ),
-    ];
-    for (const identifier of hits) {
-      rows.push(`${rel}:${lineOf(identifier.start)} ${identifier.name}`);
-    }
   }
   return rows.sort();
 }
@@ -297,201 +150,39 @@ function selftestSurface(root) {
  * oxc `parseAst`는 TypeScript syntax를 받지 않는다. 이 축은 이미 devDependency인
  * TypeScript compiler API로 JS/TS를 함께 파싱한다 — root.ts의 type 선언을 regex/strip으로
  * 우회하면 정확히 이 축이 닫으려는 조용한 사각이 되기 때문이다.
+ *
+ * `domFactoryOrigin`·`expressionIdentity` 는 평평한 분배 표(AST 노드 종류별 독립 분기)라
+ * 상시 예외로 이 파일에 남는다 — `scripts/extract_js_ast/dom_factory.mjs`의
+ * `collectDomFactoryAliases`·`invokedDomFactory`, `identity.mjs`의 `collectIterationBindings`가
+ * 이 둘을 되부른다(순환 의존, 런타임 호출 시점에만 쓰여 안전하다).
  */
-const MARKUP_DATA_ATTR = /[\s<](data-[a-z][a-z0-9-]*)(?=\s|=|\/?>|$)/g;
-const BARE_MARKUP_DATA_ATTR = /^(data-[a-z][a-z0-9-]*)(?=\s|=|$)/g;
-const DYNAMIC_MARKUP_DATA_ATTR = /(?:^|[\s<])data-$/;
+const DOM_FACTORY_NAMES = new Set(["createElement", "createElementNS", "insertAdjacentHTML"]);
 
-function unwrapExpression(node) {
-  let current = node;
-  while (
-    current
-    && (ts.isParenthesizedExpression(current)
-      || ts.isAsExpression(current)
-      || ts.isTypeAssertion(current)
-      || ts.isSatisfiesExpression(current)
-      || ts.isNonNullExpression(current))
-  ) {
-    current = current.expression;
-  }
-  return current;
-}
-
-function literalString(node, bindings, seen = new Set()) {
+export function domFactoryOrigin(node, aliases, checker, sourceFile, bindings) {
   const current = unwrapExpression(node);
   if (!current) return null;
-  if (ts.isStringLiteral(current) || ts.isNoSubstitutionTemplateLiteral(current)) {
-    return current.text;
-  }
-  if (ts.isIdentifier(current) && bindings.has(current.text) && !seen.has(current.text)) {
-    seen.add(current.text);
-    return literalString(bindings.get(current.text), bindings, seen);
-  }
-  return null;
-}
-
-function constStringBindings(sourceFile) {
-  const bindings = new Map();
-  for (const statement of sourceFile.statements) {
-    if (
-      !ts.isVariableStatement(statement)
-      || (statement.declarationList.flags & ts.NodeFlags.Const) === 0
-    ) {
-      continue;
+  if (ts.isIdentifier(current)) return aliases.get(aliasKey(current, checker, sourceFile)) ?? null;
+  if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    const name = propertyName(current, bindings);
+    if (DOM_FACTORY_NAMES.has(name)) {
+      return normalizedNodeText(current, sourceFile);
     }
-    for (const declaration of statement.declarationList.declarations) {
-      if (ts.isIdentifier(declaration.name) && declaration.initializer) {
-        bindings.set(declaration.name.text, declaration.initializer);
-      }
-    }
-  }
-  return bindings;
-}
-
-function propertyName(node, bindings) {
-  if (ts.isPropertyAccessExpression(node)) return node.name.text;
-  if (ts.isElementAccessExpression(node)) {
-    return literalString(node.argumentExpression, bindings);
-  }
-  return null;
-}
-
-function objectPropertyName(node, bindings) {
-  const name = node.name;
-  if (!name) return null;
-  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
-    return name.text;
-  }
-  if (ts.isComputedPropertyName(name)) return literalString(name.expression, bindings);
-  return null;
-}
-
-function assignmentOperator(kind) {
-  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
-}
-
-function isDatasetObject(node, bindings) {
-  const current = unwrapExpression(node);
-  return Boolean(
-    current
-    && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))
-    && propertyName(current, bindings) === "dataset"
-  );
-}
-
-function datasetAttributeName(target, bindings) {
-  const current = unwrapExpression(target);
-  if (!current || (!ts.isPropertyAccessExpression(current) && !ts.isElementAccessExpression(current))) {
     return null;
   }
-  if (!isDatasetObject(current.expression, bindings)) return null;
-  const key = propertyName(current, bindings);
-  if (key === null) return "<dynamic>";
-  return `data-${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-}
-
-function stringTokenText(node) {
-  const stringKinds = new Set([
-    ts.SyntaxKind.StringLiteral,
-    ts.SyntaxKind.NoSubstitutionTemplateLiteral,
-    ts.SyntaxKind.TemplateHead,
-    ts.SyntaxKind.TemplateMiddle,
-    ts.SyntaxKind.TemplateTail,
-  ]);
-  return stringKinds.has(node.kind) && typeof node.text === "string" ? node.text : null;
-}
-
-function tsBindingIdentifiers(name, out = []) {
-  if (!name) return out;
-  if (ts.isIdentifier(name)) {
-    out.push(name);
-  } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
-    for (const element of name.elements) {
-      if (ts.isBindingElement(element)) tsBindingIdentifiers(element.name, out);
-    }
-  }
-  return out;
-}
-
-function hasExportModifier(node) {
-  return Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
-}
-
-function tsMutableDeclarators(statements) {
-  const identifiers = [];
-  for (const statement of statements ?? []) {
+  if (ts.isCallExpression(current)) {
+    const callee = unwrapExpression(current.expression);
     if (
-      !ts.isVariableStatement(statement)
-      || (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
-    ) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      tsBindingIdentifiers(declaration.name, identifiers);
-    }
-  }
-  return identifiers;
-}
-
-function tsModuleState(sourceFile, rel, lineOf, { exported, includeProgram }) {
-  const hits = includeProgram ? tsMutableDeclarators(sourceFile.statements) : [];
-  for (const statement of sourceFile.statements) {
-    if (
-      ts.isFunctionDeclaration(statement)
-      && Boolean(statement.body)
-      && hasExportModifier(statement) === exported
+      callee
+      && (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
+      && propertyName(callee, bindings) === "bind"
     ) {
-      hits.push(...tsMutableDeclarators(statement.body.statements));
+      return domFactoryOrigin(callee.expression, aliases, checker, sourceFile, bindings);
     }
   }
-  return hits.map(
-    (identifier) => `${rel}:${lineOf(identifier.getStart(sourceFile))} ${identifier.text}`,
-  );
+  return null;
 }
 
-function tsIdSite(rel, sourceFile, lineOf, node, valueNode, bindings) {
-  const value = literalString(valueNode, bindings);
-  const current = unwrapExpression(valueNode);
-  const prefix = value === null && current && ts.isTemplateExpression(current)
-    ? current.head.text
-    : "";
-  return `${rel}:${lineOf(node.getStart(sourceFile))}:${value === null ? "dynamic" : "static"}:`
-    + `${value ?? prefix}`;
-}
-
-function normalizedNodeText(node, sourceFile) {
-  return node ? node.getText(sourceFile).replace(/\s+/g, "") : "<default>";
-}
-
-function symbolProvenance(checker, node) {
-  let symbol = checker.getSymbolAtLocation(node);
-  if (!symbol) return null;
-  if ((symbol.flags & TypeScriptSymbolFlags.Alias) !== 0) {
-    try {
-      symbol = checker.getAliasedSymbol(symbol);
-    } catch {
-      // 깨진 alias도 아래 선언 좌표로 fail-closed 식별한다.
-    }
-  }
-  return `symbol:${symbol.id}`;
-}
-
-function collectIterationBindings(sourceFile, checker) {
-  const bindings = new Map();
-  function collect(node) {
-    if (ts.isForOfStatement(node) && ts.isVariableDeclarationList(node.initializer)) {
-      const origin = `for-of:${expressionIdentity(node.expression, checker, sourceFile)}`;
-      for (const declaration of node.initializer.declarations) {
-        for (const identifier of tsBindingIdentifiers(declaration.name)) {
-          bindings.set(aliasKey(identifier, checker, sourceFile), origin);
-        }
-      }
-    }
-    node.forEachChild(collect);
-  }
-  collect(sourceFile);
-  return bindings;
-}
-
-function expressionIdentity(node, checker, sourceFile, iterationBindings = new Map()) {
+export function expressionIdentity(node, checker, sourceFile, iterationBindings = new Map()) {
   const current = unwrapExpression(node);
   if (!current) return "<missing>";
   if (ts.isIdentifier(current)) {
@@ -519,117 +210,6 @@ function expressionIdentity(node, checker, sourceFile, iterationBindings = new M
     return `function-literal:${sourceFile.fileName}:${current.getStart(sourceFile)}`;
   }
   return `expression:${sourceFile.fileName}:${current.getStart(sourceFile)}:${current.kind}`;
-}
-
-const DOM_FACTORY_NAMES = new Set(["createElement", "createElementNS", "insertAdjacentHTML"]);
-
-function aliasKey(identifier, checker, sourceFile) {
-  return symbolProvenance(checker, identifier)
-    ?? `${sourceFile.fileName}:${identifier.getStart(sourceFile)}`;
-}
-
-function domFactoryOrigin(node, aliases, checker, sourceFile, bindings) {
-  const current = unwrapExpression(node);
-  if (!current) return null;
-  if (ts.isIdentifier(current)) return aliases.get(aliasKey(current, checker, sourceFile)) ?? null;
-  if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
-    const name = propertyName(current, bindings);
-    if (DOM_FACTORY_NAMES.has(name)) {
-      return normalizedNodeText(current, sourceFile);
-    }
-    return null;
-  }
-  if (ts.isCallExpression(current)) {
-    const callee = unwrapExpression(current.expression);
-    if (
-      callee
-      && (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
-      && propertyName(callee, bindings) === "bind"
-    ) {
-      return domFactoryOrigin(callee.expression, aliases, checker, sourceFile, bindings);
-    }
-  }
-  return null;
-}
-
-function bindingElementPropertyName(element, bindings) {
-  const node = element.propertyName ?? element.name;
-  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) {
-    return node.text;
-  }
-  if (ts.isComputedPropertyName(node)) return literalString(node.expression, bindings);
-  return null;
-}
-
-function collectDomFactoryAliases(sourceFile, checker, bindings) {
-  const aliases = new Map();
-  const candidates = [];
-  function collect(node) {
-    if (ts.isVariableDeclaration(node) || ts.isBinaryExpression(node)) candidates.push(node);
-    node.forEachChild(collect);
-  }
-  collect(sourceFile);
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const candidate of candidates) {
-      if (ts.isVariableDeclaration(candidate)) {
-        if (candidate.initializer && ts.isIdentifier(candidate.name)) {
-          const origin = domFactoryOrigin(
-            candidate.initializer, aliases, checker, sourceFile, bindings,
-          );
-          const key = aliasKey(candidate.name, checker, sourceFile);
-          if (origin !== null && aliases.get(key) !== origin) {
-            aliases.set(key, origin);
-            changed = true;
-          }
-        }
-        if (
-          candidate.initializer
-          && ts.isObjectBindingPattern(candidate.name)
-        ) {
-          for (const element of candidate.name.elements) {
-            const name = bindingElementPropertyName(element, bindings);
-            if (!DOM_FACTORY_NAMES.has(name)) continue;
-            for (const identifier of tsBindingIdentifiers(element.name)) {
-              const key = aliasKey(identifier, checker, sourceFile);
-              const origin = `${normalizedNodeText(candidate.initializer, sourceFile)}.${name}`;
-              if (aliases.get(key) !== origin) {
-                aliases.set(key, origin);
-                changed = true;
-              }
-            }
-          }
-        }
-        continue;
-      }
-      if (
-        candidate.operatorToken.kind === ts.SyntaxKind.EqualsToken
-        && ts.isIdentifier(candidate.left)
-      ) {
-        const origin = domFactoryOrigin(candidate.right, aliases, checker, sourceFile, bindings);
-        const key = aliasKey(candidate.left, checker, sourceFile);
-        if (origin !== null && aliases.get(key) !== origin) {
-          aliases.set(key, origin);
-          changed = true;
-        }
-      }
-    }
-  }
-  return aliases;
-}
-
-function invokedDomFactory(callee, aliases, checker, sourceFile, bindings) {
-  const current = unwrapExpression(callee);
-  if (
-    current
-    && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))
-    && ["call", "apply"].includes(propertyName(current, bindings))
-  ) {
-    return domFactoryOrigin(current.expression, aliases, checker, sourceFile, bindings);
-  }
-  return domFactoryOrigin(current, aliases, checker, sourceFile, bindings);
 }
 
 function typescriptAxes(root) {
@@ -681,153 +261,17 @@ function typescriptAxes(root) {
         dynamic.add(`${form}:${rel}:${lineOf(node.getStart(sourceFile))}`);
       };
 
+      const ctx = {
+        rel, sourceFile, lineOf, bindings, usesTsOwnershipAxes, isReactHost,
+        domFactoryAliases, checker, iterationBindings, add, gap,
+        templateIds, directDom, listenerPairs,
+      };
+
       function visit(node) {
-        const token = stringTokenText(node);
-        if (token !== null) {
-          /* HTML 조각 안의 속성만 본다. 보통 prop 문자열인 `className: "... data-x"`를
-             markup으로 오인하면 CSS class가 semantic data-* 생산자로 둔갑한다. */
-          if (token.includes("<")) {
-            MARKUP_DATA_ATTR.lastIndex = 0;
-            for (const match of token.matchAll(MARKUP_DATA_ATTR)) add(match[1]);
-          }
-          const literal = node.parent && ts.isTemplateExpression(node.parent) ? node.parent : node;
-          const parent = literal.parent;
-          const isMarkupFragment = parent && (
-            (ts.isVariableDeclaration(parent) && parent.initializer === literal)
-            || (ts.isArrowFunction(parent) && parent.body === literal)
-          );
-          if (isMarkupFragment) {
-            BARE_MARKUP_DATA_ATTR.lastIndex = 0;
-            for (const match of token.matchAll(BARE_MARKUP_DATA_ATTR)) add(match[1]);
-          }
-          if (
-            (node.kind === ts.SyntaxKind.TemplateHead || node.kind === ts.SyntaxKind.TemplateMiddle)
-            && DYNAMIC_MARKUP_DATA_ATTR.test(token)
-          ) {
-            gap("dynamic-markup-name", node);
-          }
-          if (usesTsOwnershipAxes) {
-            ID_ATTR.lastIndex = 0;
-            for (const match of token.matchAll(ID_ATTR)) {
-              const isDynamic = match[1] !== undefined;
-              templateIds.push(
-                `${rel}:${lineOf(node.getStart(sourceFile) + match.index)}:`
-                + `${isDynamic ? "dynamic" : "static"}:${isDynamic ? match[1] : match[2]}`,
-              );
-            }
-          }
-        }
-
-        if (ts.isCallExpression(node)) {
-          const callee = unwrapExpression(node.expression);
-          const called = callee && (
-            ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)
-          ) ? propertyName(callee, bindings) : null;
-          if (called === "setAttribute" && node.arguments.length > 0) {
-            const name = literalString(node.arguments[0], bindings);
-            if (name === null) gap("dynamic-set-attribute", node.arguments[0]);
-            else add(name.toLowerCase());
-          }
-
-          const factory = callee && ts.isIdentifier(callee) ? callee.text : null;
-          /* `h`는 R4 screen component의 얇은 createElement 별칭이다. 인자 순서가 같은 이
-             호출을 빼면 실제 React producer 75곳이 소유권 축에서 통째로 사라진다. */
-          if (["createElement", "el", "h"].includes(factory) && node.arguments.length > 1) {
-            const props = unwrapExpression(node.arguments[1]);
-            if (props && ts.isObjectLiteralExpression(props)) {
-              for (const prop of props.properties) {
-                if (ts.isSpreadAssignment(prop)) {
-                  gap("jsx-spread", prop);
-                  continue;
-                }
-                add(objectPropertyName(prop, bindings));
-                if (
-                  usesTsOwnershipAxes
-                  && objectPropertyName(prop, bindings)?.toLowerCase() === "id"
-                ) {
-                  const valueNode = ts.isPropertyAssignment(prop) ? prop.initializer : null;
-                  templateIds.push(tsIdSite(
-                    rel, sourceFile, lineOf, prop, valueNode, bindings,
-                  ));
-                }
-              }
-            }
-          }
-
-          /* R5-99 B1 — DOM 생성 술어는 **제품 폐포 전체**를 본다. 종전에는 REACT_HOST_PREFIXES
-             3-prefix 로 가려 출하 번들에 실리는 frontend/js·src 루트 모듈 13이 무방비였고,
-             실 위반 표본(bridge.js 의 createElement)이 exit 0 으로 통과했다. React 밖 제품
-             코드의 직접 DOM 생성도 R5 뒤에는 전부 위반이므로 가릴 이유 자체가 없다. */
-          if (callee) {
-            const domFactory = invokedDomFactory(
-              callee, domFactoryAliases, checker, sourceFile, bindings,
-            );
-            if (domFactory !== null) {
-              directDom.push(
-                `${rel}:${lineOf(node.getStart(sourceFile))}:${domFactory}`,
-              );
-            }
-            /* 리스너 대칭 잔차는 계속 host 정의역이다 — React effect cleanup 계약이 겨누는
-               것이고, 제품 전역 attach 총량은 별도 계측(listener-attach-sites)이 든다. */
-            if (
-              isReactHost
-              && (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
-              && (called === "addEventListener" || called === "removeEventListener")
-            ) {
-                const signature = [
-                  rel,
-                  expressionIdentity(
-                    callee.expression, checker, sourceFile, iterationBindings,
-                  ),
-                  normalizedNodeText(node.arguments[0], sourceFile),
-                  expressionIdentity(
-                    node.arguments[1], checker, sourceFile, iterationBindings,
-                  ),
-                  normalizedNodeText(node.arguments[2], sourceFile),
-                ].join("|");
-                const pair = listenerPairs.get(signature) ?? { adds: [], removes: [] };
-                const entry = {
-                  rel,
-                  line: lineOf(node.getStart(sourceFile)),
-                  text: node.getText(sourceFile).replace(/\s+/g, " "),
-                };
-                pair[called === "addEventListener" ? "adds" : "removes"].push(entry);
-                listenerPairs.set(signature, pair);
-            }
-          }
-        }
-
-        if (
-          ts.isBinaryExpression(node)
-          && assignmentOperator(node.operatorToken.kind)
-        ) {
-          const name = datasetAttributeName(node.left, bindings);
-          if (name === "<dynamic>") gap("computed-dataset", node.left);
-          else add(name);
-          {
-            /* R5-99 B1 — innerHTML/outerHTML 대입도 제품 폐포 전체. */
-            const targetName = propertyName(unwrapExpression(node.left), bindings);
-            if (targetName === "innerHTML" || targetName === "outerHTML") {
-              directDom.push(
-                `${rel}:${lineOf(node.getStart(sourceFile))}:${node.left.getText(sourceFile)}`,
-              );
-            }
-          }
-        }
-
-        if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) add(node.name.text);
-        if (
-          usesTsOwnershipAxes
-          && ts.isJsxAttribute(node)
-          && ts.isIdentifier(node.name)
-          && node.name.text.toLowerCase() === "id"
-        ) {
-          const valueNode = node.initializer && ts.isJsxExpression(node.initializer)
-            ? node.initializer.expression
-            : node.initializer;
-          templateIds.push(tsIdSite(rel, sourceFile, lineOf, node, valueNode, bindings));
-        }
-        if (ts.isJsxSpreadAttribute(node)) gap("jsx-spread", node);
+        handleStringToken(node, ctx);
+        handleCallExpression(node, ctx);
+        handleAssignment(node, ctx);
+        handleJsxAttribute(node, ctx);
         node.forEachChild(visit);
       }
       visit(sourceFile);
@@ -836,18 +280,6 @@ function typescriptAxes(root) {
     snapshot?.dispose();
     api.close();
   }
-  const cleanupGaps = [];
-  for (const pair of listenerPairs.values()) {
-    if (pair.adds.length > pair.removes.length) {
-      for (const entry of pair.adds.slice(pair.removes.length)) {
-        cleanupGaps.push(`add:${entry.rel}:${entry.line}:${entry.text}`);
-      }
-    } else if (pair.removes.length > pair.adds.length) {
-      for (const entry of pair.removes.slice(pair.adds.length)) {
-        cleanupGaps.push(`remove:${entry.rel}:${entry.line}:${entry.text}`);
-      }
-    }
-  }
   return {
     members: [...members].sort(),
     dynamic: [...dynamic].sort(),
@@ -855,7 +287,7 @@ function typescriptAxes(root) {
     moduleState: moduleState.sort(),
     nonexportedState: nonexportedState.sort(),
     directDom: directDom.sort(),
-    cleanupGaps: cleanupGaps.sort(),
+    cleanupGaps: computeCleanupGaps(listenerPairs).sort(),
   };
 }
 

@@ -193,6 +193,44 @@ async function flushMicrotasks(turns) {
   for (let i = 0; i < turns; i += 1) await Promise.resolve();
 }
 
+/** H-16 불변식 — 오버레이 표면은 합법 포털(legacy `#overlayRoot` 또는 React
+ *  `#reactOverlayHost`) 밖으로 새지 않는다. */
+function overlayChildrenOwned(doc, root, reactHost) {
+  return all(doc, ".modal,.ctx-menu,.colpanel")
+    .every((el) => el.parentElement === root
+      || (reactHost !== null && el.parentElement === reactHost));
+}
+
+/** 워크카드 재질 표본 — 작업대 카드(클러스터 D 의 DOM)를 빌려 재고 원복한다. */
+function measureWorkcardMaterial(doc, win) {
+  const cardRender = doc.getElementById("wbCard");
+  const savedCardClass = cardRender.className;
+  cardRender.className = "wb-preview wc-render f-gulimche";
+  let dot = doc.querySelector("#wbDots .wc-dot");
+  let madeDot = false;
+  if (!dot) {
+    dot = doc.createElement("button");
+    dot.className = "wc-dot";
+    doc.getElementById("wbDots").appendChild(dot);
+    madeDot = true;
+  }
+  const cr = cardRender && win.getComputedStyle(cardRender);
+  const ds = dot && win.getComputedStyle(dot);
+  const dm = dot && win.getComputedStyle(dot, "::before");
+  const workcard = {
+    max_height: cr && cr.maxHeight, overflow_y: cr && cr.overflowY,
+    font_family: cr && cr.fontFamily,
+    /* 높이 계약이 열 수에 따라 갈린다 — 어느 쪽을 쟀는지 함께 실어야 단언이 창 폭에
+       따라 거짓말하지 않는다. */
+    narrow: win.innerWidth <= 920, flex_grow: cr && cr.flexGrow,
+    dot_hit: ds && [ds.width, ds.height], dot_mark: dm && [dm.width, dm.height],
+    dots_overflow: win.getComputedStyle(doc.getElementById("wbDots")).overflow,
+  };
+  if (madeDot) dot.remove();
+  cardRender.className = savedCardClass;
+  return workcard;
+}
+
 /* ────────────────────────── 프로브 정의 ────────────────────────── */
 
 /** 클러스터 B 의 프로브 전수를 **정의 데이터**로 낸다. 부작용 없음 — 이 함수를 부르는 것만으로는
@@ -1081,9 +1119,7 @@ export function createBootRoutingOverlayProbes() {
            술어를 overlayRoot 한정으로 좁히는 대안은 기각 — React 쪽 배치 드리프트(다이얼로그가
            중첩 stacking context 안으로 새는 회귀)에 눈멀게 되는 관측 축소다. */
         const reactHost = doc.getElementById("reactOverlayHost");
-        out.overlay_children_owned = all(doc, ".modal,.ctx-menu,.colpanel")
-          .every((el) => el.parentElement === root
-            || (reactHost !== null && el.parentElement === reactHost));
+        out.overlay_children_owned = overlayChildrenOwned(doc, root, reactHost);
 
         /* 전역 스크롤바 재질 + sticky 머리 재질. */
         const scrollHost = doc.createElement("div");
@@ -1106,31 +1142,7 @@ export function createBootRoutingOverlayProbes() {
         scrollHost.remove();
 
         /* 워크카드 재질 — 표본은 작업대 카드(클러스터 D 의 DOM)를 빌리고 원복한다. */
-        const cardRender = doc.getElementById("wbCard");
-        const savedCardClass = cardRender.className;
-        cardRender.className = "wb-preview wc-render f-gulimche";
-        let dot = doc.querySelector("#wbDots .wc-dot");
-        let madeDot = false;
-        if (!dot) {
-          dot = doc.createElement("button");
-          dot.className = "wc-dot";
-          doc.getElementById("wbDots").appendChild(dot);
-          madeDot = true;
-        }
-        const cr = cardRender && win.getComputedStyle(cardRender);
-        const ds = dot && win.getComputedStyle(dot);
-        const dm = dot && win.getComputedStyle(dot, "::before");
-        out.workcard = {
-          max_height: cr && cr.maxHeight, overflow_y: cr && cr.overflowY,
-          font_family: cr && cr.fontFamily,
-          /* 높이 계약이 열 수에 따라 갈린다 — 어느 쪽을 쟀는지 함께 실어야 단언이 창 폭에
-             따라 거짓말하지 않는다. */
-          narrow: win.innerWidth <= 920, flex_grow: cr && cr.flexGrow,
-          dot_hit: ds && [ds.width, ds.height], dot_mark: dm && [dm.width, dm.height],
-          dots_overflow: win.getComputedStyle(doc.getElementById("wbDots")).overflow,
-        };
-        if (madeDot) dot.remove();
-        cardRender.className = savedCardClass;
+        out.workcard = measureWorkcardMaterial(doc, win);
 
         /* 팝오버 배치 + 모달 스택 + IME Escape + 짧은 viewport. */
         const trigger = doc.createElement("button");

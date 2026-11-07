@@ -61,25 +61,81 @@ function measureReactRuntime(ctx) {
   };
 }
 
+function hitElement(doc, element) {
+  const box = element.getBoundingClientRect();
+  return doc.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+}
+
+function withinViewport(win, element) {
+  const box = element.getBoundingClientRect();
+  return box.left >= 0 && box.top >= 0 && box.right <= win.innerWidth && box.bottom <= win.innerHeight;
+}
+
+function hitsSelf(hitResult, element) {
+  return hitResult === element || element.contains(hitResult);
+}
+
+function spotCoversTarget(spot, target) {
+  const a = spot.getBoundingClientRect();
+  const b = target.getBoundingClientRect();
+  return a.left <= b.left && a.top <= b.top && a.right >= b.right && a.bottom >= b.bottom;
+}
+
+function assertTutorialPreconditions(ctx, bridge, real, nav) {
+  if (!bridge || typeof bridge.initial !== "function") ctx.fail(ERROR_CODES.CONTRACT, "tutorial initial 통로가 없습니다.");
+  if (!real || real.kind !== "tutorial-lessons/v1") ctx.fail(ERROR_CODES.CONTRACT, "tutorial-lessons/v1 실 스냅샷이 없습니다.");
+  if (!nav || typeof nav.go !== "function" || typeof nav.currentScreen !== "function") ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 화면 이동 관측점이 없습니다.");
+}
+
+function assertTutorialDom(ctx, entry, target, spot, coach) {
+  if (!entry || !target || !spot || !coach) ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 필수 DOM 요소가 없습니다.");
+}
+
+function buildNormalMeasurements(win, { target, targetHit, outsideHit, entry, entryHit, panel, panelHit, coach, spot }) {
+  return {
+    target_hit: hitsSelf(targetHit, target),
+    off_target_free: !!outsideHit && !outsideHit.closest(".tutorial-guide, .tutorial-shield"),
+    hud_hit: hitsSelf(entryHit, entry),
+    panel_hit: hitsSelf(panelHit, panel),
+    coach_in_view: withinViewport(win, coach),
+    spot_covers_target: spotCoversTarget(spot, target),
+  };
+}
+
+function buildLargeMeasurements(doc, win, entry, coach) {
+  return {
+    coach_150_in_view: withinViewport(win, coach),
+    hud_150_hit: hitsSelf(hitElement(doc, entry), entry),
+  };
+}
+
+function buildDialogMeasurements(doc, modal, inline, exit, boxed) {
+  return {
+    dialog_guide_in_focus_boundary: modal.contains(inline) && inline.getAttribute("role") === "region",
+    dialog_exit_reachable: doc.activeElement === exit,
+    dialog_target_hit: hitsSelf(hitElement(doc, boxed), boxed),
+  };
+}
+
+function restoreTutorialSurface(ctx, doc, nav, oldScale, oldScreen, real) {
+  ctx.services.Modal?.close("confirmModal");
+  if (oldScale === null) doc.documentElement.removeAttribute("data-font-scale");
+  else doc.documentElement.setAttribute("data-font-scale", oldScale);
+  ctx.push("tutorial", real);
+  const entry = doc.getElementById("tutorialOpen");
+  if (entry?.getAttribute("aria-expanded") === "true") entry.click();
+  if (oldScreen && oldScreen !== nav.currentScreen()) nav.go(oldScreen, { force: true });
+}
+
 async function measureTutorialSurface(ctx) {
   const doc = ctx.doc;
   const bridge = ctx.services.Bridge;
-  if (!bridge || typeof bridge.initial !== "function") ctx.fail(ERROR_CODES.CONTRACT, "tutorial initial 통로가 없습니다.");
-  const real = await bridge.initial("tutorial");
-  if (!real || real.kind !== "tutorial-lessons/v1") ctx.fail(ERROR_CODES.CONTRACT, "tutorial-lessons/v1 실 스냅샷이 없습니다.");
+  const real = bridge && typeof bridge.initial === "function" ? await bridge.initial("tutorial") : undefined;
   const nav = ctx.services.Nav;
-  if (!nav || typeof nav.go !== "function" || typeof nav.currentScreen !== "function") ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 화면 이동 관측점이 없습니다.");
+  assertTutorialPreconditions(ctx, bridge, real, nav);
   const oldScreen = nav.currentScreen();
   const oldScale = doc.documentElement.getAttribute("data-font-scale");
-  const hit = (element) => {
-    const box = element.getBoundingClientRect();
-    return doc.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-  };
   let pending = null;
-  const bounds = (element) => {
-    const box = element.getBoundingClientRect();
-    return box.left >= 0 && box.top >= 0 && box.right <= ctx.win.innerWidth && box.bottom <= ctx.win.innerHeight;
-  };
   try {
     nav.go("job", { force: true });
     const synthetic = {
@@ -93,65 +149,50 @@ async function measureTutorialSurface(ctx) {
       show_result: false, result: null,
     };
     ctx.push("tutorial", synthetic);
-    await ctx.waitFor(() => !!doc.getElementById("tutorialCoach") && !!doc.getElementById("jobDataLabel"),
-      { what: "튜토리얼 코치와 실제 데이터 이름", timeoutMs: 2000 });
+    const hasCoachAndLabel = () => !!doc.getElementById("tutorialCoach") && !!doc.getElementById("jobDataLabel");
+    await ctx.waitFor(hasCoachAndLabel, { what: "튜토리얼 코치와 실제 데이터 이름", timeoutMs: 2000 });
     const entry = doc.getElementById("tutorialOpen");
     const target = doc.getElementById("jobDataLabel");
     const spot = doc.querySelector(".tutorial-spot");
     const coach = doc.getElementById("tutorialCoach");
-    if (!entry || !target || !spot || !coach) ctx.fail(ERROR_CODES.CONTRACT, "튜토리얼 필수 DOM 요소가 없습니다.");
-    await ctx.waitFor(() => spot.getBoundingClientRect().width > 0, { what: "튜토리얼 spotlight 기하", timeoutMs: 1000 });
-    const targetHit = hit(target);
+    assertTutorialDom(ctx, entry, target, spot, coach);
+    const spotHasWidth = () => spot.getBoundingClientRect().width > 0;
+    await ctx.waitFor(spotHasWidth, { what: "튜토리얼 spotlight 기하", timeoutMs: 1000 });
+    const targetHit = hitElement(doc, target);
     const outsideHit = doc.elementFromPoint(8, ctx.win.innerHeight - 8);
-    const entryHit = hit(entry);
+    const entryHit = hitElement(doc, entry);
     entry.click();
-    await ctx.waitFor(() => !!doc.getElementById("tutorialPanel"), { what: "HUD 펼침", timeoutMs: 1000 });
+    const hasPanel = () => !!doc.getElementById("tutorialPanel");
+    await ctx.waitFor(hasPanel, { what: "HUD 펼침", timeoutMs: 1000 });
     const panel = doc.getElementById("tutorialPanel");
-    const panelHit = hit(panel);
-    const normal = {
-      target_hit: targetHit === target || target.contains(targetHit),
-      off_target_free: !!outsideHit && !outsideHit.closest(".tutorial-guide, .tutorial-shield"),
-      hud_hit: entryHit === entry || entry.contains(entryHit),
-      panel_hit: panelHit === panel || panel.contains(panelHit),
-      coach_in_view: bounds(coach),
-      spot_covers_target: (() => { const a = spot.getBoundingClientRect(); const b = target.getBoundingClientRect();
-        return a.left <= b.left && a.top <= b.top && a.right >= b.right && a.bottom >= b.bottom; })(),
-    };
+    const panelHit = hitElement(doc, panel);
+    const normal = buildNormalMeasurements(ctx.win, {
+      target, targetHit, outsideHit, entry, entryHit, panel, panelHit, coach, spot,
+    });
     doc.documentElement.setAttribute("data-font-scale", "larger");
     await new Promise((resolve) => ctx.win.requestAnimationFrame(() => ctx.win.requestAnimationFrame(resolve)));
-    await ctx.waitFor(() => bounds(coach), { what: "150% 코치 기하", timeoutMs: 1000 });
-    const large = { coach_150_in_view: bounds(coach), hud_150_hit: (() => {
-      const now = hit(entry); return now === entry || entry.contains(now);
-    })() };
+    const coachInViewAt150 = () => withinViewport(ctx.win, coach);
+    await ctx.waitFor(coachInViewAt150, { what: "150% 코치 기하", timeoutMs: 1000 });
+    const large = buildLargeMeasurements(doc, ctx.win, entry, coach);
     entry.click();
     // #1127: a dialog hosts the guide exactly when the beat's boxed control is inside it.
     pending = ctx.services.Modal.confirm({ title: "대상 확인", body: "대화상자 안의 대상", confirmLabel: "확인", cancelLabel: "취소" });
     ctx.push("tutorial", { ...synthetic, beat: { ...synthetic.beat, id: "selftest-dialog", target: "dialog-confirm" } });
-    await ctx.waitFor(() => !!doc.querySelector("#confirmModal #tutorialCoach[data-shown='true'][data-target='dialog-confirm']"),
-      { what: "확인 대화상자 안의 연습 안내", timeoutMs: 2000 });
+    const hasDialogCoach = () => !!doc.querySelector("#confirmModal #tutorialCoach[data-shown='true'][data-target='dialog-confirm']");
+    await ctx.waitFor(hasDialogCoach, { what: "확인 대화상자 안의 연습 안내", timeoutMs: 2000 });
     const modal = doc.getElementById("confirmModal");
     const inline = modal.querySelector("#tutorialCoach");
     const exit = modal.querySelector("#tutorialDialogExit");
     const boxed = doc.getElementById("confirmModalOk");
     exit.focus();
-    const dialog = {
-      dialog_guide_in_focus_boundary: modal.contains(inline) && inline.getAttribute("role") === "region",
-      dialog_exit_reachable: doc.activeElement === exit,
-      dialog_target_hit: (() => { const current = hit(boxed); return current === boxed || boxed.contains(current); })(),
-    };
+    const dialog = buildDialogMeasurements(doc, modal, inline, exit, boxed);
     exit.dispatchEvent(new ctx.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    await ctx.waitFor(() => !doc.querySelector("#confirmModal #tutorialCoach") && !!doc.querySelector("#tutorialPanelRoot #tutorialCoach"),
-      { what: "Escape 뒤 현재 단계 안내 복귀", timeoutMs: 2000 });
+    const coachReturnedToPanel = () => !doc.querySelector("#confirmModal #tutorialCoach") && !!doc.querySelector("#tutorialPanelRoot #tutorialCoach");
+    await ctx.waitFor(coachReturnedToPanel, { what: "Escape 뒤 현재 단계 안내 복귀", timeoutMs: 2000 });
     await pending;
     return { ...normal, ...large, ...dialog, dialog_escape_keeps_guide: !!doc.getElementById("tutorialCoach") };
   } finally {
-    ctx.services.Modal?.close("confirmModal");
-    if (oldScale === null) doc.documentElement.removeAttribute("data-font-scale");
-    else doc.documentElement.setAttribute("data-font-scale", oldScale);
-    ctx.push("tutorial", real);
-    const entry = doc.getElementById("tutorialOpen");
-    if (entry?.getAttribute("aria-expanded") === "true") entry.click();
-    if (oldScreen && oldScreen !== nav.currentScreen()) nav.go(oldScreen, { force: true });
+    restoreTutorialSurface(ctx, doc, nav, oldScale, oldScreen, real);
   }
 }
 

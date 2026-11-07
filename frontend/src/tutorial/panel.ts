@@ -3,12 +3,15 @@ import { Fragment, createElement as h, useCallback, useEffect, useLayoutEffect, 
 import type { ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import { icon } from "../screens/icons.ts";
-import { SPAN_ANCHORS, anchorSelector } from "./anchors.ts";
+import { anchorSelector } from "./anchors.ts";
 import { FLY_SCALE, clockOf, countShown, createCoachSwap, createSpotHold, flyFrom, freshIds, playFinale, prefersReducedMotion } from "./motion.ts";
 import type { FinaleState, HeldSpot } from "./motion.ts";
 import { GLIDE_WINDOW, createRevealer, measureTarget, parity, scrollAnchor, placeCoach, sameTarget, spotFrame, visibleElement, watchLayout, watchMissedPress } from "./spotlight.ts";
 import { beatReports, watchReport } from "./reports.ts";
 import type { CoachPlacement, SpotFrame, Target } from "./spotlight.ts";
+import { beatAnchor, coachHiddenProps, continueLabel, dialogHostFor, featuredLesson, featuredState, finalePosition, guideIdentity, guideTarget,
+  hudVisible, lessonAction, lessonFraction, lessonsPanelOpen, liveBeat, noHost, readSnapshot, shownResult, spansLines, viewportOf } from "./panel_state.ts";
+export { featuredAction, featuredLesson, hudVisible, lessonAction } from "./panel_state.ts";
 
 export type Lesson = {
   id: string; title: string; description: string; recommended: boolean;
@@ -59,47 +62,12 @@ export type TutorialPorts = {
   portal?: (children: ReactNode, container: Element) => ReactNode;
 };
 
-const noHost = () => null;
-
-export function lessonAction(item: Lesson, snapshot: TutorialSnapshot): string {
-  if (item.completed) return "restart";
-  return item.id === snapshot.scenario_id && snapshot.paused ? "resume" : "select";
-}
-
-/** The one lesson the open panel features: the current lesson while it is in progress (a re-run of a completed
- *  lesson included), else the next unfinished one to start. */
-export function featuredLesson(snapshot: TutorialSnapshot): Lesson | null {
-  const current = snapshot.scenarios.find((item) => item.id === snapshot.scenario_id);
-  if (current && (snapshot.active || snapshot.paused)) return current;
-  const open = snapshot.scenarios.filter((item) => !item.completed);
-  return open.find((item) => item.id === snapshot.scenario_id)
-    ?? open.find((item) => item.recommended) ?? open[0] ?? null;
-}
-
-/** Featured primary: a running current lesson continues behind the panel ("close"), a paused current lesson resumes
- *  even when it was completed before; any other lesson follows the row action. */
-export function featuredAction(item: Lesson, snapshot: TutorialSnapshot): string {
-  if (item.id === snapshot.scenario_id && snapshot.active) return "close";
-  if (item.id === snapshot.scenario_id && snapshot.paused) return "resume";
-  return lessonAction(item, snapshot);
-}
-
-function readSnapshot(value: unknown): TutorialSnapshot | null {
-  if (!value || typeof value !== "object" || (value as { kind?: unknown }).kind !== "tutorial-lessons/v1") return null;
-  return value as TutorialSnapshot;
-}
-
 function Ring(props: { fraction: number }): ReactNode {
   const offset = 63 * (1 - props.fraction);
   return h("svg", { className: "tutorial-ring", viewBox: "0 0 24 24", "aria-hidden": true },
     h("circle", { className: "tutorial-ring-bg", cx: 12, cy: 12, r: 10 }),
     h("circle", { className: "tutorial-ring-fg", cx: 12, cy: 12, r: 10, strokeDasharray: 63, strokeDashoffset: offset }));
 }
-
-const viewportOf = (doc: Document) => {
-  const view = doc.defaultView ?? window;
-  return { width: view.innerWidth, height: view.innerHeight };
-};
 
 /** Height of the element with `id`, followed while it resizes; `fallback` until measured. `deps` name what recreates it. */
 function useElementHeight(doc: Document, id: string, fallback: number, deps: readonly unknown[]): number {
@@ -193,10 +161,6 @@ export function TutorialCoach(props: CoachProps): ReactNode {
     h(CoachFoot, props)));
 }
 
-function coachHiddenProps(hidden: boolean | undefined): { inert?: boolean; "aria-hidden"?: boolean } {
-  return { inert: hidden || undefined, "aria-hidden": hidden || undefined };
-}
-
 type GuideProps = Omit<CoachProps, keyof CoachView | "inline" | "hidden" | "stale"> & {
   beat: TutorialBeat; identity: string; step: string; found: Target | null; dialogHost: Element | null; doc: Document;
   portal: (children: ReactNode, container: Element) => ReactNode;
@@ -254,20 +218,12 @@ function LessonCheck(props: { done: boolean; fresh: boolean }): ReactNode {
     props.done ? icon("check") : null);
 }
 
-/** Open panel body. One featured lesson owns the only primary action; other lessons are quiet whole-row choices,
- *  practice copies sit behind one disclosure, and maintenance stays a quiet text row at the bottom. */
-export function TutorialLessons(props: LessonControls): ReactNode {
-  const { snapshot, pending, practice } = props;
-  const count = snapshot.scenarios.filter((item) => item.completed).length;
-  const featured = featuredLesson(snapshot);
-  const current = !!featured && featured.id === snapshot.scenario_id;
-  const running = current && snapshot.active;
-  const started = !!featured && (featured.checkpoint > 0 || current && (snapshot.active || snapshot.paused));
-  const primary = featured ? featuredAction(featured, snapshot) : null;
-  const quiet = (label: string, onClick: () => void, extra?: Record<string, unknown>) =>
-    h("button", { className: "btn quiet sm", type: "button", disabled: pending, onClick, ...extra }, label);
-
-  const featuredBlock = featured ? h("section", { className: "tutorial-featured", "aria-labelledby": "tutorialFeaturedTitle" },
+function featuredBlock(props: LessonControls, featured: Lesson | null,
+  quiet: (label: string, onClick: () => void) => ReactNode): ReactNode {
+  const { snapshot, pending } = props;
+  const { running, started, primary } = featuredState(snapshot, featured);
+  if (!featured) return null;
+  return h("section", { className: "tutorial-featured", "aria-labelledby": "tutorialFeaturedTitle" },
     h("header", { className: "tutorial-featured-head" },
       h("h3", { id: "tutorialFeaturedTitle" }, featured.title),
       started ? h("span", { className: "tutorial-progress" }, `${featured.checkpoint}/${featured.step_count}`) : null),
@@ -276,37 +232,58 @@ export function TutorialLessons(props: LessonControls): ReactNode {
       // A running lesson continues behind the panel: closing returns to it without a host transition.
       h("button", { id: "tutorialContinue", className: "btn primary sm", type: "button", disabled: pending,
         onClick: () => primary === "close" ? props.close() : props.run(featured, primary!) },
-        primary === "restart" ? snapshot.copy.restart : started ? snapshot.copy.resume : snapshot.copy.start),
+        continueLabel(primary, started, snapshot.copy)),
       started && featured.checkpoint > 0 && primary !== "restart" ? quiet(snapshot.copy.restart, () => props.run(featured, "restart")) : null,
       running ? quiet(snapshot.copy.pause, () => props.act("pause")) : null,
-      running ? quiet(snapshot.copy.skip, () => props.act("skip")) : null)) : null;
+      running ? quiet(snapshot.copy.skip, () => props.act("skip")) : null));
+}
 
-  const rows = snapshot.scenarios.filter((item) => item.id !== featured?.id).map((item) => h("li", { key: item.id, className: item.completed ? "done" : undefined },
-    h("button", { type: "button", className: "tutorial-row", disabled: pending,
+function lessonRow(props: LessonControls, item: Lesson): ReactNode {
+  const { snapshot } = props;
+  return h("li", { key: item.id, className: item.completed ? "done" : undefined },
+    h("button", { type: "button", className: "tutorial-row", disabled: props.pending,
       "aria-label": item.completed ? undefined : `${item.title}, ${snapshot.copy.choose_scenario}`,
       onClick: () => props.run(item, lessonAction(item, snapshot)) },
       h(LessonCheck, { done: item.completed, fresh: props.fresh?.has(item.id) === true }),
       h("span", { className: "tutorial-row-title" }, item.title),
       !item.completed && item.checkpoint > 0 ? h("span", { className: "tutorial-progress" }, `${item.checkpoint}/${item.step_count}`) : null,
       item.completed ? h("span", { className: "tutorial-row-action" }, snapshot.copy.restart)
-        : h("span", { className: "tutorial-row-go", "aria-hidden": true }, icon("chevron-right")))));
+        : h("span", { className: "tutorial-row-go", "aria-hidden": true }, icon("chevron-right"))));
+}
 
+function fileListOf(snapshot: TutorialSnapshot): ReactNode {
   const files = snapshot.resources.files ?? [];
-  const fileList = files.length ? h("ul", { className: "tutorial-files" }, ...files.map((file) => h("li", { key: file.path, title: file.path },
+  return files.length ? h("ul", { className: "tutorial-files" }, ...files.map((file) => h("li", { key: file.path, title: file.path },
     h("span", { className: "tutorial-file-name" }, file.name), h("span", { className: "tutorial-file-path" }, file.path)))) : null;
+}
+
+/** Practice copies stay one disclosure away; the summary alone carries readiness. */
+function resourceBlock(snapshot: TutorialSnapshot): ReactNode {
+  const fileList = fileListOf(snapshot);
   const summary = snapshot.resources.summary;
   const recovery = snapshot.recovery?.body && snapshot.recovery.body !== summary ? snapshot.recovery.body : null;
+  return recovery || summary || fileList ? h("div", { className: "tutorial-resource" },
+    recovery ? h("p", { className: "tutorial-recovery" }, recovery) : null,
+    fileList && summary ? h("details", { className: "tutorial-disclosure" },
+      h("summary", null, h("span", { className: "tutorial-disclosure-mark", "aria-hidden": true }, icon("chevron-right")), summary), fileList)
+      : summary ? h("p", null, summary) : fileList) : null;
+}
 
+/** Open panel body. One featured lesson owns the only primary action; other lessons are quiet whole-row choices,
+ *  practice copies sit behind one disclosure, and maintenance stays a quiet text row at the bottom. */
+export function TutorialLessons(props: LessonControls): ReactNode {
+  const { snapshot, pending, practice } = props;
+  const count = snapshot.scenarios.filter((item) => item.completed).length;
+  const featured = featuredLesson(snapshot);
+  const quiet = (label: string, onClick: () => void, extra?: Record<string, unknown>) =>
+    h("button", { className: "btn quiet sm", type: "button", disabled: pending, onClick, ...extra }, label);
+  const featuredView = featuredBlock(props, featured, quiet);
+  const rows = snapshot.scenarios.filter((item) => item.id !== featured?.id).map((item) => lessonRow(props, item));
   return h(Fragment, null,
     h("header", null, h("h2", null, "튜토리얼"), h("span", null, `${count}/${snapshot.scenarios.length}`)),
-    featuredBlock,
+    featuredView,
     rows.length ? h("ol", { className: "tutorial-list" }, ...rows) : null,
-    recovery || summary || fileList ? h("div", { className: "tutorial-resource" },
-      recovery ? h("p", { className: "tutorial-recovery" }, recovery) : null,
-      // Practice copies stay one disclosure away; the summary alone carries readiness.
-      fileList && summary ? h("details", { className: "tutorial-disclosure" },
-        h("summary", null, h("span", { className: "tutorial-disclosure-mark", "aria-hidden": true }, icon("chevron-right")), summary), fileList)
-        : summary ? h("p", null, summary) : fileList) : null,
+    resourceBlock(snapshot),
     h("div", { className: "tutorial-maintenance" },
       !practice ? quiet(snapshot.copy.cleanup, () => props.confirm("cleanup"), { className: "btn quiet sm tutorial-destructive" }) : null,
       !practice ? quiet(snapshot.copy.reset, () => props.confirm("reset_progress"), { className: "btn quiet sm tutorial-destructive" }) : null));
@@ -340,11 +317,6 @@ function usePressReport(ports: TutorialPorts, snapshot: TutorialSnapshot | null,
     const stops = reports.flatMap(([action, fact, watch]) => fact ? [watchReport(ports, beatSelector, action, fact, watch)] : []);
     return () => stops.forEach((stop) => stop());
   }, [ports, key]);
-}
-
-/** A painted text range (#1136) is one element per line: the live beat's box is then their union. */
-function spansLines(beat: TutorialBeat | null, target: string | null, beatSelector: string | null): boolean {
-  return !!beat && target === beatSelector && SPAN_ANCHORS.has(beat.target ?? "");
 }
 
 type FinaleProps = {
@@ -410,8 +382,6 @@ function useFreshIds(ids: readonly string[] | null | undefined, shown = true): R
   return next.fresh;
 }
 
-const lessonFraction = (lesson: Lesson | undefined) => lesson?.step_count ? lesson.checkpoint / lesson.step_count : 0;
-
 type HudProps = { snapshot: TutorialSnapshot | null; selected: Lesson | undefined; practice: boolean; open: boolean; exit: ReactNode; toggle(): void };
 
 /** Practice HUD: progress ring, stage dots and the exit. A stage dot that turns done pops once. */
@@ -430,14 +400,6 @@ function TutorialHud(props: HudProps): ReactNode {
       }))) : null, practice && snapshot?.paused ? h("span", { className: "tutorial-paused" }, snapshot.copy.pause) : null), props.exit);
 }
 
-/** 설정의 「튜토리얼 버튼 표시」 토글(#1147) — HUD·열린 패널을 백엔드가 낸 최종값
- *  그대로 따른다(연습 중이면 토글과 무관하게 true). 여기서 다시 판정하지 않는다.
- *  값을 실은 첫 스냅샷 전에는 서지 않는다 — 꺼 둔 버튼이 부팅마다 잠깐 비치지 않게(#1152 리뷰). 첫 당김이
- *  실패하면 서 있는다: 백엔드의 기본값(표시)과 같고, 버튼을 잃으면 다시 켤 길이 설정뿐이다. */
-export function hudVisible(snapshot: TutorialSnapshot | null, initialFailed: boolean): boolean {
-  return snapshot ? snapshot.entry?.visible !== false : initialFailed;
-}
-
 function useHudVisible(snapshot: TutorialSnapshot | null, initialFailed: boolean, close: () => void): boolean {
   const visible = hudVisible(snapshot, initialFailed);
   useEffect(() => { if (!visible) close(); }, [visible]);
@@ -453,28 +415,20 @@ function useInitialFailed(ports: TutorialPorts): boolean {
   return failed;
 }
 
-/** 열린 과정 목록 패널을 그릴지 — HUD 숨김(#1147)·초대 카드·overlay 점유를 한데 묻는다. */
-function lessonsPanelOpen(hudVisible: boolean, open: boolean, snapshot: TutorialSnapshot | null, overlayBusy: boolean): boolean {
-  return hudVisible && open && !!snapshot && !snapshot.invitation.visible && !overlayBusy;
-}
-
-function guideIdentity(snapshot: TutorialSnapshot | null, beat: TutorialBeat | null): string {
-  return beat && snapshot ? `${snapshot.scenario_id}:${snapshot.checkpoint}:${beat.id}` : "";
-}
-
-export function TutorialPanel(ports: TutorialPorts): ReactNode {
+/** The host's tutorial snapshot, the current screen and the overlay state, each followed as an external store. */
+function useTutorialStores(ports: TutorialPorts) {
   const raw = useSyncExternalStore(ports.model.subscribe, ports.model.getSnapshot, ports.model.getSnapshot);
   const snapshot = readSnapshot(raw);
   const screen = useSyncExternalStore(ports.nav.subscribe, ports.nav.currentScreen, ports.nav.currentScreen);
   const overlayBusy = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.isBusy, ports.overlay.isBusy);
   const overlayHost = useSyncExternalStore(ports.overlay.subscribe, ports.overlay.currentHost ?? noHost, ports.overlay.currentHost ?? noHost);
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [resultDismissed, setResultDismissed] = useState(false);
+  return { snapshot, screen, overlayBusy, overlayHost };
+}
 
-  const initialFailed = useInitialFailed(ports);
-
-  const act = useCallback(async (action: string, payload?: Record<string, unknown>) => {
+/** One host action at a time: true when the host carried it out (not cancelled); errors are alarmed. A confirmed
+ *  exit closes the panel. */
+function useTutorialAct(ports: TutorialPorts, pending: boolean, setPending: (value: boolean) => void, setOpen: (value: boolean) => void) {
+  return useCallback(async (action: string, payload?: Record<string, unknown>) => {
     if (pending) return false;
     setPending(true);
     try {
@@ -485,22 +439,100 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
     catch (error) { ports.alarm(String(error)); return false; }
     finally { setPending(false); }
   }, [pending, ports]);
+}
+
+/** What the panel's layers read: the ports, the snapshot and overlay state, the pending lock and the act/exit controls. */
+type PanelView = {
+  ports: TutorialPorts; snapshot: TutorialSnapshot | null; overlayBusy: boolean; pending: boolean; practice: boolean;
+  selected: Lesson | undefined; act(action: string, payload?: Record<string, unknown>): Promise<boolean>;
+  exitButton(id?: string, primary?: boolean): ReactNode;
+};
+
+function hudLayer(view: PanelView, hudShown: boolean, open: boolean, setOpen: (value: boolean) => void, entry: Element): ReactNode {
+  const { ports, snapshot, selected, practice } = view;
+  return hudShown
+    ? (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: view.exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry)
+    : null;
+}
+
+function lessonsLayer(view: PanelView, layer: {
+  open: boolean; hudShown: boolean; setOpen(value: boolean): void; fresh: ReadonlySet<string>;
+  runLesson(item: Lesson, action: string): Promise<void>; confirmAction(action: "reset_progress" | "cleanup"): Promise<void>;
+}): ReactNode {
+  const { ports, snapshot, pending, practice, act } = view;
+  const { setOpen, runLesson, confirmAction } = layer;
+  return lessonsPanelOpen(layer.hudShown, layer.open, snapshot, view.overlayBusy) ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
+    onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
+      if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
+    } },
+    h(TutorialLessons, { snapshot: snapshot!, pending, practice, fresh: layer.fresh,
+      run: (item, action) => void runLesson(item, action),
+      close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
+      act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null;
+}
+
+function inviteLayer(view: PanelView): ReactNode {
+  const { snapshot, pending, act } = view;
+  return snapshot?.invitation.visible && !view.overlayBusy ? h("section", { className: "tutorial-invite", role: "region", "aria-labelledby": "tutorialInviteTitle" },
+    h("h2", { id: "tutorialInviteTitle" }, snapshot.invitation.title), h("p", null, snapshot.invitation.body),
+    h("div", { className: "tutorial-actions" },
+      h("button", { type: "button", className: "btn", disabled: pending, onClick: () => void act("later") }, snapshot.copy.later),
+      h("button", { type: "button", className: "btn primary", disabled: pending,
+        onClick: () => void act("start", { scenario_id: snapshot.scenarios.find((item) => item.recommended)?.id ?? "first_hwpx" }) }, snapshot.copy.start))) : null;
+}
+
+function pausedLayer(view: PanelView): ReactNode {
+  const { snapshot, pending, act } = view;
+  return view.practice && snapshot?.paused && !view.overlayBusy ? h("section", { className: "tutorial-paused-card", role: "region", "aria-label": snapshot.copy.pause },
+    h("p", null, snapshot.recovery?.body ?? view.selected?.title),
+    h("button", { id: "tutorialResume", className: "btn primary sm", type: "button", disabled: pending,
+      onClick: () => void act("resume") }, snapshot.copy.resume)) : null;
+}
+
+function finaleLayer(view: PanelView, layer: {
+  shown: boolean; result: TutorialSnapshot["result"] | null; position: CoachPlacement | null; nextLesson: Lesson | undefined;
+  chooseLesson(item: Lesson): Promise<void>; dismiss(): void;
+}): ReactNode {
+  const { result, nextLesson, chooseLesson } = layer;
+  return layer.shown && result ? h(TutorialFinale, { result, copy: view.snapshot!.copy, pending: view.pending, doc: view.ports.doc, position: layer.position,
+    next: nextLesson ? () => void chooseLesson(nextLesson) : null, exit: view.exitButton(undefined, !nextLesson),
+    close: () => layer.dismiss() }) : null;
+}
+
+function guideLayer(view: PanelView, layer: {
+  shown: boolean; beat: TutorialBeat | null; identity: string; found: Target | null; dialogHost: Element | null;
+  recover(): Promise<void>;
+}): ReactNode {
+  const { ports, snapshot, selected, act } = view;
+  const { beat, recover } = layer;
+  return layer.shown && beat ? h(TutorialGuide, { beat, identity: layer.identity,
+    copy: snapshot!.copy, found: layer.found, dialogHost: layer.dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
+    step: selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "",
+    overlayBusy: view.overlayBusy, pending: view.pending, exit: view.exitButton("tutorialDialogExit"),
+    act: (action, payload) => void act(action, payload), recover: () => void recover() }) : null;
+}
+
+export function TutorialPanel(ports: TutorialPorts): ReactNode {
+  const { snapshot, screen, overlayBusy, overlayHost } = useTutorialStores(ports);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [resultDismissed, setResultDismissed] = useState(false);
+
+  const initialFailed = useInitialFailed(ports);
+
+  const act = useTutorialAct(ports, pending, setPending, setOpen);
 
   const hudShown = useHudVisible(snapshot, initialFailed, () => setOpen(false));
 
-  const beat = snapshot?.active && !snapshot.paused ? snapshot.beat : null;
+  const beat = liveBeat(snapshot);
   const identity = guideIdentity(snapshot, beat);
-  const beatSelector = beat ? anchorSelector(beat.target, beat.arg) : null;
+  const beatSelector = beatAnchor(beat);
   const practice = snapshot?.practice?.active === true;
-  // Put help in the existing focus boundary when the boxed control is inside it; never create a second modal
-  // or intercept Escape.
-  const dialogRelevant = !!overlayHost && !!beatSelector && !!overlayHost.querySelector(beatSelector);
-  const dialogHost = dialogRelevant ? overlayHost!.querySelector(".modal-card, .sheet-card, [role='dialog']") ?? overlayHost : null;
+  const dialogHost = dialogHostFor(overlayHost, beatSelector);
   const canGuide = !overlayBusy || !!dialogHost;
-  const result = snapshot?.show_result && !snapshot.active && !overlayBusy ? snapshot.result : null;
+  const result = shownResult(snapshot, overlayBusy);
   useEffect(() => setResultDismissed(false), [result?.title]);
-  const target = beat && (beat.screen === null || beat.screen === screen) && canGuide ? beatSelector
-    : result && result.screen === screen ? anchorSelector(result.target) : null;
+  const target = guideTarget(beat, beatSelector, canGuide, result, screen);
   usePressReport(ports, snapshot, screen, beatSelector);
   const found = useAnchorBox(ports.doc, dialogHost, target, `${identity}|${target}`, spansLines(beat, target, beatSelector), [screen, open]);
   const resultHeight = useElementHeight(ports.doc, "tutorialFinale", 330, [result?.title, found]);
@@ -510,7 +542,7 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const fresh = useFreshIds(snapshot?.scenarios.filter((item) => item.completed).map((item) => item.id), open);
   const shown = Boolean(beat && canGuide);
   const resultShown = Boolean(result && !resultDismissed);
-  const resultPosition = found && result ? placeCoach(found.rect, viewportOf(ports.doc), "right", resultHeight) : null;
+  const resultPosition = finalePosition(found, result, ports.doc, resultHeight);
 
   const recover = async () => {
     const element = visibleElement(dialogHost ?? ports.doc, beatSelector);
@@ -548,34 +580,13 @@ export function TutorialPanel(ports: TutorialPorts): ReactNode {
   const exitButton = (id?: string, primary = false) => practice ? h("button", { id, className: primary ? "btn primary sm tutorial-exit" : "btn sm tutorial-exit", type: "button", disabled: pending,
     onClick: () => void act("exit") }, snapshot!.copy.exit) : null;
 
+  const view: PanelView = { ports, snapshot, overlayBusy, pending, practice, selected, act, exitButton };
   return h("div", { id: "tutorialPanelRoot", className: "tutorial-root", "data-screen": screen ?? "", "data-practice": practice },
-    hudShown
-      ? (ports.portal ?? createPortal)(h(TutorialHud, { snapshot, selected, practice, open, exit: exitButton("tutorialExit"), toggle: () => setOpen(!open) }), entry)
-      : null,
-    lessonsPanelOpen(hudShown, open, snapshot, overlayBusy) ? h("section", { id: "tutorialPanel", className: "tutorial-panel", "aria-label": "튜토리얼",
-      onKeyDown: (event: { key: string; nativeEvent: { isComposing?: boolean }; stopPropagation(): void }) => {
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); }
-      } },
-      h(TutorialLessons, { snapshot: snapshot!, pending, practice, fresh,
-        run: (item, action) => void runLesson(item, action),
-        close: () => { setOpen(false); ports.doc.getElementById("tutorialOpen")?.focus(); },
-        act: (action) => void act(action), confirm: (action) => void confirmAction(action) })) : null,
-    snapshot?.invitation.visible && !overlayBusy ? h("section", { className: "tutorial-invite", role: "region", "aria-labelledby": "tutorialInviteTitle" },
-      h("h2", { id: "tutorialInviteTitle" }, snapshot.invitation.title), h("p", null, snapshot.invitation.body),
-      h("div", { className: "tutorial-actions" },
-        h("button", { type: "button", className: "btn", disabled: pending, onClick: () => void act("later") }, snapshot.copy.later),
-        h("button", { type: "button", className: "btn primary", disabled: pending,
-          onClick: () => void act("start", { scenario_id: snapshot.scenarios.find((item) => item.recommended)?.id ?? "first_hwpx" }) }, snapshot.copy.start))) : null,
-    practice && snapshot?.paused && !overlayBusy ? h("section", { className: "tutorial-paused-card", role: "region", "aria-label": snapshot.copy.pause },
-      h("p", null, snapshot.recovery?.body ?? selected?.title),
-      h("button", { id: "tutorialResume", className: "btn primary sm", type: "button", disabled: pending,
-        onClick: () => void act("resume") }, snapshot.copy.resume)) : null,
-    resultShown && result ? h(TutorialFinale, { result, copy: snapshot!.copy, pending, doc: ports.doc, position: resultPosition,
-      next: nextLesson ? () => void chooseLesson(nextLesson) : null, exit: exitButton(undefined, !nextLesson),
-      close: () => setResultDismissed(true) }) : null,
-    shown && beat ? h(TutorialGuide, { beat, identity,
-      copy: snapshot!.copy, found, dialogHost, doc: ports.doc, portal: ports.portal ?? createPortal,
-      step: selected ? `${Math.min(snapshot!.checkpoint + 1, selected.step_count)} / ${selected.step_count}` : "",
-      overlayBusy, pending, exit: exitButton("tutorialDialogExit"),
-      act: (action, payload) => void act(action, payload), recover: () => void recover() }) : null);
+    hudLayer(view, hudShown, open, setOpen, entry),
+    lessonsLayer(view, { open, hudShown, setOpen, fresh, runLesson, confirmAction }),
+    inviteLayer(view),
+    pausedLayer(view),
+    finaleLayer(view, { shown: resultShown, result, position: resultPosition, nextLesson, chooseLesson,
+      dismiss: () => setResultDismissed(true) }),
+    guideLayer(view, { shown, beat, identity, found, dialogHost, recover }));
 }

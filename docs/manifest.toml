@@ -161,7 +161,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
-source_sha256 = "c87b632ceef6dcc25d6ee7410a14714d07f39ab64d34076c947b1798ae54e0df"
+source_sha256 = "287c29ed6c71ddd08ab3895d13f025917e264a9c713eb689b2ca1e150ce1f1da"
 body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
 [[topic]]
@@ -185,7 +185,7 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["crates/hwpx-desktop/src/template_change_coordinator.rs", "crates/hwpx-desktop/src/applied_template_asset.rs", "crates/hwpx-desktop/src/slot_configuration_*.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-filler/src/*configuration*.rs", "crates/hwpx-filler/src/*template*.rs", "crates/hwpx-desktop/src/preset_registry.rs", "crates/hwpx-filler/src/preset*.rs", "crates/hwpx-desktop/src/authoring_*.rs", "crates/hwpx-filler/src/*authoring*.rs", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["crates/hwpx-filler/src/work_slot_configuration.rs", "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/job_hwpx_panel.rs", "crates/hwpx-desktop/src/current_execution_preparation.rs", "crates/hwpx-filler/src/txt_authoring.rs", "crates/hwpx-desktop/src/authoring_controller.rs", "tests/js/authoring.test.js", "tests/js/txt_name_tags.test.js", "crates/hwpx-filler/src/authoring.rs", "crates/hwpx-filler/src/rhwp_preflight.rs", "crates/hwpx-desktop/src/template_change_coordinator.rs"]
-source_sha256 = "b11ee9fe75bb683266375ec7b433f78e76f47d835c69a2b16d050fdcaa88396e"
+source_sha256 = "f0254c8bba774ac880b275a3b8c6fff0a90b6d3f24d571d43117577a94df6fd3"
 body_sha256 = "fe2bc41c19c53e324b1371f389a4cfe9032e4f78a41086b2540083feca37e30c"
 
 [[topic]]
@@ -207,9 +207,9 @@ body_sha256 = "3cbf1e371c919a70d620434c53b0ae0a6474f3c5b4282f97b5604e9267c6ca2e"
 [[topic]]
 id = "workflow-results"
 document = "docs/workflow.md"
-sources = ["crates/hwpx-desktop/src/artifact_observation.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/native_data_sheets.rs", "crates/hwpx-desktop/src/native_authoring_files.rs", "crates/hwpx-desktop/src/workbench_controller.rs", "crates/hwpx-desktop/src/workbench_materialization.rs", "frontend/src/screens/job_artifact.ts", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "crates/hwpx-desktop/src/job_execution.rs", "frontend/src/screens/workbench*.ts", "crates/hwpx-filler/src/document_creation_workbench.rs", "crates/hwpx-filler/src/fresh_execution_observation.rs", "frontend/src/selftest/probes/job.js", "frontend/src/selftest/probes/job_artifact_snapshot.js"]
+sources = ["crates/hwpx-desktop/src/artifact_observation.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/native_data_sheets.rs", "crates/hwpx-desktop/src/native_authoring_files.rs", "crates/hwpx-desktop/src/workbench_controller.rs", "crates/hwpx-desktop/src/workbench_materialization.rs", "frontend/src/screens/job_artifact.ts", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "crates/hwpx-desktop/src/job_execution.rs", "frontend/src/screens/workbench*.ts", "crates/hwpx-filler/src/document_creation_workbench.rs", "crates/hwpx-filler/src/fresh_execution_observation.rs", "frontend/src/selftest/probes/job.js", "frontend/src/selftest/probes/job_mirror.js", "frontend/src/selftest/probes/job_artifact_snapshot.js"]
 tests = ["crates/hwpx-desktop/src/managed_generation_service.rs","crates/hwpx-desktop/src/workbench_controller.rs","crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-desktop/src/job_run_result.rs"]
-source_sha256 = "2f23b7dafbec57457d528768d287918402f3f759b172b1b492df94ec83539b8a"
+source_sha256 = "7e2abbe73d46c6a6cf891c6ed14e2ec1091ec39eb6392afc8d9439ced32bc49c"
 body_sha256 = "74338865f1b57ecb80c0d0210e73c4a585b368a7ceeefc0bc217b0f336a92e5c"
 
 [[topic]]
@@ -239,9 +239,9 @@ body_sha256 = "fdbc4edebdd5edbdb5bd52af907a46f4adb8527f0346b3c84271fde0b0111358"
 [[topic]]
 id = "ui-visual"
 document = "docs/ui-style.md"
-sources = ["scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/verify_native_restart.ps1", "frontend/design-tokens.json", "scripts/gen_design_tokens.mjs", "frontend/css/*.css", "frontend/src/screens/authoring_layout.ts", "frontend/src/screens/authoring_proposal_view.ts", "frontend/src/tutorial/panel.ts", "frontend/src/tutorial/spotlight.ts", "vendor/rhwp/patches/authoring.patch"]
+sources = ["scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/verify_native_restart.ps1", "frontend/design-tokens.json", "scripts/gen_design_tokens.mjs", "frontend/css/*.css", "frontend/src/screens/authoring_layout.ts", "frontend/src/screens/authoring_proposal_view.ts", "frontend/src/tutorial/panel.ts", "frontend/src/tutorial/panel_state.ts", "frontend/src/tutorial/spotlight.ts", "vendor/rhwp/patches/authoring.patch"]
 tests = ["tests/js/design_tokens.test.js", "tests/browser/browser_resource.test.js", "tests/js/authoring_layout.test.js", "tests/js/authoring_render.test.js", "tests/js/tutorial_panel.test.js"]
-source_sha256 = "30c4b800965505e1498e2a82b992015128d8351218e8d807a53ac852f3f3b2c2"
+source_sha256 = "5d725086aced0e195aea3c850f4f2bfc15b0c4c2d8f89096332ec57dd3f0f6c5"
 body_sha256 = "d5a771613b44926e8c58fea5187baff192a655fb47d3616851cb8d28c647ab90"
 
 [[topic]]
