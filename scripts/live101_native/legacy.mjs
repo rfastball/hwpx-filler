@@ -44,20 +44,7 @@ async function chooseTemplateAndData(s, ctx, selector, label, onPaired = null,
     `${label}: suggestions landed`, { requires: ['#scr-editor'] });
 }
 
-export async function runLegacy(surface, ctx) {
-  const s = surface;
-  const seen = {};
-  const shot = name => s.shoot(name);
-  await s.wait(`!!document.querySelector('#jobPickInLibrary')`, 'empty landing',
-    { requires: ['#jobPickInLibrary'] });
-  await s.wait(`getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none'`,
-    'data exit visible', { requires: ['#jobNoDataExit'] });
-  await shot('job-landing');
-
-  await s.click('#jobPickInLibrary', 'library exit');
-  await s.wait(`!!document.querySelector('#scr-library.on')`, 'library screen',
-    { requires: ['#scr-library'] });
-  await shot('library-empty');
+async function hwpxJobPhase(s, ctx, shot, seen) {
   await chooseTemplateAndData(s, ctx,
     '#editorTplList .pitem[data-path*="발주요청서"]', 'HWPX', async () => {
       await s.wait(`document.querySelector('#editorLinkCard').textContent.includes('⟷') &&
@@ -104,7 +91,9 @@ export async function runLegacy(surface, ctx) {
   seen.hwpx_job_saved = true;
   await s.click('#editorBack', 'leave Editor');
   await s.wait(`!!document.querySelector('#scr-job.on')`, 'return to Job');
+}
 
+async function libraryReentryPhase(s, shot, seen) {
   await s.click('.navbtn[data-scr="library"]', 'library');
   await s.wait(`!!document.querySelector('#libraryList [data-work="발주요청서"]')`,
     'saved HWPX row');
@@ -173,7 +162,9 @@ export async function runLegacy(surface, ctx) {
   seen.hwpx_result_state = await s.value(`document.getElementById('jobResult').dataset.state`);
   await s.scrollTo('#jobResult');
   await shot('generated');
+}
 
+async function txtJobPhase(s, ctx, shot, seen) {
   await s.click('.navbtn[data-scr="library"]', 'library for TXT');
   await s.wait(`!!document.querySelector('#scr-library.on')`, 'library for TXT');
   await chooseTemplateAndData(s, ctx,
@@ -222,7 +213,9 @@ export async function runLegacy(surface, ctx) {
     'workbench exit guard');
   await s.value(`window.__cap.clickBtn(null,'나가기');true`);
   await s.wait(`!!document.querySelector('#scr-job.on')`, 'workbench exit');
+}
 
+async function blankValueJobPhase(s, ctx, shot, seen) {
   await s.click('.navbtn[data-scr="library"]', 'library for empty value');
   await s.wait(`!!document.querySelector('#scr-library.on')`, 'library for empty value');
   await chooseTemplateAndData(s, ctx,
@@ -271,6 +264,28 @@ export async function runLegacy(surface, ctx) {
     'empty value visible');
   seen.empty_value_surfaced = true;
   await shot('workbench-empty-value');
+}
+
+export async function runLegacy(surface, ctx) {
+  const s = surface;
+  const seen = {};
+  const shot = name => s.shoot(name);
+  await s.wait(`!!document.querySelector('#jobPickInLibrary')`, 'empty landing',
+    { requires: ['#jobPickInLibrary'] });
+  await s.wait(`getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none'`,
+    'data exit visible', { requires: ['#jobNoDataExit'] });
+  await shot('job-landing');
+
+  await s.click('#jobPickInLibrary', 'library exit');
+  await s.wait(`!!document.querySelector('#scr-library.on')`, 'library screen',
+    { requires: ['#scr-library'] });
+  await shot('library-empty');
+
+  await hwpxJobPhase(s, ctx, shot, seen);
+  await libraryReentryPhase(s, shot, seen);
+  await txtJobPhase(s, ctx, shot, seen);
+  await blankValueJobPhase(s, ctx, shot, seen);
+
   if (s.shots.join('|') !== CAPTURE_POINTS.join('|')) {
     throw new Error(`shutter order differs: ${JSON.stringify(s.shots)}`);
   }

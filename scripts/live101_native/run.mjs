@@ -128,6 +128,118 @@ async function verifyPageIdentity(page, exe, devAssets) {
     script: loaded.script, script_sha256: loaded.sha256 };
 }
 
+function armWatchdog(state, evidence) {
+  return setTimeout(() => {
+    void (async () => {
+      state.timedOut = true;
+      state.report = hardStopReport({ phase: state.args.phase, mode: state.args.mode, home: state.home,
+        previous: state.report, shots: state.surface?.shots ?? [], elapsedMs: Date.now() - state.started });
+      try {
+        state.report.teardown = state.page ? await state.page.abort()
+          : { graceful: false, forced: false, reason: 'native page not connected' };
+      } catch (error) {
+        state.report.teardown = { graceful: false, forced: true, error: String(error) };
+      }
+      try {
+        await writeFile(path.join(evidence, 'check-report.json'), JSON.stringify(state.report, null, 2), 'utf8');
+      } catch (error) {
+        process.stderr.write(`native live101 deadline report failed: ${error}\n`);
+      }
+      process.stderr.write(`${state.report.error}\n`);
+      process.exit(1);
+    })();
+  }, HARD_STOP_MS);
+}
+
+async function captureDiagnostic(page) {
+  try {
+    return await page.evaluate(`(async()=>({
+      screen:document.querySelector('.scr.on')?.id || null,
+      editor:document.querySelector('#scr-editor')?.textContent.slice(0,1500) || null,
+      gate:document.querySelector('#editorTplGate')?.textContent || null,
+      link:document.querySelector('#editorLinkCard')?.textContent || null,
+      authoring_tabs:[...document.querySelectorAll('#scr-authoring .authoring-tab')]
+        .map(e=>({text:e.textContent,html:e.outerHTML.slice(0,500)})),
+      modals:[...document.querySelectorAll('.modal:not(.hidden)')]
+        .map(e=>({id:e.id,text:e.textContent.slice(0,500)})),
+      overlays:[...document.querySelectorAll('[role="dialog"]')]
+        .map(e=>({class:e.className,text:e.textContent.slice(0,500)})),
+      authoring:await window.pywebview.api.initial('authoring'),
+      dispatchTrace:(window.__cap?.dispatchTrace || []).map(x=>({
+        screen:x.screen,action:x.action,error:x.error || null,
+        response_ok:x.response?.ok ?? null
+      })),
+      dispatchInstalled:window.__cap?.dispatchInstalled || false,
+      alerts:window.__cap?.alerts || [],
+    }))()`, 3000);
+  } catch (diagnosticError) {
+    return { error: String(diagnosticError) };
+  }
+}
+
+async function teardownAndSave(state, evidence) {
+  if (!state.timedOut && state.page) {
+    try {
+      state.report.teardown = await state.page.close();
+    } catch (closeError) {
+      state.report.teardown = { graceful: false, error: String(closeError) };
+    }
+    if (!state.report.teardown.graceful && state.report.verdict.ok) {
+      state.report.verdict = { ok: false, failures: ['native window did not close cleanly'] };
+    }
+  }
+  if (!state.timedOut) {
+    try {
+      await writeFile(path.join(evidence, 'check-report.json'),
+        JSON.stringify(state.report ?? { error: 'native run ended without a report' }, null, 2), 'utf8');
+    } finally {
+      clearTimeout(state.watchdog);
+    }
+  }
+}
+
+async function executeRun(state, evidence, exampleBefore) {
+  const { args, home } = state;
+  if (args.phase !== 'restart') await seed(home);
+  else if (!await exists(home)) throw new Error('restart requires the completed isolated home');
+  const exe = path.resolve(args.exe);
+  state.page = await connectNativePage(exe, home, BOOT_MS, args.devAssets);
+  state.surface = new NativeSurface(state.page, SURFACE_MS,
+    args.mode === 'capture' ? path.join(evidence, 'pixels') : null);
+  await state.surface.install();
+  const source = await verifyPageIdentity(state.page, exe, args.devAssets);
+  const observations = args.phase === 'restart' ? await runRestart(state.surface, home)
+    : await runLegacy(state.surface, {
+      page: state.page, csvPath: path.join(home, 'data/발주목록.csv'),
+    });
+  if (args.phase === 'journey') {
+    observations.sx05 = (await runJourney(state.surface, home, evidence)).seen;
+  }
+  const documents = args.phase === 'restart' ? [] : await generatedDocuments(home);
+  state.report = {
+    phase: args.phase, mode: args.mode, home, observations, documents,
+    hwpx_generated: documents.length, shots: state.surface.shots,
+    elapsed_s: Math.round((Date.now() - state.started) / 100) / 10,
+    source,
+  };
+  state.report.verdict = judgePhase(state.report);
+  if (!state.report.verdict.ok) throw new Error(state.report.verdict.failures.join('; '));
+  const exampleAfter = await hashTree(EXAMPLE);
+  if (JSON.stringify(exampleBefore) !== JSON.stringify(exampleAfter)) {
+    throw new Error('committed live101 source assets changed during native run');
+  }
+}
+
+async function handleRunError(state, error) {
+  if (state.timedOut) return;
+  const { args, home } = state;
+  state.report ??= { phase: args.phase, mode: args.mode, home, observations: {},
+    documents: [], hwpx_generated: 0, shots: state.surface?.shots ?? [] };
+  state.report.verdict = { ok: false, failures: [error.message] };
+  state.report.error = error.stack ?? String(error);
+  if (state.page) state.report.diagnostic = await captureDiagnostic(state.page);
+}
+
 async function main() {
   const args = options(process.argv.slice(2));
   const home = args.home ? path.resolve(args.home)
@@ -135,115 +247,20 @@ async function main() {
   const evidence = path.resolve(args.evidence ?? path.join(os.tmpdir(), `hwpx-101-evidence-${Date.now()}`));
   await mkdir(evidence, { recursive: true });
   const exampleBefore = await hashTree(EXAMPLE);
-  let page;
-  let surface;
-  let report;
-  const started = Date.now();
-  let timedOut = false;
-  const watchdog = setTimeout(() => {
-    void (async () => {
-      timedOut = true;
-      report = hardStopReport({ phase: args.phase, mode: args.mode, home, previous: report,
-        shots: surface?.shots ?? [], elapsedMs: Date.now() - started });
-      try {
-        report.teardown = page ? await page.abort()
-          : { graceful: false, forced: false, reason: 'native page not connected' };
-      } catch (error) {
-        report.teardown = { graceful: false, forced: true, error: String(error) };
-      }
-      try {
-        await writeFile(path.join(evidence, 'check-report.json'), JSON.stringify(report, null, 2), 'utf8');
-      } catch (error) {
-        process.stderr.write(`native live101 deadline report failed: ${error}\n`);
-      }
-      process.stderr.write(`${report.error}\n`);
-      process.exit(1);
-    })();
-  }, HARD_STOP_MS);
+  const state = { args, home, page: undefined, surface: undefined, report: undefined,
+    started: Date.now(), timedOut: false };
+  state.watchdog = armWatchdog(state, evidence);
   try {
-    if (args.phase !== 'restart') await seed(home);
-    else if (!await exists(home)) throw new Error('restart requires the completed isolated home');
-    const exe = path.resolve(args.exe);
-    page = await connectNativePage(exe, home, BOOT_MS, args.devAssets);
-    surface = new NativeSurface(page, SURFACE_MS,
-      args.mode === 'capture' ? path.join(evidence, 'pixels') : null);
-    await surface.install();
-    const source = await verifyPageIdentity(page, exe, args.devAssets);
-    const observations = args.phase === 'restart' ? await runRestart(surface, home)
-      : await runLegacy(surface, {
-        page, csvPath: path.join(home, 'data/발주목록.csv'),
-      });
-    if (args.phase === 'journey') {
-      observations.sx05 = (await runJourney(surface, home, evidence)).seen;
-    }
-    const documents = args.phase === 'restart' ? [] : await generatedDocuments(home);
-    report = {
-      phase: args.phase, mode: args.mode, home, observations, documents,
-      hwpx_generated: documents.length, shots: surface.shots,
-      elapsed_s: Math.round((Date.now() - started) / 100) / 10,
-      source,
-    };
-    report.verdict = judgePhase(report);
-    if (!report.verdict.ok) throw new Error(report.verdict.failures.join('; '));
-    const exampleAfter = await hashTree(EXAMPLE);
-    if (JSON.stringify(exampleBefore) !== JSON.stringify(exampleAfter)) {
-      throw new Error('committed live101 source assets changed during native run');
-    }
+    await executeRun(state, evidence, exampleBefore);
   } catch (error) {
-    if (timedOut) return;
-    report ??= { phase: args.phase, mode: args.mode, home, observations: {},
-      documents: [], hwpx_generated: 0, shots: surface?.shots ?? [] };
-    report.verdict = { ok: false, failures: [error.message] };
-    report.error = error.stack ?? String(error);
-    if (page) {
-      try {
-        report.diagnostic = await page.evaluate(`(async()=>({
-          screen:document.querySelector('.scr.on')?.id || null,
-          editor:document.querySelector('#scr-editor')?.textContent.slice(0,1500) || null,
-          gate:document.querySelector('#editorTplGate')?.textContent || null,
-          link:document.querySelector('#editorLinkCard')?.textContent || null,
-          authoring_tabs:[...document.querySelectorAll('#scr-authoring .authoring-tab')]
-            .map(e=>({text:e.textContent,html:e.outerHTML.slice(0,500)})),
-          modals:[...document.querySelectorAll('.modal:not(.hidden)')]
-            .map(e=>({id:e.id,text:e.textContent.slice(0,500)})),
-          overlays:[...document.querySelectorAll('[role="dialog"]')]
-            .map(e=>({class:e.className,text:e.textContent.slice(0,500)})),
-          authoring:await window.pywebview.api.initial('authoring'),
-          dispatchTrace:(window.__cap?.dispatchTrace || []).map(x=>({
-            screen:x.screen,action:x.action,error:x.error || null,
-            response_ok:x.response?.ok ?? null
-          })),
-          dispatchInstalled:window.__cap?.dispatchInstalled || false,
-          alerts:window.__cap?.alerts || [],
-        }))()`, 3000);
-      } catch (diagnosticError) {
-        report.diagnostic = { error: String(diagnosticError) };
-      }
-    }
+    await handleRunError(state, error);
   } finally {
-    if (!timedOut && page) {
-      try {
-        report.teardown = await page.close();
-      } catch (closeError) {
-        report.teardown = { graceful: false, error: String(closeError) };
-      }
-      if (!report.teardown.graceful && report.verdict.ok) {
-        report.verdict = { ok: false, failures: ['native window did not close cleanly'] };
-      }
-    }
-    if (!timedOut) {
-      try {
-        await writeFile(path.join(evidence, 'check-report.json'),
-          JSON.stringify(report ?? { error: 'native run ended without a report' }, null, 2), 'utf8');
-      } finally {
-        clearTimeout(watchdog);
-      }
-    }
+    await teardownAndSave(state, evidence);
   }
-  if (timedOut) return;
+  if (state.timedOut) return;
   process.stdout.write(`${evidence}\n`);
-  if (!report.verdict.ok) {
-    process.stderr.write(`${report.error ?? report.verdict.failures.join('; ')}\n`);
+  if (!state.report.verdict.ok) {
+    process.stderr.write(`${state.report.error ?? state.report.verdict.failures.join('; ')}\n`);
     process.exitCode = 1;
   }
 }

@@ -86,18 +86,39 @@ export class NativePage {
     })`);
   }
 
-  async abort() {
-    this.child.kill();
+  async _waitExit(timeoutMs) {
     if (this.child.exitCode === null) {
       await Promise.race([
         new Promise(resolve => this.child.once('exit', resolve)),
-        delay(2000),
+        delay(timeoutMs),
       ]);
     }
+  }
+
+  async _forceKill() {
+    this.child.kill();
+    await this._waitExit(2000);
     if (this.child.exitCode === null && process.platform === 'win32') {
       spawnSync('taskkill.exe', ['/PID', String(this.child.pid), '/T', '/F'],
         { windowsHide: true, timeout: 3000 });
     }
+  }
+
+  _closeSockets() {
+    this.socket.close();
+    // Undici's WHATWG WebSocket otherwise waits 30 seconds for the peer.
+    // Only the exact loopback connection to this isolated profile is closed.
+    for (const handle of process._getActiveHandles()) {
+      if (handle.remoteAddress === '127.0.0.1'
+          && handle.remotePort === this.devtoolsPort
+          && typeof handle.destroy === 'function') handle.destroy();
+    }
+    this.child.stderr.destroy();
+    this.child.unref();
+  }
+
+  async abort() {
+    await this._forceKill();
     this.socket.close();
     this.child.stderr.destroy();
     this.child.unref();
@@ -112,39 +133,81 @@ export class NativePage {
     } catch (error) {
       requestError = String(error);
     } finally {
-      if (this.child.exitCode === null) {
-        await Promise.race([
-          new Promise(resolve => this.child.once('exit', resolve)),
-          delay(5000),
-        ]);
-      }
+      await this._waitExit(5000);
       if (this.child.exitCode === null) {
         forced = true;
-        this.child.kill();
-        await Promise.race([
-          new Promise(resolve => this.child.once('exit', resolve)),
-          delay(2000),
-        ]);
-        if (this.child.exitCode === null && process.platform === 'win32') {
-          spawnSync('taskkill.exe', ['/PID', String(this.child.pid), '/T', '/F'],
-            { windowsHide: true, timeout: 3000 });
-        }
+        await this._forceKill();
       }
-      this.socket.close();
-      // Undici's WHATWG WebSocket otherwise waits 30 seconds for the peer.
-      // Only the exact loopback connection to this isolated profile is closed.
-      for (const handle of process._getActiveHandles()) {
-        if (handle.remoteAddress === '127.0.0.1'
-            && handle.remotePort === this.devtoolsPort
-            && typeof handle.destroy === 'function') handle.destroy();
-      }
-      this.child.stderr.destroy();
-      this.child.unref();
+      this._closeSockets();
     }
     const graceful = !forced && this.child.exitCode === 0;
     return { graceful, forced, exit_code: this.child.exitCode,
       request_error: graceful ? null : requestError };
   }
+}
+
+function validateLoopbackTarget(target, port) {
+  const address = new URL(target.webSocketDebuggerUrl);
+  if (address.protocol !== 'ws:' || Number(address.port) !== port
+      || !['127.0.0.1', 'localhost'].includes(address.hostname)) {
+    throw new Error('DevTools target leaves the isolated loopback endpoint');
+  }
+}
+
+async function probeDevToolsTarget(home, deadline) {
+  const active = await readFile(path.join(home, PROFILE_PORT), 'utf8');
+  const port = Number(active.split(/\r?\n/, 1)[0]);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('isolated WebView2 profile has an invalid DevTools port');
+  }
+  const targets = await targetsAt(port, Math.min(2000, Math.max(1, deadline - Date.now())));
+  const target = targets.find(item => item.type === 'page' && item.url === PAGE_URL);
+  if (!target) return null;
+  validateLoopbackTarget(target, port);
+  return { target, devtoolsPort: port };
+}
+
+async function waitForDevToolsTarget(child, home, deadline, timeoutMs, stderrRef, spawnErrorRef) {
+  while (Date.now() < deadline) {
+    if (spawnErrorRef.value) throw new Error(`native GUI did not spawn: ${spawnErrorRef.value.message}`);
+    if (child.exitCode !== null) throw new Error(`native GUI exited ${child.exitCode}: ${stderrRef.value}`);
+    try {
+      const found = await probeDevToolsTarget(home, deadline);
+      if (found) return found;
+    } catch (error) {
+      if (error.message.includes('invalid DevTools port')
+          || error.message.includes('leaves the isolated loopback')) throw error;
+    }
+    await delay(100);
+  }
+  throw new Error(`native Tauri page did not open in ${timeoutMs} ms: ${stderrRef.value}`);
+}
+
+async function awaitSocketOpen(socket, deadline) {
+  const openTimer = new AbortController();
+  try {
+    await Promise.race([
+      new Promise((resolve, reject) => {
+        socket.addEventListener('open', resolve, { once: true });
+        socket.addEventListener('error', reject, { once: true });
+      }),
+      delay(Math.max(1, deadline - Date.now()), undefined,
+        { signal: openTimer.signal }).then(() => {
+        throw new Error('native DevTools socket open timed out');
+      }),
+    ]);
+  } finally {
+    openTimer.abort();
+  }
+}
+
+async function waitForPageToken(page, token, deadline) {
+  while (Date.now() < deadline) {
+    if (await page.evaluate('window.__hwpxLive101',
+      Math.min(3000, Math.max(1, deadline - Date.now()))) === token) return page;
+    await delay(100);
+  }
+  throw new Error('DevTools target did not match the newly launched native window');
 }
 
 export async function connectNativePage(exe, home, timeoutMs = 30000, devAssets = null) {
@@ -159,65 +222,19 @@ export async function connectNativePage(exe, home, timeoutMs = 30000, devAssets 
       HWPX_LIVE101_TOKEN: token,
     },
   });
-  let stderr = '';
-  let spawnError = null;
-  child.on('error', error => { spawnError = error; });
-  child.stderr.on('data', bytes => { stderr += bytes; });
+  const stderrRef = { value: '' };
+  const spawnErrorRef = { value: null };
+  child.on('error', error => { spawnErrorRef.value = error; });
+  child.stderr.on('data', bytes => { stderrRef.value += bytes; });
   const deadline = Date.now() + timeoutMs;
   let socket;
   try {
-    let target;
-    let devtoolsPort;
-    while (Date.now() < deadline) {
-      if (spawnError) throw new Error(`native GUI did not spawn: ${spawnError.message}`);
-      if (child.exitCode !== null) throw new Error(`native GUI exited ${child.exitCode}: ${stderr}`);
-      try {
-        const active = await readFile(path.join(home, PROFILE_PORT), 'utf8');
-        const port = Number(active.split(/\r?\n/, 1)[0]);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) {
-          throw new Error('isolated WebView2 profile has an invalid DevTools port');
-        }
-        const targets = await targetsAt(port, Math.min(2000, Math.max(1, deadline - Date.now())));
-        target = targets.find(item => item.type === 'page' && item.url === PAGE_URL);
-        if (target) {
-          const address = new URL(target.webSocketDebuggerUrl);
-          if (address.protocol !== 'ws:' || Number(address.port) !== port
-              || !['127.0.0.1', 'localhost'].includes(address.hostname)) {
-            throw new Error('DevTools target leaves the isolated loopback endpoint');
-          }
-          devtoolsPort = port;
-          break;
-        }
-      } catch (error) {
-        if (error.message.includes('invalid DevTools port')
-            || error.message.includes('leaves the isolated loopback')) throw error;
-      }
-      await delay(100);
-    }
-    if (!target) throw new Error(`native Tauri page did not open in ${timeoutMs} ms: ${stderr}`);
+    const { target, devtoolsPort } = await waitForDevToolsTarget(
+      child, home, deadline, timeoutMs, stderrRef, spawnErrorRef);
     socket = new WebSocket(target.webSocketDebuggerUrl);
-    const openTimer = new AbortController();
-    try {
-      await Promise.race([
-        new Promise((resolve, reject) => {
-          socket.addEventListener('open', resolve, { once: true });
-          socket.addEventListener('error', reject, { once: true });
-        }),
-        delay(Math.max(1, deadline - Date.now()), undefined,
-          { signal: openTimer.signal }).then(() => {
-          throw new Error('native DevTools socket open timed out');
-        }),
-      ]);
-    } finally {
-      openTimer.abort();
-    }
+    await awaitSocketOpen(socket, deadline);
     const page = new NativePage(child, socket, token, devtoolsPort);
-    while (Date.now() < deadline) {
-      if (await page.evaluate('window.__hwpxLive101',
-        Math.min(3000, Math.max(1, deadline - Date.now()))) === token) return page;
-      await delay(100);
-    }
-    throw new Error('DevTools target did not match the newly launched native window');
+    return await waitForPageToken(page, token, deadline);
   } catch (error) {
     socket?.close();
     child.kill();

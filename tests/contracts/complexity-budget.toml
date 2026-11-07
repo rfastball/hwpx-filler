@@ -796,25 +796,8 @@ function_complexity = 11
 function_complexity = 60
 function_statements = 66
 
-[budget."scripts/live101_native/cdp.mjs::NativePage.close"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."scripts/live101_native/cdp.mjs::connectNativePage"]
-function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 53, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."scripts/live101_native/fixtures.mjs::Staging.data"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."scripts/live101_native/journey.mjs::runJourney"]
 function_statements = { value = 55, reason = "상시 예외: 독립 사례 나열 테스트 — H1~H7 가설별 독립 시나리오" }
-
-[budget."scripts/live101_native/legacy.mjs::runLegacy"]
-function_statements = { value = 138, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."scripts/live101_native/run.mjs::main"]
-function_complexity = { value = 32, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 68, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."scripts/live101_native/run.mjs::options"]
 function_complexity = { value = 13, reason = "상시 예외: 형식 명세 1:1 처리 — CLI 플래그별 평평한 파서" }
