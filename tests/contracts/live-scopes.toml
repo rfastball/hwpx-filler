@@ -195,6 +195,7 @@ paths = [
   "frontend/src/screens/library.ts",
   "frontend/css/library.css",
   "crates/hwpx-desktop/src/library_*.rs",
+  "crates/hwpx-desktop/src/library_controller/**",
   "crates/hwpx-desktop/src/template_controller.rs",
   "crates/hwpx-desktop/src/template_groups.rs",
 ]

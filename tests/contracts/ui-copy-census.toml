@@ -931,6 +931,54 @@ text = "이 작업에 연결된 데이터를 불러오지 못했습니다. {}"
 file = "crates/hwpx-desktop/src/job_selection.rs"
 text = "작업을 전환하세요"
 [[sentence]]
+file = "crates/hwpx-desktop/src/library_controller.rs"
+text = "복원할 최근 작업이 없습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller.rs"
+text = "손상 작업 목록에 없는 경로입니다. 새로고침 후 다시 시도하세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller.rs"
+text = "손상된 작업 파일을 삭제합니다(복구 불가): {} 내용을 확인하려면 먼저 '폴더 열기'로 살펴보세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "⚠ 새 파일의 구조가 이 작업의 확정 매핑과 다릅니다: {} 매핑을 다시 확정하기 전에는 생성이 차단됩니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "새 템플릿 경로가 비어 있습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "새 템플릿이 HWPX 도 온나라 기안 TXT 도 아닙니다. HWPX 또는 TXT 파일을 선택하세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "작업 '{}' 은(는) '{}' 작업이라 {} 템플릿을 연결할 수 없습니다. 작업 방식을 바꾸려면 이 작업을 삭제하고 새로 만드세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "작업 '{}' 의 템플릿 연결을 바꿉니다. 기존: {} 새 파일: {}{}{}"
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "채울 {{토큰}}이 없는 TXT 템플릿입니다. 목록의 행 ⋮ → '내용 편집'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "템플릿을 다시 연결했습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/relink.rs"
+text = "형식을 확인할 수 없던 작업이라 최근 사용 기록은 함께 지워집니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/work_package.rs"
+text = "데이터 연결이 필요합니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/work_package.rs"
+text = "데이터를 읽을 수 없어 확인 조건 없이 내보냅니다. 받는 쪽에서 연결을 직접 확정해야 합니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/library_controller/work_package.rs"
+text = "작업 꾸러미를 만들 수 없습니다: 내보낼 수 있는 작업이 없습니다."
+[[sentence]]
 file = "crates/hwpx-desktop/src/native_authoring_files.rs"
 text = "현재 템플릿 목록에 없는 경로입니다."
 [[sentence]]
@@ -1504,54 +1552,6 @@ text = "읽을 수 없는 작업이나 등록 데이터가 있어 연습 파일 
 [[sentence]]
 file = "crates/hwpx-desktop/src/legacy_practice.rs"
 text = "저장한 작업이 참조합니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "⚠ 새 파일의 구조가 이 작업의 확정 매핑과 다릅니다: {} 매핑을 다시 확정하기 전에는 생성이 차단됩니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "데이터 연결이 필요합니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "데이터를 읽을 수 없어 확인 조건 없이 내보냅니다. 받는 쪽에서 연결을 직접 확정해야 합니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "복원할 최근 작업이 없습니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "새 템플릿 경로가 비어 있습니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "새 템플릿이 HWPX 도 온나라 기안 TXT 도 아닙니다. HWPX 또는 TXT 파일을 선택하세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "손상 작업 목록에 없는 경로입니다. 새로고침 후 다시 시도하세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "손상된 작업 파일을 삭제합니다(복구 불가): {} 내용을 확인하려면 먼저 '폴더 열기'로 살펴보세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "작업 '{}' 은(는) '{}' 작업이라 {} 템플릿을 연결할 수 없습니다. 작업 방식을 바꾸려면 이 작업을 삭제하고 새로 만드세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "작업 '{}' 의 템플릿 연결을 바꿉니다. 기존: {} 새 파일: {}{}{}"
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "작업 꾸러미를 만들 수 없습니다: 내보낼 수 있는 작업이 없습니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "채울 {{토큰}}이 없는 TXT 템플릿입니다. 목록의 행 ⋮ → '내용 편집'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "템플릿을 다시 연결했습니다."
-[[sentence]]
-file = "crates/hwpx-desktop/src/library_controller.rs"
-text = "형식을 확인할 수 없던 작업이라 최근 사용 기록은 함께 지워집니다."
 [[sentence]]
 file = "crates/hwpx-desktop/src/library_observation.rs"
 text = "header_row는 1 이상의 정수여야 합니다."

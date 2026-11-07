@@ -100,12 +100,6 @@ function_complexity = { value = 15, reason = "상시 예외: 평평한 투영 �
 [budget."crates/hwpx-desktop/src/legacy_practice.rs::LegacyPractice.validate"]
 function_complexity = { value = 11, reason = "상시 예외: 단일 책임 가드 나열 — 변조 탐지 가드 체인" }
 
-[budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController"]
-class_methods = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController.relink_job_template"]
-function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController.update"]
 function_complexity = { value = 18, reason = "상시 예외: 평평한 분배 표 — action→method 1:1 분배" }
 
