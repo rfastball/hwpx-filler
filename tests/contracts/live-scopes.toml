@@ -138,6 +138,7 @@ paths = [
   "frontend/css/jobdata.css",
   "frontend/css/draftcard.css",
   "crates/hwpx-desktop/src/job_*.rs",
+  "crates/hwpx-desktop/src/job_registry/**",
   "crates/hwpx-desktop/src/slot_configuration_product.rs",
   "crates/hwpx-desktop/src/slot_configuration_runner.rs",
   # 실제 생성 경로 — 101 실주행도 함께 탄다(`journey101`).
@@ -194,7 +195,9 @@ paths = [
   "frontend/src/screens/library.ts",
   "frontend/css/library.css",
   "crates/hwpx-desktop/src/library_*.rs",
+  "crates/hwpx-desktop/src/library_controller/**",
   "crates/hwpx-desktop/src/template_controller.rs",
+  "crates/hwpx-desktop/src/template_controller/**",
   "crates/hwpx-desktop/src/template_groups.rs",
 ]
 
