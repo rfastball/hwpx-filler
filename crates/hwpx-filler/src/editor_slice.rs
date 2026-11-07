@@ -114,6 +114,60 @@ fn miss_tag(spec: &TextSlice) -> String {
 fn from_value(value: Value) -> Option<TextSlice> {
     TextSlice::from_dict(&value).ok()
 }
+/// Delimiter specs from the nearest non-space characters around the selection.
+fn delimiter_specs(
+    start: usize,
+    end: usize,
+    len: usize,
+    neighbours: (Option<char>, Option<char>),
+) -> Vec<Value> {
+    let (before, after) = neighbours;
+    let mut out = Vec::new();
+    if start == 0
+        && let Some(ch) = after
+    {
+        out.push(json!({"mode":"before","delimiter":ch.to_string(),"on_missing":"keep"}));
+    }
+    if end == len
+        && let Some(ch) = before
+    {
+        out.push(json!({"mode":"after","delimiter":ch.to_string(),"on_missing":"keep"}));
+    }
+    if start > 0
+        && end < len
+        && let (Some(b), Some(a)) = (before, after)
+    {
+        out.push(json!({"mode":"between","open":b.to_string(),"close":a.to_string(),"on_missing":"keep"}));
+    }
+    out
+}
+/// Split specs for each separator whose pieces include the selected text.
+fn split_specs(value: &str, want: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    for delimiter in SPLIT.iter().filter(|delimiter| value.contains(**delimiter)) {
+        let pieces = value.split(delimiter).map(python_trim).collect::<Vec<_>>();
+        if let Some(at) = pieces.iter().position(|piece| *piece == want) {
+            let index = if at == pieces.len() - 1 && at > 0 {
+                -1
+            } else {
+                at as i64 + 1
+            };
+            out.push(
+                json!({"mode":"split","delimiter":delimiter,"index":index,"on_missing":"keep"}),
+            );
+        }
+    }
+    out
+}
+fn position_spec(start: usize, end: usize, len: usize) -> Value {
+    if start == 0 {
+        json!({"mode":"head","count":end})
+    } else if end == len {
+        json!({"mode":"tail","count":len-start})
+    } else {
+        json!({"mode":"chars","start":start+1,"length":end-start,"on_missing":"keep"})
+    }
+}
 fn candidate_specs(value: &str, start: usize, end: usize) -> Vec<TextSlice> {
     let chars = value.chars().collect::<Vec<_>>();
     let want = text_at(value, start, end);
@@ -126,61 +180,13 @@ fn candidate_specs(value: &str, start: usize, end: usize) -> Vec<TextSlice> {
         .iter()
         .find(|ch| !python_whitespace(**ch))
         .copied();
-    let mut out = Vec::new();
-    if start == 0
-        && let Some(ch) = after
-    {
-        out.push(json!({"mode":"before","delimiter":ch.to_string(),"on_missing":"keep"}));
-    }
-    if end == chars.len()
-        && let Some(ch) = before
-    {
-        out.push(json!({"mode":"after","delimiter":ch.to_string(),"on_missing":"keep"}));
-    }
-    if start > 0
-        && end < chars.len()
-        && let (Some(b), Some(a)) = (before, after)
-    {
-        out.push(json!({"mode":"between","open":b.to_string(),"close":a.to_string(),"on_missing":"keep"}));
-    }
-    for delimiter in SPLIT {
-        if value.contains(delimiter) {
-            let pieces = value.split(delimiter).map(python_trim).collect::<Vec<_>>();
-            if let Some(at) = pieces.iter().position(|piece| *piece == want) {
-                let index = if at == pieces.len() - 1 && at > 0 {
-                    -1
-                } else {
-                    at as i64 + 1
-                };
-                out.push(
-                    json!({"mode":"split","delimiter":delimiter,"index":index,"on_missing":"keep"}),
-                );
-            }
-        }
-    }
-    if start == 0 {
-        out.push(json!({"mode":"head","count":end}));
-    } else if end == chars.len() {
-        out.push(json!({"mode":"tail","count":chars.len()-start}));
-    } else {
-        out.push(json!({"mode":"chars","start":start+1,"length":end-start,"on_missing":"keep"}));
-    }
+    let mut out = delimiter_specs(start, end, chars.len(), (before, after));
+    out.extend(split_specs(value, &want));
+    out.push(position_spec(start, end, chars.len()));
     out.into_iter().filter_map(from_value).collect()
 }
-fn propose(values: &[String], sample: usize, start: &Value, end: &Value) -> Result<Value, String> {
-    let value = values
-        .get(sample)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| fail(format!("예시 행이 올바르지 않음: {sample}")))?;
-    let mut begin = utf16_to_scalar(value, start)?;
-    let mut finish = utf16_to_scalar(value, end)?;
-    if finish < begin {
-        return Err(fail(format!(
-            "선택 범위가 거꾸로임: {}~{}",
-            python_repr(start),
-            python_repr(end)
-        )));
-    }
+/// The selection narrowed past leading and trailing whitespace.
+fn trimmed_selection(value: &str, mut begin: usize, mut finish: usize) -> (usize, usize) {
     let chars = value.chars().collect::<Vec<_>>();
     while begin < finish && python_whitespace(chars[begin]) {
         begin += 1;
@@ -188,42 +194,127 @@ fn propose(values: &[String], sample: usize, start: &Value, end: &Value) -> Resu
     while finish > begin && python_whitespace(chars[finish - 1]) {
         finish -= 1;
     }
+    (begin, finish)
+}
+/// Specs that reproduce the selection on the sample, best row agreement first.
+fn scored_candidates(values: &[String], value: &str, begin: usize, finish: usize) -> Vec<Value> {
     let want = text_at(value, begin, finish);
-    let mut candidates = Vec::new();
-    if !want.is_empty() {
-        let target = shape(&want);
-        let total = values.iter().filter(|item| !item.is_empty()).count();
-        let mut seen = HashSet::new();
-        let mut scored = Vec::new();
-        for (order, spec) in candidate_specs(value, begin, finish)
-            .into_iter()
-            .enumerate()
+    let target = shape(&want);
+    let total = values.iter().filter(|item| !item.is_empty()).count();
+    let mut seen = HashSet::new();
+    let mut scored = Vec::new();
+    for (order, spec) in candidate_specs(value, begin, finish)
+        .into_iter()
+        .enumerate()
+    {
+        let outcome = spec.evaluate(value);
+        if outcome.missed
+            || python_trim(&outcome.text) != want
+            || !seen.insert(spec.mode().to_owned())
         {
-            let outcome = spec.evaluate(value);
-            if outcome.missed
-                || python_trim(&outcome.text) != want
-                || !seen.insert(spec.mode().to_owned())
-            {
-                continue;
-            }
-            let matched = values
-                .iter()
-                .filter(|item| !item.is_empty())
-                .filter(|item| {
-                    let outcome = spec.evaluate(item);
-                    !outcome.missed && shape(&outcome.text) == target
-                })
-                .count();
-            scored.push((matched, order, spec));
+            continue;
         }
-        scored.sort_by_key(|(matched, order, _)| (std::cmp::Reverse(*matched), *order));
-        for (matched, _, spec) in scored {
-            candidates.push(json!({"mode":spec.mode(),"slice":spec.to_dict(),"label":slice_label(Some(&spec)),"matched":matched,"total":total,"tag":format!("{matched}/{total}행 맞음"),"tip":format!("맞는 행: 값 있는 {total}행 중 {matched}행"),"full":matched==total}));
-        }
+        let matched = values
+            .iter()
+            .filter(|item| !item.is_empty())
+            .filter(|item| {
+                let outcome = spec.evaluate(item);
+                !outcome.missed && shape(&outcome.text) == target
+            })
+            .count();
+        scored.push((matched, order, spec));
     }
+    scored.sort_by_key(|(matched, order, _)| (std::cmp::Reverse(*matched), *order));
+    scored.into_iter().map(|(matched, _, spec)| {
+        json!({"mode":spec.mode(),"slice":spec.to_dict(),"label":slice_label(Some(&spec)),"matched":matched,"total":total,"tag":format!("{matched}/{total}행 맞음"),"tip":format!("맞는 행: 값 있는 {total}행 중 {matched}행"),"full":matched==total})
+    }).collect()
+}
+fn propose(values: &[String], sample: usize, start: &Value, end: &Value) -> Result<Value, String> {
+    let value = values
+        .get(sample)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| fail(format!("예시 행이 올바르지 않음: {sample}")))?;
+    let begin = utf16_to_scalar(value, start)?;
+    let finish = utf16_to_scalar(value, end)?;
+    if finish < begin {
+        return Err(fail(format!(
+            "선택 범위가 거꾸로임: {}~{}",
+            python_repr(start),
+            python_repr(end)
+        )));
+    }
+    let (begin, finish) = trimmed_selection(value, begin, finish);
+    let candidates = if begin < finish {
+        scored_candidates(values, value, begin, finish)
+    } else {
+        Vec::new()
+    };
     Ok(
         json!({"ok":true,"candidates":candidates,"message":if candidates.is_empty(){"고른 부분에 맞는 방식이 없습니다. 방식을 직접 고르세요."}else{""}}),
     )
+}
+/// One preview row: its status, sliced result, kept span, and explanatory tags.
+fn row_outcome(
+    value: &str,
+    spec: Option<&TextSlice>,
+    target: Option<&String>,
+) -> (&'static str, String, Option<(usize, usize)>, Vec<String>) {
+    if value.is_empty() {
+        return ("empty", String::new(), None, Vec::new());
+    }
+    let Some(spec) = spec else {
+        return ("plain", value.to_owned(), None, Vec::new());
+    };
+    let outcome = spec.evaluate(value);
+    let status = if outcome.missed || python_trim(&outcome.text).is_empty() {
+        "miss"
+    } else if target.is_some_and(|target| shape(&outcome.text) != *target) {
+        "odd"
+    } else {
+        "hit"
+    };
+    let mut tags = Vec::new();
+    if outcome.missed {
+        tags.push(miss_tag(spec));
+    } else if status == "odd" {
+        tags.push("형식 다름".into());
+    }
+    (status, outcome.text, outcome.span, tags)
+}
+fn miss_choice(spec: Option<&TextSlice>) -> Option<Value> {
+    spec.filter(|spec|matches!(spec.mode(),"before"|"after"|"between")).map(|spec|{
+        let raw=spec.to_dict();let subject=if spec.mode()=="between"{format!("‘{}’ 또는 ‘{}’",raw["open"].as_str().unwrap_or(""),raw["close"].as_str().unwrap_or(""))}else{format!("‘{}’",raw["delimiter"].as_str().unwrap_or(""))};
+        json!({"label":format!("{subject} 없는 행"),"value":spec.on_missing(),"choices":[{"value":"keep","label":"원본 그대로"},{"value":"empty","label":"빈 값"}]})
+    })
+}
+fn with_segments(mut object: Value, value: &str, span: Option<(usize, usize)>) -> Value {
+    for (key, value) in segments(value, span).as_object().unwrap() {
+        object[key] = value.clone();
+    }
+    object
+}
+/// The preview rows and how many rows fall in each status.
+fn preview_rows(
+    field: &str,
+    spec: Option<&TextSlice>,
+    values: &[String],
+    target: Option<&String>,
+) -> (Vec<Value>, [usize; 4]) {
+    let mut counts = [0usize; 4];
+    let mut rows = Vec::new();
+    for (position, value) in values.iter().enumerate() {
+        let (status, result, span, tags) = row_outcome(value, spec, target);
+        if let Some(index) = ["hit", "odd", "miss", "empty"]
+            .iter()
+            .position(|known| *known == status)
+        {
+            counts[index] += 1;
+        }
+        let missing = python_trim(&result).is_empty();
+        let row = json!({"index":position,"label":format!("{}행",position+1),"result":if missing{MISSING_MARKER.replace("{field}",field)}else{result},"marker":missing,"status":status,"tags":tags});
+        rows.push(with_segments(row, value, span));
+    }
+    (rows, counts)
 }
 fn preview(
     field: &str,
@@ -252,46 +343,7 @@ fn preview(
             .filter(|outcome| !outcome.missed && !python_trim(&outcome.text).is_empty())
             .map(|outcome| shape(&outcome.text))
     };
-    let mut counts = [0usize; 4];
-    let mut rows = Vec::new();
-    for (position, value) in values.iter().enumerate() {
-        let mut tags = Vec::new();
-        let (status, result, span) = if value.is_empty() {
-            ("empty", String::new(), None)
-        } else if let Some(spec) = spec {
-            let outcome = spec.evaluate(value);
-            let status = if outcome.missed || python_trim(&outcome.text).is_empty() {
-                "miss"
-            } else if target
-                .as_ref()
-                .is_some_and(|target| shape(&outcome.text) != *target)
-            {
-                "odd"
-            } else {
-                "hit"
-            };
-            if outcome.missed {
-                tags.push(miss_tag(spec));
-            } else if status == "odd" {
-                tags.push("형식 다름".into());
-            }
-            (status, outcome.text, outcome.span)
-        } else {
-            ("plain", value.clone(), None)
-        };
-        if let Some(index) = ["hit", "odd", "miss", "empty"]
-            .iter()
-            .position(|known| *known == status)
-        {
-            counts[index] += 1;
-        }
-        let missing = python_trim(&result).is_empty();
-        let mut row = json!({"index":position,"label":format!("{}행",position+1),"result":if missing{MISSING_MARKER.replace("{field}",field)}else{result},"marker":missing,"status":status,"tags":tags});
-        for (key, value) in segments(value, span).as_object().unwrap() {
-            row[key] = value.clone();
-        }
-        rows.push(row);
-    }
+    let (rows, counts) = preview_rows(field, spec, values, target.as_ref());
     let summary = ["hit", "odd", "miss", "empty"]
         .into_iter()
         .zip(counts)
@@ -299,22 +351,13 @@ fn preview(
         .map(|(status, count)| format!("{} {count}행", status_word(status)))
         .collect::<Vec<_>>()
         .join(" · ");
-    let mut sample_block = json!({"index":sample_index,"value":sample_value,"miss_tag":sample_outcome.as_ref().filter(|outcome|outcome.missed).and(spec).map(miss_tag).unwrap_or_default()});
-    for (key, value) in segments(
+    let sample_block = with_segments(
+        json!({"index":sample_index,"value":sample_value,"miss_tag":sample_outcome.as_ref().filter(|outcome|outcome.missed).and(spec).map(miss_tag).unwrap_or_default()}),
         sample_value,
         sample_outcome.as_ref().and_then(|outcome| outcome.span),
-    )
-    .as_object()
-    .unwrap()
-    {
-        sample_block[key] = value.clone();
-    }
+    );
     let samples=values.iter().enumerate().map(|(position,value)|json!({"index":position,"label":format!("{}",position+1),"aria":format!("{}행{}",position+1,if value.is_empty(){", 빈 값"}else{""}),"disabled":value.is_empty(),"pressed":Some(position)==sample_index})).collect::<Vec<_>>();
-    let miss_choice=spec.filter(|spec|matches!(spec.mode(),"before"|"after"|"between")).map(|spec|{
-        let raw=spec.to_dict();let subject=if spec.mode()=="between"{format!("‘{}’ 또는 ‘{}’",raw["open"].as_str().unwrap_or(""),raw["close"].as_str().unwrap_or(""))}else{format!("‘{}’",raw["delimiter"].as_str().unwrap_or(""))};
-        json!({"label":format!("{subject} 없는 행"),"value":spec.on_missing(),"choices":[{"value":"keep","label":"원본 그대로"},{"value":"empty","label":"빈 값"}]})
-    });
-    json!({"ok":true,"slice":spec.map(TextSlice::to_dict),"rows":rows,"rows_label":format!("불러온 {}행 미리보기",values.len()),"summary":summary,"hint":if spec.is_none(){"쓸 부분을 끌어 고르거나 방식을 고르세요."}else{""},"sample":sample_block,"samples":samples,"miss_choice":miss_choice})
+    json!({"ok":true,"slice":spec.map(TextSlice::to_dict),"rows":rows,"rows_label":format!("불러온 {}행 미리보기",values.len()),"summary":summary,"hint":if spec.is_none(){"쓸 부분을 끌어 고르거나 방식을 고르세요."}else{""},"sample":sample_block,"samples":samples,"miss_choice":miss_choice(spec)})
 }
 pub fn slice_query(
     kind: &str,

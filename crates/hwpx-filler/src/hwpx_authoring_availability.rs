@@ -66,6 +66,28 @@ fn entries(reasons: &[Option<&'static str>; 13], alternative: bool) -> Vec<Value
         .collect()
 }
 
+/// The field-selection reason: none picked, or more than one where one is needed.
+fn field_reason(field_hits: &[String], too_many: bool) -> Option<&'static str> {
+    if field_hits.is_empty() {
+        Some(NEED_FIELD)
+    } else if too_many {
+        Some(ONE_FIELD)
+    } else {
+        None
+    }
+}
+
+/// The region-command reason: broken structure first, then a missing target.
+fn region_reason(broken: bool, allowed: bool, missing: &'static str) -> Option<&'static str> {
+    if broken {
+        Some(STRUCTURE_FIRST)
+    } else if allowed {
+        None
+    } else {
+        Some(missing)
+    }
+}
+
 fn shared_reasons(
     field_hits: &[String],
     target_kind: Option<&str>,
@@ -74,43 +96,13 @@ fn shared_reasons(
 ) -> [Option<&'static str>; 13] {
     let mut reasons = [None; 13];
     let unique = field_hits.iter().collect::<HashSet<_>>().len();
-    reasons[3] = if field_hits.is_empty() {
-        Some(NEED_FIELD)
-    } else if unique > 1 {
-        Some(ONE_FIELD)
-    } else {
-        None
-    };
-    reasons[4] = if field_hits.is_empty() {
-        Some(NEED_FIELD)
-    } else if field_hits.len() > 1 {
-        Some(ONE_FIELD)
-    } else {
-        None
-    };
+    reasons[3] = field_reason(field_hits, unique > 1);
+    reasons[4] = field_reason(field_hits, field_hits.len() > 1);
     reasons[5] = reasons[4];
-    reasons[6] = if broken {
-        Some(STRUCTURE_FIRST)
-    } else if has_slot {
-        None
-    } else {
-        Some(NEED_REGION)
-    };
-    reasons[7] = if broken {
-        Some(STRUCTURE_FIRST)
-    } else if target_kind == Some("option") {
-        None
-    } else {
-        Some(NEED_OPTION)
-    };
+    reasons[6] = region_reason(broken, has_slot, NEED_REGION);
+    reasons[7] = region_reason(broken, target_kind == Some("option"), NEED_OPTION);
     for reason in &mut reasons[8..] {
-        *reason = if broken {
-            Some(STRUCTURE_FIRST)
-        } else if target_kind.is_some() {
-            None
-        } else {
-            Some(NEED_REGION)
-        };
+        *reason = region_reason(broken, target_kind.is_some(), NEED_REGION);
     }
     reasons
 }
@@ -265,6 +257,98 @@ fn regions(analysis: &Value, entry: &str) -> Vec<Region> {
     out
 }
 
+/// The slot and option the selection targets: explicit context keys win, otherwise
+/// the containing regions; a slot the document does not have targets nothing.
+fn selection_target(
+    context: &Value,
+    containing: &[&Region],
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
+) -> (Option<String>, Option<String>) {
+    let explicit = |key: &str| context.get(key).and_then(Value::as_str).map(str::to_owned);
+    let slot = if context.get("slot_id").is_some() {
+        explicit("slot_id")
+    } else {
+        containing
+            .iter()
+            .find(|item| item.kind == "slot")
+            .map(|item| item.slot.clone())
+    };
+    let option = if context.get("option_id").is_some() {
+        explicit("option_id")
+    } else {
+        containing.iter().find_map(|item| item.option.clone())
+    };
+    if slot
+        .as_ref()
+        .is_some_and(|id| !snapshot.slot_regions.contains_key(id))
+    {
+        return (None, None);
+    }
+    (slot, option)
+}
+
+fn target_kind(slot: &Option<String>, option: &Option<String>) -> Option<&'static str> {
+    match (slot, option) {
+        (Some(_), Some(_)) => Some("option"),
+        (Some(_), None) => Some("slot"),
+        _ => None,
+    }
+}
+
+/// Why a field cannot be created over a single-paragraph selection, if at all.
+fn paragraph_field_reason(
+    package: &HwpxPackage,
+    selection: &Value,
+    frame: &Frame,
+    field_hits: &[String],
+) -> Result<Option<&'static str>, AuthoringAvailabilityError> {
+    let source = package
+        .entries
+        .iter()
+        .find(|item| item.name == frame.entry)
+        .unwrap();
+    let view = XmlView::parse(&source.data)
+        .map_err(|error| AuthoringAvailabilityError(error.to_string()))?;
+    let path = selection_path(selection);
+    let paragraph = selected_paragraph(&view, frame.first, path.as_deref())
+        .map_err(|error| AuthoringAvailabilityError(error.into()))?;
+    let scan = view.field_occurrences(&frame.entry);
+    let sites = paragraph_sites(&view, paragraph, &scan);
+    if !sites.sites.is_empty()
+        && frame.start == frame.end
+        && frame.start <= sites.text.chars().count()
+    {
+        return Ok(Some(NEED_RANGE));
+    }
+    let overlap = (!field_hits.is_empty() && frame.start != frame.end).then_some(FIELD_OVERLAP);
+    Ok(field_range_refusal(&view, paragraph, &scan, &sites, frame.start, frame.end).or(overlap))
+}
+
+/// Reasons for create_slot and create_option, and whether to offer making a slot first.
+fn create_region_reasons(
+    broken: bool,
+    in_cell: bool,
+    hits: &[&Region],
+    containing: &[&Region],
+) -> (Option<&'static str>, Option<&'static str>, bool) {
+    if broken {
+        return (Some(STRUCTURE_FIRST), Some(STRUCTURE_FIRST), false);
+    }
+    if in_cell {
+        return (Some(REGION_IN_CELL), Some(REGION_IN_CELL), false);
+    }
+    let slot = (!hits.is_empty()).then_some(REGION_OVERLAP);
+    let owners = containing.iter().filter(|item| item.kind == "slot").count();
+    if owners == 1 {
+        let overlap = hits.iter().any(|item| item.kind == "option");
+        (slot, overlap.then_some(REGION_OVERLAP), false)
+    } else if hits.iter().any(|item| item.kind == "slot") {
+        (slot, Some(MULTI_REGION), false)
+    } else {
+        (slot, Some(OPTION_OUTSIDE), true)
+    }
+}
+
 pub fn available_commands_hwpx(
     package: &HwpxPackage,
     selection: &Value,
@@ -295,100 +379,24 @@ pub fn available_commands_hwpx(
     let context = context
         .filter(|value| value.is_object())
         .unwrap_or(&Value::Null);
-    let mut slot = if context.get("slot_id").is_some() {
-        context
-            .get("slot_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    } else {
-        containing
-            .iter()
-            .find(|item| item.kind == "slot")
-            .map(|item| item.slot.clone())
-    };
-    let mut option = if context.get("option_id").is_some() {
-        context
-            .get("option_id")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    } else {
-        containing.iter().find_map(|item| item.option.clone())
-    };
-    if slot
-        .as_ref()
-        .is_some_and(|id| !snapshot.slot_regions.contains_key(id))
-    {
-        slot = None;
-        option = None;
-    }
-    let target = if slot.is_some() && option.is_some() {
-        Some("option")
-    } else if slot.is_some() {
-        Some("slot")
-    } else {
-        None
-    };
+    let (slot, option) = selection_target(context, &containing, &snapshot);
     let broken = !snapshot.diagnostics.is_empty();
-    let mut reasons = shared_reasons(&field_hits, target, slot.is_some(), broken);
+    let mut reasons = shared_reasons(
+        &field_hits,
+        target_kind(&slot, &option),
+        slot.is_some(),
+        broken,
+    );
     reasons[0] = if crossing {
         Some(MULTI_REGION)
     } else if frame.first != frame.last {
         Some(MULTI_PARAGRAPH_FIELD)
     } else {
-        let source = package
-            .entries
-            .iter()
-            .find(|item| item.name == frame.entry)
-            .unwrap();
-        let view = XmlView::parse(&source.data)
-            .map_err(|error| AuthoringAvailabilityError(error.to_string()))?;
-        let path = selection_path(selection);
-        let paragraph = selected_paragraph(&view, frame.first, path.as_deref())
-            .map_err(|error| AuthoringAvailabilityError(error.into()))?;
-        let scan = view.field_occurrences(&frame.entry);
-        let sites = paragraph_sites(&view, paragraph, &scan);
-        if !sites.sites.is_empty()
-            && frame.start == frame.end
-            && frame.start <= sites.text.chars().count()
-        {
-            Some(NEED_RANGE)
-        } else {
-            field_range_refusal(&view, paragraph, &scan, &sites, frame.start, frame.end).or(
-                if !field_hits.is_empty() && frame.start != frame.end {
-                    Some(FIELD_OVERLAP)
-                } else {
-                    None
-                },
-            )
-        }
+        paragraph_field_reason(package, selection, &frame, &field_hits)?
     };
-    let mut alternative = false;
-    if broken {
-        reasons[1] = Some(STRUCTURE_FIRST);
-        reasons[2] = Some(STRUCTURE_FIRST);
-    } else if !path.is_null() {
-        reasons[1] = Some(REGION_IN_CELL);
-        reasons[2] = Some(REGION_IN_CELL);
-    } else {
-        reasons[1] = if hits.is_empty() {
-            None
-        } else {
-            Some(REGION_OVERLAP)
-        };
-        let owners = containing.iter().filter(|item| item.kind == "slot").count();
-        reasons[2] = if owners == 1 {
-            if hits.iter().any(|item| item.kind == "option") {
-                Some(REGION_OVERLAP)
-            } else {
-                None
-            }
-        } else if hits.iter().any(|item| item.kind == "slot") {
-            Some(MULTI_REGION)
-        } else {
-            alternative = true;
-            Some(OPTION_OUTSIDE)
-        };
-    }
+    let alternative;
+    (reasons[1], reasons[2], alternative) =
+        create_region_reasons(broken, !path.is_null(), &hits, &containing);
     Ok(entries(&reasons, alternative))
 }
 

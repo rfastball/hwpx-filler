@@ -307,7 +307,8 @@ pub fn selected_paragraph(
     }
 }
 
-pub fn simple_field_content(view: &XmlView, paragraph: NodeId) -> bool {
+/// Runs hold only text and controls, with no comments or processing instructions.
+fn runs_are_simple(view: &XmlView, paragraph: NodeId) -> bool {
     for run in element_children(view, paragraph).filter(|id| is_hp(view, *id, "run")) {
         for part in &view.node(run).unwrap().children {
             let Content::Element(child) = part else {
@@ -324,6 +325,11 @@ pub fn simple_field_content(view: &XmlView, paragraph: NodeId) -> bool {
             }
         }
     }
+    true
+}
+
+/// Controls hold nothing but field boundaries.
+fn controls_are_simple(view: &XmlView, paragraph: NodeId) -> bool {
     for control in view.descendants(paragraph).unwrap_or_default() {
         if is_hp(view, control, "ctrl")
             && view
@@ -343,6 +349,10 @@ pub fn simple_field_content(view: &XmlView, paragraph: NodeId) -> bool {
         }
     }
     true
+}
+
+pub fn simple_field_content(view: &XmlView, paragraph: NodeId) -> bool {
+    runs_are_simple(view, paragraph) && controls_are_simple(view, paragraph)
 }
 
 pub fn simple_field_span(view: &XmlView, field: &EntryFieldObservation) -> Option<(usize, usize)> {
@@ -665,6 +675,11 @@ pub fn paragraph_sites(view: &XmlView, paragraph: NodeId, scan: &EntryFieldScan)
     }
 }
 
+/// Whether a selection touches a field span; a caret touches it at either edge.
+fn range_touches((start, end): (usize, usize), (low, high): (usize, usize)) -> bool {
+    (start == end && low <= start && start <= high) || (start < end && low < end && start < high)
+}
+
 pub fn field_range_refusal(
     view: &XmlView,
     paragraph: NodeId,
@@ -684,8 +699,7 @@ pub fn field_range_refusal(
     }
     for field in editable_fields(view, paragraph, scan) {
         if let Some((low, high)) = simple_field_span(view, field)
-            && ((start == end && low <= start && start <= high)
-                || (start < end && low < end && start < high))
+            && range_touches((start, end), (low, high))
         {
             return Some(REASON_FIELD_OVERLAP);
         }

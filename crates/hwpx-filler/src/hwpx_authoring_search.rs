@@ -4,8 +4,8 @@ use crate::authoring::paragraph_model_text;
 use crate::fields::normalize_field_id;
 use crate::hwpx_authoring_analysis::analyze_hwpx;
 use crate::hwpx_authoring_reading::{
-    CellStep, PARAGRAPH_UNRESOLVED, body_hit_context, body_hit_parts, field_marks,
-    field_range_refusal, is_hp, paragraph_body, paragraph_pieces, paragraph_position,
+    CellStep, PARAGRAPH_UNRESOLVED, ParagraphPosition, body_hit_context, body_hit_parts,
+    field_marks, field_range_refusal, is_hp, paragraph_body, paragraph_pieces, paragraph_position,
     paragraph_sites, root_anchor, selected_paragraph, top_paragraphs,
 };
 use crate::hwpx_product_inspection::inspect_slot_regions;
@@ -14,7 +14,7 @@ use crate::schema::extract_schema;
 use crate::structure_scan::python_trim;
 use hwpx_core::package::HwpxPackage;
 use hwpx_core::structural_boundary::python_string_repr;
-use hwpx_core::xml_view::XmlView;
+use hwpx_core::xml_view::{NodeId, XmlView};
 use regex::RegexBuilder;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -264,6 +264,16 @@ fn utf16_len(text: &str) -> usize {
     text.encode_utf16().count()
 }
 
+fn with_cell_path(mut location: Value, cell_path: Option<&Value>) -> Value {
+    if let Some(cell_path) = cell_path {
+        location
+            .as_object_mut()
+            .unwrap()
+            .insert("cell_path".into(), json!(cell_path));
+    }
+    location
+}
+
 pub fn same_text_hwpx(
     package: &HwpxPackage,
     selection: &Value,
@@ -288,11 +298,9 @@ pub fn same_text_hwpx(
     for entry in package.content_xml_names() {
         let view = XmlView::parse(source(package, entry)?)
             .map_err(|error| AuthoringSearchError(error.to_string()))?;
-        let selected = if entry == chosen_entry {
-            selected_paragraph(&view, chosen_index, path.as_deref()).ok()
-        } else {
-            None
-        };
+        let selected = (entry == chosen_entry)
+            .then(|| selected_paragraph(&view, chosen_index, path.as_deref()).ok())
+            .flatten();
         let scan = view.field_occurrences(entry);
         let marks = field_marks(&scan);
         let top = top_paragraphs(&view);
@@ -320,19 +328,18 @@ pub fn same_text_hwpx(
                 let parts = body_hit_parts(&pieces, start, end);
                 let context = format!("{}{}{}", parts.0, parts.1, parts.2);
                 let lead = utf16_len(&parts.0);
-                let reason = if position.paragraph.is_none() {
-                    Some(PARAGRAPH_UNRESOLVED)
-                } else {
+                let reason = position.paragraph.map_or(Some(PARAGRAPH_UNRESOLVED), |_| {
                     field_range_refusal(&view, paragraph, &scan, &sites, start, end)
-                };
-                let mut location = json!({"entry": entry, "paragraph": position.paragraph,
-                    "paragraph_path": path, "start": start, "end": end});
-                if let Some(cell_path) = &position.cell_path {
-                    location
-                        .as_object_mut()
-                        .unwrap()
-                        .insert("cell_path".into(), json!(cell_path));
-                }
+                });
+                let location = with_cell_path(
+                    json!({"entry": entry, "paragraph": position.paragraph,
+                        "paragraph_path": path, "start": start, "end": end}),
+                    position
+                        .cell_path
+                        .as_ref()
+                        .map(|cell_path| json!(cell_path))
+                        .as_ref(),
+                );
                 hits.push(
                     json!({"location": location, "anchor": anchor, "context": context,
                     "focus": {"start": lead, "end": lead + utf16_len(&parts.1)},
@@ -342,6 +349,48 @@ pub fn same_text_hwpx(
         }
     }
     Ok(hits)
+}
+
+/// Where a stray token's problem points: its top paragraph or root anchor, if any.
+fn token_location(
+    view: &XmlView,
+    entry: &str,
+    paragraph: NodeId,
+    position: &ParagraphPosition,
+) -> Value {
+    let location = if let Some(index) = position.paragraph {
+        json!({"entry": entry, "paragraph": index})
+    } else if let Some(anchor) = root_anchor(view, paragraph) {
+        json!({"entry": entry, "paragraph": anchor})
+    } else {
+        return Value::Null;
+    };
+    let cell_path = position
+        .cell_path
+        .is_some()
+        .then(|| json!(position.cell_path));
+    with_cell_path(location, cell_path.as_ref())
+}
+
+/// The token's character range when it can be compiled in place: inside the editable
+/// text, before any control, and with the same leading text as the paragraph model.
+fn compilable_token_range(
+    view: &XmlView,
+    entry: &str,
+    paragraph: NodeId,
+    token: (isize, isize),
+) -> Option<(usize, usize)> {
+    let scan = view.field_occurrences(entry);
+    let sites = paragraph_sites(view, paragraph, &scan);
+    let end = usize::try_from(token.1).unwrap_or(usize::MAX);
+    let start = usize::try_from(token.0).unwrap_or(usize::MAX);
+    let model = paragraph_model_text(view, paragraph);
+    (start < end
+        && end <= sites.text.chars().count()
+        && !sites.sites.is_empty()
+        && !sites.hazards.iter().any(|at| *at <= end)
+        && sites.text.chars().take(end).eq(model.chars().take(end)))
+    .then_some((start, end))
 }
 
 pub fn stray_token_problems(package: &HwpxPackage) -> Result<Vec<Value>, AuthoringSearchError> {
@@ -367,37 +416,17 @@ pub fn stray_token_problems(package: &HwpxPackage) -> Result<Vec<Value>, Authori
                 AuthoringSearchError(format!("token paragraph missing: {}", site.paragraph_path))
             })?;
         let position = paragraph_position(view, paragraph);
-        let mut location = if let Some(index) = position.paragraph {
-            json!({"entry": site.entry, "paragraph": index})
-        } else if let Some(anchor) = root_anchor(view, paragraph) {
-            json!({"entry": site.entry, "paragraph": anchor})
-        } else {
-            Value::Null
-        };
-        if location != Value::Null && position.cell_path.is_some() {
-            location
-                .as_object_mut()
-                .unwrap()
-                .insert("cell_path".into(), json!(position.cell_path));
-        }
+        let mut location = token_location(view, &site.entry, paragraph, &position);
+        let addressable =
+            view.parent(paragraph) == Some(view.root()) || position.cell_path.is_some();
         if location != Value::Null
-            && (view.parent(paragraph) == Some(view.root()) || position.cell_path.is_some())
+            && addressable
+            && let Some((start, end)) =
+                compilable_token_range(view, &site.entry, paragraph, (site.start, site.end))
         {
-            let scan = view.field_occurrences(&site.entry);
-            let sites = paragraph_sites(view, paragraph, &scan);
-            let end = usize::try_from(site.end).unwrap_or(usize::MAX);
-            let start = usize::try_from(site.start).unwrap_or(usize::MAX);
-            let model = paragraph_model_text(view, paragraph);
-            if start < end
-                && end <= sites.text.chars().count()
-                && !sites.sites.is_empty()
-                && !sites.hazards.iter().any(|at| *at <= end)
-                && sites.text.chars().take(end).eq(model.chars().take(end))
-            {
-                let object = location.as_object_mut().unwrap();
-                object.insert("start".into(), json!(start));
-                object.insert("end".into(), json!(end));
-            }
+            let object = location.as_object_mut().unwrap();
+            object.insert("start".into(), json!(start));
+            object.insert("end".into(), json!(end));
         }
         let name = normalize_field_id(&site.name).unwrap_or(site.name);
         let command = json!({"type": "compile_token", "entry": site.entry,
