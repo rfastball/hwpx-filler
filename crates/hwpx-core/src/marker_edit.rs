@@ -59,6 +59,30 @@ fn marker_paragraph(
     Ok(paragraph)
 }
 
+/// Style neighbor and root child index for one original paragraph gap: before
+/// paragraph `gap`, or after the last paragraph when `gap` is the paragraph count.
+fn insertion_site(
+    doc: &XmlDocument,
+    originals: &[NodeId],
+    gap: usize,
+) -> Result<(NodeId, usize), XmlError> {
+    let neighbor = if gap == originals.len() {
+        *originals.last().unwrap()
+    } else {
+        originals[gap]
+    };
+    let mut position = doc
+        .node(doc.root)
+        .children
+        .iter()
+        .position(|part| matches!(part, Content::Element(id) if *id == neighbor))
+        .ok_or_else(|| invalid("detached marker neighbor"))?;
+    if gap == originals.len() {
+        position += 1;
+    }
+    Ok((neighbor, position))
+}
+
 /// Insert `(gap, marker text)` in list order, with gaps referring to the original
 /// direct native paragraph sequence. No package or filesystem mutation occurs.
 pub fn insert_marker_paragraphs(
@@ -84,20 +108,7 @@ pub fn insert_marker_paragraphs(
         return Ok(source.to_vec());
     }
     for (gap, texts) in groups.into_iter().rev() {
-        let neighbor = if gap == originals.len() {
-            *originals.last().unwrap()
-        } else {
-            originals[gap]
-        };
-        let mut position = doc
-            .node(doc.root)
-            .children
-            .iter()
-            .position(|part| matches!(part, Content::Element(id) if *id == neighbor))
-            .ok_or_else(|| invalid("detached marker neighbor"))?;
-        if gap == originals.len() {
-            position += 1;
-        }
+        let (neighbor, position) = insertion_site(&doc, &originals, gap)?;
         for text in texts.into_iter().rev() {
             let paragraph = marker_paragraph(&mut doc, neighbor, text)?;
             doc.insert_element(doc.root, position, paragraph)?;

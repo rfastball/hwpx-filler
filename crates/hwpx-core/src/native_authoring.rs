@@ -1,7 +1,7 @@
 //! Guarded byte edits for native authoring Field controls.
 
 use crate::authoring_edit::{add_one, document_text, max_numeric_id};
-use crate::field_occurrence::resolve_field_occurrences;
+use crate::field_occurrence::{FieldOccurrence, FieldResolution, resolve_field_occurrences};
 use crate::lineseg::serialize_modified_section;
 use crate::native_admission::native_element;
 use crate::text_model::HP_NS;
@@ -191,6 +191,18 @@ fn preflight(
             "고른 범위 앞이나 안에 제어 요소가 있어 문자 위치를 확정할 수 없습니다.",
         ));
     }
+    ensure_clear_of_fields(doc, paragraph, edit)
+}
+/// A caret touches an existing span at either end; a range overlaps it strictly.
+fn overlaps_span(edit: &CreateFieldEdit<'_>, low: usize, high: usize) -> bool {
+    (edit.start == edit.end && low <= edit.start && edit.start <= high)
+        || (edit.start < edit.end && low < edit.end && edit.start < high)
+}
+fn ensure_clear_of_fields(
+    doc: &XmlDocument,
+    paragraph: NodeId,
+    edit: &CreateFieldEdit<'_>,
+) -> Result<(), NativeAuthoringError> {
     let resolution = resolve_field_occurrences("", doc);
     for field in resolution
         .occurrences
@@ -198,8 +210,7 @@ fn preflight(
         .filter(|field| field.paragraph == paragraph)
     {
         if let Some((low, high)) = field_span(doc, paragraph, field.begin, field.end)
-            && ((edit.start == edit.end && low <= edit.start && edit.start <= high)
-                || (edit.start < edit.end && low < edit.end && edit.start < high))
+            && overlaps_span(edit, low, high)
         {
             return Err(invalid("고른 범위에 기존 필드가 포함되어 있습니다."));
         }
@@ -348,6 +359,29 @@ pub fn create_field_ranges(
         preflight(&doc, paragraph, edit)?;
         planned.push((paragraph, edit));
     }
+    ensure_disjoint(&planned)?;
+    planned.sort_by_key(|(_, edit)| std::cmp::Reverse(edit.start));
+    let mut next = max_numeric_id(&doc).map_err(|error| invalid(error.to_string()))?;
+    let mut generated = Vec::new();
+    for (paragraph, edit) in planned {
+        add_one(&mut next);
+        let begin_id = next.clone();
+        add_one(&mut next);
+        let field_id = next.clone();
+        insert_field(&mut doc, paragraph, edit, &begin_id, &field_id)?;
+        generated.push((edit.name, begin_id, field_id));
+    }
+    let bytes = serialize_modified_section(&mut doc)?;
+    let after = parse_xml(&bytes)?;
+    if document_text(&after) != before {
+        return Err(invalid("field creation changed surrounding text"));
+    }
+    verify_created_fields(&after, generated)?;
+    Ok(bytes)
+}
+
+/// Two planned ranges in one paragraph may neither overlap nor coincide.
+fn ensure_disjoint(planned: &[(NodeId, &CreateFieldEdit<'_>)]) -> Result<(), NativeAuthoringError> {
     for at in 0..planned.len() {
         for other in &planned[at + 1..] {
             let (first, edit) = &planned[at];
@@ -359,31 +393,34 @@ pub fn create_field_ranges(
             }
         }
     }
-    planned.sort_by_key(|(_, edit)| std::cmp::Reverse(edit.start));
-    let mut next = max_numeric_id(&doc).map_err(|error| invalid(error.to_string()))?;
-    let mut generated = Vec::new();
-    for (paragraph, edit) in planned {
-        add_one(&mut next);
-        let begin_id = next.clone();
-        add_one(&mut next);
-        let field_id = next.clone();
-        let begin = boundary(&mut doc, edit.name, &begin_id, &field_id, true)?;
-        let end = boundary(&mut doc, edit.name, &begin_id, &field_id, false)?;
-        if edit.start == 0 && edit.end == 0 {
-            insert_boundary(&mut doc, paragraph, edit.start, begin, true)?;
-            insert_boundary(&mut doc, paragraph, edit.end, end, false)?;
-        } else {
-            insert_boundary(&mut doc, paragraph, edit.end, end, false)?;
-            insert_boundary(&mut doc, paragraph, edit.start, begin, true)?;
-        }
-        generated.push((edit.name, begin_id, field_id));
+    Ok(())
+}
+/// Place one begin/end control pair, end first; an empty range at offset zero
+/// inserts the begin first so it still precedes the end.
+fn insert_field(
+    doc: &mut XmlDocument,
+    paragraph: NodeId,
+    edit: &CreateFieldEdit<'_>,
+    begin_id: &str,
+    field_id: &str,
+) -> Result<(), NativeAuthoringError> {
+    let begin = boundary(doc, edit.name, begin_id, field_id, true)?;
+    let end = boundary(doc, edit.name, begin_id, field_id, false)?;
+    if edit.start == 0 && edit.end == 0 {
+        insert_boundary(doc, paragraph, edit.start, begin, true)?;
+        insert_boundary(doc, paragraph, edit.end, end, false)?;
+    } else {
+        insert_boundary(doc, paragraph, edit.end, end, false)?;
+        insert_boundary(doc, paragraph, edit.start, begin, true)?;
     }
-    let bytes = serialize_modified_section(&mut doc)?;
-    let after = parse_xml(&bytes)?;
-    if document_text(&after) != before {
-        return Err(invalid("field creation changed surrounding text"));
-    }
-    let resolution = resolve_field_occurrences("", &after);
+    Ok(())
+}
+/// Readback must pair cleanly and hold each generated Field exactly once.
+fn verify_created_fields(
+    after: &XmlDocument,
+    generated: Vec<(&str, String, String)>,
+) -> Result<(), NativeAuthoringError> {
+    let resolution = resolve_field_occurrences("", after);
     if !resolution.diagnostics.is_empty() {
         return Err(invalid("field creation pairing postcondition failed"));
     }
@@ -403,7 +440,7 @@ pub fn create_field_ranges(
             return Err(invalid("field creation postcondition failed"));
         }
     }
-    Ok(bytes)
+    Ok(())
 }
 
 /// Change selected ordinary Field pairs in one XML entry. Ordinals and optional
@@ -420,6 +457,30 @@ pub fn change_field_occurrences(
     if !resolution.diagnostics.is_empty() {
         return Err(invalid("ordinary Field pairing is unusable"));
     }
+    validate_occurrence_edits(&doc, &resolution, edits)?;
+    let removed = edits
+        .iter()
+        .filter(|edit| matches!(edit.change, FieldElementChange::Unset(_)))
+        .count();
+    for edit in edits {
+        apply_occurrence_edit(
+            &mut doc,
+            &resolution.occurrences[edit.ordinal],
+            &edit.change,
+        )?;
+    }
+    let bytes = serialize_modified_section(&mut doc)?;
+    let after = parse_xml(&bytes)?;
+    verify_changed_fields(&doc, &after, &resolution, edits, removed)?;
+    Ok(bytes)
+}
+
+/// Every edit names a distinct, current occurrence; an unset must keep plain text.
+fn validate_occurrence_edits(
+    doc: &XmlDocument,
+    resolution: &FieldResolution,
+    edits: &[FieldOccurrenceEdit<'_>],
+) -> Result<(), NativeAuthoringError> {
     let mut seen = HashSet::new();
     for edit in edits {
         if !seen.insert(edit.ordinal) {
@@ -438,65 +499,80 @@ pub fn change_field_occurrences(
             ));
         }
         if matches!(edit.change, FieldElementChange::Unset(_)) {
-            if field.texts.is_empty()
-                || field.texts.iter().any(|id| {
-                    doc.node(*id).children.iter().any(|part| {
-                        matches!(
-                            part,
-                            Content::Element(_)
-                                | Content::Comment(_)
-                                | Content::ProcessingInstruction(_)
-                        )
-                    })
-                })
-            {
-                return Err(invalid(
-                    "이 필드에는 복합 요소가 있어 내용 보존을 확인할 수 없습니다.",
-                ));
-            }
-            if field.begin_ctrl == field.end_ctrl {
-                return Err(invalid("field controls share one container"));
-            }
+            ensure_unset_preserves(doc, field)?;
         }
     }
-    let removed = edits
-        .iter()
-        .filter(|edit| matches!(edit.change, FieldElementChange::Unset(_)))
-        .count();
-    for edit in edits {
-        let field = &resolution.occurrences[edit.ordinal];
-        match &edit.change {
-            FieldElementChange::Rename(name) => {
-                let attrs = &mut doc.node_mut(field.begin).attributes;
-                if let Some(attr) = attrs
-                    .iter_mut()
-                    .find(|attr| attr.name.namespace.is_empty() && attr.name.local == "name")
-                {
-                    attr.value = (*name).into();
-                } else {
-                    attrs.push(Attribute {
-                        name: Name {
-                            raw: "name".into(),
-                            namespace: String::new(),
-                            local: "name".into(),
-                        },
-                        value: (*name).into(),
-                    });
-                }
+    Ok(())
+}
+fn ensure_unset_preserves(
+    doc: &XmlDocument,
+    field: &FieldOccurrence,
+) -> Result<(), NativeAuthoringError> {
+    if field.texts.is_empty()
+        || field.texts.iter().any(|id| {
+            doc.node(*id).children.iter().any(|part| {
+                matches!(
+                    part,
+                    Content::Element(_) | Content::Comment(_) | Content::ProcessingInstruction(_)
+                )
+            })
+        })
+    {
+        return Err(invalid(
+            "이 필드에는 복합 요소가 있어 내용 보존을 확인할 수 없습니다.",
+        ));
+    }
+    if field.begin_ctrl == field.end_ctrl {
+        return Err(invalid("field controls share one container"));
+    }
+    Ok(())
+}
+fn apply_occurrence_edit(
+    doc: &mut XmlDocument,
+    field: &FieldOccurrence,
+    change: &FieldElementChange<'_>,
+) -> Result<(), NativeAuthoringError> {
+    match change {
+        FieldElementChange::Rename(name) => set_unqualified_name(doc, field.begin, name),
+        FieldElementChange::Unset(replacement) => {
+            doc.node_mut(field.texts[0]).children = vec![Content::Text((*replacement).into())];
+            for id in &field.texts[1..] {
+                doc.node_mut(*id).children.clear();
             }
-            FieldElementChange::Unset(replacement) => {
-                doc.node_mut(field.texts[0]).children = vec![Content::Text((*replacement).into())];
-                for id in &field.texts[1..] {
-                    doc.node_mut(*id).children.clear();
-                }
-                doc.remove_element_with_tail(field.begin_ctrl)?;
-                doc.remove_element_with_tail(field.end_ctrl)?;
-            }
+            doc.remove_element_with_tail(field.begin_ctrl)?;
+            doc.remove_element_with_tail(field.end_ctrl)?;
         }
     }
-    let bytes = serialize_modified_section(&mut doc)?;
-    let after = parse_xml(&bytes)?;
-    let observed = resolve_field_occurrences("", &after);
+    Ok(())
+}
+fn set_unqualified_name(doc: &mut XmlDocument, begin: NodeId, name: &str) {
+    let attrs = &mut doc.node_mut(begin).attributes;
+    if let Some(attr) = attrs
+        .iter_mut()
+        .find(|attr| attr.name.namespace.is_empty() && attr.name.local == "name")
+    {
+        attr.value = name.into();
+    } else {
+        attrs.push(Attribute {
+            name: Name {
+                raw: "name".into(),
+                namespace: String::new(),
+                local: "name".into(),
+            },
+            value: name.into(),
+        });
+    }
+}
+/// Readback pairs cleanly, lost exactly the unset pairs, and carries every
+/// rename on the pair whose begin ID it had in the edited arena.
+fn verify_changed_fields(
+    doc: &XmlDocument,
+    after: &XmlDocument,
+    resolution: &FieldResolution,
+    edits: &[FieldOccurrenceEdit<'_>],
+    removed: usize,
+) -> Result<(), NativeAuthoringError> {
+    let observed = resolve_field_occurrences("", after);
     if !observed.diagnostics.is_empty()
         || observed.occurrences.len() + removed != resolution.occurrences.len()
     {
@@ -513,7 +589,7 @@ pub fn change_field_occurrences(
             }
         }
     }
-    Ok(bytes)
+    Ok(())
 }
 
 #[cfg(test)]
