@@ -16,6 +16,9 @@ use tauri::{
     WebviewWindowBuilder, Wry,
 };
 
+#[path = "tauri_close_guard.rs"]
+mod close_guard;
+
 pub trait ProductCaller: Send + Sync + 'static {
     fn call(
         &self,
@@ -191,16 +194,7 @@ pub fn run_shell(
         let alert = alert.clone();
         move |message| alert(message)
     }));
-    let saved = settings
-        .load_window_geometry()
-        .map_err(|error| error.to_string())?;
-    let saved = saved.filter(|geometry| {
-        let visible = virtual_screen_bounds().is_none_or(|bounds| geometry.visible_in(bounds));
-        if !visible {
-            alert("저장된 창 위치가 현재 화면 밖이라 기본 위치로 복원합니다");
-        }
-        visible
-    });
+    let saved = visible_saved_geometry(&settings, &*alert)?;
     let initial = saved.clone().unwrap_or(WindowGeometry {
         x: 0,
         y: 0,
@@ -223,211 +217,24 @@ pub fn run_shell(
         live_token,
     });
     let context = verified_context(assets);
-    let setup_state = state.clone();
-    let boot_timing = timing;
+    let setup = MainWindowSetup {
+        expected_resources,
+        saved,
+        profile,
+        state: state.clone(),
+        timing,
+        live_debug,
+        window_binding,
+    };
     tauri::Builder::default()
         .manage(state.clone())
-        .invoke_handler(tauri::generate_handler![product_call, selftest_finish, live101_queue_dialog])
-        .setup(move |app| {
-            let actual = app.path().resource_dir()?;
-            let actual_display = crate::single_instance::normalize_windows_path(&actual)?;
-            let expected_display =
-                crate::single_instance::normalize_windows_path(&expected_resources)?;
-            if !actual_display.eq_ignore_ascii_case(&expected_display) {
-                return Err(
-                    format!("bundle resource directory changed: {}", actual.display()).into(),
-                );
-            }
-            let mut builder =
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("문서나르미")
-                    .inner_size(
-                        saved.as_ref().map_or(1440.0, |item| item.width as f64),
-                        saved.as_ref().map_or(900.0, |item| item.height as f64),
-                    )
-                    .min_inner_size(720.0, 560.0)
-                    .visible(false)
-                    .data_directory(profile.clone())
-                    .on_navigation(is_app_navigation)
-                    .on_page_load({
-                        let state = setup_state.clone();
-                        let completed_runtime = boot_timing.runtime_version.clone();
-                        move |webview, payload| {
-                            if payload.event() != PageLoadEvent::Finished
-                                || state.boot_started.swap(true, Ordering::SeqCst)
-                            {
-                                return;
-                            }
-                            if let Err(error) = state.settings.save_boot_completed(&completed_runtime) {
-                                (state.alert)(&format!(
-                                    "부팅 완료 기록 저장 실패 — 다음 부팅도 넓은 예산: {error:?}"
-                                ));
-                            }
-                            let Some(window) = webview.app_handle().get_webview_window("main")
-                            else {
-                                (state.alert)("기본 창을 찾지 못했습니다.");
-                                return;
-                            };
-                            let state = state.clone();
-                            tauri::async_runtime::spawn(async move {
-                                apply_preferences_then_show(&window, &state).await;
-                                if let Some(selftest) = state.selftest.as_ref() {
-                                    match selftest.driver_script() {
-                                        Ok(script) => {
-                                            if let Err(error) = window.eval(&script) {
-                                                (state.alert)(&format!(
-                                                    "WebView2 selftest 시작 실패: {error}"
-                                                ));
-                                            }
-                                        }
-                                        Err(error) => (state.alert)(&format!(
-                                            "WebView2 selftest 구성 실패: {error}"
-                                        )),
-                                    }
-                                }
-                            });
-                        }
-                    });
-            if let Some((port, token)) = live_debug.as_ref() {
-                builder = builder.additional_browser_args(&format!(
-                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
-                     --remote-debugging-address=127.0.0.1 --remote-debugging-port={port}"
-                ));
-                builder = builder.initialization_script(format!(
-                    "Object.defineProperty(window,'__hwpxLive101',{{value:{}}});",
-                    serde_json::to_string(token)?
-                ));
-            }
-            if setup_state
-                .selftest
-                .as_ref()
-                .is_some_and(|selftest| selftest.web_capability())
-            {
-                builder = builder.initialization_script(
-                    "Object.defineProperty(Object.getPrototypeOf(window), '__HWPX_NATIVE_SELFTEST__', {value:true});",
-                );
-            }
-            if let Some(geometry) = saved.as_ref() {
-                builder = builder
-                    .position(geometry.x as f64, geometry.y as f64)
-                    .maximized(geometry.maximized);
-            }
-            let fallback_started = Instant::now();
-            let window = builder.build()?;
-            size_initial_window(&window, saved.as_ref(), &setup_state)?;
-            window_binding
-                .set(window.clone())
-                .map_err(|_| "main window was already bound")?;
-            let fallback_state = setup_state.clone();
-            let fallback_budget = boot_timing.fallback_seconds;
-            let fallback_reason = boot_timing.reason.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(Duration::from_secs(fallback_budget).saturating_sub(fallback_started.elapsed()));
-                if fallback_state.geometry_stop.load(Ordering::SeqCst)
-                    || fallback_state.shown.lock().is_ok_and(|shown| *shown)
-                {
-                    return;
-                }
-                if show_once(&window, &fallback_state).is_ok() {
-                    let message = if fallback_state.boot_started.load(Ordering::SeqCst) {
-                        "loaded 후 표시 매달림. 폴백으로 창 표시(테마 미주입 가능)"
-                    } else {
-                        "loaded 미발화. 폴백으로 창 표시(테마 미주입 가능)"
-                    };
-                    (fallback_state.alert)(&format!(
-                        "{message} [예산 {fallback_budget}s · {fallback_reason}]"
-                    ));
-                }
-            });
-            let geometry_state = setup_state.clone();
-            std::thread::spawn(move || {
-                let mut saved_revision = 0;
-                while !geometry_state.geometry_stop.load(Ordering::SeqCst) {
-                    std::thread::sleep(Duration::from_millis(250));
-                    let revision = geometry_state.geometry_revision.load(Ordering::SeqCst);
-                    if revision != saved_revision
-                        && !geometry_state.geometry_stop.load(Ordering::SeqCst)
-                    {
-                        persist_geometry(&geometry_state);
-                        saved_revision = revision;
-                    }
-                }
-            });
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            if matches!(
-                event,
-                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
-            ) {
-                let state = window.state::<Arc<HostState>>().inner().clone();
-                record_geometry(window, &state);
-            }
-            if let tauri::WindowEvent::Destroyed = event {
-                let state = window.state::<Arc<HostState>>().inner().clone();
-                state.geometry_stop.store(true, Ordering::SeqCst);
-                persist_geometry(&state);
-            }
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let state = window.state::<Arc<HostState>>().inner().clone();
-                if state.close_authorized.swap(false, Ordering::SeqCst) {
-                    return;
-                }
-                api.prevent_close();
-                if state.close_prompt_open.swap(true, Ordering::SeqCst) {
-                    return;
-                }
-                let Some(webview) = window.app_handle().get_webview_window("main") else {
-                    state.close_prompt_open.store(false, Ordering::SeqCst);
-                    return;
-                };
-                tauri::async_runtime::spawn(async move {
-                    let caller = state.caller.clone();
-                    let check_window = webview.clone();
-                    let guard = tauri::async_runtime::spawn_blocking(move || {
-                        let state = caller.call("close_guard_state", &[], &check_window)?;
-                        let flush = caller.call("close_flush_required", &[], &check_window)?;
-                        Ok::<_, String>((state, flush))
-                    })
-                    .await;
-                    match guard {
-                        Ok(Ok((Value::Object(body), Value::Bool(false))))
-                            if body.get("armed") == Some(&Value::Bool(false)) =>
-                        {
-                            state.close_authorized.store(true, Ordering::SeqCst);
-                            if let Err(error) = webview.close() {
-                                state.close_authorized.store(false, Ordering::SeqCst);
-                                (state.alert)(&format!("창을 닫지 못했습니다: {error}"));
-                            }
-                        }
-                        Ok(Ok((Value::Object(body), Value::Bool(_)))) => {
-                            let alert = state.alert.clone();
-                            let api = crate::product_transport::TauriProductApi::new(
-                                webview,
-                                move |message| alert(message),
-                            );
-                            let outcome = api.close_request(&body).await;
-                            if !outcome.ok {
-                                state.close_prompt_open.store(false, Ordering::SeqCst);
-                                (state.alert)(&format!(
-                                    "닫기 확인창 전달 실패: {}",
-                                    outcome.detail
-                                ));
-                            }
-                        }
-                        _ => {
-                            state.close_prompt_open.store(false, Ordering::SeqCst);
-                            let alert = state.alert.clone();
-                            let api = crate::product_transport::TauriProductApi::new(
-                                webview,
-                                move |message| alert(message),
-                            );
-                            let _ = api.notice("창 닫기 상태를 확인하지 못했습니다.").await;
-                        }
-                    }
-                });
-            }
-        })
+        .invoke_handler(tauri::generate_handler![
+            product_call,
+            selftest_finish,
+            live101_queue_dialog
+        ])
+        .setup(move |app| setup.run(app))
+        .on_window_event(on_window_event)
         .run(context)
         .map_err(|error| error.to_string())?;
     if let Some(selftest) = state.selftest.as_ref()
@@ -436,6 +243,204 @@ pub fn run_shell(
         return Err("WebView2 selftest failed".into());
     }
     Ok(())
+}
+
+/// The saved window geometry when it is still on a current screen; otherwise the user is
+/// told it was off-screen and the default placement is used.
+fn visible_saved_geometry(
+    settings: &ShellSettings,
+    alert: &(dyn Fn(&str) + Send + Sync),
+) -> Result<Option<WindowGeometry>, String> {
+    let saved = settings
+        .load_window_geometry()
+        .map_err(|error| error.to_string())?;
+    Ok(saved.filter(|geometry| {
+        let visible = virtual_screen_bounds().is_none_or(|bounds| geometry.visible_in(bounds));
+        if !visible {
+            alert("저장된 창 위치가 현재 화면 밖이라 기본 위치로 복원합니다");
+        }
+        visible
+    }))
+}
+
+/// Everything the Tauri `setup` hook needs to build and bind the hidden main window.
+struct MainWindowSetup {
+    expected_resources: PathBuf,
+    saved: Option<WindowGeometry>,
+    profile: PathBuf,
+    state: Arc<HostState>,
+    timing: BootTiming,
+    live_debug: Option<(u16, String)>,
+    window_binding: Arc<OnceLock<WebviewWindow<Wry>>>,
+}
+
+impl MainWindowSetup {
+    fn run(self, app: &mut tauri::App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
+        self.verify_resource_dir(app)?;
+        let mut builder =
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("문서나르미")
+                .inner_size(
+                    self.saved.as_ref().map_or(1440.0, |item| item.width as f64),
+                    self.saved.as_ref().map_or(900.0, |item| item.height as f64),
+                )
+                .min_inner_size(720.0, 560.0)
+                .visible(false)
+                .data_directory(self.profile.clone())
+                .on_navigation(is_app_navigation)
+                .on_page_load(page_load_handler(
+                    self.state.clone(),
+                    self.timing.runtime_version.clone(),
+                ));
+        if let Some((port, token)) = self.live_debug.as_ref() {
+            builder = builder.additional_browser_args(&format!(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+                 --remote-debugging-address=127.0.0.1 --remote-debugging-port={port}"
+            ));
+            builder = builder.initialization_script(format!(
+                "Object.defineProperty(window,'__hwpxLive101',{{value:{}}});",
+                serde_json::to_string(token)?
+            ));
+        }
+        if self
+            .state
+            .selftest
+            .as_ref()
+            .is_some_and(|selftest| selftest.web_capability())
+        {
+            builder = builder.initialization_script(
+                "Object.defineProperty(Object.getPrototypeOf(window), '__HWPX_NATIVE_SELFTEST__', {value:true});",
+            );
+        }
+        if let Some(geometry) = self.saved.as_ref() {
+            builder = builder
+                .position(geometry.x as f64, geometry.y as f64)
+                .maximized(geometry.maximized);
+        }
+        let fallback_started = Instant::now();
+        let window = builder.build()?;
+        size_initial_window(&window, self.saved.as_ref(), &self.state)?;
+        self.window_binding
+            .set(window.clone())
+            .map_err(|_| "main window was already bound")?;
+        spawn_show_fallback(window, self.state.clone(), &self.timing, fallback_started);
+        spawn_geometry_saver(self.state);
+        Ok(())
+    }
+
+    /// The bundle must still run from the resource directory it was started for.
+    fn verify_resource_dir(&self, app: &tauri::App<Wry>) -> Result<(), Box<dyn std::error::Error>> {
+        let actual = app.path().resource_dir()?;
+        let actual_display = crate::single_instance::normalize_windows_path(&actual)?;
+        let expected_display =
+            crate::single_instance::normalize_windows_path(&self.expected_resources)?;
+        if !actual_display.eq_ignore_ascii_case(&expected_display) {
+            return Err(format!("bundle resource directory changed: {}", actual.display()).into());
+        }
+        Ok(())
+    }
+}
+
+/// On the first finished page load: record boot completion, then apply preferences,
+/// show the window, and start the selftest driver when one is attached.
+fn page_load_handler(
+    state: Arc<HostState>,
+    completed_runtime: String,
+) -> impl Fn(WebviewWindow<Wry>, tauri::webview::PageLoadPayload<'_>) + Send + Sync + 'static {
+    move |webview, payload| {
+        if payload.event() != PageLoadEvent::Finished
+            || state.boot_started.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+        if let Err(error) = state.settings.save_boot_completed(&completed_runtime) {
+            (state.alert)(&format!(
+                "부팅 완료 기록 저장 실패 — 다음 부팅도 넓은 예산: {error:?}"
+            ));
+        }
+        let Some(window) = webview.app_handle().get_webview_window("main") else {
+            (state.alert)("기본 창을 찾지 못했습니다.");
+            return;
+        };
+        let state = state.clone();
+        tauri::async_runtime::spawn(async move {
+            apply_preferences_then_show(&window, &state).await;
+            start_selftest_driver(&window, &state);
+        });
+    }
+}
+
+fn start_selftest_driver(window: &WebviewWindow<Wry>, state: &HostState) {
+    if let Some(selftest) = state.selftest.as_ref() {
+        match selftest.driver_script() {
+            Ok(script) => {
+                if let Err(error) = window.eval(&script) {
+                    (state.alert)(&format!("WebView2 selftest 시작 실패: {error}"));
+                }
+            }
+            Err(error) => (state.alert)(&format!("WebView2 selftest 구성 실패: {error}")),
+        }
+    }
+}
+
+/// Shows the window anyway once the boot budget runs out without a normal show.
+fn spawn_show_fallback(
+    window: WebviewWindow<Wry>,
+    state: Arc<HostState>,
+    timing: &BootTiming,
+    started: Instant,
+) {
+    let budget = timing.fallback_seconds;
+    let reason = timing.reason.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(budget).saturating_sub(started.elapsed()));
+        if state.geometry_stop.load(Ordering::SeqCst)
+            || state.shown.lock().is_ok_and(|shown| *shown)
+        {
+            return;
+        }
+        if show_once(&window, &state).is_ok() {
+            let message = if state.boot_started.load(Ordering::SeqCst) {
+                "loaded 후 표시 매달림. 폴백으로 창 표시(테마 미주입 가능)"
+            } else {
+                "loaded 미발화. 폴백으로 창 표시(테마 미주입 가능)"
+            };
+            (state.alert)(&format!("{message} [예산 {budget}s · {reason}]"));
+        }
+    });
+}
+
+/// Persists the latest recorded geometry revision every 250ms until the window stops.
+fn spawn_geometry_saver(state: Arc<HostState>) {
+    std::thread::spawn(move || {
+        let mut saved_revision = 0;
+        while !state.geometry_stop.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(250));
+            let revision = state.geometry_revision.load(Ordering::SeqCst);
+            if revision != saved_revision && !state.geometry_stop.load(Ordering::SeqCst) {
+                persist_geometry(&state);
+                saved_revision = revision;
+            }
+        }
+    });
+}
+
+fn on_window_event(window: &tauri::Window<Wry>, event: &tauri::WindowEvent) {
+    if matches!(
+        event,
+        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
+    ) {
+        let state = window.state::<Arc<HostState>>().inner().clone();
+        record_geometry(window, &state);
+    }
+    if let tauri::WindowEvent::Destroyed = event {
+        let state = window.state::<Arc<HostState>>().inner().clone();
+        state.geometry_stop.store(true, Ordering::SeqCst);
+        persist_geometry(&state);
+    }
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        close_guard::close_requested(window, api);
+    }
 }
 
 async fn apply_preferences_then_show(window: &WebviewWindow<Wry>, state: &HostState) {

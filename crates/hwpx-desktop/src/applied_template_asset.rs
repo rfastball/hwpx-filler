@@ -127,20 +127,17 @@ impl AppliedTemplateAsset {
         }
         Ok(())
     }
-    pub fn adopt(&self, job_name: &str, replace: bool) -> Result<Job, AppliedAssetError> {
-        let job = self.jobs.load(job_name).map_err(|e| fail(e.to_string()))?;
-        if job.authority_id.is_empty()
-            || !self
-                .works
-                .exists(&job.authority_id)
-                .map_err(|e| fail(e.detail))?
-        {
-            return Ok(job);
-        }
-        let path = self.path(&job.authority_id, &job.template_path)?;
-        let linked = job.template_path == path.to_string_lossy();
-        let exact = match self.current_exact(&job) {
-            Ok(exact) => exact,
+    /// Resolves the applied exact content for `job`, relinking to its app-owned path first
+    /// when the Work link failed and the job is not yet pointed at it (unlinked).
+    fn exact_or_relink(
+        &self,
+        job: &Job,
+        job_name: &str,
+        path: &Path,
+        linked: bool,
+    ) -> Result<ExactAppliedTemplateInput, AppliedAssetError> {
+        match self.current_exact(job) {
+            Ok(exact) => Ok(exact),
             Err(error) => {
                 if !linked {
                     self.jobs
@@ -151,25 +148,28 @@ impl AppliedTemplateAsset {
                         )
                         .map_err(|e| fail(e.to_string()))?;
                 }
-                return Err(error);
+                Err(error)
             }
-        };
-        let write = if linked && !path.is_file() {
-            Err(fail(format!(
-                "적용된 템플릿 파일을 찾을 수 없습니다: {}",
-                path.display()
-            )))
-        } else if (replace && !linked) || !path.is_file() {
-            let bytes = self.exact_bytes(&exact)?;
-            fs::create_dir_all(
-                path.parent()
-                    .ok_or_else(|| fail("적용 파일 부모 경로 부재"))?,
-            )
-            .map_err(|e| fail(e.to_string()))?;
-            write_bytes_atomic(&path, &bytes).map_err(|e| fail(e.to_string()))
-        } else {
-            Ok(())
-        };
+        }
+    }
+    fn write_template_bytes(path: &Path, bytes: &[u8]) -> Result<(), AppliedAssetError> {
+        fs::create_dir_all(
+            path.parent()
+                .ok_or_else(|| fail("적용 파일 부모 경로 부재"))?,
+        )
+        .map_err(|e| fail(e.to_string()))?;
+        write_bytes_atomic(path, bytes).map_err(|e| fail(e.to_string()))
+    }
+    /// Finishes `adopt`: relinks an unlinked job (its error, if any, takes priority over
+    /// a prior write failure) and otherwise surfaces the write result.
+    fn finish_adopt(
+        &self,
+        job: Job,
+        job_name: &str,
+        path: &Path,
+        linked: bool,
+        write: Result<(), AppliedAssetError>,
+    ) -> Result<Job, AppliedAssetError> {
         if !linked {
             let relink = self
                 .jobs
@@ -187,5 +187,53 @@ impl AppliedTemplateAsset {
         }
         write?;
         Ok(job)
+    }
+    pub fn adopt(&self, job_name: &str, replace: bool) -> Result<Job, AppliedAssetError> {
+        let job = self.jobs.load(job_name).map_err(|e| fail(e.to_string()))?;
+        if job.authority_id.is_empty()
+            || !self
+                .works
+                .exists(&job.authority_id)
+                .map_err(|e| fail(e.detail))?
+        {
+            return Ok(job);
+        }
+        let path = self.path(&job.authority_id, &job.template_path)?;
+        let linked = job.template_path == path.to_string_lossy();
+        let exact = self.exact_or_relink(&job, job_name, &path, linked)?;
+        let write = match classify_write_need(&path, linked, replace) {
+            WriteNeed::MissingWhileLinked => Err(fail(format!(
+                "적용된 템플릿 파일을 찾을 수 없습니다: {}",
+                path.display()
+            ))),
+            WriteNeed::Write => {
+                let bytes = self.exact_bytes(&exact)?;
+                Self::write_template_bytes(&path, &bytes)
+            }
+            WriteNeed::NoneNeeded => Ok(()),
+        };
+        self.finish_adopt(job, job_name, &path, linked, write)
+    }
+}
+
+/// What `adopt` must do about the app-owned applied template file, decided without
+/// performing any I/O.
+enum WriteNeed {
+    /// The job is linked to its app-owned path but the file is missing there.
+    MissingWhileLinked,
+    /// The file needs to be (re)written, either because a replace was requested on an
+    /// unlinked job or because the app-owned file does not exist yet.
+    Write,
+    /// The existing app-owned file already satisfies the request.
+    NoneNeeded,
+}
+
+fn classify_write_need(path: &Path, linked: bool, replace: bool) -> WriteNeed {
+    if linked && !path.is_file() {
+        WriteNeed::MissingWhileLinked
+    } else if (replace && !linked) || !path.is_file() {
+        WriteNeed::Write
+    } else {
+        WriteNeed::NoneNeeded
     }
 }

@@ -1,17 +1,17 @@
 //! Windows CLI for managed HWPX generation and template tools.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+#[path = "hwpxfiller/cli_support.rs"]
+mod cli_support;
 #[path = "hwpxfiller/generate.rs"]
 mod generate;
 #[path = "hwpxfiller/generate_run.rs"]
 mod generate_run;
 
 use hwpx_core::package::{HwpxPackage, PackageError, PackageLimits};
-use hwpx_filler::authoring::{compile_document, scan_tokens};
 use hwpx_filler::data_excel::{ExcelDataSource, ambiguous_sheets};
 use hwpx_filler::data_source::DataSource;
 use hwpx_filler::fields::required_fields;
-use hwpx_filler::lint::{DEFAULT_SIMILARITY_THRESHOLD, lint_template};
 use hwpx_filler::mapping::MappingProfile;
 use hwpx_filler::schema::extract_schema;
 use hwpx_filler::schema_drift::{SchemaDrift, diff_schema};
@@ -297,29 +297,31 @@ fn parse_schema(args: &[OsString]) -> Result<Command, String> {
     let mut at = 0;
     while at < args.len() {
         let arg = &args[at];
-        if !positional_only && arg == "--" {
-            positional_only = true;
-        } else if !positional_only && (arg == "--help" || arg == "-h") {
-            return Ok(Command::Help(SCHEMA_HELP));
-        } else if !positional_only && arg == "--out" {
-            at += 1;
-            let value = args
-                .get(at)
-                .ok_or("schema --out 에 저장 경로가 필요합니다.")?;
-            if value != "-" && value.to_string_lossy().starts_with('-') {
-                return Err("schema --out 에 저장 경로가 필요합니다.".into());
+        let token = cli_support::classify_schema_flag(arg, positional_only).unwrap_or_else(|| {
+            cli_support::classify_schema_positional(arg, positional_only, template.is_some())
+        });
+        match token {
+            cli_support::SchemaToken::PositionalMarker => positional_only = true,
+            cli_support::SchemaToken::Help => return Ok(Command::Help(SCHEMA_HELP)),
+            cli_support::SchemaToken::OutFlag => {
+                at += 1;
+                let value = args
+                    .get(at)
+                    .ok_or("schema --out 에 저장 경로가 필요합니다.")?;
+                if value != "-" && value.to_string_lossy().starts_with('-') {
+                    return Err("schema --out 에 저장 경로가 필요합니다.".into());
+                }
+                out = (!value.is_empty()).then(|| PathBuf::from(value.clone()));
             }
-            out = (!value.is_empty()).then(|| PathBuf::from(value.clone()));
-        } else if !positional_only
-            && let Some(path) = arg.to_str().and_then(|s| s.strip_prefix("--out="))
-        {
-            out = (!path.is_empty()).then(|| PathBuf::from(path));
-        } else if (!positional_only && arg != "-" && arg.to_string_lossy().starts_with('-'))
-            || template.is_some()
-        {
-            return Err(format!("지원하지 않는 인자: {}", arg.to_string_lossy()));
-        } else {
-            template = Some(PathBuf::from(arg.clone()));
+            cli_support::SchemaToken::OutInline(path) => {
+                out = (!path.is_empty()).then(|| PathBuf::from(path));
+            }
+            cli_support::SchemaToken::Unsupported => {
+                return Err(format!("지원하지 않는 인자: {}", arg.to_string_lossy()));
+            }
+            cli_support::SchemaToken::Positional => {
+                template = Some(PathBuf::from(arg.clone()));
+            }
         }
         at += 1;
     }
@@ -545,13 +547,8 @@ fn render_text(
     let mut source =
         ExcelDataSource::new(data, sheet.map(str::to_owned), 1).map_err(|err| err.to_string())?;
     let records = source.records().map_err(|err| err.to_string())?;
-    if records.is_empty() {
-        eprintln!("데이터에 레코드가 없습니다.");
-        return Ok(1);
-    }
-    if record_number == 0 || record_number > records.len() {
-        eprintln!("--record {record_number} 범위 밖(1..{}).", records.len());
-        return Ok(1);
+    if let Some(code) = cli_support::validate_record_range(records.len(), record_number) {
+        return Ok(code);
     }
     let raw = records[record_number - 1]
         .iter()
@@ -675,90 +672,7 @@ fn run(command: Command) -> Result<u8, String> {
                 print_lines([payload]).map(|()| 0)
             }
         }
-        Command::Fieldize { template, out } => {
-            let mut package = read_package(&template)?;
-            if let Some(path) = out {
-                let report = compile_document(&mut package, None).map_err(|err| err.to_string())?;
-                for site in &report.skipped {
-                    eprintln!("  [건너뜀] {} — {}", site.name, site.reason);
-                }
-                if !report.modified {
-                    print_lines(["변환할 토큰이 없습니다(이미 누름틀이거나 토큰 없음).".into()])?;
-                    return Ok(0);
-                }
-                let bytes = package.to_bytes().map_err(|err| err.to_string())?;
-                write_bytes_atomic(&path, &bytes).map_err(|err| {
-                    format!("파일을 읽거나 쓸 수 없습니다: {} — {err}", path.display())
-                })?;
-                print_lines([format!(
-                    "누름틀 변환 완료: 필드 {}개 -> {}",
-                    report.compiled.len(),
-                    path.display()
-                )])?;
-            } else {
-                let sites = scan_tokens(&package).map_err(|err| err.to_string())?;
-                let compilable: Vec<_> = sites.iter().filter(|site| site.compilable).collect();
-                let skipped: Vec<_> = sites.iter().filter(|site| !site.compilable).collect();
-                print_lines([format!(
-                    "[미리보기] 변환 가능 {}개 / 건너뜀 {}개",
-                    compilable.len(),
-                    skipped.len()
-                )])?;
-                for site in compilable {
-                    print_lines([format!("  + {}  ({})", site.name, site.context)])?;
-                }
-                for site in skipped {
-                    eprintln!("  ! {}  — {}", site.name, site.reason);
-                }
-                print_lines(["실제 변환하려면 --out <경로> 를 지정하세요.".into()])?;
-            }
-            Ok(0)
-        }
-        Command::Lint { template, vocab } => {
-            let package = read_package(&template)?;
-            let vocabulary = vocab.as_deref().map(read_vocabulary).transpose()?;
-            let report = lint_template(
-                &package,
-                vocabulary.as_deref(),
-                DEFAULT_SIMILARITY_THRESHOLD,
-            )
-            .map_err(|err| err.to_string())?;
-            if report.findings.is_empty() {
-                print_lines(["이슈 없음.".into()])?;
-            } else {
-                print_lines(report.findings.iter().map(|finding| {
-                    format!(
-                        "  [{}] {}: {}",
-                        finding.severity, finding.kind, finding.message
-                    )
-                }))?;
-            }
-            Ok(u8::from(report.has_issues()))
-        }
-        Command::RetiredDiff => {
-            eprintln!(
-                "diff 는 별도 제품 hwpxdiff 입니다: hwpxdiff OLD.hwpx NEW.hwpx [--html out.html]\n  설치: https://github.com/rfastball/hwpx-diff"
-            );
-            Ok(2)
-        }
-        Command::Drift { old, new } => print_lines(drift_lines(&old, &new)?).map(|()| 0),
-        Command::Render {
-            template,
-            data,
-            profile,
-            record,
-            sheet,
-            out,
-            clip,
-        } => render_text(
-            &template,
-            &data,
-            profile.as_deref(),
-            record,
-            sheet.as_deref(),
-            out.as_deref(),
-            clip,
-        ),
+        other => cli_support::run_tooling(other),
     }
 }
 

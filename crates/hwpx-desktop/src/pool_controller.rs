@@ -1,18 +1,16 @@
 //! Data-pool screen transport over the native registry and pure product projections.
 
 use crate::action_registry::validate_dispatch;
-use crate::dataset_registry::{DatasetPoolRegistry, ExcelRelink, PoolError};
+use crate::dataset_registry::{DatasetPoolRegistry, PoolError};
 use crate::workspace_switch::{GraphError, PushGate, ScreenController};
 use hwpx_filler::dataset_pool::{DatasetDetail, DatasetPoolRow, bound_state, confirm_basis};
-use hwpx_filler::dataset_reference::{
-    DatasetReference, excel_reference_opts, pclm_identity, reference_identity, reference_sheets,
-    resolve_pclm_db,
-};
+use hwpx_filler::dataset_reference::{DatasetReference, reference_identity};
 use serde_json::{Map, Value, json};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 mod projection;
+mod registration;
 use projection::{notices, row_json};
 
 #[derive(Default)]
@@ -116,447 +114,6 @@ impl PoolController {
     fn stale_basis(&self) -> Result<Value, GraphError> {
         self.refusal("확인하는 사이 이 데이터의 등록 상태가 바뀌어 실행하지 않았습니다. 목록을 새로 읽었으니 다시 확인해 주세요.".into())
     }
-    fn registration_sheets(
-        payload: &Map<String, Value>,
-    ) -> Result<(Option<String>, Option<Vec<String>>), String> {
-        let mut sheet = payload
-            .get("sheet")
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned);
-        let Some(selected) = payload.get("sheets") else {
-            return Ok((sheet, None));
-        };
-        let path = payload.get("path").and_then(Value::as_str).unwrap_or("");
-        let names = hwpx_filler::data_excel::sheet_overview(Path::new(path))
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .map(|(name, _, _)| name)
-            .collect::<Vec<_>>();
-        let selected = selected.as_array().ok_or("읽을 시트를 고르세요.")?;
-        if !names.is_empty() && selected.is_empty() {
-            return Err("읽을 시트를 고르세요.".into());
-        }
-        let mut unique = Vec::new();
-        for name in selected {
-            let name = name
-                .as_str()
-                .ok_or("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.")?;
-            if !names.iter().any(|candidate| candidate == name) {
-                return Err("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.".into());
-            }
-            if !unique.iter().any(|candidate| candidate == name) {
-                unique.push(name.into());
-            }
-        }
-        if names.is_empty() {
-            return Ok((None, None));
-        }
-        if sheet.is_none() {
-            sheet = unique.first().cloned();
-        }
-        if !sheet.as_ref().is_some_and(|sheet| unique.contains(sheet)) {
-            return Err("읽을 시트를 고르세요.".into());
-        }
-        Ok((sheet, Some(unique)))
-    }
-    fn register_excel(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
-        let name = hwpx_filler::structure_scan::python_trim(
-            payload.get("name").and_then(Value::as_str).unwrap_or(""),
-        );
-        let path = payload.get("path").and_then(Value::as_str).unwrap_or("");
-        let note = payload.get("note").and_then(Value::as_str).unwrap_or("");
-        let (sheet, sheets) = match Self::registration_sheets(payload) {
-            Ok(value) => value,
-            Err(error) => return self.refusal(error),
-        };
-        if !path.is_empty()
-            && sheet.is_none()
-            && let Some(error) = hwpx_filler::data_excel::ambiguous_sheet_error(Path::new(path), "")
-        {
-            return self.refusal(error);
-        }
-        let same = if path.is_empty() {
-            None
-        } else {
-            self.registry.find_identity(path, sheet.as_deref())?
-        };
-        if let Some((key, existing)) = &same {
-            let changes_sheets = sheets.as_ref().is_some_and(|sheets| {
-                reference_sheets(existing).is_ok_and(|current| current != *sheets)
-                    || existing.opts.get("sheet").and_then(Value::as_str) != sheet.as_deref()
-            });
-            let changes_name = !name.is_empty() && name != existing.name;
-            let changes_note = !note.is_empty() && note != existing.note;
-            let basis = confirm_basis(&[bound_state(key, existing)?]);
-            if !changes_name && !changes_note && !changes_sheets {
-                return match self.registry.commands().relabel_confirmed(
-                    path,
-                    sheet.as_deref(),
-                    &existing.name,
-                    "",
-                    sheets.as_deref(),
-                    Some(&basis),
-                ) {
-                    Ok((_, item)) => {
-                        self.set_result(
-                            format!(
-                                "이미 고정돼 있습니다: {} ({})",
-                                item.name,
-                                hwpx_filler::dataset_pool::reference_summary(&item)?
-                            ),
-                            "ok",
-                        )?;
-                        Ok(json!({"ok":true,"key":key,"name":item.name}))
-                    }
-                    Err(PoolError::Stale(_)) => self.stale_basis(),
-                    Err(error) => self.refusal(error.to_string()),
-                };
-            }
-            if !payload
-                .get("confirm")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                let summary = hwpx_filler::dataset_pool::reference_summary(existing)?;
-                let text = if changes_sheets {
-                    format!(
-                        "이 데이터는 이미 '{}' 으로 고정돼 있습니다({summary}).\n같은 등록을 유지하고 이름·메모·사용할 시트를 갱신합니다: '{name}'.\n사용할 시트: {}",
-                        existing.name,
-                        sheets.as_ref().unwrap().join(", ")
-                    )
-                } else {
-                    format!(
-                        "이 데이터는 이미 '{}' 으로 고정돼 있습니다({summary}).\n같은 등록을 유지하고 이름·메모를 갱신합니다: '{name}'.",
-                        existing.name
-                    )
-                };
-                return Ok(
-                    json!({"ok":true,"needs_confirm":true,"key":key,"name":name,"basis":basis,"confirm_text":text}),
-                );
-            }
-            if name.is_empty() {
-                return self.refusal("데이터셋 이름을 입력하세요.".into());
-            }
-            let given = payload.get("basis").and_then(Value::as_str);
-            let item = match self.registry.commands().relabel_confirmed(
-                path,
-                sheet.as_deref(),
-                name,
-                note,
-                sheets.as_deref(),
-                given,
-            ) {
-                Ok((_, item)) => item,
-                Err(PoolError::Stale(_)) => return self.stale_basis(),
-                Err(error) => return self.refusal(error.to_string()),
-            };
-            self.set_result(
-                format!(
-                    "등록 데이터를 갱신했습니다: {} ({})",
-                    item.name,
-                    hwpx_filler::dataset_pool::reference_summary(&item)?
-                ),
-                "ok",
-            )?;
-            return Ok(json!({"ok":true,"name":item.name}));
-        }
-        if payload
-            .get("confirm")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            return self.refusal(format!(
-                "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name}. 목록을 새로 읽었습니다."
-            ));
-        }
-        if name.is_empty() {
-            return self.refusal("데이터셋 이름을 입력하세요.".into());
-        }
-        if path.is_empty() {
-            return self.refusal("파일 경로가 비어 있습니다.".into());
-        }
-        let opts = match excel_reference_opts(path, sheet.as_deref(), sheets.as_deref()) {
-            Ok(opts) => opts,
-            Err(error) => return self.refusal(error.to_string()),
-        };
-        let mut item = match DatasetReference::new(name, "excel", opts) {
-            Ok(item) => item,
-            Err(error) => return self.refusal(error.to_string()),
-        };
-        item.note = note.into();
-        if let Err(error) = self.registry.add(&item) {
-            return self.refusal(error.to_string());
-        }
-        self.set_result(
-            format!(
-                "등록 데이터를 추가했습니다: {} ({})",
-                item.name,
-                hwpx_filler::dataset_pool::reference_summary(&item)?
-            ),
-            "ok",
-        )?;
-        Ok(json!({"ok":true,"name":item.name}))
-    }
-    fn register_pclm(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
-        let name = hwpx_filler::structure_scan::python_trim(
-            payload.get("name").and_then(Value::as_str).unwrap_or(""),
-        );
-        let view = payload.get("view").and_then(Value::as_str).unwrap_or("");
-        let note = payload.get("note").and_then(Value::as_str).unwrap_or("");
-        let db = match resolve_pclm_db(payload.get("db").and_then(Value::as_str).unwrap_or("")) {
-            Ok(db) => db,
-            Err(error) => return self.refusal(error.to_string()),
-        };
-        let selected = if let Some(raw) = payload.get("views") {
-            let Some(values) = raw.as_array() else {
-                return self.refusal("읽을 시트를 고르세요.".into());
-            };
-            let selected = values.iter().filter_map(Value::as_str).collect::<Vec<_>>();
-            if selected.len() != values.len()
-                || selected.is_empty()
-                || selected.iter().any(|name| name.is_empty())
-                || !selected.contains(&view)
-            {
-                return self.refusal("읽을 시트를 고르세요.".into());
-            }
-            let available = match hwpx_filler::data_pclm::list_sqlite_sheets(&db) {
-                Ok(available) => available,
-                Err(error) => return self.refusal(error.to_string()),
-            };
-            if selected
-                .iter()
-                .any(|name| !available.iter().any(|existing| existing == name))
-            {
-                return self.refusal("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.".into());
-            }
-            Some(selected.into_iter().map(str::to_owned).collect::<Vec<_>>())
-        } else {
-            None
-        };
-        let identity = pclm_identity(&db, view);
-        let same = self.registry.find_identity_raw(&identity)?;
-        if let Some(key) = payload.get("key").and_then(Value::as_str)
-            && !same.as_ref().is_some_and(|(found, item)| {
-                found == key && item.opts.get("view").and_then(Value::as_str) == Some(view)
-            })
-        {
-            return self.refusal(format!(
-                "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name}. 목록을 새로 읽었습니다."
-            ));
-        }
-        if let Some((key, existing)) = same {
-            let changes_name = !name.is_empty() && name != existing.name;
-            let changes_note = !note.is_empty() && note != existing.note;
-            let changes_sheets = selected.as_ref().is_some_and(|selected| {
-                reference_sheets(&existing).is_ok_and(|current| current != *selected)
-                    || existing.opts.get("view").and_then(Value::as_str) != Some(view)
-            });
-            let basis = confirm_basis(&[bound_state(&key, &existing)?]);
-            if !changes_name && !changes_note && !changes_sheets {
-                return match self.registry.commands().relabel_confirmed_raw(
-                    &identity,
-                    &existing.name,
-                    "",
-                    selected.as_deref(),
-                    Some(&basis),
-                ) {
-                    Ok((_, item)) => {
-                        self.set_result(
-                            format!(
-                                "이미 고정돼 있습니다: {} ({})",
-                                item.name,
-                                hwpx_filler::dataset_pool::reference_summary(&item)?
-                            ),
-                            "ok",
-                        )?;
-                        Ok(json!({"ok":true,"key":key,"name":item.name}))
-                    }
-                    Err(PoolError::Stale(_)) => self.stale_basis(),
-                    Err(error) => self.refusal(error.to_string()),
-                };
-            }
-            if !payload
-                .get("confirm")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                let summary = hwpx_filler::dataset_pool::reference_summary(&existing)?;
-                let text = if changes_sheets {
-                    format!(
-                        "이 데이터는 이미 '{}' 으로 고정돼 있습니다({summary}).\n같은 등록을 유지하고 이름·메모·사용할 시트를 갱신합니다: '{name}'.\n사용할 시트: {}",
-                        existing.name,
-                        selected.as_ref().unwrap().join(", ")
-                    )
-                } else {
-                    format!(
-                        "이 데이터는 이미 '{}' 으로 고정돼 있습니다({summary}).\n같은 등록을 유지하고 이름·메모를 갱신합니다: '{name}'.",
-                        existing.name
-                    )
-                };
-                return Ok(
-                    json!({"ok":true,"needs_confirm":true,"key":key,"name":name,"basis":basis,"confirm_text":text}),
-                );
-            }
-            return match self.registry.commands().relabel_confirmed_raw(
-                &identity,
-                name,
-                note,
-                selected.as_deref(),
-                payload.get("basis").and_then(Value::as_str),
-            ) {
-                Ok((_, item)) => {
-                    self.reproject_open_detail(&key)?;
-                    self.set_result(
-                        format!(
-                            "등록 데이터를 갱신했습니다: {} ({})",
-                            item.name,
-                            hwpx_filler::dataset_pool::reference_summary(&item)?
-                        ),
-                        "ok",
-                    )?;
-                    Ok(json!({"ok":true,"name":item.name}))
-                }
-                Err(PoolError::Stale(_)) => self.stale_basis(),
-                Err(error) => self.refusal(error.to_string()),
-            };
-        }
-        if payload
-            .get("confirm")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            return self.refusal(format!(
-                "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name}. 목록을 새로 읽었습니다."
-            ));
-        }
-        if name.is_empty() {
-            return self.refusal("데이터셋 이름을 입력하세요.".into());
-        }
-        let available = match hwpx_filler::data_pclm::list_sqlite_sheets(&db) {
-            Ok(available) => available,
-            Err(error) => return self.refusal(error.to_string()),
-        };
-        if !available.iter().any(|name| name == view)
-            || selected.as_ref().is_some_and(|selected| {
-                selected
-                    .iter()
-                    .any(|name| !available.iter().any(|existing| existing == name))
-            })
-        {
-            let quoted = hwpx_filler::text_render::python_repr(&Value::String(view.into()));
-            return self.refusal(format!(
-                "계약 목록이 약속한 뷰가 아닙니다: {quoted}\n쓸 수 있는 뷰:\n{}",
-                available
-                    .iter()
-                    .map(|name| format!("  {name}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
-        }
-        let mut opts = Map::new();
-        opts.insert("db".into(), Value::String(db));
-        opts.insert("view".into(), Value::String(view.into()));
-        if let Some(selected) = selected {
-            opts.insert("sheets".into(), json!(selected));
-        }
-        let mut item = match DatasetReference::new(name, "pclm", opts) {
-            Ok(item) => item,
-            Err(error) => return self.refusal(error.to_string()),
-        };
-        item.note = note.into();
-        if let Err(error) = self.registry.add(&item) {
-            return self.refusal(error.to_string());
-        }
-        self.set_result(
-            format!(
-                "등록 데이터를 추가했습니다: {} ({})",
-                item.name,
-                hwpx_filler::dataset_pool::reference_summary(&item)?
-            ),
-            "ok",
-        )?;
-        Ok(json!({"ok":true,"name":item.name}))
-    }
-    fn relink(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
-        let key = Self::required_string(payload, "key")?;
-        let path = payload.get("path").and_then(Value::as_str).unwrap_or("");
-        let note = payload.get("note").and_then(Value::as_str).unwrap_or("");
-        let name = hwpx_filler::structure_scan::python_trim(
-            payload.get("name").and_then(Value::as_str).unwrap_or(""),
-        );
-        let (sheet, sheets) = match Self::registration_sheets(payload) {
-            Ok(value) => value,
-            Err(error) => return self.refusal(error),
-        };
-        if path.is_empty() {
-            return self.refusal("새 파일 경로가 비어 있습니다.".into());
-        }
-        if sheet.is_none()
-            && let Some(error) = hwpx_filler::data_excel::ambiguous_sheet_error(Path::new(path), "")
-        {
-            return self.refusal(error);
-        }
-        if !payload
-            .get("confirm")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            let item = match self.registry.load(key) {
-                Ok(item) => item,
-                Err(_) => return self.refusal(format!(
-                    "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {}. 목록을 새로 읽었습니다.",
-                    if name.is_empty() { key } else { name }
-                )),
-            };
-            let rename = if !name.is_empty() && name != item.name {
-                format!("\n이름도 '{}' → '{}' 으로 바뀝니다.", item.name, name)
-            } else {
-                String::new()
-            };
-            let sheets_clause = sheets
-                .as_ref()
-                .filter(|sheets| !sheets.is_empty())
-                .map(|sheets| format!(" · {}", sheets.join(", ")))
-                .unwrap_or_default();
-            return Ok(json!({
-                "ok":true,"needs_confirm":true,"key":key,
-                "basis":confirm_basis(&[bound_state(key,&item)?]),
-                "confirm_text":format!(
-                    "'{}' 의 참조를 새 파일로 바꿉니다.\n기존: {}\n새 파일: {path}{sheets_clause}{}{}",
-                    item.name,hwpx_filler::dataset_pool::reference_summary(&item)?,
-                    hwpx_filler::dataset_pool::kind_transition_clause(&item),rename
-                )
-            }));
-        }
-        let request = ExcelRelink {
-            path,
-            sheet: sheet.as_deref(),
-            note,
-            name,
-            sheets: sheets.as_deref(),
-        };
-        match self.registry.commands().relink_confirmed(
-            key,
-            &request,
-            payload.get("basis").and_then(Value::as_str),
-        ) {
-            Ok(updated) => {
-                self.reproject_open_detail(key)?;
-                self.set_result(
-                    format!(
-                        "참조를 다시 연결했습니다: {} ({})",
-                        updated.name,
-                        hwpx_filler::dataset_pool::reference_summary(&updated)?
-                    ),
-                    "ok",
-                )?;
-                Ok(json!({"ok":true,"name":updated.name}))
-            }
-            Err(PoolError::Stale(_)) => self.stale_basis(),
-            Err(error) => self.refusal(error.to_string()),
-        }
-    }
     fn reproject_open_detail(&self, key: &str) -> Result<(), GraphError> {
         if self
             .state()?
@@ -569,236 +126,242 @@ impl PoolController {
         }
         Ok(())
     }
+    /// Routes one validated pool action; every arm is a single call.
     fn perform(&self, action: &str, payload: &Map<String, Value>) -> Result<Value, GraphError> {
         match action {
             "refresh" => Ok(Value::Null),
-            "review" => {
-                let key = Self::required_string(payload, "key")?;
-                let detail = match self.review(key) {
-                    Ok(detail) => detail,
-                    Err(error)
-                        if matches!(
-                            error.downcast_ref::<PoolError>(),
-                            Some(PoolError::Io(io_error))
-                                if io_error.kind() == std::io::ErrorKind::NotFound
-                        ) =>
-                    {
-                        self.state()?.detail = None;
-                        return self.refusal(format!(
-                            "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {key}. 목록을 새로 읽었습니다."
-                        ));
-                    }
-                    Err(error) => return Err(error),
-                };
-                self.set_result(
-                    if detail.error.is_empty() {
-                        format!("검토 {}: {}", detail.name, detail.column_summary())
-                    } else {
-                        format!("검토 {}: {}", detail.name, detail.error)
-                    },
-                    if detail.error.is_empty() {
-                        "ok"
-                    } else {
-                        "danger"
-                    },
-                )?;
-                self.state()?.detail = Some(detail);
-                Ok(json!({"ok":true}))
+            "review" => self.open_review(payload),
+            "archive" | "activate" => self.archive_or_activate(action, payload),
+            "reorder_sheets" => self.reorder_sheets(payload),
+            "inspect_sheets" => inspect_sheets(payload),
+            "register_excel" => self.register_excel(payload),
+            "register_pclm" => self.register_pclm(payload),
+            "relink" => self.relink(payload),
+            "delete" => self.delete_reference(payload),
+            "resolve_duplicate" => self.resolve_duplicate(payload),
+            _ => Err(format!("알 수 없는 pool 액션: {action:?}").into()),
+        }
+    }
+    fn open_review(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
+        let key = Self::required_string(payload, "key")?;
+        let detail = match self.review(key) {
+            Ok(detail) => detail,
+            Err(error)
+                if matches!(
+                    error.downcast_ref::<PoolError>(),
+                    Some(PoolError::Io(io_error))
+                        if io_error.kind() == std::io::ErrorKind::NotFound
+                ) =>
+            {
+                self.state()?.detail = None;
+                return self.refusal(missing_message(key));
             }
-            "archive" | "activate" => {
-                let key = Self::required_string(payload, "key")?;
-                let name = self.registry.load(key)?.name;
-                if action == "archive" {
-                    self.registry.commands().archive(key)?;
-                } else {
-                    self.registry.commands().activate(key)?;
+            Err(error) => return Err(error),
+        };
+        self.set_result(
+            if detail.error.is_empty() {
+                format!("검토 {}: {}", detail.name, detail.column_summary())
+            } else {
+                format!("검토 {}: {}", detail.name, detail.error)
+            },
+            if detail.error.is_empty() {
+                "ok"
+            } else {
+                "danger"
+            },
+        )?;
+        self.state()?.detail = Some(detail);
+        Ok(json!({"ok":true}))
+    }
+    fn archive_or_activate(
+        &self,
+        action: &str,
+        payload: &Map<String, Value>,
+    ) -> Result<Value, GraphError> {
+        let key = Self::required_string(payload, "key")?;
+        let name = self.registry.load(key)?.name;
+        let archive = action == "archive";
+        if archive {
+            self.registry.commands().archive(key)?;
+        } else {
+            self.registry.commands().activate(key)?;
+        }
+        self.reproject_open_detail(key)?;
+        self.set_result(
+            format!(
+                "데이터셋을 {}했습니다: {name}",
+                if archive { "보관" } else { "활성화" }
+            ),
+            "ok",
+        )?;
+        Ok(json!({"ok":true}))
+    }
+    fn reorder_sheets(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
+        let key = Self::required_string(payload, "key")?;
+        let sheets = payload
+            .get("sheets")
+            .and_then(Value::as_array)
+            .ok_or("pool sheets array required")?
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("pool sheet string required")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.registry.commands().reorder_sheets(key, &sheets)?;
+        self.reproject_open_detail(key)?;
+        Ok(Value::Null)
+    }
+    fn delete_reference(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
+        let key = Self::required_string(payload, "key")?;
+        let item = self.registry.load(key)?;
+        if !confirmed(payload) {
+            return Ok(json!({
+                "ok":true,"needs_confirm":true,"key":key,
+                "basis":confirm_basis(&[bound_state(key,&item)?]),
+                "confirm_text":format!(
+                    "등록 데이터 참조를 삭제합니다(원본 파일은 지우지 않습니다):\n{} ({})",
+                    item.name,hwpx_filler::dataset_pool::reference_summary(&item)?)
+            }));
+        }
+        let basis = payload.get("basis").and_then(Value::as_str);
+        match self.registry.commands().delete_confirmed(key, basis) {
+            Ok(deleted) => {
+                if self
+                    .state()?
+                    .detail
+                    .as_ref()
+                    .is_some_and(|detail| detail.key == key)
+                {
+                    self.state()?.detail = None;
                 }
-                self.reproject_open_detail(key)?;
                 self.set_result(
-                    format!(
-                        "데이터셋을 {}했습니다: {name}",
-                        if action == "archive" {
-                            "보관"
-                        } else {
-                            "활성화"
-                        }
-                    ),
+                    format!("데이터셋 참조를 삭제했습니다: {}", deleted.name),
                     "ok",
                 )?;
                 Ok(json!({"ok":true}))
             }
-            "reorder_sheets" => {
-                let key = Self::required_string(payload, "key")?;
-                let sheets = payload
-                    .get("sheets")
-                    .and_then(Value::as_array)
-                    .ok_or("pool sheets array required")?
-                    .iter()
-                    .map(|value| {
-                        value
-                            .as_str()
-                            .map(str::to_owned)
-                            .ok_or("pool sheet string required")
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                self.registry.commands().reorder_sheets(key, &sheets)?;
-                self.reproject_open_detail(key)?;
-                Ok(Value::Null)
-            }
-            "inspect_sheets" => {
-                let path = Self::required_string(payload, "path")?;
-                let inspected = if payload.get("kind").and_then(Value::as_str) == Some("pclm") {
-                    hwpx_filler::dataset_reference::resolve_pclm_db(path)
-                        .map_err(|error| error.to_string())
-                        .and_then(|resolved| {
-                            hwpx_filler::data_pclm::list_sqlite_sheets(resolved)
-                                .map_err(|error| error.to_string())
-                        })
-                        .map(|names| {
-                            names
-                                .into_iter()
-                                .map(|name| json!({"name":name}))
-                                .collect::<Vec<_>>()
-                        })
-                } else {
-                    hwpx_filler::data_excel::sheet_overview(Path::new(path))
-                        .map_err(|error| error.to_string())
-                        .map(|rows| {
-                            rows.into_iter()
-                                .map(|(name, rows, cols)| {
-                                    json!({
-                                        "name":name,"rows":rows,"cols":cols
-                                    })
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                };
-                Ok(match inspected {
-                    Ok(sheets) => json!({"ok":true,"sheets":sheets}),
-                    Err(error) => json!({"ok":false,"error":error}),
-                })
-            }
-            "register_excel" => self.register_excel(payload),
-            "register_pclm" => self.register_pclm(payload),
-            "relink" => self.relink(payload),
-            "delete" => {
-                let key = Self::required_string(payload, "key")?;
-                let item = self.registry.load(key)?;
-                if !payload
-                    .get("confirm")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                {
-                    return Ok(json!({
-                        "ok":true,"needs_confirm":true,"key":key,
-                        "basis":confirm_basis(&[bound_state(key,&item)?]),
-                        "confirm_text":format!(
-                            "등록 데이터 참조를 삭제합니다(원본 파일은 지우지 않습니다):\n{} ({})",
-                            item.name,hwpx_filler::dataset_pool::reference_summary(&item)?)
-                    }));
-                }
-                let basis = payload.get("basis").and_then(Value::as_str);
-                match self.registry.commands().delete_confirmed(key, basis) {
-                    Ok(deleted) => {
-                        if self
-                            .state()?
-                            .detail
-                            .as_ref()
-                            .is_some_and(|detail| detail.key == key)
-                        {
-                            self.state()?.detail = None;
-                        }
-                        self.set_result(
-                            format!("데이터셋 참조를 삭제했습니다: {}", deleted.name),
-                            "ok",
-                        )?;
-                        Ok(json!({"ok":true}))
-                    }
-                    Err(PoolError::Stale(_)) => {
-                        let message = "확인하는 사이 이 데이터의 등록 상태가 바뀌어 실행하지 않았습니다. 목록을 새로 읽었으니 다시 확인해 주세요.";
-                        self.set_result(message.into(), "danger")?;
-                        Ok(json!({"ok":false,"error":message}))
-                    }
-                    Err(error) => Err(error.into()),
-                }
-            }
-            "resolve_duplicate" => {
-                let keep = Self::required_string(payload, "keep")?;
-                let (entries, _) = self.registry.list_references(None)?;
-                let identity = entries
-                    .iter()
-                    .find(|(key, _)| key == keep)
-                    .and_then(|(_, item)| reference_identity(item));
-                let group = entries
-                    .into_iter()
-                    .filter(|(_, item)| {
-                        identity.as_ref().is_some_and(|identity| {
-                            reference_identity(item).as_ref() == Some(identity)
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                if group.len() < 2 {
-                    let message = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다.";
-                    self.set_result(message.into(), "danger")?;
-                    return Ok(json!({"ok":false,"error":message}));
-                }
-                if !payload
-                    .get("confirm")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                {
-                    let kept = group
-                        .iter()
-                        .find(|(key, _)| key == keep)
-                        .expect("keep belongs to group");
-                    let dropped = group
-                        .iter()
-                        .filter(|(key, _)| key != keep)
-                        .map(|(_, item)| format!("'{}'", item.name))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let states = group
-                        .iter()
-                        .map(|(key, item)| bound_state(key, item))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    return Ok(json!({
-                        "ok":true,"needs_confirm":true,"keep":keep,
-                        "basis":confirm_basis(&states),
-                        "confirm_text":format!(
-                            "같은 데이터({})를 가리키는 등록 {}건을 '{}' 하나로 합칩니다.\n삭제되는 등록: {} — 그 이름·메모는 사라집니다(원본 파일은 지우지 않습니다).",
-                            hwpx_filler::dataset_pool::reference_summary(&kept.1)?,
-                            group.len(),kept.1.name,dropped
-                        )
-                    }));
-                }
-                match self
-                    .registry
-                    .commands()
-                    .resolve_duplicates(keep, payload.get("basis").and_then(Value::as_str))
-                {
-                    Ok((kept, removed)) => {
-                        self.set_result(
-                            format!("중복 등록 {removed}건을 정리하고 '{kept}' 을(를) 남겼습니다."),
-                            "ok",
-                        )?;
-                        Ok(json!({"ok":true,"kept":kept,"removed":removed}))
-                    }
-                    Err(PoolError::Stale(_)) => {
-                        let message = "확인하는 사이 이 데이터의 등록 상태가 바뀌어 실행하지 않았습니다. 목록을 새로 읽었으니 다시 확인해 주세요.";
-                        self.set_result(message.into(), "danger")?;
-                        Ok(json!({"ok":false,"error":message}))
-                    }
-                    Err(PoolError::Invalid(_)) => {
-                        let message = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다.";
-                        self.set_result(message.into(), "danger")?;
-                        Ok(json!({"ok":false,"error":message}))
-                    }
-                    Err(error) => Err(error.into()),
-                }
-            }
-            _ => Err(format!("알 수 없는 pool 액션: {action:?}").into()),
+            Err(PoolError::Stale(_)) => self.stale_basis(),
+            Err(error) => Err(error.into()),
         }
     }
+    fn resolve_duplicate(&self, payload: &Map<String, Value>) -> Result<Value, GraphError> {
+        let keep = Self::required_string(payload, "keep")?;
+        let (entries, _) = self.registry.list_references(None)?;
+        let identity = entries
+            .iter()
+            .find(|(key, _)| key == keep)
+            .and_then(|(_, item)| reference_identity(item));
+        let group = entries
+            .into_iter()
+            .filter(|(_, item)| {
+                identity
+                    .as_ref()
+                    .is_some_and(|identity| reference_identity(item).as_ref() == Some(identity))
+            })
+            .collect::<Vec<_>>();
+        if group.len() < 2 {
+            return self.refusal(NO_DUPLICATES.into());
+        }
+        if !confirmed(payload) {
+            return confirm_duplicate_merge(keep, &group);
+        }
+        match self
+            .registry
+            .commands()
+            .resolve_duplicates(keep, payload.get("basis").and_then(Value::as_str))
+        {
+            Ok((kept, removed)) => {
+                self.set_result(
+                    format!("중복 등록 {removed}건을 정리하고 '{kept}' 을(를) 남겼습니다."),
+                    "ok",
+                )?;
+                Ok(json!({"ok":true,"kept":kept,"removed":removed}))
+            }
+            Err(PoolError::Stale(_)) => self.stale_basis(),
+            Err(PoolError::Invalid(_)) => self.refusal(NO_DUPLICATES.into()),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+const NO_DUPLICATES: &str = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다.";
+
+/// Whether the payload carries the user's confirmation of a previously shown request.
+fn confirmed(payload: &Map<String, Value>) -> bool {
+    payload
+        .get("confirm")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn missing_message(name: &str) -> String {
+    format!("등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name}. 목록을 새로 읽었습니다.")
+}
+
+fn confirm_duplicate_merge(
+    keep: &str,
+    group: &[(String, DatasetReference)],
+) -> Result<Value, GraphError> {
+    let kept = group
+        .iter()
+        .find(|(key, _)| key == keep)
+        .expect("keep belongs to group");
+    let dropped = group
+        .iter()
+        .filter(|(key, _)| key != keep)
+        .map(|(_, item)| format!("'{}'", item.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let states = group
+        .iter()
+        .map(|(key, item)| bound_state(key, item))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(json!({
+        "ok":true,"needs_confirm":true,"keep":keep,
+        "basis":confirm_basis(&states),
+        "confirm_text":format!(
+            "같은 데이터({})를 가리키는 등록 {}건을 '{}' 하나로 합칩니다.\n삭제되는 등록: {} — 그 이름·메모는 사라집니다(원본 파일은 지우지 않습니다).",
+            hwpx_filler::dataset_pool::reference_summary(&kept.1)?,
+            group.len(),kept.1.name,dropped
+        )
+    }))
+}
+
+fn inspect_sheets(payload: &Map<String, Value>) -> Result<Value, GraphError> {
+    let path = PoolController::required_string(payload, "path")?;
+    let inspected = if payload.get("kind").and_then(Value::as_str) == Some("pclm") {
+        hwpx_filler::dataset_reference::resolve_pclm_db(path)
+            .map_err(|error| error.to_string())
+            .and_then(|resolved| {
+                hwpx_filler::data_pclm::list_sqlite_sheets(resolved)
+                    .map_err(|error| error.to_string())
+            })
+            .map(|names| {
+                names
+                    .into_iter()
+                    .map(|name| json!({"name":name}))
+                    .collect::<Vec<_>>()
+            })
+    } else {
+        hwpx_filler::data_excel::sheet_overview(Path::new(path))
+            .map_err(|error| error.to_string())
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|(name, rows, cols)| {
+                        json!({
+                            "name":name,"rows":rows,"cols":cols
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+    };
+    Ok(match inspected {
+        Ok(sheets) => json!({"ok":true,"sheets":sheets}),
+        Err(error) => json!({"ok":false,"error":error}),
+    })
 }
 impl ScreenController for PoolController {
     fn initial(&self) -> Result<Value, GraphError> {

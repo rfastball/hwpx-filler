@@ -163,6 +163,12 @@ impl JobController {
         Ok(with_token(result, &token))
     }
 
+    /// Pre-generation staleness/readiness guard chain: media/authority admission, the
+    /// panel's create-action gate, then the sealed-plan freshness checks (present,
+    /// current orchestration, matching overwrite basis). Each guard is an independent
+    /// refusal reason, checked in the same order as before; failure or unknown
+    /// staleness must never fall through to generation; only after every guard passes
+    /// does this hand off to `generate_after_guard`.
     fn generate_with_lease(
         &self,
         snapshot: &RunSnapshot,
@@ -214,6 +220,27 @@ impl JobController {
                 "실행 준비가 현재 확인 상태와 달라 생성하지 않았습니다. 변경사항을 다시 확인해 주세요.",
             ));
         }
+        self.generate_after_guard(
+            snapshot,
+            confirm_overwrite,
+            overwrite_key,
+            run_token,
+            sealed,
+        )
+    }
+
+    /// Continues `generate_with_lease` once every pre-generation guard has passed:
+    /// records/binding readiness, then the actual delivery resolution and managed run.
+    fn generate_after_guard(
+        &self,
+        snapshot: &RunSnapshot,
+        confirm_overwrite: bool,
+        overwrite_key: &OverwriteBasis,
+        run_token: &str,
+        sealed: &hwpx_filler::fresh_execution_observation::CurrentSealedPlanObservation,
+    ) -> Result<Value, JobControllerError> {
+        let job = &snapshot.seat.job;
+        let plan = &sealed.sealed_plan_value;
         let now = snapshot
             .confirmed_delivery
             .as_ref()

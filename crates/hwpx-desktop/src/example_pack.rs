@@ -50,6 +50,13 @@ pub struct RemoveResult {
     pub kept_pins: Vec<String>,
     pub missing: Vec<String>,
 }
+/// Bundles the per-asset-loop context `install_template_asset` needs, so it stays
+/// under clippy's argument-count limit without changing any argument's meaning.
+struct TemplateInstallContext<'a> {
+    media: &'a str,
+    root: &'a Path,
+    owned: &'a HashSet<String>,
+}
 impl ExamplePack {
     fn settings(&self) -> Result<Map<String, Value>, ExampleError> {
         Ok(read_with_alert(&self.settings_path, |message| {
@@ -160,38 +167,106 @@ impl ExamplePack {
             })?;
         Ok(())
     }
+    /// Copies one bundled example data asset into the data folder (numbered if an
+    /// unowned file already occupies the expected name) and (re)activates its pool
+    /// identity, in the same order the inline loop body used to.
+    fn install_data_asset(
+        &self,
+        source: &Path,
+        name: &std::ffi::OsStr,
+        prior_data: &[Value],
+        data_files: &mut Vec<String>,
+        pool_keys: &mut Vec<String>,
+        renamed: &mut Vec<String>,
+    ) -> Result<(), ExampleError> {
+        fs::create_dir_all(&self.data_dir)?;
+        let expected = self.data_dir.join(name);
+        let previous = prior_data
+            .get(data_files.len())
+            .and_then(Value::as_str)
+            .map(Path::new);
+        let destination = copy_owned_or_numbered(source, &expected, previous)?;
+        if destination != expected {
+            renamed.push(format!(
+                "'{}' → '{}'",
+                name.to_string_lossy(),
+                destination.file_name().unwrap().to_string_lossy()
+            ));
+        }
+        let path = destination
+            .to_str()
+            .ok_or("example data path is not Unicode")?;
+        data_files.push(path.to_owned());
+        let key = match self.pools.find_identity(path, None)? {
+            Some((key, item)) => {
+                if item.status != "active" {
+                    self.pools.commands().activate(&key)?;
+                }
+                key
+            }
+            None => {
+                let mut opts = Map::new();
+                opts.insert("path".into(), json!(path));
+                let item = DatasetReference::new(
+                    destination.file_stem().unwrap().to_string_lossy(),
+                    "excel",
+                    opts,
+                )?;
+                self.pools.add(&item)?
+            }
+        };
+        pool_keys.push(key);
+        Ok(())
+    }
+    /// Copies one bundled example template into the library (reusing the prior
+    /// app-owned file in place when the manifest still owns it) and assigns it to the
+    /// example group, in the same order the inline loop body used to.
+    fn install_template_asset(
+        &self,
+        source: &Path,
+        name: &std::ffi::OsStr,
+        ctx: TemplateInstallContext<'_>,
+        templates: &mut Vec<Value>,
+        renamed: &mut Vec<String>,
+    ) -> Result<(), ExampleError> {
+        let expected = ctx.root.join(name);
+        let destination = if expected.exists()
+            && ctx.owned.contains(
+                expected
+                    .to_str()
+                    .ok_or("example template path is not Unicode")?,
+            ) {
+            write_bytes_atomic(&expected, &fs::read(source)?)?;
+            expected.clone()
+        } else {
+            self.files.copy_into_library(source)?
+        };
+        if destination.file_name() != Some(name) {
+            renamed.push(format!(
+                "'{}' → '{}'",
+                name.to_string_lossy(),
+                destination.file_name().unwrap().to_string_lossy()
+            ));
+        }
+        let key = destination
+            .strip_prefix(ctx.root)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        self.set_group(ctx.media, &key)?;
+        templates.push(json!({"media":ctx.media,"path":destination.to_str().ok_or("example template path is not Unicode")?,"key":key}));
+        Ok(())
+    }
     pub fn install(&self) -> Result<InstallResult, ExampleError> {
         let plan = self.asset_plan()?;
         let root = self.root.path();
         let prior = self.manifest()?.unwrap_or(Value::Null);
-        let mut owned = HashSet::new();
-        if let Some(templates) = prior.get("templates").and_then(Value::as_array) {
-            owned.extend(
-                templates
-                    .iter()
-                    .filter_map(|entry| entry.get("path").and_then(Value::as_str))
-                    .map(str::to_owned),
-            );
-        }
+        let owned = prior_owned_template_paths(&prior);
         let prior_data = prior
             .get("data_files")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        for (index, value) in prior_data.iter().enumerate() {
-            if let Some(name) = DATA.get(index) {
-                let path = Path::new(
-                    value
-                        .as_str()
-                        .ok_or("설치 기재의 데이터 파일 목록이 올바르지 않습니다.")?,
-                );
-                require_inside(&self.data_dir, path, "예제 데이터")?;
-                let expected = self.data_dir.join(name);
-                if !owned_data_name(&expected, path) {
-                    return Err("설치 기재의 데이터 파일 목록이 올바르지 않습니다.".into());
-                }
-            }
-        }
+        validate_prior_data_names(&self.data_dir, &prior_data)?;
         let mut templates = Vec::new();
         let mut data_files = Vec::new();
         let mut pool_keys = Vec::new();
@@ -199,69 +274,26 @@ impl ExamplePack {
         for (media, source) in plan {
             let name = source.file_name().ok_or("example asset name missing")?;
             if media == "data" {
-                fs::create_dir_all(&self.data_dir)?;
-                let expected = self.data_dir.join(name);
-                let previous = prior_data
-                    .get(data_files.len())
-                    .and_then(Value::as_str)
-                    .map(Path::new);
-                let destination = copy_owned_or_numbered(&source, &expected, previous)?;
-                if destination != expected {
-                    renamed.push(format!(
-                        "'{}' → '{}'",
-                        name.to_string_lossy(),
-                        destination.file_name().unwrap().to_string_lossy()
-                    ));
-                }
-                let path = destination
-                    .to_str()
-                    .ok_or("example data path is not Unicode")?;
-                data_files.push(path.to_owned());
-                let key = match self.pools.find_identity(path, None)? {
-                    Some((key, item)) => {
-                        if item.status != "active" {
-                            self.pools.commands().activate(&key)?;
-                        }
-                        key
-                    }
-                    None => {
-                        let mut opts = Map::new();
-                        opts.insert("path".into(), json!(path));
-                        let item = DatasetReference::new(
-                            destination.file_stem().unwrap().to_string_lossy(),
-                            "excel",
-                            opts,
-                        )?;
-                        self.pools.add(&item)?
-                    }
-                };
-                pool_keys.push(key);
+                self.install_data_asset(
+                    &source,
+                    name,
+                    &prior_data,
+                    &mut data_files,
+                    &mut pool_keys,
+                    &mut renamed,
+                )?;
             } else {
-                let expected = root.join(name);
-                let destination = if expected.exists()
-                    && owned.contains(
-                        expected
-                            .to_str()
-                            .ok_or("example template path is not Unicode")?,
-                    ) {
-                    write_bytes_atomic(&expected, &fs::read(&source)?)?;
-                    expected.clone()
-                } else {
-                    self.files.copy_into_library(&source)?
-                };
-                if destination.file_name() != Some(name) {
-                    renamed.push(format!(
-                        "'{}' → '{}'",
-                        name.to_string_lossy(),
-                        destination.file_name().unwrap().to_string_lossy()
-                    ));
-                }
-                let key = destination
-                    .strip_prefix(&root)?
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                self.set_group(media, &key)?;
-                templates.push(json!({"media":media,"path":destination.to_str().ok_or("example template path is not Unicode")?,"key":key}));
+                self.install_template_asset(
+                    &source,
+                    name,
+                    TemplateInstallContext {
+                        media,
+                        root: &root,
+                        owned: &owned,
+                    },
+                    &mut templates,
+                    &mut renamed,
+                )?;
             }
         }
         let result = InstallResult {
@@ -357,16 +389,14 @@ impl ExamplePack {
             "설치할 때 기재한 것만 걷습니다. 예제를 고쳐 다른 이름으로 저장한 것은 그대로 남습니다.".into(),
             "되돌리기는 다시 설치하기입니다 — 걷은 것을 하나씩 되살리는 길은 없습니다.".into()].join("\n")
     }
-    pub fn remove(&self) -> Result<RemoveResult, ExampleError> {
-        let plan = self.removal_plan()?.ok_or("설치된 예제가 없습니다.")?;
-        let mut result = RemoveResult {
-            removed: Vec::new(),
-            data_removed: 0,
-            unpinned: 0,
-            kept_pins: Vec::new(),
-            missing: Vec::new(),
-        };
-        for (media, path, _) in &plan.templates {
+    /// Removes each listed template file from the library, recording the ones already
+    /// missing instead of failing the whole removal on them.
+    fn remove_templates(
+        &self,
+        templates: &[(String, PathBuf, String)],
+        result: &mut RemoveResult,
+    ) -> Result<(), ExampleError> {
+        for (media, path, _) in templates {
             if !path.is_file() {
                 result
                     .missing
@@ -376,7 +406,12 @@ impl ExamplePack {
             self.files.remove(media, path)?;
             result.removed.push(path.clone());
         }
-        for path in &plan.data_files {
+        Ok(())
+    }
+    /// Deletes each listed data file, recording the ones already missing instead of
+    /// failing the whole removal on them.
+    fn remove_data_files(paths: &[PathBuf], result: &mut RemoveResult) -> Result<(), ExampleError> {
+        for path in paths {
             if !path.is_file() {
                 result
                     .missing
@@ -386,6 +421,16 @@ impl ExamplePack {
             fs::remove_file(path)?;
             result.data_removed += 1;
         }
+        Ok(())
+    }
+    /// Unpins each pool key the manifest registered, unless it is unreadable (kept as
+    /// a loud leftover) or no longer points at one of the example's own data files
+    /// (kept because it is not this install's pin to remove).
+    fn unpin_pools(
+        &self,
+        plan: &RemovalPlan,
+        result: &mut RemoveResult,
+    ) -> Result<(), ExampleError> {
         let targets = plan
             .data_files
             .iter()
@@ -419,6 +464,20 @@ impl ExamplePack {
             self.pools.delete(key)?;
             result.unpinned += 1;
         }
+        Ok(())
+    }
+    pub fn remove(&self) -> Result<RemoveResult, ExampleError> {
+        let plan = self.removal_plan()?.ok_or("설치된 예제가 없습니다.")?;
+        let mut result = RemoveResult {
+            removed: Vec::new(),
+            data_removed: 0,
+            unpinned: 0,
+            kept_pins: Vec::new(),
+            missing: Vec::new(),
+        };
+        self.remove_templates(&plan.templates, &mut result)?;
+        Self::remove_data_files(&plan.data_files, &mut result)?;
+        self.unpin_pools(&plan, &mut result)?;
         for media in ["hwpx", "txt"] {
             self.disband_group(media, &plan.group)?;
         }
@@ -436,6 +495,41 @@ impl ExamplePack {
         })?;
         Ok(())
     }
+}
+
+/// Collects the manifest's template paths from a prior install, so `install` can tell
+/// whether it still owns a file sitting at an expected destination path.
+fn prior_owned_template_paths(prior: &Value) -> HashSet<String> {
+    let mut owned = HashSet::new();
+    if let Some(templates) = prior.get("templates").and_then(Value::as_array) {
+        owned.extend(
+            templates
+                .iter()
+                .filter_map(|entry| entry.get("path").and_then(Value::as_str))
+                .map(str::to_owned),
+        );
+    }
+    owned
+}
+
+/// Confirms the prior manifest's recorded data-file names are still inside `data_dir`
+/// and match the expected owned-or-numbered naming scheme, before `install` reuses them.
+fn validate_prior_data_names(data_dir: &Path, prior_data: &[Value]) -> Result<(), ExampleError> {
+    for (index, value) in prior_data.iter().enumerate() {
+        if let Some(name) = DATA.get(index) {
+            let path = Path::new(
+                value
+                    .as_str()
+                    .ok_or("설치 기재의 데이터 파일 목록이 올바르지 않습니다.")?,
+            );
+            require_inside(data_dir, path, "예제 데이터")?;
+            let expected = data_dir.join(name);
+            if !owned_data_name(&expected, path) {
+                return Err("설치 기재의 데이터 파일 목록이 올바르지 않습니다.".into());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn require_inside(root: &Path, path: &Path, what: &str) -> Result<(), ExampleError> {

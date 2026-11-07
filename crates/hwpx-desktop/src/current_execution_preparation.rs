@@ -133,6 +133,23 @@ pub fn record_issue(
     })
 }
 
+/// Folds one validated record's marked-missing fields into the running per-field
+/// counts, preserving first-seen field order.
+fn accumulate_marked_fields(
+    value: &ValidatedDataRecord,
+    marked_indices: &mut HashMap<String, usize>,
+    marked_counts: &mut Vec<(String, usize)>,
+) {
+    for field in marked_missing_fields(&value.validation_provenance) {
+        if let Some(index) = marked_indices.get(&field) {
+            marked_counts[*index].1 += 1;
+        } else {
+            marked_indices.insert(field.clone(), marked_counts.len());
+            marked_counts.push((field, 1));
+        }
+    }
+}
+
 pub fn prepare_current_records(
     plan: &SealedExecutionPlanSemanticPayload,
     snapshot_generation: usize,
@@ -164,14 +181,7 @@ pub fn prepare_current_records(
     {
         match result {
             ValidateDataRecordResult::Validated(value) => {
-                for field in marked_missing_fields(&value.validation_provenance) {
-                    if let Some(index) = marked_indices.get(&field) {
-                        marked_counts[*index].1 += 1;
-                    } else {
-                        marked_indices.insert(field.clone(), marked_counts.len());
-                        marked_counts.push((field, 1));
-                    }
-                }
+                accumulate_marked_fields(&value, &mut marked_indices, &mut marked_counts);
                 validated_records.push(*value);
             }
             ValidateDataRecordResult::ContextError(error) => {

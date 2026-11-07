@@ -276,53 +276,50 @@ pub fn load_records(args: &GenerateArgs) -> Result<LoadedRecords, SourceFailure>
     })
 }
 
-/// Only CLI-specific preflight; managed sealing and run admission stay in JobController.
-pub fn prepare_generation(
-    args: &GenerateArgs,
-    loaded: &LoadedRecords,
+/// Reads and parses `--profile` into a `MappingProfile`. Only the file-shaped failures
+/// (read/JSON/profile-shape) live here; structural fit against the template is checked
+/// by the caller once `required` is also known.
+fn load_profile(path: &std::path::Path) -> Result<MappingProfile, SourceFailure> {
+    let raw = fs::read_to_string(path).map_err(|err| {
+        failure(
+            2,
+            format!("파일을 읽거나 쓸 수 없습니다: {} — {err}", path.display()),
+        )
+    })?;
+    let value: Value = serde_json::from_str(&raw).map_err(|err| failure(2, err.to_string()))?;
+    MappingProfile::from_dict(&value).map_err(|err| failure(2, err.to_string()))
+}
+
+/// A template structure read failure is only fatal if there is no profile to fall back
+/// on for field coverage; with a profile, it instead reports as a structure drift.
+fn resolve_required_fields(
     required: Result<Vec<String>, String>,
-) -> Result<PreparedGeneration, SourceFailure> {
-    let mut notices = loaded.notices.clone();
-    let profile = if let Some(path) = &args.profile {
-        let raw = fs::read_to_string(path).map_err(|err| {
-            failure(
-                2,
-                format!("파일을 읽거나 쓸 수 없습니다: {} — {err}", path.display()),
-            )
-        })?;
-        let value: Value = serde_json::from_str(&raw).map_err(|err| failure(2, err.to_string()))?;
-        Some(MappingProfile::from_dict(&value).map_err(|err| failure(2, err.to_string()))?)
-    } else {
-        None
-    };
-    let required = match required {
-        Ok(fields) => fields,
-        Err(reason) if profile.is_some() => {
-            return Err(failure(
-                1,
-                format!("템플릿 구조 드리프트 — 템플릿 구조를 읽을 수 없음: {reason}"),
-            ));
-        }
-        Err(reason) => return Err(failure(2, reason)),
-    };
-    let mapping = if let Some(profile) = profile {
-        let job = Job {
-            mapping: profile.clone(),
-            ..Job::default()
-        };
-        let drift = StructureDrift::from_fields(&job, Ok(required.clone()));
-        if drift.has_drift() {
-            return Err(failure(
-                1,
-                format!("템플릿 구조 드리프트 — {}", drift.describe("; ")),
-            ));
-        }
-        profile
-    } else {
+    has_profile: bool,
+) -> Result<Vec<String>, SourceFailure> {
+    match required {
+        Ok(fields) => Ok(fields),
+        Err(reason) if has_profile => Err(failure(
+            1,
+            format!("템플릿 구조 드리프트 — 템플릿 구조를 읽을 수 없음: {reason}"),
+        )),
+        Err(reason) => Err(failure(2, reason)),
+    }
+}
+
+/// With a profile, confirms it still covers `required` (structure drift) and reuses it
+/// as-is; without one, derives a passthrough mapping from the source's own keys,
+/// noting any `required` field the source does not provide.
+fn derive_mapping(
+    profile: Option<MappingProfile>,
+    required: &[String],
+    source_keys: &[String],
+    notices: &mut Vec<String>,
+) -> Result<MappingProfile, SourceFailure> {
+    let Some(profile) = profile else {
         let mut mappings = Vec::with_capacity(required.len());
         let mut missing = Vec::new();
-        for field in &required {
-            if loaded.source_keys.contains(field) {
+        for field in required {
+            if source_keys.contains(field) {
                 mappings.push(
                     FieldMapping::new(field, field, "text", "", "", None)
                         .map_err(|err| failure(2, err.to_string()))?,
@@ -341,8 +338,33 @@ pub fn prepare_generation(
                 missing.join(", ")
             ));
         }
-        MappingProfile::new("", mappings, Map::new()).map_err(|err| failure(2, err.to_string()))?
+        return MappingProfile::new("", mappings, Map::new())
+            .map_err(|err| failure(2, err.to_string()));
     };
+    let job = Job {
+        mapping: profile.clone(),
+        ..Job::default()
+    };
+    let drift = StructureDrift::from_fields(&job, Ok(required.to_vec()));
+    if drift.has_drift() {
+        return Err(failure(
+            1,
+            format!("템플릿 구조 드리프트 — {}", drift.describe("; ")),
+        ));
+    }
+    Ok(profile)
+}
+
+/// Only CLI-specific preflight; managed sealing and run admission stay in JobController.
+pub fn prepare_generation(
+    args: &GenerateArgs,
+    loaded: &LoadedRecords,
+    required: Result<Vec<String>, String>,
+) -> Result<PreparedGeneration, SourceFailure> {
+    let mut notices = loaded.notices.clone();
+    let profile = args.profile.as_deref().map(load_profile).transpose()?;
+    let required = resolve_required_fields(required, profile.is_some())?;
+    let mapping = derive_mapping(profile, &required, &loaded.source_keys, &mut notices)?;
     let raw = loaded
         .records
         .iter()
