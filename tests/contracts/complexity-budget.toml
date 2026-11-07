@@ -133,12 +133,6 @@ function_complexity = { value = 11, reason = "상시 예외: 단일 책임 가�
 [budget."crates/hwpx-desktop/src/pool_controller.rs::PoolController.perform"]
 function_complexity = { value = 11, reason = "상시 예외: 평평한 분배 표 — pool 액션 10갈래를 각 한 줄 호출로 위임" }
 
-[budget."crates/hwpx-desktop/src/template_controller.rs::TemplateController.review"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/template_controller.rs::TemplateController.slot_action"]
-function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-desktop/src/tutorial_seed.rs::seed_mapping"]
 function_complexity = { value = 16, reason = "상시 예외: 값 매핑 표 — 필드명→상수/서식 매핑표" }
 
