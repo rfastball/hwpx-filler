@@ -87,19 +87,12 @@ fn provenance(
     rows
 }
 
-pub fn trial_hwpx(
-    package: &HwpxPackage,
-    values: &Map<String, Value>,
+/// Options the trial leaves out, each with why; every optioned slot needs a choice
+/// and every chosen slot must exist.
+fn excluded_options(
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
     selected: &HashMap<String, String>,
-) -> Result<HwpxTrial, AuthoringTrialError> {
-    let source_bytes = package
-        .to_bytes()
-        .map_err(|error| fail(error.to_string()))?;
-    let source_fields = fields(package).map_err(|error| fail(error.to_string()))?;
-    let snapshot = inspect_slot_regions(package).map_err(|error| fail(error.to_string()))?;
-    if !snapshot.diagnostics.is_empty() {
-        return Err(fail("문서 구조 오류를 수정한 뒤 결과를 시험하세요."));
-    }
+) -> Result<Vec<Value>, AuthoringTrialError> {
     let mut excluded = Vec::new();
     let mut known_slots = HashSet::new();
     for slot in &snapshot.slots {
@@ -144,23 +137,12 @@ pub fn trial_hwpx(
     {
         return Err(fail("존재하지 않는 항목 선택이 있습니다."));
     }
-    let mut chosen = HwpxPackage::from_bytes(&source_bytes, PackageLimits::default())
-        .map_err(|error| fail(error.to_string()))?;
-    for item in excluded.iter().rev() {
-        remove_slot_option(
-            &mut chosen,
-            item["slot_id"].as_str().unwrap_or(""),
-            item["option_id"].as_str().unwrap_or(""),
-        )
-        .map_err(|error| fail(error.to_string()))?;
-    }
-    let selected_fields = fields(&chosen).map_err(|error| fail(error.to_string()))?;
-    let (logical, empty_fields) = logical_values(&field_names(&selected_fields), values);
-    let qualification =
-        inspect_hwpx_qualification(&source_bytes).map_err(|error| fail(error.to_string()))?;
-    let structure = qualification
-        .execution_structure
-        .ok_or_else(|| fail("문서 구조 오류를 수정한 뒤 결과를 시험하세요."))?;
+    Ok(excluded)
+}
+
+/// The materialization plan: remove the excluded options, then bind every field,
+/// with the occurrence count each field must keep.
+fn trial_plan(excluded: &[Value], selected_fields: &[Value]) -> (Vec<Value>, Vec<Value>) {
     let mut operations: Vec<Value> = excluded
         .iter()
         .map(|item| {
@@ -178,6 +160,41 @@ pub fn trial_hwpx(
             json!({"field_id":field["name"],"expected_active_occurrence_count":field["count"]})
         })
         .collect();
+    (operations, requirements)
+}
+
+pub fn trial_hwpx(
+    package: &HwpxPackage,
+    values: &Map<String, Value>,
+    selected: &HashMap<String, String>,
+) -> Result<HwpxTrial, AuthoringTrialError> {
+    let source_bytes = package
+        .to_bytes()
+        .map_err(|error| fail(error.to_string()))?;
+    let source_fields = fields(package).map_err(|error| fail(error.to_string()))?;
+    let snapshot = inspect_slot_regions(package).map_err(|error| fail(error.to_string()))?;
+    if !snapshot.diagnostics.is_empty() {
+        return Err(fail("문서 구조 오류를 수정한 뒤 결과를 시험하세요."));
+    }
+    let excluded = excluded_options(&snapshot, selected)?;
+    let mut chosen = HwpxPackage::from_bytes(&source_bytes, PackageLimits::default())
+        .map_err(|error| fail(error.to_string()))?;
+    for item in excluded.iter().rev() {
+        remove_slot_option(
+            &mut chosen,
+            item["slot_id"].as_str().unwrap_or(""),
+            item["option_id"].as_str().unwrap_or(""),
+        )
+        .map_err(|error| fail(error.to_string()))?;
+    }
+    let selected_fields = fields(&chosen).map_err(|error| fail(error.to_string()))?;
+    let (logical, empty_fields) = logical_values(&field_names(&selected_fields), values);
+    let qualification =
+        inspect_hwpx_qualification(&source_bytes).map_err(|error| fail(error.to_string()))?;
+    let structure = qualification
+        .execution_structure
+        .ok_or_else(|| fail("문서 구조 오류를 수정한 뒤 결과를 시험하세요."))?;
+    let (operations, requirements) = trial_plan(&excluded, &selected_fields);
     let materialized = materialize_authoring_trial(
         &source_bytes,
         &structure,
