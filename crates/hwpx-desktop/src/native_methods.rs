@@ -1,5 +1,10 @@
 //! Direct host verbs that require a Windows dialog, clipboard, shell, or trusted live session.
 
+#[path = "native_authoring_files.rs"]
+mod authoring_files;
+#[path = "native_data_sheets.rs"]
+mod data_sheets;
+
 use crate::dialogs::{hwpx_file_filter, open_file_dialog, open_folder_dialog, save_file_dialog};
 use crate::live_graph::LiveGraph;
 use crate::onboarding_controller::OnboardingController;
@@ -7,9 +12,9 @@ use crate::owned_paths::{collect_owned_paths, validate_owned_path};
 use crate::reveal::{open_path, reveal_in_explorer};
 use crate::template_inventory::discover_paths;
 use crate::workspace_runtime::RuntimeResources;
-use crate::workspace_switch::ScreenController;
 use hwpx_filler::data_source::{CONTRACT_LIST_FILE_EXTENSIONS, SUPPORTED_DATA_FILE_EXTENSIONS};
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -165,6 +170,7 @@ impl NativeMethods {
         Ok(result)
     }
 
+    /// Routes one validated host verb to its handler; every arm is a single call.
     fn call_inner(
         &self,
         method: &str,
@@ -173,487 +179,128 @@ impl NativeMethods {
     ) -> Result<Value, String> {
         validate_host_call(method, args)?;
         let resources = self.graph.active_resources().map_err(|e| e.to_string())?;
-        let string = |index: usize| {
-            args.get(index)
-                .and_then(Value::as_str)
-                .ok_or_else(|| format!("{method}: 문자열 인자 {index}가 필요합니다."))
+        let call = HostCall {
+            method,
+            args,
+            owner: &clipboard_owner,
         };
-        let owner_hwnd = || clipboard_owner();
+        let r = &resources;
         match method {
-            "pick_data_file" => {
-                let screen = string(0)?;
-                let hint = self
-                    .onboarding
-                    .as_ref()
-                    .map(|tutorial| {
-                        tutorial
-                            .file_picker_hint("data", screen)
-                            .map_err(|e| e.to_string())
-                    })
-                    .transpose()?
-                    .unwrap_or_default();
-                let path = open_file_dialog(data_filters(), owner_hwnd()?, hint)
-                    .map_err(|e| e.to_string())?;
-                let Some(path) = path else {
-                    return Ok(Value::Null);
-                };
-                Ok(self.process_selected_data_file(&resources, screen, Path::new(&path)))
-            }
-            "load_data_sheet" => {
-                let screen = string(0)?;
-                let path = string(1)?;
-                if let Some(sheets) = args.get(2).and_then(Value::as_array) {
-                    let selected = self.register_data_sheets(
-                        &resources,
-                        screen,
-                        Path::new(path),
-                        sheets,
-                        args.get(3),
-                    );
-                    return Ok(selected.unwrap_or_else(|error| json!(format!("ERROR: {error}"))));
-                }
-                if args.get(3).is_some_and(|value| !value.is_null()) {
-                    return Ok(json!("ERROR: 데이터를 가져올 화면과 파일을 확인하세요."));
-                }
-                let sheet = string(2)?;
-                let selected = (|| -> Result<Value, String> {
-                    let names = hwpx_filler::data_excel::sheet_overview(Path::new(path))
-                        .map_err(|e| e.to_string())?;
-                    if !names.iter().any(|(name, _, _)| name == sheet) {
-                        return Err(format!(
-                            "'{sheet}' 시트를 찾을 수 없습니다. 시트를 다시 선택하세요."
-                        ));
-                    }
-                    self.mount_data(&resources, screen, Path::new(path), Some(sheet))
-                })();
-                Ok(selected.unwrap_or_else(|error| json!(format!("ERROR: {error}"))))
-            }
-            "copy_clipboard" => {
-                if string(0)? != "workbench" {
-                    return Err("이 화면은 클립보드 복사 거래를 소유하지 않습니다.".into());
-                }
-                let token = args.get(1).and_then(Value::as_str).unwrap_or("");
-                resources
-                    .workbench
-                    .copy_to(token, |text| {
-                        crate::clipboard::set_clipboard_text(
-                            clipboard_owner().map_err(std::io::Error::other)?,
-                            text,
-                        )
-                        .map_err(Into::into)
-                    })
-                    .map_err(|e| e.to_string())
-            }
-            "save_artifact_as" => resources.job.save_artifact_as(
-                args.first().unwrap_or(&Value::Null),
-                |name, filters, extension| {
-                    save_file_dialog(name, filters, extension, owner_hwnd()?)
-                        .map_err(|error| error.to_string())
-                },
-            ),
-            "open_job_in_editor" => {
-                let name = string(0)?;
-                let context = args
-                    .get(1)
-                    .filter(|value| value.is_object())
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                let result = (|| -> Result<String, String> {
-                    resources
-                        .generation
-                        .raise_if_generating("편집기를 여세요", false)
-                        .map_err(|e| e.to_string())?;
-                    let reason = context["entry_reason"].as_str().unwrap_or("");
-                    let source = if matches!(
-                        reason,
-                        "document_browser_new_work"
-                            | "document_browser_repair"
-                            | "workbench_result"
-                    ) {
-                        Some(
-                            resources
-                                .job
-                                .new_work_handoff()
-                                .map_err(|e| e.to_string())?
-                                .0,
-                        )
-                    } else {
-                        None
-                    };
-                    resources
-                        .editor
-                        .load_job_with_context(name, &context, source.as_ref())
-                        .map_err(|e| e.to_string())?;
-                    Ok(name.into())
-                })();
-                Ok(match result {
-                    Ok(name) => json!(name),
-                    Err(error) => json!(format!("ERROR: {error}")),
-                })
-            }
-            "new_job_from_data" => {
-                let context = args
-                    .first()
-                    .filter(|value| value.is_object())
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                let result = (|| -> Result<String, String> {
-                    resources
-                        .generation
-                        .raise_if_generating("새 작업을 시작하세요", false)
-                        .map_err(|e| e.to_string())?;
-                    let (source, blocked) = resources
-                        .job
-                        .new_work_handoff()
-                        .map_err(|e| e.to_string())?;
-                    if !blocked.is_empty() {
-                        return Err(blocked);
-                    }
-                    resources
-                        .editor
-                        .new_draft_with_data(&source, &context)
-                        .map_err(|e| e.to_string())?;
-                    Ok(source["path"].as_str().unwrap_or("").into())
-                })();
-                Ok(match result {
-                    Ok(path) => json!(path),
-                    Err(error) => json!(format!("ERROR: {error}")),
-                })
-            }
-            "set_theme" => {
-                let value = string(0)?;
-                resources
-                    .settings
-                    .save_theme(value)
-                    .map_err(|e| e.to_string())?;
-                Ok(json!(value))
-            }
-            "set_font_scale" => {
-                let value = string(0)?;
-                resources
-                    .settings
-                    .save_font_scale(value)
-                    .map_err(|e| e.to_string())?;
-                Ok(json!(value))
-            }
-            "set_master_width" => {
-                let value = args
-                    .first()
-                    .and_then(Value::as_i64)
-                    .ok_or("폭이 정수가 아닙니다.")?;
-                resources
-                    .settings
-                    .save_master_width(value)
-                    .map_err(|e| e.to_string())?;
-                Ok(json!(value))
-            }
-            "set_authoring_width" => {
-                let panel = string(0)?;
-                let value = args
-                    .get(1)
-                    .and_then(Value::as_i64)
-                    .ok_or("폭이 정수가 아닙니다.")?;
-                resources
-                    .settings
-                    .save_authoring_width(panel, value)
-                    .map_err(|e| e.to_string())?;
-                Ok(json!(value))
-            }
-            "generate" => {
-                if string(0)? != "job" {
-                    return Err("문서 생성 화면이 아닙니다.".into());
-                }
-                let overwrite = args.get(1).and_then(Value::as_bool).unwrap_or(false);
-                let token = args.get(2).and_then(Value::as_str).unwrap_or("");
-                resources
-                    .job
-                    .generate(overwrite, token)
-                    .map_err(|e| e.to_string())
-            }
-            "pick_output_folder" => {
-                if string(0)? != "job" {
-                    return Err("저장 폴더를 고를 화면이 아닙니다.".into());
-                }
-                let path = open_folder_dialog("저장 폴더 선택".into(), owner_hwnd()?)
-                    .map_err(|e| e.to_string())?;
-                let Some(path) = path else {
-                    return Ok(Value::Null);
-                };
-                match resources.job.set_output_folder(&path) {
-                    Ok(()) => Ok(json!(path)),
-                    Err(e) => Ok(json!(format!("ERROR: {e}"))),
-                }
-            }
-            "pick_templates_root" => {
-                if string(0)?.is_empty() {
-                    return Err("호출 화면 이름이 비어 있습니다.".into());
-                }
-                let path = open_folder_dialog("서식 폴더 선택".into(), owner_hwnd()?)
-                    .map_err(|e| e.to_string())?;
-                let Some(path) = path else {
-                    return Ok(Value::Null);
-                };
-                match resources.template.set_templates_root(&path) {
-                    Ok(_) => Ok(json!(path)),
-                    Err(e) => Ok(json!(format!("ERROR: {e}"))),
-                }
-            }
-            "pick_pool_data_file" => {
-                let hint = self
-                    .onboarding
-                    .as_ref()
-                    .map(|tutorial| {
-                        tutorial
-                            .file_picker_hint("data", "")
-                            .map_err(|e| e.to_string())
-                    })
-                    .transpose()?
-                    .unwrap_or_default();
-                Ok(json!(
-                    open_file_dialog(excel_filters(), owner_hwnd()?, hint)
-                        .map_err(|e| e.to_string())?
-                ))
-            }
-            "pick_template_path" => Ok(json!(
-                open_file_dialog(
-                    vec![hwpx_file_filter(), ("모든 파일".into(), "*.*".into())],
-                    owner_hwnd()?,
-                    String::new()
-                )
-                .map_err(|e| e.to_string())?
-            )),
-            "pick_work_package_path" => Ok(json!(pick_package_path(
-                string(0)?,
-                |filters| open_file_dialog(filters, owner_hwnd()?, String::new())
-                    .map_err(|e| e.to_string()),
-                |name, filters, extension| save_file_dialog(
-                    name,
-                    filters,
-                    extension,
-                    owner_hwnd()?
-                )
-                .map_err(|e| e.to_string()),
-            )?)),
-            "reveal_corrupt_job" => {
-                let path = string(0)?;
-                let result = resources
-                    .library
-                    .validate_corrupt_path(path)
-                    .and_then(|path| reveal_in_explorer(&path).map(|_| ()).map_err(Into::into));
-                Ok(result
-                    .err()
-                    .map(|e| json!(format!("ERROR: {e}")))
-                    .unwrap_or(Value::Null))
-            }
-            "open_path" | "reveal_path" | "copy_path" => {
-                let path = string(0)?;
-                let result = (|| -> Result<(), String> {
-                    let mut session = resources
-                        .job
-                        .owned_session_paths()
-                        .map_err(|e| e.to_string())?;
-                    let (template, data) = resources
-                        .editor
-                        .owned_session_paths()
-                        .map_err(|e| e.to_string())?;
-                    session.extend([
-                        template,
-                        data,
-                        resources.templates.path().to_string_lossy().into_owned(),
-                    ]);
-                    let owned = collect_owned_paths(
-                        &resources.jobs,
-                        &resources.datasets,
-                        &session,
-                        &self.base_dir,
-                    )
-                    .map_err(|e| e.to_string())?;
-                    let path = validate_owned_path(path, &owned, &self.base_dir)
-                        .map_err(|e| e.to_string())?;
-                    match method {
-                        "open_path" => {
-                            open_path(Path::new(path)).map_err(|e| e.to_string())?;
-                        }
-                        "reveal_path" => {
-                            reveal_in_explorer(Path::new(path)).map_err(|e| e.to_string())?;
-                        }
-                        _ => {
-                            crate::clipboard::set_clipboard_text(clipboard_owner()?, path)
-                                .map_err(|e| e.to_string())?;
-                        }
-                    }
-                    Ok(())
-                })();
-                Ok(result
-                    .err()
-                    .map(|e| json!(format!("ERROR: {e}")))
-                    .unwrap_or(Value::Null))
-            }
-            "open_authoring_document" => {
-                let supplied = args.first().and_then(Value::as_str).unwrap_or("");
-                let as_template = args.get(1).and_then(Value::as_bool).unwrap_or(false);
-                let path = if supplied.is_empty() {
-                    open_file_dialog(
-                        vec![hwpx_file_filter(), ("모든 파일".into(), "*.*".into())],
-                        owner_hwnd()?,
-                        String::new(),
-                    )
-                    .map_err(|e| e.to_string())?
-                } else {
-                    Some(supplied.into())
-                };
-                let Some(path) = path else {
-                    return Ok(Value::Null);
-                };
-                if !supplied.is_empty() {
-                    let media = Path::new(&path)
-                        .extension()
-                        .and_then(|v| v.to_str())
-                        .unwrap_or("")
-                        .to_ascii_lowercase();
-                    if !listed_template_path(&resources.templates.path(), &media, Path::new(&path))?
-                        && !current_applied_template(&resources, Path::new(&path))?
-                    {
-                        return Err("현재 템플릿 목록에 없는 경로입니다.".into());
-                    }
-                }
-                resources
-                    .authoring
-                    .open_path(Path::new(&path), as_template)
-                    .map_err(|e| e.to_string())
-            }
-            "save_authoring_document" => {
-                let id = string(0)?;
-                let revision = args
-                    .get(1)
-                    .and_then(Value::as_u64)
-                    .ok_or("문서 판본이 올바르지 않습니다.")?;
-                let content = resources
-                    .authoring
-                    .dispatch("content", &json!({"session_id":id}))
-                    .map_err(|e| e.to_string())?;
-                if content["revision"].as_u64() != Some(revision) {
-                    return Err("문서가 변경되었습니다. 다시 저장하세요.".into());
-                }
-                let media = content["media"].as_str().ok_or("문서 매체가 없습니다.")?;
-                let stem = content["source_stem"].as_str().unwrap_or("");
-                let name = if stem.is_empty() {
-                    format!("새 템플릿.{media}")
-                } else {
-                    format!("{stem}_템플릿.{media}")
-                };
-                let path = save_file_dialog(
-                    name,
-                    vec![(media.to_ascii_uppercase(), format!("*.{media}"))],
-                    media.into(),
-                    owner_hwnd()?,
-                )
-                .map_err(|e| e.to_string())?;
-                match path {
-                    Some(path) => resources
-                        .authoring
-                        .save_to_path(id, revision, Path::new(&path))
-                        .map_err(|e| e.to_string()),
-                    None => Ok(Value::Null),
-                }
-            }
-            "authoring_cases_file" => {
-                let session_id = string(0)?;
-                let action = string(1)?;
-                resources
-                    .authoring
-                    .dispatch("content", &json!({"session_id":session_id}))
-                    .map_err(|e| e.to_string())?;
-                let filters = vec![("시험 케이스 JSON".into(), "*.json".into())];
-                match action {
-                    "import" => match open_file_dialog(filters, owner_hwnd()?, String::new())
-                        .map_err(|e| e.to_string())?
-                    {
-                        Some(path) => resources
-                            .authoring
-                            .import_cases_path(session_id, Path::new(&path))
-                            .map_err(|e| e.to_string()),
-                        None => Ok(Value::Null),
-                    },
-                    "export" => match save_file_dialog(
-                        "시험 케이스.json".into(),
-                        filters,
-                        "json".into(),
-                        owner_hwnd()?,
-                    )
-                    .map_err(|e| e.to_string())?
-                    {
-                        Some(path) => resources
-                            .authoring
-                            .export_cases_path(session_id, Path::new(&path))
-                            .map_err(|e| e.to_string()),
-                        None => Ok(Value::Null),
-                    },
-                    _ => Err("시험 자료 파일 명령이 잘못되었습니다.".into()),
-                }
-            }
-            "export_authoring_result" => {
-                let session_id = string(0)?;
-                let revision = args
-                    .get(1)
-                    .and_then(Value::as_u64)
-                    .ok_or("문서가 변경되었습니다. 다시 시험하세요.")?;
-                let content = resources
-                    .authoring
-                    .dispatch("content", &json!({"session_id":session_id}))
-                    .map_err(|e| e.to_string())?;
-                if content["revision"].as_u64() != Some(revision) {
-                    return Err("문서가 변경되었습니다. 다시 시험하세요.".into());
-                }
-                let media = content["media"].as_str().ok_or("문서 매체가 없습니다.")?;
-                let name = resources
-                    .authoring
-                    .export_result_name(session_id)
-                    .map_err(|e| e.to_string())?;
-                match save_file_dialog(
-                    name,
-                    vec![(media.to_ascii_uppercase(), format!("*.{media}"))],
-                    media.into(),
-                    owner_hwnd()?,
-                )
-                .map_err(|e| e.to_string())?
-                {
-                    Some(path) => resources
-                        .authoring
-                        .export_result_path(session_id, revision, Path::new(&path))
-                        .map_err(|e| e.to_string()),
-                    None => Ok(Value::Null),
-                }
-            }
-            "import_template_file" => {
-                let screen = string(0)?;
-                let path = open_file_dialog(
-                    vec![("HWPX·TXT 템플릿".into(), "*.hwpx;*.txt".into())],
-                    owner_hwnd()?,
-                    String::new(),
-                )
-                .map_err(|e| e.to_string())?;
-                let Some(path) = path else {
-                    return Ok(Value::Null);
-                };
-                let result: Result<String, crate::workspace_switch::GraphError> = (|| {
-                    let dest = resources
-                        .template_files
-                        .copy_into_library(Path::new(&path))?;
-                    if screen == "editor" {
-                        Ok(resources.editor.adopt_imported_template(&dest)?)
-                    } else {
-                        Err("가져온 템플릿을 받을 화면이 아닙니다.".into())
-                    }
-                })(
-                );
-                Ok(match result {
-                    Ok(name) => json!(name),
-                    Err(error) => json!(format!("ERROR: {error}")),
-                })
-            }
+            "pick_data_file" => self.pick_data_file(r, &call),
+            "load_data_sheet" => self.load_data_sheet(r, &call),
+            "copy_clipboard" => copy_clipboard(r, &call),
+            "save_artifact_as" => save_artifact_as(r, &call),
+            "open_job_in_editor" => open_job_in_editor(r, &call),
+            "new_job_from_data" => new_job_from_data(r, &call),
+            "set_theme" => set_theme(r, &call),
+            "set_font_scale" => set_font_scale(r, &call),
+            "set_master_width" => set_master_width(r, &call),
+            "set_authoring_width" => set_authoring_width(r, &call),
+            "generate" => generate(r, &call),
+            "pick_output_folder" => pick_output_folder(r, &call),
+            "pick_templates_root" => pick_templates_root(r, &call),
+            "pick_pool_data_file" => self.pick_pool_data_file(&call),
+            "pick_template_path" => pick_template_path(&call),
+            "pick_work_package_path" => pick_work_package_path(&call),
+            "reveal_corrupt_job" => reveal_corrupt_job(r, &call),
+            "open_path" | "reveal_path" | "copy_path" => self.owned_path_verb(r, &call),
+            "open_authoring_document" => authoring_files::open_authoring_document(r, &call),
+            "save_authoring_document" => authoring_files::save_authoring_document(r, &call),
+            "authoring_cases_file" => authoring_files::authoring_cases_file(r, &call),
+            "export_authoring_result" => authoring_files::export_authoring_result(r, &call),
+            "import_template_file" => authoring_files::import_template_file(r, &call),
             _ => Err(format!("등록되지 않은 네이티브 명령: {method}")),
         }
+    }
+
+    /// The tutorial's file-picker hint for `screen`, or none outside the tutorial.
+    fn file_picker_hint(&self, screen: &str) -> Result<String, String> {
+        Ok(self
+            .onboarding
+            .as_ref()
+            .map(|tutorial| {
+                tutorial
+                    .file_picker_hint("data", screen)
+                    .map_err(|e| e.to_string())
+            })
+            .transpose()?
+            .unwrap_or_default())
+    }
+
+    fn pick_data_file(
+        &self,
+        resources: &RuntimeResources,
+        call: &HostCall<'_>,
+    ) -> Result<Value, String> {
+        let screen = call.string(0)?;
+        let hint = self.file_picker_hint(screen)?;
+        let path =
+            open_file_dialog(data_filters(), call.hwnd()?, hint).map_err(|e| e.to_string())?;
+        let Some(path) = path else {
+            return Ok(Value::Null);
+        };
+        Ok(self.process_selected_data_file(resources, screen, Path::new(&path)))
+    }
+
+    fn pick_pool_data_file(&self, call: &HostCall<'_>) -> Result<Value, String> {
+        let hint = self.file_picker_hint("")?;
+        Ok(json!(
+            open_file_dialog(excel_filters(), call.hwnd()?, hint).map_err(|e| e.to_string())?
+        ))
+    }
+
+    /// `open_path`, `reveal_path`, `copy_path`: only a path this app owns right now.
+    fn owned_path_verb(
+        &self,
+        resources: &RuntimeResources,
+        call: &HostCall<'_>,
+    ) -> Result<Value, String> {
+        let path = call.string(0)?;
+        let result = (|| -> Result<(), String> {
+            let owned = self.owned_paths(resources)?;
+            let path =
+                validate_owned_path(path, &owned, &self.base_dir).map_err(|e| e.to_string())?;
+            match call.method {
+                "open_path" => {
+                    open_path(Path::new(path)).map_err(|e| e.to_string())?;
+                }
+                "reveal_path" => {
+                    reveal_in_explorer(Path::new(path)).map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    crate::clipboard::set_clipboard_text(call.hwnd()?, path)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(())
+        })();
+        Ok(result
+            .err()
+            .map(|e| json!(format!("ERROR: {e}")))
+            .unwrap_or(Value::Null))
+    }
+
+    fn owned_paths(&self, resources: &RuntimeResources) -> Result<HashSet<String>, String> {
+        let mut session = resources
+            .job
+            .owned_session_paths()
+            .map_err(|e| e.to_string())?;
+        let (template, data) = resources
+            .editor
+            .owned_session_paths()
+            .map_err(|e| e.to_string())?;
+        session.extend([
+            template,
+            data,
+            resources.templates.path().to_string_lossy().into_owned(),
+        ]);
+        collect_owned_paths(
+            &resources.jobs,
+            &resources.datasets,
+            &session,
+            &self.base_dir,
+        )
+        .map_err(|e| e.to_string())
     }
 
     fn mount_data(
@@ -694,201 +341,241 @@ impl NativeMethods {
             json!({"label":format!("파일: {label}"),"path":path.to_string_lossy(),"sheet":sheet.unwrap_or(""),"rows":rows}),
         )
     }
+}
 
-    fn register_data_sheets(
-        &self,
-        resources: &RuntimeResources,
-        screen: &str,
-        path: &Path,
-        sheets: &[Value],
-        confirmation: Option<&Value>,
-    ) -> Result<Value, String> {
-        if !matches!(screen, "job" | "editor") || path.as_os_str().is_empty() {
-            return Err("데이터를 가져올 화면과 파일을 확인하세요.".into());
-        }
-        let basis = match confirmation {
-            None | Some(Value::Null) => None,
-            Some(Value::Object(map)) if map.len() == 1 => map.get("basis").and_then(Value::as_str),
-            _ => return Err("데이터를 가져올 화면과 파일을 확인하세요.".into()),
-        };
-        if confirmation.is_some_and(|value| !value.is_null()) && basis.is_none() {
-            return Err("데이터를 가져올 화면과 파일을 확인하세요.".into());
-        }
-        if sheets.is_empty()
-            || sheets
-                .iter()
-                .any(|name| name.as_str().is_none_or(str::is_empty))
-        {
-            return Err("가져올 시트를 선택하세요.".into());
-        }
-        let names = hwpx_filler::data_excel::sheet_overview(path)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|(name, _, _)| name)
-            .collect::<Vec<_>>();
-        let requested = sheets.iter().filter_map(Value::as_str).collect::<Vec<_>>();
-        if requested
-            .iter()
-            .any(|name| !names.iter().any(|known| known == name))
-        {
-            return Err("시트를 찾을 수 없습니다. 파일을 다시 선택하세요.".into());
-        }
-        let selected = names
-            .into_iter()
-            .filter(|name| requested.contains(&name.as_str()))
-            .collect::<Vec<_>>();
-        let path_text = path.to_string_lossy();
-        let same = resources
-            .datasets
-            .find_identity(&path_text, selected.first().map(String::as_str))
+/// One validated host call: its verb, raw arguments, and the clipboard/dialog owner window.
+struct HostCall<'a> {
+    method: &'a str,
+    args: &'a [Value],
+    owner: &'a dyn Fn() -> Result<isize, String>,
+}
+
+impl<'a> HostCall<'a> {
+    fn string(&self, index: usize) -> Result<&'a str, String> {
+        self.args
+            .get(index)
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("{}: 문자열 인자 {index}가 필요합니다.", self.method))
+    }
+
+    fn hwnd(&self) -> Result<isize, String> {
+        (self.owner)()
+    }
+}
+
+fn copy_clipboard(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    if call.string(0)? != "workbench" {
+        return Err("이 화면은 클립보드 복사 거래를 소유하지 않습니다.".into());
+    }
+    let token = call.args.get(1).and_then(Value::as_str).unwrap_or("");
+    resources
+        .workbench
+        .copy_to(token, |text| {
+            crate::clipboard::set_clipboard_text(call.hwnd().map_err(std::io::Error::other)?, text)
+                .map_err(Into::into)
+        })
+        .map_err(|e| e.to_string())
+}
+
+fn save_artifact_as(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    resources.job.save_artifact_as(
+        call.args.first().unwrap_or(&Value::Null),
+        |name, filters, extension| {
+            save_file_dialog(name, filters, extension, call.hwnd()?)
+                .map_err(|error| error.to_string())
+        },
+    )
+}
+
+/// The object argument at `index`, or an empty object.
+fn context_arg(call: &HostCall<'_>, index: usize) -> Value {
+    call.args
+        .get(index)
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}))
+}
+
+/// A handoff result as the host's string-or-`ERROR:` value.
+fn handoff_value(result: Result<String, String>) -> Value {
+    match result {
+        Ok(text) => json!(text),
+        Err(error) => json!(format!("ERROR: {error}")),
+    }
+}
+
+fn open_job_in_editor(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let name = call.string(0)?;
+    let context = context_arg(call, 1);
+    let result = (|| -> Result<String, String> {
+        resources
+            .generation
+            .raise_if_generating("편집기를 여세요", false)
             .map_err(|e| e.to_string())?;
-        let mut rows = Vec::new();
-        for name in &selected {
-            let checked = (|| -> Result<(), String> {
-                let mut source = if let Some((_, item)) = &same {
-                    if hwpx_filler::dataset_reference::reference_sheets(item)
-                        .map_err(|e| e.to_string())?
-                        .iter()
-                        .any(|sheet| sheet == name)
-                    {
-                        let reference =
-                            hwpx_filler::dataset_reference::reference_for_sheet(item, Some(name))
-                                .map_err(|e| e.to_string())?;
-                        crate::nara_source::source_from_pool_reference_live(&reference)
-                            .map_err(|e| e.to_string())?
-                    } else {
-                        hwpx_filler::data_factory::source_for_path(
-                            path,
-                            Some(name),
-                            item.opts
-                                .get("header_row")
-                                .and_then(Value::as_u64)
-                                .unwrap_or(1) as usize,
-                        )
-                        .map_err(|e| e.to_string())?
-                    }
-                } else {
-                    hwpx_filler::data_factory::source_for_path(path, Some(name), 1)
-                        .map_err(|e| e.to_string())?
-                };
-                if source.records().map_err(|e| e.to_string())?.is_empty() {
-                    return Err("데이터에 행이 없습니다.".into());
-                }
-                if let Some((key, item)) = &same {
-                    let row =
-                        hwpx_filler::dataset_pool::DatasetPoolRow::from_item(key, item, false)
-                            .map_err(|e| e.to_string())?;
-                    let reason = row.select_block_reason();
-                    if !reason.is_empty() {
-                        return Err(reason);
-                    }
-                }
-                Ok(())
-            })();
-            rows.push(json!({"name":name,"error":checked.err().unwrap_or_default()}));
-        }
-        let errors = rows
-            .iter()
-            .filter_map(|row| {
-                let error = row["error"].as_str().filter(|error| !error.is_empty())?;
-                Some(format!("{}: {error}", row["name"].as_str().unwrap_or("")))
-            })
-            .collect::<Vec<_>>();
-        if !errors.is_empty() {
-            return Ok(json!({"sheets":rows,"mount":null,"error":errors.join("\n")}));
-        }
-        let name = same.as_ref().map_or_else(
-            || {
-                path.file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned()
-            },
-            |(_, item)| item.name.clone(),
-        );
-        let mut request =
-            json!({"name":name,"path":path_text,"sheet":selected[0],"sheets":selected});
-        if let Some(basis) = basis {
-            request["confirm"] = json!(true);
-            request["basis"] = json!(basis);
-        }
-        let registered = resources
-            .pool
-            .dispatch("register_excel", &request)
-            .map_err(|e| e.to_string())?;
-        if registered["needs_confirm"] == true {
-            let mut response = json!({"sheets":[],"mount":null,"error":""});
-            response
-                .as_object_mut()
-                .unwrap()
-                .extend(registered.as_object().cloned().unwrap_or_default());
-            return Ok(response);
-        }
-        if registered["ok"] != true {
-            return Ok(json!({"sheets":rows,"mount":null,"error":registered["error"]}));
-        }
-        let (key, item) = resources
-            .datasets
-            .find_identity(&path_text, Some(&selected[0]))
-            .map_err(|e| e.to_string())?
-            .ok_or("등록 데이터를 찾을 수 없습니다. 다시 가져오세요.")?;
-        for row in &mut rows {
-            row["key"] = json!(key);
-        }
-        let mounted = (|| -> Result<Value, String> {
-            match screen {
-                "job" => resources
+        let reason = context["entry_reason"].as_str().unwrap_or("");
+        let source = if matches!(
+            reason,
+            "document_browser_new_work" | "document_browser_repair" | "workbench_result"
+        ) {
+            Some(
+                resources
                     .job
-                    .load_pool(&key, Some(&selected[0]))
-                    .map_err(|e| e.to_string())?,
-                _ => {
-                    let result = resources
-                        .editor
-                        .dispatch("use_pool_data", &json!({"key":key}))
-                        .map_err(|e| e.to_string())?;
-                    if result["ok"] != true {
-                        return Err(result["error"]
-                            .as_str()
-                            .unwrap_or("등록 데이터를 활성화하지 못했습니다.")
-                            .to_owned());
-                    }
-                }
-            }
-            let mut descriptor =
-                self.mount_data_descriptor(resources, screen, path, &selected[0])?;
-            descriptor["label"] = json!(format!("등록 데이터: {}", item.name));
-            Ok(descriptor)
-        })();
-        match mounted {
-            Ok(mount) => Ok(json!({"sheets":rows,"mount":mount,"error":""})),
-            Err(error) => Ok(json!({"sheets":rows,"mount":null,"error":error})),
-        }
-    }
-
-    fn mount_data_descriptor(
-        &self,
-        resources: &RuntimeResources,
-        screen: &str,
-        path: &Path,
-        sheet: &str,
-    ) -> Result<Value, String> {
-        let rows = if screen == "job" {
-            resources
-                .job
-                .data()
-                .map_err(|e| e.to_string())?
-                .records
-                .len()
+                    .new_work_handoff()
+                    .map_err(|e| e.to_string())?
+                    .0,
+            )
         } else {
-            let mut source = hwpx_filler::data_factory::source_for_path(path, Some(sheet), 1)
-                .map_err(|e| e.to_string())?;
-            source.records().map_err(|e| e.to_string())?.len()
+            None
         };
-        Ok(
-            json!({"label":format!("파일: {}",path.file_name().unwrap_or_default().to_string_lossy()),
-            "path":path.to_string_lossy(),"sheet":sheet,"rows":rows}),
-        )
+        resources
+            .editor
+            .load_job_with_context(name, &context, source.as_ref())
+            .map_err(|e| e.to_string())?;
+        Ok(name.into())
+    })();
+    Ok(handoff_value(result))
+}
+
+fn new_job_from_data(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let context = context_arg(call, 0);
+    let result = (|| -> Result<String, String> {
+        resources
+            .generation
+            .raise_if_generating("새 작업을 시작하세요", false)
+            .map_err(|e| e.to_string())?;
+        let (source, blocked) = resources
+            .job
+            .new_work_handoff()
+            .map_err(|e| e.to_string())?;
+        if !blocked.is_empty() {
+            return Err(blocked);
+        }
+        resources
+            .editor
+            .new_draft_with_data(&source, &context)
+            .map_err(|e| e.to_string())?;
+        Ok(source["path"].as_str().unwrap_or("").into())
+    })();
+    Ok(handoff_value(result))
+}
+
+fn set_theme(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let value = call.string(0)?;
+    resources
+        .settings
+        .save_theme(value)
+        .map_err(|e| e.to_string())?;
+    Ok(json!(value))
+}
+
+fn set_font_scale(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let value = call.string(0)?;
+    resources
+        .settings
+        .save_font_scale(value)
+        .map_err(|e| e.to_string())?;
+    Ok(json!(value))
+}
+
+fn set_master_width(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let value = call
+        .args
+        .first()
+        .and_then(Value::as_i64)
+        .ok_or("폭이 정수가 아닙니다.")?;
+    resources
+        .settings
+        .save_master_width(value)
+        .map_err(|e| e.to_string())?;
+    Ok(json!(value))
+}
+
+fn set_authoring_width(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let panel = call.string(0)?;
+    let value = call
+        .args
+        .get(1)
+        .and_then(Value::as_i64)
+        .ok_or("폭이 정수가 아닙니다.")?;
+    resources
+        .settings
+        .save_authoring_width(panel, value)
+        .map_err(|e| e.to_string())?;
+    Ok(json!(value))
+}
+
+fn generate(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    if call.string(0)? != "job" {
+        return Err("문서 생성 화면이 아닙니다.".into());
     }
+    let overwrite = call.args.get(1).and_then(Value::as_bool).unwrap_or(false);
+    let token = call.args.get(2).and_then(Value::as_str).unwrap_or("");
+    resources
+        .job
+        .generate(overwrite, token)
+        .map_err(|e| e.to_string())
+}
+
+fn pick_output_folder(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    if call.string(0)? != "job" {
+        return Err("저장 폴더를 고를 화면이 아닙니다.".into());
+    }
+    let path =
+        open_folder_dialog("저장 폴더 선택".into(), call.hwnd()?).map_err(|e| e.to_string())?;
+    let Some(path) = path else {
+        return Ok(Value::Null);
+    };
+    match resources.job.set_output_folder(&path) {
+        Ok(()) => Ok(json!(path)),
+        Err(e) => Ok(json!(format!("ERROR: {e}"))),
+    }
+}
+
+fn pick_templates_root(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    if call.string(0)?.is_empty() {
+        return Err("호출 화면 이름이 비어 있습니다.".into());
+    }
+    let path =
+        open_folder_dialog("서식 폴더 선택".into(), call.hwnd()?).map_err(|e| e.to_string())?;
+    let Some(path) = path else {
+        return Ok(Value::Null);
+    };
+    match resources.template.set_templates_root(&path) {
+        Ok(_) => Ok(json!(path)),
+        Err(e) => Ok(json!(format!("ERROR: {e}"))),
+    }
+}
+
+fn pick_template_path(call: &HostCall<'_>) -> Result<Value, String> {
+    Ok(json!(
+        open_file_dialog(
+            vec![hwpx_file_filter(), ("모든 파일".into(), "*.*".into())],
+            call.hwnd()?,
+            String::new()
+        )
+        .map_err(|e| e.to_string())?
+    ))
+}
+
+fn pick_work_package_path(call: &HostCall<'_>) -> Result<Value, String> {
+    Ok(json!(pick_package_path(
+        call.string(0)?,
+        |filters| open_file_dialog(filters, call.hwnd()?, String::new()).map_err(|e| e.to_string()),
+        |name, filters, extension| save_file_dialog(name, filters, extension, call.hwnd()?)
+            .map_err(|e| e.to_string()),
+    )?))
+}
+
+fn reveal_corrupt_job(resources: &RuntimeResources, call: &HostCall<'_>) -> Result<Value, String> {
+    let path = call.string(0)?;
+    let result = resources
+        .library
+        .validate_corrupt_path(path)
+        .and_then(|path| reveal_in_explorer(&path).map(|_| ()).map_err(Into::into));
+    Ok(result
+        .err()
+        .map(|e| json!(format!("ERROR: {e}")))
+        .unwrap_or(Value::Null))
 }
 
 fn direct_observation(
