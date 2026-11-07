@@ -314,17 +314,7 @@ pub fn run_shell(
             }
             let fallback_started = Instant::now();
             let window = builder.build()?;
-            if saved.as_ref().is_some_and(|item| item.maximized) {
-                window.unmaximize()?;
-            }
-            configure_outer_size(
-                &window,
-                saved.as_ref().map_or(1440, |item| item.width as u32),
-                saved.as_ref().map_or(900, |item| item.height as u32),
-            )?;
-            if saved.as_ref().is_some_and(|item| item.maximized) {
-                window.maximize()?;
-            }
+            size_initial_window(&window, saved.as_ref(), &setup_state)?;
             window_binding
                 .set(window.clone())
                 .map_err(|_| "main window was already bound")?;
@@ -589,6 +579,64 @@ fn configure_outer_size(
     set_outer_logical_size(window, width, height)
 }
 
+/// 기본 창(저장 위치 없음·화면 밖 회수)은 1440×900 이되 작업 영역을 넘지 않는다 —
+/// 작은 화면에서 창이 화면을 덮어 최대화처럼 보이거나 잘리지 않게 한다. 최소 크기는 유지한다.
+fn fitted_default_size(work_width: i64, work_height: i64) -> (u32, u32) {
+    const MARGIN: i64 = 48;
+    let width = (work_width - MARGIN).clamp(760, 1440);
+    let height = (work_height - MARGIN).clamp(600, 900);
+    (width as u32, height as u32)
+}
+
+/// 저장된 창은 그 크기(최대화 포함)로, 없으면 작업 영역에 맞춘 기본 배치로 연다.
+fn size_initial_window(
+    window: &WebviewWindow<Wry>,
+    saved: Option<&WindowGeometry>,
+    state: &HostState,
+) -> Result<(), String> {
+    let Some(item) = saved else {
+        return place_default_window(window, state);
+    };
+    if item.maximized {
+        window.unmaximize().map_err(|error| error.to_string())?;
+    }
+    configure_outer_size(window, item.width as u32, item.height as u32)?;
+    if item.maximized {
+        window.maximize().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn place_default_window(window: &WebviewWindow<Wry>, state: &HostState) -> Result<(), String> {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let (width, height) = monitor.map_or((1440, 900), |monitor| {
+        let area = monitor
+            .work_area()
+            .size
+            .to_logical::<f64>(monitor.scale_factor());
+        fitted_default_size(area.width.round() as i64, area.height.round() as i64)
+    });
+    configure_outer_size(window, width, height)?;
+    window.center().map_err(|error| error.to_string())?;
+    // 움직이지 않고 닫아도 다음 실행이 같은(화면 안) 기본 배치를 복원하도록 상태에 남긴다.
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let position = window
+        .outer_position()
+        .map_err(|error| error.to_string())?
+        .to_logical::<f64>(scale);
+    if let Ok(mut geometry) = state.geometry.lock() {
+        geometry.x = position.x.round() as i64;
+        geometry.y = position.y.round() as i64;
+        geometry.width = i64::from(width);
+        geometry.height = i64::from(height);
+    }
+    Ok(())
+}
+
 fn persist_geometry(state: &HostState) {
     let Ok(geometry) = state.geometry.lock() else {
         return;
@@ -659,7 +707,16 @@ pub fn is_app_navigation(url: &Url) -> bool {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use super::{LiveCaller, is_app_navigation, prepare_webview_profile};
+    use super::{LiveCaller, fitted_default_size, is_app_navigation, prepare_webview_profile};
+
+    #[test]
+    fn default_window_fits_small_work_areas_and_keeps_its_size_on_large_ones() {
+        assert_eq!(fitted_default_size(2560, 1400), (1440, 900));
+        assert_eq!(fitted_default_size(1488, 948), (1440, 900));
+        assert_eq!(fitted_default_size(1366, 728), (1318, 680));
+        assert_eq!(fitted_default_size(1024, 720), (976, 672));
+        assert_eq!(fitted_default_size(640, 480), (760, 600));
+    }
     use crate::live_graph::LiveGraph;
     use crate::locations::Locations;
     use crate::workspace_switch::{GraphError, ScreenController, WorkspaceGraph, WorkspaceSwitch};

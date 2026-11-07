@@ -151,7 +151,11 @@ try {
             Require-Equal $observed.maximized_like $true 'maximized geometry'
         } else {
             if ($observed.x -eq 50000) { throw 'offscreen geometry was not recovered' }
-            Require-Equal $observed.width 1440 'offscreen fallback width'
+            # 기본 1440×900 은 작업 영역(여백 48)에 맞춰 줄어든다 — 작은 러너 화면에서도 화면 안이다.
+            $fallbackWidth = [Math]::Min(1440, [Math]::Max(760, $observed.avail_width - 48))
+            $fallbackHeight = [Math]::Min(900, [Math]::Max(600, $observed.avail_height - 48))
+            Require-Equal $observed.width $fallbackWidth 'offscreen fallback width'
+            Require-Equal $observed.height $fallbackHeight 'offscreen fallback height'
             Require-Equal $observed.maximized_like $false 'offscreen fallback maximized'
         }
     }

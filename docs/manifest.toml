@@ -153,7 +153,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
-source_sha256 = "d5fa1f68443c45781c3177ee1f5139e873910f9ce2529e5acc5875e6bc6c6fef"
+source_sha256 = "d3aebbcb34cc49fdb392a92d938627dfb037589eb1c3a50d65e8de2c713a48d7"
 body_sha256 = "0faeb20d797961ad20e0dce979ee7f6425ba669ac368513e5becc332df63cf9a"
 
 [[topic]]
@@ -161,7 +161,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
-source_sha256 = "193f4fbfc9a7ec53fd6cc6e4724d21e96c81f1ec1ff8d9439cdbfe9517110055"
+source_sha256 = "fce21f578a708428acf866c5b3a68775e49d630f83dcd0ae64f9e1366d5ce48e"
 body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
 [[topic]]
@@ -241,7 +241,7 @@ id = "ui-visual"
 document = "docs/ui-style.md"
 sources = ["scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/verify_native_restart.ps1", "frontend/design-tokens.json", "scripts/gen_design_tokens.mjs", "frontend/css/*.css", "frontend/src/screens/authoring_layout.ts", "frontend/src/screens/authoring_proposal_view.ts", "frontend/src/tutorial/panel.ts", "frontend/src/tutorial/spotlight.ts", "vendor/rhwp/patches/authoring.patch"]
 tests = ["tests/js/design_tokens.test.js", "tests/browser/browser_resource.test.js", "tests/js/authoring_layout.test.js", "tests/js/authoring_render.test.js", "tests/js/tutorial_panel.test.js"]
-source_sha256 = "6cd81a1a1692988c13b18f1bc0ad6cd6a5082f7227217d9a1be5c9b3f54ce9ba"
+source_sha256 = "30c4b800965505e1498e2a82b992015128d8351218e8d807a53ac852f3f3b2c2"
 body_sha256 = "d5a771613b44926e8c58fea5187baff192a655fb47d3616851cb8d28c647ab90"
 
 [[topic]]
