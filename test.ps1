@@ -103,6 +103,10 @@ function Invoke-Cargo([string[]]$CargoArgs) {
 
 Push-Location $PSScriptRoot
 try {
+    # TOML 파서 준비와 npm test 의 bridge descriptor 는 --offline 으로 짓는다 — 깨끗한 체크아웃
+    # (릴리스 러너 포함)에서도 돌도록 workspace 잠금 의존을 먼저 받아 둔다.
+    $code = Invoke-Cargo ('fetch --locked' -split ' ')
+    if ($code -ne 0) { exit $code }
     & (Join-Path $PSScriptRoot 'build-web.ps1')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & node scripts/read_toml.mjs --prepare

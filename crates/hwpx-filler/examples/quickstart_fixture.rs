@@ -79,10 +79,11 @@ const PURCHASE_LINES: [&str; 4] = [
 fn csv(records: &[[&str; 6]]) -> Vec<u8> {
     let mut bytes = vec![0xef, 0xbb, 0xbf];
     bytes.extend_from_slice(FIELDS.join(",").as_bytes());
-    bytes.extend_from_slice(b"\r\n");
+    // 저장소 정본은 `.gitattributes`(eol=lf)대로 LF 다 — 체크아웃이 어디서든 같은 바이트를 낸다.
+    bytes.extend_from_slice(b"\n");
     for record in records {
         bytes.extend_from_slice(record.join(",").as_bytes());
-        bytes.extend_from_slice(b"\r\n");
+        bytes.extend_from_slice(b"\n");
     }
     bytes
 }
