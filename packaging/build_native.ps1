@@ -209,6 +209,10 @@ try {
         if (-not $cargo) { throw 'Cargo가 없습니다. rust-toolchain.toml의 도구 체인을 먼저 준비하세요.' }
         $cargoPath = $cargo.Source
     }
+    # 빌드 메타데이터(TOML 파서)·고지 생성기는 --offline 으로 Cargo 를 부른다 — 깨끗한 러너에서도
+    # 돌도록 같은 toolchain 에 잠금 의존을 먼저 받아 둔다.
+    & $cargoPath fetch --locked
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if (-not $SkipCheck) {
         & (Join-Path $root 'test.ps1')
