@@ -259,6 +259,157 @@ fn block_error(error: NativeTransferError) -> TransferError {
     };
     TransferError(message.into())
 }
+fn field_names<'a>(fields: impl Iterator<Item = &'a Value>) -> HashSet<String> {
+    fields
+        .filter_map(|field| field["name"].as_str())
+        .map(str::to_owned)
+        .collect()
+}
+fn rows(value: &Value) -> impl Iterator<Item = &Value> {
+    value.as_array().into_iter().flatten()
+}
+/// Names of source fields used inside the copied region.
+fn copied_field_names(
+    source: &HwpxPackage,
+    region: &BookmarkRegion,
+) -> Result<HashSet<String>, TransferError> {
+    let detail = analyze_hwpx(source).map_err(|item| error(item.to_string()))?;
+    let inside = |occ: &Value| {
+        occ["entry"] == region.section
+            && occ["paragraph"].as_u64().is_some_and(|at| {
+                region.start_paragraph as u64 <= at && at <= region.end_paragraph as u64
+            })
+    };
+    Ok(field_names(
+        rows(&detail["fields"]).filter(|field| rows(&field["occurrences"]).any(inside)),
+    ))
+}
+/// The slot bookmark name, refused when the id is taken or the spot is inside a region.
+fn slot_bookmark_name(
+    target: &HwpxPackage,
+    target_detail: &Value,
+    new_id: &str,
+    at: (&str, usize),
+) -> Result<String, TransferError> {
+    let (entry, index) = at;
+    if rows(&target_detail["slots"]).any(|slot| slot["id"] == new_id) {
+        return Err(error(
+            "같은 항목 식별자가 있습니다. 새 식별자를 입력하세요.",
+        ));
+    }
+    if resolve_bookmark_topology(target)
+        .map_err(|item| error(item.to_string()))?
+        .iter()
+        .any(|row| row.section == entry && row.start_paragraph < index && index <= row.end_paragraph)
+    {
+        return Err(error("항목을 다른 의미 영역 안에 넣을 수 없습니다."));
+    }
+    Ok(new_id.to_owned())
+}
+/// The option bookmark name under its owner slot, which must enclose the paste point.
+fn option_bookmark_name(
+    target_detail: &Value,
+    destination: &Value,
+    new_id: &str,
+    at: (&str, usize),
+) -> Result<String, TransferError> {
+    let (entry, index) = at;
+    let owner_id = destination.get("slot_id").and_then(Value::as_str);
+    let owner = rows(&target_detail["slots"])
+        .find(|slot| slot.get("id").and_then(Value::as_str) == owner_id)
+        .filter(|slot| {
+            slot["location"]["entry"] == entry
+                && !rows(&slot["options"]).any(|opt| opt["id"] == new_id)
+        })
+        .ok_or_else(|| error("상위 항목이나 선택 식별자를 확인하세요."))?;
+    let location = &owner["location"];
+    let encloses = location["start_paragraph"]
+        .as_u64()
+        .is_some_and(|at| at < (index as u64))
+        && location["end_paragraph"]
+            .as_u64()
+            .is_some_and(|at| (index as u64) <= at);
+    if !encloses {
+        return Err(error("선택은 상위 항목 안의 문단 경계에 붙여넣으세요."));
+    }
+    Ok(format!("{}/{new_id}", owner_id.unwrap()))
+}
+/// Renames for option bookmarks nested in a copied slot, moved under the new slot id.
+fn child_name_edits(
+    source: &HwpxPackage,
+    selector: &Value,
+    region: &BookmarkRegion,
+    new_id: &str,
+) -> Result<Vec<BookmarkNameEdit>, TransferError> {
+    let old_prefix = format!(
+        "{}/",
+        selector
+            .get("slot_id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+    );
+    let nested = |child: &BookmarkRegion| {
+        child.pairing_id() != region.pairing_id()
+            && child.section == region.section
+            && child.start_paragraph >= region.start_paragraph
+            && child.end_paragraph <= region.end_paragraph
+    };
+    Ok(resolve_bookmark_topology(source)
+        .map_err(|item| error(item.to_string()))?
+        .into_iter()
+        .filter(|child| nested(child))
+        .filter_map(|child| {
+            let suffix = child.name.as_deref()?.strip_prefix(&old_prefix)?;
+            Some(BookmarkNameEdit {
+                source_pairing_id: child.pairing_id().into(),
+                new_name: format!("{new_id}/{suffix}"),
+                metatag_texts: Vec::new(),
+            })
+        })
+        .collect())
+}
+/// Bookmark renames that give the pasted region (and a slot's options) their new ids.
+fn meaning_name_edits(
+    source: &HwpxPackage,
+    target: &HwpxPackage,
+    request: (&Value, &Value, &str),
+    copied: (&BookmarkRegion, &Value),
+    at: (&str, usize),
+) -> Result<Vec<BookmarkNameEdit>, TransferError> {
+    let (selector, destination, kind) = request;
+    let (region, selected) = copied;
+    let new_id = destination
+        .get("new_id")
+        .filter(|value| python_truthy(value))
+        .or_else(|| selected.get("id"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| error("새 식별자를 입력하세요."))?;
+    let target_detail = analyze_hwpx(target).map_err(|item| error(item.to_string()))?;
+    let copied_names = copied_field_names(source, region)?;
+    let target_names = field_names(rows(&target_detail["fields"]));
+    if !copied_names.is_disjoint(&target_names)
+        && destination.get("link_existing") != Some(&Value::Bool(true))
+    {
+        return Err(error(
+            "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요.",
+        ));
+    }
+    let bookmark_name = if kind == "slot" {
+        slot_bookmark_name(target, &target_detail, new_id, at)?
+    } else {
+        option_bookmark_name(&target_detail, destination, new_id, at)?
+    };
+    let mut edits = vec![BookmarkNameEdit {
+        source_pairing_id: region.pairing_id().into(),
+        new_name: bookmark_name,
+        metatag_texts: metatag_edits(region, new_id)?,
+    }];
+    if kind == "slot" {
+        edits.extend(child_name_edits(source, selector, region, new_id)?);
+    }
+    Ok(edits)
+}
 fn block_paste(
     source: &HwpxPackage,
     target: &mut HwpxPackage,
@@ -280,138 +431,17 @@ fn block_paste(
     {
         return Err(error("붙여넣을 문단 시작 위치를 고르세요."));
     }
-    let mut edits = Vec::new();
-    if with_meaning {
-        let new_id = destination
-            .get("new_id")
-            .filter(|value| python_truthy(value))
-            .or_else(|| selected.get("id"))
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| error("새 식별자를 입력하세요."))?;
-        let target_detail = analyze_hwpx(target).map_err(|item| error(item.to_string()))?;
-        let copied_names: HashSet<_> = analyze_hwpx(source)
-            .map_err(|item| error(item.to_string()))?["fields"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|field| {
-                field["occurrences"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .any(|occ| {
-                        occ["entry"] == region.section
-                            && occ["paragraph"].as_u64().is_some_and(|at| {
-                                region.start_paragraph as u64 <= at
-                                    && at <= region.end_paragraph as u64
-                            })
-                    })
-            })
-            .filter_map(|field| field["name"].as_str())
-            .map(str::to_owned)
-            .collect();
-        let target_names: HashSet<_> = target_detail["fields"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|field| field["name"].as_str())
-            .map(str::to_owned)
-            .collect();
-        if !copied_names.is_disjoint(&target_names)
-            && destination.get("link_existing") != Some(&Value::Bool(true))
-        {
-            return Err(error(
-                "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요.",
-            ));
-        }
-        let bookmark_name = if kind == "slot" {
-            if target_detail["slots"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .any(|slot| slot["id"] == new_id)
-            {
-                return Err(error(
-                    "같은 항목 식별자가 있습니다. 새 식별자를 입력하세요.",
-                ));
-            }
-            if resolve_bookmark_topology(target)
-                .map_err(|item| error(item.to_string()))?
-                .iter()
-                .any(|row| {
-                    row.section == entry
-                        && row.start_paragraph < index
-                        && index <= row.end_paragraph
-                })
-            {
-                return Err(error("항목을 다른 의미 영역 안에 넣을 수 없습니다."));
-            }
-            new_id.to_owned()
-        } else {
-            let owner_id = destination.get("slot_id").and_then(Value::as_str);
-            let owner = target_detail["slots"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|slot| slot.get("id").and_then(Value::as_str) == owner_id)
-                .filter(|slot| {
-                    slot["location"]["entry"] == entry
-                        && !slot["options"]
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .any(|opt| opt["id"] == new_id)
-                })
-                .ok_or_else(|| error("상위 항목이나 선택 식별자를 확인하세요."))?;
-            if !(owner["location"]["start_paragraph"]
-                .as_u64()
-                .is_some_and(|at| at < (index as u64))
-                && owner["location"]["end_paragraph"]
-                    .as_u64()
-                    .is_some_and(|at| (index as u64) <= at))
-            {
-                return Err(error("선택은 상위 항목 안의 문단 경계에 붙여넣으세요."));
-            }
-            format!("{}/{new_id}", owner_id.unwrap())
-        };
-        edits.push(BookmarkNameEdit {
-            source_pairing_id: region.pairing_id().into(),
-            new_name: bookmark_name,
-            metatag_texts: metatag_edits(&region, new_id)?,
-        });
-        if kind == "slot" {
-            let old_prefix = format!(
-                "{}/",
-                selector
-                    .get("slot_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-            );
-            for child in
-                resolve_bookmark_topology(source).map_err(|item| error(item.to_string()))?
-            {
-                if child.pairing_id() == region.pairing_id()
-                    || child.section != region.section
-                    || child.start_paragraph < region.start_paragraph
-                    || child.end_paragraph > region.end_paragraph
-                {
-                    continue;
-                }
-                if let Some(suffix) = child
-                    .name
-                    .as_deref()
-                    .and_then(|name| name.strip_prefix(&old_prefix))
-                {
-                    edits.push(BookmarkNameEdit {
-                        source_pairing_id: child.pairing_id().into(),
-                        new_name: format!("{new_id}/{suffix}"),
-                        metatag_texts: Vec::new(),
-                    });
-                }
-            }
-        }
-    }
+    let edits = if with_meaning {
+        meaning_name_edits(
+            source,
+            target,
+            (selector, destination, kind),
+            (&region, &selected),
+            (entry, index),
+        )?
+    } else {
+        Vec::new()
+    };
     let inserted = paste_bookmark_block(
         source,
         target,
