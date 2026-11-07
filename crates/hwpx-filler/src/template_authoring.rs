@@ -166,6 +166,88 @@ pub fn document_commands(media: &str, analysis: &Value) -> Vec<Value> {
     };
     vec![json!({"type":"revert_template","enabled":filled,"reason":reason,"alternative":null})]
 }
+fn occurrence_total(item: &Value) -> u64 {
+    item["count"].as_u64().unwrap_or_else(|| {
+        item["occurrences"]
+            .as_array()
+            .map_or(0, |rows| rows.len() as u64)
+    })
+}
+
+fn txt_lint_location(occurrence: &Value) -> Value {
+    let mut map = Map::new();
+    for key in ["line", "start", "end"] {
+        if let Some(value) = occurrence.get(key) {
+            map.insert(key.into(), value.clone());
+        }
+    }
+    Value::Object(map)
+}
+
+/// A paragraph location with its table cell path and character range when known.
+fn hwpx_paragraph_location(occurrence: &Value) -> Value {
+    let mut map = json!({"entry":occurrence["entry"],"paragraph":occurrence["paragraph"]});
+    if let Some(path) = occurrence.get("cell_path").filter(|value| !value.is_null()) {
+        map["cell_path"] = path.clone();
+    }
+    if occurrence["start"].as_u64().is_some() && occurrence["end"].as_u64().is_some() {
+        map["start"] = occurrence["start"].clone();
+        map["end"] = occurrence["end"].clone();
+    }
+    map
+}
+
+/// Where a lint problem points: the field occurrence, in the media's coordinates.
+fn lint_location(media: &str, occurrence: Option<&Value>) -> Value {
+    let Some(occurrence) = occurrence else {
+        return Value::Null;
+    };
+    if media == "txt" {
+        txt_lint_location(occurrence)
+    } else if occurrence["paragraph"].as_u64().is_some() {
+        hwpx_paragraph_location(occurrence)
+    } else if occurrence["anchor_paragraph"].as_u64().is_some() {
+        json!({"entry":occurrence["entry"],"paragraph":occurrence["anchor_paragraph"]})
+    } else {
+        Value::Null
+    }
+}
+
+fn relink_command(media: &str, occurrence: &Value, name: &str, other_name: &str) -> Value {
+    if media == "txt" {
+        json!({"type":"relink_field","start":occurrence["start"],
+            "end":occurrence["end"],"name":other_name})
+    } else {
+        json!({"type":"relink_field","entry":occurrence["entry"],
+            "occurrence":occurrence["occurrence"],"pairing_id":occurrence["pairing_id"],
+            "old_name":name,"name":other_name})
+    }
+}
+
+/// A near-duplicate warning on the less-used of two names, offering to relink a lone use.
+fn near_duplicate_problem(media: &str, left: &Value, right: &Value) -> Value {
+    let (target, other) = if occurrence_total(left) < occurrence_total(right) {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let name = target["name"].as_str().unwrap_or("");
+    let other_name = other["name"].as_str().unwrap_or("");
+    let occurrence = target["occurrences"]
+        .as_array()
+        .and_then(|rows| rows.first());
+    let location = lint_location(media, occurrence);
+    let mut actions = vec![json!({"label":"원문으로 이동","kind":"navigate","location":location})];
+    if occurrence_total(target) == 1
+        && let Some(occurrence) = occurrence
+    {
+        let command = relink_command(media, occurrence, name, other_name);
+        actions.push(json!({"label":"필드 연결 변경","kind":"command","command":command}));
+    }
+    json!({"kind":"near_duplicate","severity":"warning","category":"authoring",
+        "message":"공백만 다른 필드 이름이 있습니다.","target":name,"location":location,"actions":actions})
+}
+
 pub fn authoring_lint(media: &str, analysis: &Value) -> Vec<Value> {
     let fields: Vec<&Value> = analysis["fields"]
         .as_array()
@@ -176,42 +258,16 @@ pub fn authoring_lint(media: &str, analysis: &Value) -> Vec<Value> {
         .iter()
         .filter_map(|item| item["name"].as_str().map(str::to_owned))
         .collect();
-    crate::lint::near_duplicate_pairs(&names).into_iter().map(|(first,second)|{
-        let left=fields.iter().find(|field|field["name"]==first).expect("known name");
-        let right=fields.iter().find(|field|field["name"]==second).expect("known name");
-        let count=|item:&Value|item["count"].as_u64().unwrap_or_else(||item["occurrences"].as_array().map_or(0,|rows|rows.len() as u64));
-        let (target,other)=if count(left)<count(right){(left,right)}else{(right,left)};
-        let name=target["name"].as_str().unwrap_or("");
-        let other_name=other["name"].as_str().unwrap_or("");
-        let occurrence=target["occurrences"].as_array().and_then(|rows|rows.first());
-        let location=if let Some(occurrence)=occurrence {
-            if media=="txt" {
-                let mut map=Map::new();
-                for key in ["line","start","end"] {if let Some(value)=occurrence.get(key){map.insert(key.into(),value.clone());}}
-                Value::Object(map)
-            } else if occurrence["paragraph"].as_u64().is_some(){
-                let mut map=json!({"entry":occurrence["entry"],"paragraph":occurrence["paragraph"]});
-                if let Some(path)=occurrence.get("cell_path").filter(|value|!value.is_null()){map["cell_path"]=path.clone();}
-                if occurrence["start"].as_u64().is_some() && occurrence["end"].as_u64().is_some(){
-                    map["start"]=occurrence["start"].clone();map["end"]=occurrence["end"].clone();
-                }
-                map
-            } else if occurrence["anchor_paragraph"].as_u64().is_some(){
-                json!({"entry":occurrence["entry"],"paragraph":occurrence["anchor_paragraph"]})
-            } else {Value::Null}
-        }else{Value::Null};
-        let mut actions=vec![json!({"label":"원문으로 이동","kind":"navigate","location":location})];
-        if count(target)==1 && let Some(occurrence)=occurrence {
-            let command=if media=="txt" {json!({"type":"relink_field","start":occurrence["start"],
-                "end":occurrence["end"],"name":other_name})}
-                else{json!({"type":"relink_field","entry":occurrence["entry"],
-                    "occurrence":occurrence["occurrence"],"pairing_id":occurrence["pairing_id"],
-                    "old_name":name,"name":other_name})};
-            actions.push(json!({"label":"필드 연결 변경","kind":"command","command":command}));
-        }
-        json!({"kind":"near_duplicate","severity":"warning","category":"authoring",
-            "message":"공백만 다른 필드 이름이 있습니다.","target":name,"location":location,"actions":actions})
-    }).collect()
+    let by_name = |name: &str| {
+        *fields
+            .iter()
+            .find(|field| field["name"] == name)
+            .expect("known name")
+    };
+    crate::lint::near_duplicate_pairs(&names)
+        .into_iter()
+        .map(|(first, second)| near_duplicate_problem(media, by_name(&first), by_name(&second)))
+        .collect()
 }
 pub fn whole_field_unset(command: &Map<String, Value>) -> bool {
     command.get("type") == Some(&Value::String("unset_field".into()))
