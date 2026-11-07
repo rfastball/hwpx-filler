@@ -221,83 +221,104 @@ struct ParagraphModel {
     run_base: HashMap<NodeId, usize>,
 }
 
-fn paragraph_model(view: &XmlView, paragraph: NodeId) -> ParagraphModel {
-    let mut model = ParagraphModel {
-        text: String::new(),
-        pieces: Vec::new(),
-        events: Vec::new(),
-        run_base: HashMap::new(),
-    };
-    let mut depth = 0i32;
-    let mut length = 0usize;
-    for (child_index, child) in node_children(view, paragraph).enumerate() {
-        let Some(run) = child else { continue };
-        if local(view, run) != "run" {
-            continue;
-        }
+/// Walks a paragraph's runs, tracking field nesting, to build its [`ParagraphModel`].
+struct ModelBuilder<'v> {
+    view: &'v XmlView,
+    model: ParagraphModel,
+    depth: i32,
+    length: usize,
+}
+
+impl ModelBuilder<'_> {
+    fn run(&mut self, run: NodeId, child_index: usize) {
+        let view = self.view;
         let simple = simple_text(view, run).is_some();
-        model.run_base.entry(run).or_insert(length);
+        self.model.run_base.entry(run).or_insert(self.length);
         for item in node_children(view, run) {
             let Some(node) = item else {
-                if depth == 0 {
-                    model.events.push((length, "struct"));
+                if self.depth == 0 {
+                    self.model.events.push((self.length, "struct"));
                 }
                 continue;
             };
             match local(view, node) {
-                "ctrl" => {
-                    let mut field_boundary = false;
-                    for ctrl_child in element_children(view, node) {
-                        match local(view, ctrl_child) {
-                            "fieldBegin" => {
-                                depth += 1;
-                                field_boundary = true;
-                            }
-                            "fieldEnd" => {
-                                depth = (depth - 1).max(0);
-                                field_boundary = true;
-                            }
-                            _ => {}
-                        }
-                    }
-                    if depth == 0 && !field_boundary {
-                        model.events.push((length, "ctrl"));
-                    }
-                }
-                "t" if depth == 0 => {
-                    let start = length;
-                    let (value, events) = t_text_events(view, node);
-                    length += value.chars().count();
-                    model.text.push_str(&value);
-                    let end = length;
-                    model.pieces.push(Piece {
-                        start,
-                        end,
-                        run,
-                        simple,
-                        child_index,
-                    });
-                    model
-                        .events
-                        .extend(events.into_iter().map(|(at, kind)| (start + at, kind)));
-                }
-                "tab" | "lineBreak" if depth == 0 => {
-                    let at = length;
-                    let kind = if local(view, node) == "tab" {
-                        "tab"
-                    } else {
-                        "lineBreak"
-                    };
-                    model.events.push((at, kind));
-                    model.text.push(if kind == "tab" { '\t' } else { '\n' });
-                    length += 1;
-                }
-                _ if depth == 0 => model.events.push((length, "struct")),
+                "ctrl" => self.control(node),
+                "t" if self.depth == 0 => self.text(node, run, simple, child_index),
+                "tab" | "lineBreak" if self.depth == 0 => self.line_break(node),
+                _ if self.depth == 0 => self.model.events.push((self.length, "struct")),
                 _ => {}
             }
         }
     }
-    model
+    /// Field boundaries change the nesting depth; other top-level controls are events.
+    fn control(&mut self, node: NodeId) {
+        let mut field_boundary = false;
+        for ctrl_child in element_children(self.view, node) {
+            match local(self.view, ctrl_child) {
+                "fieldBegin" => {
+                    self.depth += 1;
+                    field_boundary = true;
+                }
+                "fieldEnd" => {
+                    self.depth = (self.depth - 1).max(0);
+                    field_boundary = true;
+                }
+                _ => {}
+            }
+        }
+        if self.depth == 0 && !field_boundary {
+            self.model.events.push((self.length, "ctrl"));
+        }
+    }
+    fn text(&mut self, node: NodeId, run: NodeId, simple: bool, child_index: usize) {
+        let start = self.length;
+        let (value, events) = t_text_events(self.view, node);
+        self.length += value.chars().count();
+        self.model.text.push_str(&value);
+        let end = self.length;
+        self.model.pieces.push(Piece {
+            start,
+            end,
+            run,
+            simple,
+            child_index,
+        });
+        self.model
+            .events
+            .extend(events.into_iter().map(|(at, kind)| (start + at, kind)));
+    }
+    fn line_break(&mut self, node: NodeId) {
+        let at = self.length;
+        let kind = if local(self.view, node) == "tab" {
+            "tab"
+        } else {
+            "lineBreak"
+        };
+        self.model.events.push((at, kind));
+        self.model.text.push(if kind == "tab" { '\t' } else { '\n' });
+        self.length += 1;
+    }
+}
+
+fn paragraph_model(view: &XmlView, paragraph: NodeId) -> ParagraphModel {
+    let mut builder = ModelBuilder {
+        view,
+        model: ParagraphModel {
+            text: String::new(),
+            pieces: Vec::new(),
+            events: Vec::new(),
+            run_base: HashMap::new(),
+        },
+        depth: 0,
+        length: 0,
+    };
+    for (child_index, child) in node_children(view, paragraph).enumerate() {
+        let Some(run) = child else { continue };
+        if local(view, run) == "run" {
+            builder.run(run, child_index);
+        }
+    }
+    builder.model
 }
 
 pub(crate) fn paragraph_model_text(view: &XmlView, paragraph: NodeId) -> String {
@@ -334,6 +355,119 @@ fn site(
     }
 }
 
+/// What a token match spans in the paragraph model.
+struct Coverage<'v> {
+    inside: Vec<&'static str>,
+    runs: Vec<NodeId>,
+    char_prs: HashSet<Option<&'v str>>,
+    contiguous: bool,
+    all_simple: bool,
+}
+
+impl Coverage<'_> {
+    /// One run format, adjacent runs, no inner events, and no field in the runs.
+    fn clean(&self, view: &XmlView) -> bool {
+        let same_format = self.runs.len() == 1
+            || (self.char_prs.len() == 1 && !self.char_prs.contains(&None));
+        self.inside.is_empty()
+            && same_format
+            && self.contiguous
+            && !self.runs.iter().any(|run| run_has_field(view, *run))
+    }
+    /// Why a composite token cannot be compiled automatically, most specific first.
+    fn refusal(&self) -> &'static str {
+        if self
+            .inside
+            .iter()
+            .any(|kind| matches!(*kind, "tab" | "lineBreak"))
+        {
+            "탭/줄바꿈이 토큰 안에 삽입됨"
+        } else if self.inside.contains(&"ctrl") {
+            "제어 요소가 토큰 사이에 끼임"
+        } else if self.inside.contains(&"struct") {
+            "비텍스트 구조 요소(표·그림 등)가 토큰 사이에 끼임"
+        } else if self.char_prs.len() > 1 {
+            "혼합 서식(charPrIDRef 상이)"
+        } else if self.runs.len() > 1 && self.char_prs.contains(&None) {
+            "토큰이 파편에 걸침(charPrIDRef 없음)"
+        } else if !self.contiguous {
+            "런 경계가 비연속"
+        } else {
+            "복합 런(수동 처리)"
+        }
+    }
+}
+
+fn coverage<'v>(
+    view: &'v XmlView,
+    model: &ParagraphModel,
+    start: usize,
+    end: usize,
+) -> Option<Coverage<'v>> {
+    let covered: Vec<_> = model
+        .pieces
+        .iter()
+        .filter(|piece| piece.start < end && piece.end > start)
+        .collect();
+    if covered.is_empty() {
+        return None;
+    }
+    let inside = model
+        .events
+        .iter()
+        .filter(|(at, _)| start <= *at && *at < end)
+        .map(|(_, kind)| *kind)
+        .collect();
+    let mut runs = Vec::new();
+    let mut indexes = Vec::new();
+    for piece in &covered {
+        if !runs.contains(&piece.run) {
+            runs.push(piece.run);
+        }
+        if !indexes.contains(&piece.child_index) {
+            indexes.push(piece.child_index);
+        }
+    }
+    let char_prs = runs
+        .iter()
+        .map(|run| view.attr(*run, "charPrIDRef"))
+        .collect();
+    Some(Coverage {
+        inside,
+        runs,
+        char_prs,
+        contiguous: indexes.windows(2).all(|pair| pair[1] == pair[0] + 1),
+        all_simple: covered.iter().all(|piece| piece.simple),
+    })
+}
+
+/// Openers with no complete token, reported as fragments.
+fn fragment_sites(model: &ParagraphModel, context: &str, location: (&str, &str)) -> Vec<TokenSite> {
+    let complete: HashSet<_> = token_matches(&model.text, true)
+        .into_iter()
+        .map(|matched| matched.byte_start)
+        .collect();
+    model
+        .text
+        .match_indices("{{")
+        .filter(|(opener, _)| !complete.contains(opener))
+        .map(|(opener, _)| {
+            site(
+                trim_python(&model.text[opener..])
+                    .chars()
+                    .take(40)
+                    .collect(),
+                context,
+                false,
+                "토큰이 파편에 걸침",
+                location,
+                -1,
+                -1,
+            )
+        })
+        .collect()
+}
+
 fn classify_composite(
     view: &XmlView,
     model: &ParagraphModel,
@@ -344,64 +478,14 @@ fn classify_composite(
     skipped: &mut Vec<TokenSite>,
 ) {
     for matched in token_matches(&model.text, false) {
-        let covered: Vec<_> = model
-            .pieces
-            .iter()
-            .filter(|piece| piece.start < matched.end && piece.end > matched.start)
-            .collect();
-        if covered.is_empty() {
+        let Some(coverage) = coverage(view, model, matched.start, matched.end) else {
             continue;
-        }
-        let inside: Vec<_> = model
-            .events
-            .iter()
-            .filter(|(at, _)| matched.start <= *at && *at < matched.end)
-            .map(|(_, kind)| *kind)
-            .collect();
-        let mut runs = Vec::new();
-        let mut indexes = Vec::new();
-        for piece in &covered {
-            if !runs.contains(&piece.run) {
-                runs.push(piece.run);
-            }
-            if !indexes.contains(&piece.child_index) {
-                indexes.push(piece.child_index);
-            }
-        }
-        let char_prs: HashSet<_> = runs
-            .iter()
-            .map(|run| view.attr(*run, "charPrIDRef"))
-            .collect();
-        let contiguous = indexes.windows(2).all(|pair| pair[1] == pair[0] + 1);
-        let same_format = runs.len() == 1 || (char_prs.len() == 1 && !char_prs.contains(&None));
-        let all_simple = covered.iter().all(|piece| piece.simple);
-        let clean = inside.is_empty()
-            && same_format
-            && contiguous
-            && !runs.iter().any(|run| run_has_field(view, *run));
-        if clean && all_simple {
-            continue;
-        }
-        let reason = if clean {
-            ""
-        } else if inside
-            .iter()
-            .any(|kind| matches!(*kind, "tab" | "lineBreak"))
-        {
-            "탭/줄바꿈이 토큰 안에 삽입됨"
-        } else if inside.contains(&"ctrl") {
-            "제어 요소가 토큰 사이에 끼임"
-        } else if inside.contains(&"struct") {
-            "비텍스트 구조 요소(표·그림 등)가 토큰 사이에 끼임"
-        } else if char_prs.len() > 1 {
-            "혼합 서식(charPrIDRef 상이)"
-        } else if runs.len() > 1 && char_prs.contains(&None) {
-            "토큰이 파편에 걸침(charPrIDRef 없음)"
-        } else if !contiguous {
-            "런 경계가 비연속"
-        } else {
-            "복합 런(수동 처리)"
         };
+        let clean = coverage.clean(view);
+        if clean && coverage.all_simple {
+            continue;
+        }
+        let reason = if clean { "" } else { coverage.refusal() };
         let mut found = site(
             matched.name,
             context,
@@ -418,27 +502,52 @@ fn classify_composite(
             skipped.push(found);
         }
     }
-    let complete: HashSet<_> = token_matches(&model.text, true)
-        .into_iter()
-        .map(|matched| matched.byte_start)
-        .collect();
-    for (opener, _) in model.text.match_indices("{{") {
-        if complete.contains(&opener) {
-            continue;
+    skipped.extend(fragment_sites(model, context, (entry, path)));
+}
+
+/// The text of a simple run joined with following simple runs of the same format,
+/// and the index just past the group.
+fn simple_run_group(
+    view: &XmlView,
+    children: &[Option<NodeId>],
+    index: usize,
+    text: String,
+) -> (String, usize) {
+    let mut group_text = text;
+    let mut next = index + 1;
+    let Some(char_pr) = children[index].and_then(|run| view.attr(run, "charPrIDRef")) else {
+        return (group_text, next);
+    };
+    while next < children.len() {
+        let Some(candidate) = children[next] else {
+            break;
+        };
+        if local(view, candidate) != "run" {
+            break;
         }
-        skipped.push(site(
-            trim_python(&model.text[opener..])
-                .chars()
-                .take(40)
-                .collect(),
-            context,
-            false,
-            "토큰이 파편에 걸침",
-            (entry, path),
-            -1,
-            -1,
-        ));
+        let Some((_, candidate_text)) = simple_text(view, candidate) else {
+            break;
+        };
+        if candidate_text.is_empty() || view.attr(candidate, "charPrIDRef") != Some(char_pr) {
+            break;
+        }
+        group_text.push_str(&candidate_text);
+        next += 1;
     }
+    (group_text, next)
+}
+
+/// How a run's controls change the field nesting depth.
+fn field_depth_change(view: &XmlView, run: NodeId) -> i32 {
+    element_children(view, run)
+        .filter(|child| local(view, *child) == "ctrl")
+        .flat_map(|child| element_children(view, child))
+        .map(|control| match local(view, control) {
+            "fieldBegin" => 1,
+            "fieldEnd" => -1,
+            _ => 0,
+        })
+        .sum()
 }
 
 fn scan_paragraph(
@@ -455,40 +564,15 @@ fn scan_paragraph(
     let mut depth = 0i32;
     let mut index = 0;
     while index < children.len() {
-        let Some(run) = children[index] else {
+        let Some(run) = children[index].filter(|run| local(view, *run) == "run") else {
             index += 1;
             continue;
         };
-        if local(view, run) != "run" {
-            index += 1;
-            continue;
-        }
         if let Some((_, text)) = simple_text(view, run)
             && depth == 0
             && !text.is_empty()
         {
-            let mut group_text = text;
-            let mut next = index + 1;
-            if let Some(char_pr) = view.attr(run, "charPrIDRef") {
-                while next < children.len() {
-                    let Some(candidate) = children[next] else {
-                        break;
-                    };
-                    if local(view, candidate) != "run" {
-                        break;
-                    }
-                    let Some((_, candidate_text)) = simple_text(view, candidate) else {
-                        break;
-                    };
-                    if candidate_text.is_empty()
-                        || view.attr(candidate, "charPrIDRef") != Some(char_pr)
-                    {
-                        break;
-                    }
-                    group_text.push_str(&candidate_text);
-                    next += 1;
-                }
-            }
+            let (group_text, next) = simple_run_group(view, &children, index, text);
             let base = model.run_base[&run];
             for matched in token_matches(&group_text, false) {
                 let mut found = site(
@@ -506,17 +590,7 @@ fn scan_paragraph(
             index = next;
             continue;
         }
-        for child in element_children(view, run) {
-            if local(view, child) == "ctrl" {
-                for control in element_children(view, child) {
-                    match local(view, control) {
-                        "fieldBegin" => depth += 1,
-                        "fieldEnd" => depth -= 1,
-                        _ => {}
-                    }
-                }
-            }
-        }
+        depth += field_depth_change(view, run);
         index += 1;
     }
     classify_composite(view, &model, &context, entry, path, compiled, skipped);
