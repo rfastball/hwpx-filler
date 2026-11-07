@@ -2588,7 +2588,7 @@ text = "현재 환경에서는 문서를 만들 수 없습니다"
 file = "crates/hwpx-filler/src/editor_mapping.rs"
 text = "매핑 행이 없습니다."
 [[sentence]]
-file = "crates/hwpx-filler/src/editor_mapping.rs"
+file = "crates/hwpx-filler/src/editor_mapping/suggestion.rs"
 text = "확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요."
 [[sentence]]
 file = "crates/hwpx-filler/src/editor_save_policy.rs"
