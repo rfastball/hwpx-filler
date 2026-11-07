@@ -92,6 +92,8 @@ export type SlotMenusDeps = {
 };
 
 export function createSlotMenus(deps: SlotMenusDeps) {
+  // 발신은 바로 부른다 — 브리지 계약 검사가 리터럴 화면·동작의 payload 를 읽는다.
+  const { dispatch } = deps;
   const libContextMenu = createContextMenu();
 
   function closeLibMenu(): void {
@@ -172,7 +174,7 @@ export function createSlotMenus(deps: SlotMenusDeps) {
    *  열림·닫힘을 뷰 상태로 드는 이유는 **동사 결과의 채널**이 그 사실로 갈리기 때문이다
    *  (리뷰 3): 시트가 화면을 덮는 동안 `#save-msg` 에 쓴 문장은 스크림 뒤에 그려진다. */
   async function openDetail(path: string, trigger: HTMLElement): Promise<void> {
-    await deps.dispatch("tpl", "review", { path });
+    await dispatch("tpl", "review", { path });
     deps.patchView({ detailOpen: true, detailMessage: null });
     deps.modal.open("tplDetailModal", {
       returnFocus: trigger,
@@ -196,12 +198,12 @@ export function createSlotMenus(deps: SlotMenusDeps) {
    *  문안·수치·차단 판정은 Python 이 낸다. 여기서 재조립하지 않는다: 차단(`blocked`)은
    *  결과 줄로 이미 재진술됐으므로 확인을 띄우지 않고 조용히 끝난다. */
   async function compileTemplate(path: string): Promise<void> {
-    const result = await deps.dispatch("tpl", "compile", { path });
+    const result = await dispatch("tpl", "compile", { path });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n지금 변환할까요?`,
       confirmLabel: "제자리 변환", cancelLabel: "취소", danger: true,
     })) {
-      await deps.dispatch("tpl", "compile", { path, confirm: true });
+      await dispatch("tpl", "compile", { path, confirm: true });
     }
   }
 
@@ -227,42 +229,42 @@ export function createSlotMenus(deps: SlotMenusDeps) {
       returnFocus: trigger,
     });
     if (value === null) return;
-    await deps.dispatch("tpl", "slot_rename", { path: detailPath(), slot_id: slotId, label: value });
+    await dispatch("tpl", "slot_rename", { path: detailPath(), slot_id: slotId, label: value });
   }
 
   /** 항목을 표기로 되돌리기 — 확인 본문(전이 결과 재진술)은 Python 이 싣는다. */
   async function decompileSlot(slotId: string, trigger: HTMLElement): Promise<void> {
     const path = detailPath();
-    const result = await deps.dispatch("tpl", "slot_decompile", { path, slot_id: slotId });
+    const result = await dispatch("tpl", "slot_decompile", { path, slot_id: slotId });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n되돌릴까요?`,
       confirmLabel: "표기로 되돌리기", cancelLabel: "취소", returnFocus: trigger, danger: true,
     })) {
-      await deps.dispatch("tpl", "slot_decompile", { path, slot_id: slotId, confirm: true });
+      await dispatch("tpl", "slot_decompile", { path, slot_id: slotId, confirm: true });
     }
   }
 
   /** 이 템플릿의 항목을 전부 표기로 되돌리기 — 대상이 항목이 아니라 파일이라 `slot_id` 가 없다. */
   async function decompileAllSlots(trigger: HTMLElement): Promise<void> {
     const path = detailPath();
-    const result = await deps.dispatch("tpl", "slot_decompile_all", { path });
+    const result = await dispatch("tpl", "slot_decompile_all", { path });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n되돌릴까요?`,
       confirmLabel: "전부 되돌리기", cancelLabel: "취소", returnFocus: trigger, danger: true,
     })) {
-      await deps.dispatch("tpl", "slot_decompile_all", { path, confirm: true });
+      await dispatch("tpl", "slot_decompile_all", { path, confirm: true });
     }
   }
 
   /** 항목 삭제 — 내용째 사라지는 파괴 확정. */
   async function removeSlot(slotId: string, trigger: HTMLElement): Promise<void> {
     const path = detailPath();
-    const result = await deps.dispatch("tpl", "slot_remove", { path, slot_id: slotId });
+    const result = await dispatch("tpl", "slot_remove", { path, slot_id: slotId });
     if (result.needs_confirm && await deps.modal.confirm({
       body: `${result.confirm_text}\n\n지울까요?`,
       confirmLabel: "삭제", cancelLabel: "취소", returnFocus: trigger, danger: true,
     })) {
-      await deps.dispatch("tpl", "slot_remove", { path, slot_id: slotId, confirm: true });
+      await dispatch("tpl", "slot_remove", { path, slot_id: slotId, confirm: true });
     }
   }
 

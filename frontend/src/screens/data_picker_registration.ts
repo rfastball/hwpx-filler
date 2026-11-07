@@ -59,6 +59,8 @@ export type RegistrationFormDeps = {
 };
 
 export function createRegistrationForm(deps: RegistrationFormDeps) {
+  // 발신은 바로 부른다 — 브리지 계약 검사가 리터럴 화면·동작의 payload 를 읽는다.
+  const { dispatch } = deps;
   let reg: RegState | null = null;
   let regRevision = 0;
   let inspectionRevision = 0;
@@ -113,7 +115,7 @@ export function createRegistrationForm(deps: RegistrationFormDeps) {
     const current = () => reg !== null && regRevision === revision && inspectionRevision === request;
     patchReg({ inspecting: true, error: "" });
     try {
-      const result = await deps.dispatch("pool", "inspect_sheets", pclm ? { path, kind: "pclm" } : { path });
+      const result = await dispatch("pool", "inspect_sheets", pclm ? { path, kind: "pclm" } : { path });
       if (current()) settleInspection(result, path);
     } catch (error) {
       if (current()) patchReg({ error: String((error as Obj)?.message || error) });
@@ -135,7 +137,7 @@ export function createRegistrationForm(deps: RegistrationFormDeps) {
       body: result.confirm_text, confirmLabel: okLabel, cancelLabel: "취소", danger: true,
     });
     if (!accepted || reg === null || regRevision !== revision) return null;
-    return deps.dispatch("pool", action, { ...payload, confirm: true, basis: result.basis });
+    return dispatch("pool", action, { ...payload, confirm: true, basis: result.basis });
   }
 
   async function refreshRegisteredTabs(screen: RegState["refreshScreen"]): Promise<void> {
@@ -172,7 +174,7 @@ export function createRegistrationForm(deps: RegistrationFormDeps) {
     const revision = regRevision;
     patchReg({ submitting: true });
     try {
-      const initial = await deps.dispatch("pool", action, payload);
+      const initial = await dispatch("pool", action, payload);
       await settleRegistrationSubmit(action, payload, initial, revision, pclm);
     } catch (error) {
       if (regRevision === revision) patchReg({ error: String((error as Obj)?.message || error) });
