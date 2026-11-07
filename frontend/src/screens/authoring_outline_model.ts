@@ -12,6 +12,9 @@ export const SEVERITY_LABEL: Obj = { error: "오류", warning: "경고" };
 export const CATEGORY_LABEL: Obj = { structure: "구조", compatibility: "호환성", authoring: "필드" };
 /** 식별자 변경은 고급 정보지만 기존 작업 연결에 닿는 영향은 숨기지 않는다(U06·F19). */
 export const IDENTIFIER_IMPACT = "식별자 변경은 기존 작업 연결에 영향을 줄 수 있습니다.";
+/** 필드 증감 한 줄 — 미리보기·작업 적용 영향이 같은 모양으로 보인다(비면 「없음」). */
+export const fieldDeltaText = (added: string[] | undefined, removed: string[] | undefined): string =>
+  `추가 필드: ${(added || []).join(", ") || "없음"} · 없어진 필드: ${(removed || []).join(", ") || "없음"}`;
 
 /** Python 이 판정한 명령 한 건의 가용성(F40·P07). 판정이 아직 없으면(선택 전) 세 번째 상태 — 표면은 자기 추측으로
  *  켜 두지 않고, 사유 문장 없이 비활성(pending)으로 둔다(UX-04). */

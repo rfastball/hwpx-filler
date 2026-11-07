@@ -39,6 +39,127 @@ export function keepFocusOutside(host: { contains(node: unknown): boolean } | nu
   else active?.blur?.();
 }
 
+/** 시험 결과 뷰어 마운트(useEffect 본체 분리). 해제는 초점·닻 이동 전에 `install` 로 건다 — 그 사이에 효과가 걷히면 뷰어를 닫는다. */
+async function mountTrialResult({ controller, output, result, composing, shell, isDisposed, install }:
+  { controller: Obj; output: { current: HTMLDivElement | null }; result: Obj; composing: { current: boolean }; shell: ShellInput; isDisposed(): boolean;
+    install(release: () => void): void }): Promise<void> {
+  const before = document.activeElement;
+  // 75% 고정 배율(IDE-04): 결과 칸 높이에서 채운 값 줄이 쪽 머리와 함께 들어온다. 맞춤 모드는 Studio 설정에 남아
+  // 다음 마운트로 새므로 쓰지 않는다.
+  const editor = await rhwpMount.mount({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", title: "시험 결과", readOnly: true, zoom: TRIAL_VIEW_ZOOM,
+    sectionEntries: result.section_entries, trackSelection: "visible",
+    onShortcut: (shortcut) => {
+      if (shortcut !== "F6" && shortcut !== "ShiftF6") return;
+      const forwarded = forwardedShellKey(shortcut, output.current?.querySelector("iframe") || output.current);
+      if (forwarded) shell.current.key?.(forwarded);
+    },
+    onChanged: () => {}, onSelectionChanged: (target) => controller.update({ resultSelection: target }),
+    onError: (error) => controller.fail(error, "trial-view") });
+  if (isDisposed()) { editor.dispose(); return; }
+  install(() => editor.dispose());
+  keepFocusOutside(output.current, before);
+  const anchor = hwpxTrialAnchor(result, trialAnchorName(controller.viewModel.getSnapshot()));
+  if (anchor && !composing.current) await editor.scrollTo(anchor);
+}
+
+/** 시험 입력 필드 한 줄. 손대지 않은 필드는 입력칸이 aria-invalid 를 받고 결과 시험 탭 배지로 센다 — 결과는 빈 값 표식으로 렌더된다. */
+function trialFieldRow({ controller, field, view, missingFields, input, composing }:
+  Props & { field: Obj; view: Obj; missingFields: string[]; input: (name: string, values: Obj) => void; composing: { current: boolean } }): ReactNode {
+  return h("label", { key: field.name, className: "authoring-field" }, field.name,
+    h("input", { className: "field", "aria-invalid": missingFields.includes(field.name) || undefined, value: view.values[field.name] || "",
+      onCompositionStart: () => { composing.current = true; },
+      onCompositionEnd: (event: any) => { composing.current = false; void controller.guarded(() => input(field.name, { ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value })); },
+      onChange: (event: any) => {
+        const values = { ...controller.viewModel.getSnapshot().values, [field.name]: event.target.value };
+        if (event.nativeEvent.isComposing) controller.update({ values });
+        else void controller.guarded(() => input(field.name, values));
+      } }));
+}
+
+/** 시험 선택 구성 한 줄. */
+function trialSlotRow({ controller, slot, view, missingSlots }: Props & { slot: Obj; view: Obj; missingSlots: string[] }): ReactNode {
+  return h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
+    h("select", { className: "field", "data-guide": "trial-slot", "data-slot": slot.id, "aria-invalid": missingSlots.includes(slot.id) || undefined, value: view.selectedOptions[slot.id] || "",
+      onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
+      h("option", { value: "" }, "고르세요"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id))));
+}
+
+/** 보관한 시험 케이스 한 줄. */
+function trialCaseItem({ controller, test }: Props & { test: Obj }): ReactNode {
+  return h("div", { key: test.name, className: "authoring-case" },
+    rowButton({ text: test.name, context: test.needs_review ? "다시 확인 필요" : null }, () => { void controller.guarded(() => controller.loadCase(test)); },
+      { "aria-label": `${test.name}${test.needs_review ? " · 다시 확인 필요" : ""}` }),
+    iconButton("trash", `${test.name} 삭제`, () => { void controller.guarded(() => controller.removeCase(test.name)); }));
+}
+
+/** 왼쪽 열: 입력 → 선택 구성 → 자동 갱신 → [시험 시작] → 보관한 시험 케이스. */
+function trialInputPanel({ controller, item, view, missingFields, missingSlots, input, composing, cases }:
+  Props & { item: Obj; view: Obj; missingFields: string[]; missingSlots: string[]; input: (name: string, values: Obj) => void; composing: { current: boolean }; cases: Obj[] }): ReactNode {
+  return h("div", { className: "authoring-trial-input" },
+    item.cases_error && h("p", { role: "alert" }, item.cases_error),
+    h("div", { className: "authoring-trial-group" },
+      // 「필드 이름 사용」(IDE-01): 손대지 않은 필드만 그 이름으로 채우는 한 번의 입력 전이 — 채울 필드(trial_missing)가
+      // 없으면 비활성이다. 어느 필드를 채울지는 Python 이 정한다.
+      !!item.analysis?.fields?.length && h("div", { className: "authoring-actions start" },
+        button("필드 이름 사용", () => { void controller.guarded(controller.fillTrialNames); }, { disabled: !missingFields.length, "data-guide": "trial-fill-names" })),
+      ...(item.analysis?.fields || []).map((field: Obj) => trialFieldRow({ controller, field, view, missingFields, input, composing }))),
+    !!item.analysis?.slots?.length && h("div", { className: "authoring-trial-group" },
+      ...(item.analysis?.slots || []).map((slot: Obj) => trialSlotRow({ controller, slot, view, missingSlots }))),
+    h("label", { className: "authoring-check" }, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
+    h("div", { className: "authoring-actions start" },
+      primary("시험 시작", () => { void controller.guarded(() => controller.runTrial(), "trial"); }, { disabled: view.trialBusy })),
+    h("details", { className: "authoring-fold", open: cases.length > 0 },
+      h("summary", { className: "authoring-section-label" }, "보관한 시험 케이스"),
+      h("div", { className: "authoring-actions start" },
+        button("시험 케이스 저장", () => { void controller.guarded(() => controller.saveCase()); })),
+      h("div", { className: "authoring-actions start quiet-row" },
+        quiet("시험 자료 가져오기", () => { void controller.guarded(() => controller.transferCases("import")); }),
+        quiet("시험 자료 내보내기", () => { void controller.guarded(() => controller.transferCases("export")); })),
+      rowList("보관한 시험 케이스", cases.map((test: Obj) => trialCaseItem({ controller, test })))));
+}
+
+/** 결과 칸 위 상태 줄은 보이는 글로만 남는다 — 화면 읽기는 셸의 단일 live region 이 결과가 바뀔 때만 한다(UX-04). */
+function trialStateRow({ controller, item, view }: Props & { item: Obj; view: Obj }): ReactNode {
+  return h("div", { className: "authoring-trial-state" },
+    item.trial_state_label && h("span", { className: "authoring-badge", "data-trial": item.trial_state }, item.trial_state_label),
+    h("p", null, view.trialBusy ? "갱신 중 · 이전 결과" : item.trial_state_message),
+    quiet("시험 결과 내보내기", () => { void controller.guarded(controller.exportResult); }, { disabled: item.trial_state !== "current" }));
+}
+
+/** 선택별 시험 상태: 구조 트리와 같은 점(채움 모양)과 같은 이름이다. 항목이 있을 때만 선다. */
+function trialCoverageSection(coverage: Obj[]): ReactNode {
+  return !!coverage.length && h("details", { className: "authoring-fold" },
+    h("summary", { className: "authoring-section-label" }, "선택별 시험 상태"),
+    h("ul", { className: "authoring-coverage", "aria-label": "선택별 시험 상태" }, ...coverage.map((entry: Obj) =>
+      h("li", { key: `${entry.slot_id}/${entry.option_id}` }, h("span", { className: "authoring-coverage-dot", "data-state": entry.state }, coverageDot(entry.state)),
+        `${entry.slot_id} / ${entry.option_id} · ${COVERAGE_LABEL[entry.state]}`))));
+}
+
+/** 출력·제외 이유 접힘. */
+function trialTraceSection({ item, view, result, traceRow, select }:
+  { item: Obj; view: Obj; result?: Obj; traceRow: (entry: Obj) => ReactNode; select: (entry: Obj) => () => void }): ReactNode {
+  return h("details", { className: "authoring-fold" },
+    h("summary", { className: "authoring-section-label" }, "출력·제외 이유"),
+    item.media === "hwpx" && view.resultSelection?.entry && h("div", null, h("h4", { className: "authoring-section-label" }, "고른 문단의 필드"),
+      rowList("고른 문단의 필드", (result?.occurrences || []).filter((entry: Obj) => entry.output?.entry === view.resultSelection.entry && entry.output?.paragraph === view.resultSelection.paragraph).map(traceRow))),
+    rowList("출력·제외 이유", [
+      ...(result?.occurrences || result?.trace || []).map(traceRow),
+      ...(result?.excluded || []).map((entry: Obj) => rowButton({ chip: kindTag("option"), text: entry.reason || entry.label || entry.option_id }, select(entry)))]));
+}
+
+/** 오른쪽 열: 상태 칩 + 문장 → 결과 → 통과 범위 문장 → 접힌 「선택별 시험 상태」·「출력·제외 이유」. */
+function trialOutputPanel({ controller, item, view, result, coverage, traceRow, select, output }:
+  Props & { item: Obj; view: Obj; result?: Obj; coverage: Obj[]; traceRow: (entry: Obj) => ReactNode; select: (entry: Obj) => () => void; output: { current: HTMLDivElement | null } }): ReactNode {
+  return h("div", { className: "authoring-trial-output" },
+    trialStateRow({ controller, item, view }),
+    item.media === "txt"
+      ? h(TxtTrialOutput, { controller, item, result, selected: view.selected, anchor: trialAnchorName(view) })
+      : h("div", { className: "authoring-trial-result", ref: output }),
+    h("p", { className: "authoring-reason" }, "통과 표시는 현재 값과 선택 구성에만 해당합니다."),
+    trialCoverageSection(coverage),
+    trialTraceSection({ item, view, result, traceRow, select }));
+}
+
 export function Trial({ controller, item, view, shell }: Props & { item: Obj; view: Obj; shell: ShellInput }) {
   const result = item.trial_result;
   const output = useRef<HTMLDivElement>(null);
@@ -51,23 +172,7 @@ export function Trial({ controller, item, view, shell }: Props & { item: Obj; vi
     // 이동은 초점 없는 스크롤(H4)이다 — focus/focusRange 는 결과 iframe 으로 DOM 초점을 가져가므로 쓰지 않는다. 즉시 이동이라
     // 줄인 움직임 설정에도 그대로다.
     if (item.media === "hwpx" && result?.content && output.current) void controller.guarded(async () => {
-      const before = document.activeElement;
-      // 75% 고정 배율(IDE-04): 결과 칸 높이에서 채운 값 줄이 쪽 머리와 함께 들어온다. 맞춤 모드는 Studio 설정에 남아
-      // 다음 마운트로 새므로 쓰지 않는다.
-      const editor = await rhwpMount.mount({ host: output.current!, content: result.content, fileName: "시험 결과.hwpx", title: "시험 결과", readOnly: true, zoom: TRIAL_VIEW_ZOOM,
-        sectionEntries: result.section_entries, trackSelection: "visible",
-        onShortcut: (shortcut) => {
-          if (shortcut !== "F6" && shortcut !== "ShiftF6") return;
-          const forwarded = forwardedShellKey(shortcut, output.current?.querySelector("iframe") || output.current);
-          if (forwarded) shell.current.key?.(forwarded);
-        },
-        onChanged: () => {}, onSelectionChanged: (target) => controller.update({ resultSelection: target }),
-        onError: (error) => controller.fail(error, "trial-view") });
-      if (disposed) { editor.dispose(); return; }
-      release = () => editor.dispose();
-      keepFocusOutside(output.current, before);
-      const anchor = hwpxTrialAnchor(result, trialAnchorName(controller.viewModel.getSnapshot()));
-      if (anchor && !composing.current) await editor.scrollTo(anchor);
+      await mountTrialResult({ controller, output, result, composing, shell, isDisposed: () => disposed, install: (next) => { release = next; } });
     }, "trial-view");
     return () => { disposed = true; release?.(); };
   }, trialViewerKey(item));
@@ -86,65 +191,8 @@ export function Trial({ controller, item, view, shell }: Props & { item: Obj; vi
   // 높이를 채운다) → 통과 범위 문장 → 접힌 「선택별 시험 상태」·「출력·제외 이유」. 접힘은 영속하지 않는다.
   return h("section", { className: "authoring-trial", "aria-label": "결과 시험" },
     h("header", null, h("h2", null, "결과 시험"), h("p", null, "시험 자료는 템플릿 파일에 포함되지 않습니다.")),
-    h("div", { className: "authoring-trial-input" },
-      item.cases_error && h("p", { role: "alert" }, item.cases_error),
-      h("div", { className: "authoring-trial-group" },
-        // 「필드 이름 사용」(IDE-01): 손대지 않은 필드만 그 이름으로 채우는 한 번의 입력 전이 — 채울 필드(trial_missing)가
-        // 없으면 비활성이다. 어느 필드를 채울지는 Python 이 정한다.
-        !!item.analysis?.fields?.length && h("div", { className: "authoring-actions start" },
-          button("필드 이름 사용", () => { void controller.guarded(controller.fillTrialNames); }, { disabled: !missingFields.length, "data-guide": "trial-fill-names" })),
-        ...(item.analysis?.fields || []).map((field: Obj) => h("label", { key: field.name, className: "authoring-field" }, field.name,
-          // 손대지 않은 필드는 입력칸이 aria-invalid 를 받고 결과 시험 탭 배지로 센다 — 결과는 빈 값 표식으로 렌더된다.
-          h("input", { className: "field", "aria-invalid": missingFields.includes(field.name) || undefined, value: view.values[field.name] || "",
-            onCompositionStart: () => { composing.current = true; },
-            onCompositionEnd: (event: any) => { composing.current = false; void controller.guarded(() => input(field.name, { ...controller.viewModel.getSnapshot().values, [field.name]: event.currentTarget.value })); },
-            onChange: (event: any) => {
-              const values = { ...controller.viewModel.getSnapshot().values, [field.name]: event.target.value };
-              if (event.nativeEvent.isComposing) controller.update({ values });
-              else void controller.guarded(() => input(field.name, values));
-            } })))),
-      !!item.analysis?.slots?.length && h("div", { className: "authoring-trial-group" },
-        ...(item.analysis?.slots || []).map((slot: Obj) => h("label", { key: slot.id, className: "authoring-field" }, slot.label || slot.id,
-          h("select", { className: "field", "data-guide": "trial-slot", "data-slot": slot.id, "aria-invalid": missingSlots.includes(slot.id) || undefined, value: view.selectedOptions[slot.id] || "", onChange: (event: any) => { void controller.guarded(() => controller.trialInput(view.values, { ...view.selectedOptions, [slot.id]: event.target.value })); } },
-            h("option", { value: "" }, "고르세요"), ...(slot.options || []).map((option: Obj) => h("option", { key: option.id, value: option.id }, option.label || option.id)))))),
-      h("label", { className: "authoring-check" }, h("input", { type: "checkbox", checked: view.autoTrial, onChange: (event: any) => controller.update({ autoTrial: event.target.checked }) }), " 자동 갱신"),
-      h("div", { className: "authoring-actions start" },
-        primary("시험 시작", () => { void controller.guarded(() => controller.runTrial(), "trial"); }, { disabled: view.trialBusy })),
-      h("details", { className: "authoring-fold", open: cases.length > 0 },
-        h("summary", { className: "authoring-section-label" }, "보관한 시험 케이스"),
-        h("div", { className: "authoring-actions start" },
-          button("시험 케이스 저장", () => { void controller.guarded(() => controller.saveCase()); })),
-        h("div", { className: "authoring-actions start quiet-row" },
-          quiet("시험 자료 가져오기", () => { void controller.guarded(() => controller.transferCases("import")); }),
-          quiet("시험 자료 내보내기", () => { void controller.guarded(() => controller.transferCases("export")); })),
-        rowList("보관한 시험 케이스", cases.map((test: Obj) => h("div", { key: test.name, className: "authoring-case" },
-          rowButton({ text: test.name, context: test.needs_review ? "다시 확인 필요" : null }, () => { void controller.guarded(() => controller.loadCase(test)); },
-            { "aria-label": `${test.name}${test.needs_review ? " · 다시 확인 필요" : ""}` }),
-          iconButton("trash", `${test.name} 삭제`, () => { void controller.guarded(() => controller.removeCase(test.name)); })))))),
-    h("div", { className: "authoring-trial-output" },
-      // 상태 줄은 보이는 글로만 남는다 — 화면 읽기는 셸의 단일 live region 이 결과가 바뀔 때만 한다(UX-04).
-      h("div", { className: "authoring-trial-state" },
-        item.trial_state_label && h("span", { className: "authoring-badge", "data-trial": item.trial_state }, item.trial_state_label),
-        h("p", null, view.trialBusy ? "갱신 중 · 이전 결과" : item.trial_state_message),
-        quiet("시험 결과 내보내기", () => { void controller.guarded(controller.exportResult); }, { disabled: item.trial_state !== "current" })),
-      item.media === "txt"
-        ? h(TxtTrialOutput, { controller, item, result, selected: view.selected, anchor: trialAnchorName(view) })
-        : h("div", { className: "authoring-trial-result", ref: output }),
-      h("p", { className: "authoring-reason" }, "통과 표시는 현재 값과 선택 구성에만 해당합니다."),
-      // 선택별 시험 상태: 구조 트리와 같은 점(채움 모양)과 같은 이름이다. 항목이 있을 때만 선다.
-      !!coverage.length && h("details", { className: "authoring-fold" },
-        h("summary", { className: "authoring-section-label" }, "선택별 시험 상태"),
-        h("ul", { className: "authoring-coverage", "aria-label": "선택별 시험 상태" }, ...coverage.map((entry: Obj) =>
-          h("li", { key: `${entry.slot_id}/${entry.option_id}` }, h("span", { className: "authoring-coverage-dot", "data-state": entry.state }, coverageDot(entry.state)),
-            `${entry.slot_id} / ${entry.option_id} · ${COVERAGE_LABEL[entry.state]}`)))),
-      h("details", { className: "authoring-fold" },
-        h("summary", { className: "authoring-section-label" }, "출력·제외 이유"),
-        item.media === "hwpx" && view.resultSelection?.entry && h("div", null, h("h4", { className: "authoring-section-label" }, "고른 문단의 필드"),
-          rowList("고른 문단의 필드", (result?.occurrences || []).filter((entry: Obj) => entry.output?.entry === view.resultSelection.entry && entry.output?.paragraph === view.resultSelection.paragraph).map(traceRow))),
-        rowList("출력·제외 이유", [
-          ...(result?.occurrences || result?.trace || []).map(traceRow),
-          ...(result?.excluded || []).map((entry: Obj) => rowButton({ chip: kindTag("option"), text: entry.reason || entry.label || entry.option_id }, select(entry)))]))),
-  );
+    trialInputPanel({ controller, item, view, missingFields, missingSlots, input, composing, cases }),
+    trialOutputPanel({ controller, item, view, result, coverage, traceRow, select, output }));
 }
 
 /** TXT 시험 결과(읽기 전용 글, 결과 칸 자체가 스크롤 상자). 새 결과(trialViewerKey)가 서면 닻 필드의 첫 출력 자리가 이 칸

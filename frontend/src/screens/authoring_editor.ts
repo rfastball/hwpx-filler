@@ -151,6 +151,126 @@ export function highlightRanges(analysis: Obj, highlight: Obj | null | undefined
 
 /** 표면이 제 입력을 비교할 뿐이다(판정 아님) — 보인 미리보기의 명령과 지금 입력으로 지은 명령이 같은가. */
 
+type EditorMount = { adapter: AuthoringEditor; release: () => void };
+
+/** TXT 편집기 마운트(useEffect 본체 분리) — Lintpad 를 세우고 제안 표식 누름을 잇는다. 해제는 듣개와 편집기를 함께 걷는다. */
+function mountTxtEditor({ controller, item, host, shell, initial, latest }:
+  { controller: AuthoringController; item: Obj; host: HTMLDivElement; shell: ShellInput; initial: Obj; latest: { current: Obj } }): EditorMount {
+  let composing = false;
+  const handle = mountLintpad({ host, doc: initial.content,
+    contentId: `authoring-text-${item.id}`, ariaLabel: "TXT 템플릿 원문", authoring: true,
+    onDocChanged: (content) => { if (!composing) controller.changed(item.id, content); },
+    // 캐럿이 제안 자리(#1156)에 서면 그 팝오버가 선다 — 판정(locate)과 같은 보고다.
+    onSelectionChanged: (selection) => { if (!composing) { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection); } },
+    onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
+    onRangePick: (offset) => controller.pickClick(item.id, { entry: "", paragraph: 0, offset, cell: false }),
+    onCompositionChanged: (active) => { composing = active; if (!active) queueMicrotask(() => controller.changed(item.id, lintpadState(handle).text)); },
+  });
+  // 제안 표식(#1156)은 누름틀처럼 한 덩어리다 — 누르면(편집기가 캐럿을 놓은 뒤) 자리 전체를 고르고 팝오버를 곧장 연다.
+  const txtHost = host;
+  let pressed: ReturnType<typeof txtSpotPress> = null;
+  const onSpotPress = (event: MouseEvent) => { pressed = txtSpotPress(event); };
+  const onSpotClick = (event: MouseEvent) => {
+    const spotId = txtSpotClick(pressed, event, lintpadState(handle));
+    pressed = null;
+    const spot = spotId ? controller.proposal.openSpot(item.id, spotId, null) : null;
+    if (spot && typeof spot.start === "number" && typeof spot.end === "number") navigateLintpad(handle, spot.start, spot.end);
+  };
+  txtHost.addEventListener("mousedown", onSpotPress, true);
+  txtHost.addEventListener("click", onSpotClick);
+  const adapter: AuthoringEditor = {
+    flush: async () => { if (lintpadState(handle).composing) throw new Error(IME_BUSY); },
+    content: async () => lintpadState(handle).text,
+    apply: async (content, edits, _label, expectedContent) => {
+      if (expectedContent !== undefined && lintpadState(handle).text !== expectedContent) throw new Error("문서가 변경되었습니다. 변경 미리보기를 다시 실행하세요.");
+      const changes = edits.length ? [...edits].sort((a, b) => a.start - b.start) : [{ start: 0, end: lintpadState(handle).text.length, text: content }];
+      if (!editLintpad(handle, changes as { start: number; end: number; text: string }[])) throw new Error(IME_BUSY);
+    },
+    focus: async (target) => { if (target.start != null) navigateLintpad(handle, target.start, target.end ?? target.start); },
+    // TXT 에는 캐럿을 두고 뷰만 옮기는 길이 없다 — 캐럿을 그 자리 머리에 둔다(빈 선택이라 선택 옆 막대는 서지 않는다).
+    scrollTo: async (target) => { navigateLintpad(handle, target.start, target.start); return true; },
+    rangePick: (state) => setLintpadRangePick(handle, state === false || state === null ? state : state.offset),
+    command: async (command) => { lintpadCommand(handle, command); },
+    state: () => { const state = lintpadState(handle); return { canUndo: state.canUndo, canRedo: state.canRedo }; },
+    decorate: (analysis, mode, highlight) => {
+      // 이름표(FB-03)는 모든 표시에서 원문 표기를 대신한다 — 표시 방식은 HWPX 편집면의 labels 어휘다(문서 none·템플릿
+      // selected·이름표 all). 항목·선택 범위 막대는 Python 배치(placements) 그대로다.
+      // 튜토리얼 범위 단계(#1136)가 고르라고 한 범위 — Python 좌표 그대로 칠한다(판정은 Python 이 한다).
+      const guide = controller.guideOf(item.id);
+      const spans = guide ? guideSpans(analysis.spans || [], analysis.source_text || "", guide) : [...(analysis.spans || [])];
+      // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
+      for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
+      // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
+      updateLintpad(handle, { sourceDoc: analysis.source_text, spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
+        regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis),
+        // 「데이터로 필드 찾기」 제안(#1156)은 본문 표식 층 — 띠가 켜진 동안 모든 표시 방식에서 선다.
+        marks: controller.proposal.marks(item.id) });
+    },
+  };
+  const release = () => { txtHost.removeEventListener("mousedown", onSpotPress, true); txtHost.removeEventListener("click", onSpotClick); disposeLintpad(handle); };
+  return { adapter, release };
+}
+
+/** HWPX 편집기 마운트(useEffect 본체 분리). 어댑터·해제는 배율을 맞추기 전에 `install` 로 건다 — 그 사이에 효과가 걷히면
+ *  해제가 Studio 를 닫는다. 마운트 중에 걷혔으면 false 다. 초점을 돌려받을 자리는 누를 때의 `hostRef` 로 읽는다. */
+async function mountRhwpEditor({ controller, item, hostRef, shell, initial, latest, isDisposed, install }:
+  { controller: AuthoringController; item: Obj; hostRef: { current: HTMLDivElement | null }; shell: ShellInput; initial: Obj; latest: { current: Obj };
+    isDisposed(): boolean; install(mounted: EditorMount): void }): Promise<boolean> {
+  const report = compatibilityReporter(controller, item.id, initial.revision);
+  const mountedFit = controller.zoom(item.id) === "fit";
+  let handle: Awaited<ReturnType<typeof mountRhwp>>;
+  try {
+    handle = await rhwpMount.mount({ host: hostRef.current!, content: initial.content, fileName: item.name,
+    sectionEntries: initial.section_entries, trackSelection: "visible",
+    preflight: report.preflight,
+    onCompatibility: (result) => { void controller.guarded(() => report.onCompatibility(result)); },
+    title: item.name,
+    // 초점을 돌려받을 자리는 편집면 iframe 이다(메뉴를 닫는 Escape·F6 순환의 출발점).
+    onContextMenu: (point) => shell.current.menu?.({ clientX: point.x, clientY: point.y, target: hostRef.current?.querySelector("iframe") || hostRef.current }),
+    onShortcut: (shortcut) => {
+      const current = controller.viewModel.getSnapshot();
+      const forwarded = forwardedShellKey(shortcut, hostRef.current?.querySelector("iframe") || hostRef.current);
+      if (forwarded) shell.current.key?.(forwarded);
+      else if (shortcut === "CtrlShiftP") shell.current.palette?.();
+      else if (shortcut === "CtrlS") void controller.guarded(() => controller.save(), "save");
+      else if (shortcut === "CtrlF") controller.update({ panel: "search", ...focusRequest(current, "dock") });
+      else renameShortcut(controller);
+    },
+    onChanged: (content) => controller.changed(item.id, content),
+    onSelectionChanged: (selection, caret) => { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection, caret); },
+    // 캐럿 줄만 옮겨 가면(편집면 스크롤) 문서에서 연 제안 팝오버가 따라가거나 숨는다(#1156).
+    onCaretRect: (caret) => controller.proposal.caretRect(item.id, caret),
+    // 제안 표지를 누르면 Studio 가 자리 전체를 고른다 — 폴링을 기다리지 않고 누른 줄 아래에 팝오버를 연다.
+    onDecorationClick: ({ token, rect }) => { controller.proposal.openSpot(item.id, token, rect); },
+    onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
+    onRangePick: (point) => controller.pickClick(item.id, point),
+    onError: (error) => controller.fail(error, "editor"), readOnly: false,
+    // 배율 방식은 마운트마다 명시한다(IDE-06) — 폭 맞춤이면 Studio 가, 고정 배율이면 셸 CSS 가 키운다(곱하지 않는다).
+    zoom: mountedFit ? "fit" : 100 });
+  } catch (error) {
+    // 마운트가 무너져도 안내는 남는다 — Python 이 판정 없음을 기록하고 투영한다. 보이는 오류는 원래의 것이다.
+    if (!isDisposed()) await report.onMountError(error).catch(() => undefined);
+    throw error;
+  }
+  if (isDisposed()) { handle.dispose(); return false; }
+  const adapter: AuthoringEditor = {
+    flush: () => handle.flushChanges(),
+    content: () => handle.content(), apply: (content, _edits, label, expectedContent) => handle.applySnapshot(content, label, expectedContent),
+    focus: (target) => handle.focus(target), scrollTo: (target) => handle.scrollTo(target),
+    command: async (command) => { if (command === "undo") await handle.undo(); else if (command === "redo") await handle.redo(); else controller.update({ panel: "search" }); },
+    // 문제 밑줄(IDE-08 P-08)은 TXT 와 같은 규칙이다 — Python 의 problems 를 그대로 넘기고 문서 모드에서도 선다.
+    // 「데이터로 필드 찾기」 제안 자리(#1156)도 같은 장식 호출에 싣는다 — 표지 상한은 보류·제안·문제 차례로 덜어 낸다.
+    decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null, problems: latest.current.problems || [],
+      proposals: controller.proposal.spots(item.id) }), "editor"); },
+    zoom: (mode) => handle.setZoom(mode === "fit" ? "fit" : 100),
+    rangePick: (state) => handle.rangePick(state),
+  };
+  install({ adapter, release: () => handle.dispose() });
+  // 마운트 중에 확대를 바꿨으면(편집기가 붙기 전이라 알림을 못 받았다) 지금 방식을 맞춘다.
+  if ((controller.zoom(item.id) === "fit") !== mountedFit) await adapter.zoom!(mountedFit ? "fixed" : "fit");
+  return true;
+}
+
 export function DocumentEditor({ controller, item, active, shell }: Props & { item: Obj; active: boolean; shell: ShellInput }) {
   const host = useRef<HTMLDivElement>(null);
   const adapter = useRef<AuthoringEditor | null>(null);
@@ -164,113 +284,9 @@ export function DocumentEditor({ controller, item, active, shell }: Props & { it
     void controller.guarded(async () => {
       const initial = await controller.content(item.id);
       if (disposed || !host.current) return;
-      if (item.media === "txt") {
-        let composing = false;
-        const handle = mountLintpad({ host: host.current, doc: initial.content,
-          contentId: `authoring-text-${item.id}`, ariaLabel: "TXT 템플릿 원문", authoring: true,
-          onDocChanged: (content) => { if (!composing) controller.changed(item.id, content); },
-          // 캐럿이 제안 자리(#1156)에 서면 그 팝오버가 선다 — 판정(locate)과 같은 보고다.
-          onSelectionChanged: (selection) => { if (!composing) { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection); } },
-          onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
-          onRangePick: (offset) => controller.pickClick(item.id, { entry: "", paragraph: 0, offset, cell: false }),
-          onCompositionChanged: (active) => { composing = active; if (!active) queueMicrotask(() => controller.changed(item.id, lintpadState(handle).text)); },
-        });
-        // 제안 표식(#1156)은 누름틀처럼 한 덩어리다 — 누르면(편집기가 캐럿을 놓은 뒤) 자리 전체를 고르고 팝오버를 곧장 연다.
-        const txtHost = host.current;
-        let pressed: ReturnType<typeof txtSpotPress> = null;
-        const onSpotPress = (event: MouseEvent) => { pressed = txtSpotPress(event); };
-        const onSpotClick = (event: MouseEvent) => {
-          const spotId = txtSpotClick(pressed, event, lintpadState(handle));
-          pressed = null;
-          const spot = spotId ? controller.proposal.openSpot(item.id, spotId, null) : null;
-          if (spot && typeof spot.start === "number" && typeof spot.end === "number") navigateLintpad(handle, spot.start, spot.end);
-        };
-        txtHost.addEventListener("mousedown", onSpotPress, true);
-        txtHost.addEventListener("click", onSpotClick);
-        adapter.current = {
-          flush: async () => { if (lintpadState(handle).composing) throw new Error(IME_BUSY); },
-          content: async () => lintpadState(handle).text,
-          apply: async (content, edits, _label, expectedContent) => {
-            if (expectedContent !== undefined && lintpadState(handle).text !== expectedContent) throw new Error("문서가 변경되었습니다. 변경 미리보기를 다시 실행하세요.");
-            const changes = edits.length ? [...edits].sort((a, b) => a.start - b.start) : [{ start: 0, end: lintpadState(handle).text.length, text: content }];
-            if (!editLintpad(handle, changes as { start: number; end: number; text: string }[])) throw new Error(IME_BUSY);
-          },
-          focus: async (target) => { if (target.start != null) navigateLintpad(handle, target.start, target.end ?? target.start); },
-          // TXT 에는 캐럿을 두고 뷰만 옮기는 길이 없다 — 캐럿을 그 자리 머리에 둔다(빈 선택이라 선택 옆 막대는 서지 않는다).
-          scrollTo: async (target) => { navigateLintpad(handle, target.start, target.start); return true; },
-          rangePick: (state) => setLintpadRangePick(handle, state === false || state === null ? state : state.offset),
-          command: async (command) => { lintpadCommand(handle, command); },
-          state: () => { const state = lintpadState(handle); return { canUndo: state.canUndo, canRedo: state.canRedo }; },
-          decorate: (analysis, mode, highlight) => {
-            // 이름표(FB-03)는 모든 표시에서 원문 표기를 대신한다 — 표시 방식은 HWPX 편집면의 labels 어휘다(문서 none·템플릿
-            // selected·이름표 all). 항목·선택 범위 막대는 Python 배치(placements) 그대로다.
-            // 튜토리얼 범위 단계(#1136)가 고르라고 한 범위 — Python 좌표 그대로 칠한다(판정은 Python 이 한다).
-            const guide = controller.guideOf(item.id);
-            const spans = guide ? guideSpans(analysis.spans || [], analysis.source_text || "", guide) : [...(analysis.spans || [])];
-            // 구조 트리 줄의 강조(UX-09)는 그 범위의 줄 전체에 선다 — 문서 모드에서도(표시만, 본문은 그대로).
-            for (const range of highlightRanges(analysis, highlight)) spans.push({ kind: "highlight", ...range });
-            // 문제 밑줄(IDE-05)은 별도 층이며 문서 모드에서도 선다(문제는 표시가 아니라 경보다). 표지 짝 강조는 표시라 걷는다.
-            updateLintpad(handle, { sourceDoc: analysis.source_text, spans, labels: mode === "document" ? "none" : mode === "structure" ? "all" : "selected",
-              regions: analysis.placements || [], problems: txtProblemMarks(latest.current.problems), pairs: mode === "document" ? [] : markerPairs(analysis),
-              // 「데이터로 필드 찾기」 제안(#1156)은 본문 표식 층 — 띠가 켜진 동안 모든 표시 방식에서 선다.
-              marks: controller.proposal.marks(item.id) });
-          },
-        };
-        release = () => { txtHost.removeEventListener("mousedown", onSpotPress, true); txtHost.removeEventListener("click", onSpotClick); disposeLintpad(handle); };
-      } else {
-        const report = compatibilityReporter(controller, item.id, initial.revision);
-        const mountedFit = controller.zoom(item.id) === "fit";
-        let handle: Awaited<ReturnType<typeof mountRhwp>>;
-        try {
-          handle = await rhwpMount.mount({ host: host.current, content: initial.content, fileName: item.name,
-          sectionEntries: initial.section_entries, trackSelection: "visible",
-          preflight: report.preflight,
-          onCompatibility: (result) => { void controller.guarded(() => report.onCompatibility(result)); },
-          title: item.name,
-          // 초점을 돌려받을 자리는 편집면 iframe 이다(메뉴를 닫는 Escape·F6 순환의 출발점).
-          onContextMenu: (point) => shell.current.menu?.({ clientX: point.x, clientY: point.y, target: host.current?.querySelector("iframe") || host.current }),
-          onShortcut: (shortcut) => {
-            const current = controller.viewModel.getSnapshot();
-            const forwarded = forwardedShellKey(shortcut, host.current?.querySelector("iframe") || host.current);
-            if (forwarded) shell.current.key?.(forwarded);
-            else if (shortcut === "CtrlShiftP") shell.current.palette?.();
-            else if (shortcut === "CtrlS") void controller.guarded(() => controller.save(), "save");
-            else if (shortcut === "CtrlF") controller.update({ panel: "search", ...focusRequest(current, "dock") });
-            else renameShortcut(controller);
-          },
-          onChanged: (content) => controller.changed(item.id, content),
-          onSelectionChanged: (selection, caret) => { controller.selection(item.id, selection); controller.proposal.caret(item.id, selection, caret); },
-          // 캐럿 줄만 옮겨 가면(편집면 스크롤) 문서에서 연 제안 팝오버가 따라가거나 숨는다(#1156).
-          onCaretRect: (caret) => controller.proposal.caretRect(item.id, caret),
-          // 제안 표지를 누르면 Studio 가 자리 전체를 고른다 — 폴링을 기다리지 않고 누른 줄 아래에 팝오버를 연다.
-          onDecorationClick: ({ token, rect }) => { controller.proposal.openSpot(item.id, token, rect); },
-          onSelectionRect: (rect) => shell.current.selectionRect?.(item.id, rect),
-          onRangePick: (point) => controller.pickClick(item.id, point),
-          onError: (error) => controller.fail(error, "editor"), readOnly: false,
-          // 배율 방식은 마운트마다 명시한다(IDE-06) — 폭 맞춤이면 Studio 가, 고정 배율이면 셸 CSS 가 키운다(곱하지 않는다).
-          zoom: mountedFit ? "fit" : 100 });
-        } catch (error) {
-          // 마운트가 무너져도 안내는 남는다 — Python 이 판정 없음을 기록하고 투영한다. 보이는 오류는 원래의 것이다.
-          if (!disposed) await report.onMountError(error).catch(() => undefined);
-          throw error;
-        }
-        if (disposed) { handle.dispose(); return; }
-        adapter.current = {
-          flush: () => handle.flushChanges(),
-          content: () => handle.content(), apply: (content, _edits, label, expectedContent) => handle.applySnapshot(content, label, expectedContent),
-          focus: (target) => handle.focus(target), scrollTo: (target) => handle.scrollTo(target),
-          command: async (command) => { if (command === "undo") await handle.undo(); else if (command === "redo") await handle.redo(); else controller.update({ panel: "search" }); },
-          // 문제 밑줄(IDE-08 P-08)은 TXT 와 같은 규칙이다 — Python 의 problems 를 그대로 넘기고 문서 모드에서도 선다.
-          // 「데이터로 필드 찾기」 제안 자리(#1156)도 같은 장식 호출에 싣는다 — 표지 상한은 보류·제안·문제 차례로 덜어 낸다.
-          decorate: (analysis, mode, highlight) => { void controller.guarded(() => handle.setDecorations({ ...analysis, mode, highlight: highlight || null, problems: latest.current.problems || [],
-            proposals: controller.proposal.spots(item.id) }), "editor"); },
-          zoom: (mode) => handle.setZoom(mode === "fit" ? "fit" : 100),
-          rangePick: (state) => handle.rangePick(state),
-        };
-        release = () => handle.dispose();
-        // 마운트 중에 확대를 바꿨으면(편집기가 붙기 전이라 알림을 못 받았다) 지금 방식을 맞춘다.
-        if ((controller.zoom(item.id) === "fit") !== mountedFit) await adapter.current.zoom!(mountedFit ? "fixed" : "fit");
-      }
+      const install = (mounted: EditorMount) => { adapter.current = mounted.adapter; release = mounted.release; };
+      if (item.media === "txt") install(mountTxtEditor({ controller, item, host: host.current, shell, initial, latest }));
+      else if (!await mountRhwpEditor({ controller, item, hostRef: host, shell, initial, latest, isDisposed: () => disposed, install })) return;
       detach = controller.attach(item.id, adapter.current!);
       adapter.current!.decorate(item.analysis || {}, controller.mode(item.id), controller.highlightOf(item.id));
     }, "editor");
