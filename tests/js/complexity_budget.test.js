@@ -83,6 +83,45 @@ test('frozen budgets require fresh justified overrides and tightening never rais
   assert.deepEqual(judge(duplicate, maxima, maxima), []);
 });
 
+test('reason-only entries are a permanent exception that can only drop, never appear fresh', () => {
+  const ident = 'crates/example/src/lib.rs::Flat';
+  const base = { schema: 'complexity-budget/v1', budget: {
+    [ident]: { function_complexity: { value: 15, override: '#1200', reason: '측정 보정' } },
+  } };
+  const unit = value => [{ path: 'crates/example/src/lib.rs', qual: 'Flat', kind: 'function',
+    metrics: { function_complexity: value }, detail: [] }];
+
+  // (a) dropping the override and keeping the same or a lower value, reason-only, passes.
+  const same = { schema: 'complexity-budget/v1', budget: {
+    [ident]: { function_complexity: { value: 15, reason: '상시 예외: 평평한 분배 표 — 테스트 근거' } },
+  } };
+  assert.deepEqual(judge(unit(15), same, base), []);
+  const lower = { schema: 'complexity-budget/v1', budget: {
+    [ident]: { function_complexity: { value: 14, reason: '상시 예외: 평평한 분배 표 — 테스트 근거' } },
+  } };
+  assert.deepEqual(judge(unit(14), lower, base), []);
+
+  // (b) a brand-new reason-only entry absent from base is rejected: permanent exceptions
+  // cannot be newly introduced, only carried down from an existing override.
+  const freshIdent = 'crates/example/src/lib.rs::NeverSeen';
+  const fresh = { schema: 'complexity-budget/v1', budget: {
+    [freshIdent]: { function_complexity: { value: 15, reason: '상시 예외: 값 매핑 표 — 새로 생긴 항목' } },
+  } };
+  const freshUnits = [{ path: 'crates/example/src/lib.rs', qual: 'NeverSeen', kind: 'function',
+    metrics: { function_complexity: 15 }, detail: [] }];
+  assert.match(judge(freshUnits, fresh, base).join('\n'), /new or raised frozen budget/u);
+
+  // (c) tightened() and renderLedger() preserve the reason on a reason-only entry.
+  const tightening = { schema: 'complexity-budget/v1', budget: {
+    [ident]: { function_complexity: { value: 15, reason: '상시 예외: 평평한 분배 표 — 테스트 근거' } },
+  } };
+  const result = tightened(unit(12), tightening);
+  assert.deepEqual(result.budget[ident].function_complexity,
+    { value: 12, reason: '상시 예외: 평평한 분배 표 — 테스트 근거' });
+  assert.match(renderLedger(result, '# header'),
+    /function_complexity = \{ value = 12, reason = "상시 예외: 평평한 분배 표 — 테스트 근거" \}/u);
+});
+
 test('JS measurement separates callbacks, ignores formatting, and refuses broken syntax', () => {
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const cache = path.join(root, '.cache');
