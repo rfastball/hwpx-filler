@@ -13,6 +13,9 @@ use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+mod bookmark_scope;
+use bookmark_scope::{BookmarkWalk, duplicate_id_diagnostics};
+
 pub const PRODUCT_KIND_SLOT: &str = "slot";
 pub const PRODUCT_KIND_OPTION: &str = "slot_option";
 pub const NATIVE_NAME: &str = "#hf";
@@ -436,13 +439,6 @@ fn translate_structural_diagnostics(scan: &StructuralBoundaryScan) -> Vec<Templa
         .collect()
 }
 
-#[derive(Clone)]
-struct OpenBookmark {
-    pair: BoundaryPairRef,
-    kind: Option<String>,
-    scope_usable: bool,
-}
-
 pub fn inspect_product_bookmarks(
     scan: &StructuralBoundaryScan,
 ) -> Result<ProductBookmarkInspection, ProductInspectionError> {
@@ -490,206 +486,26 @@ pub fn inspect_product_bookmarks(
             });
         }
     }
-    let mut observations = Vec::new();
-    let mut names: HashMap<BoundaryPairRef, Option<String>> = HashMap::new();
+    let mut walk = BookmarkWalk {
+        unattributed_metatag_entries: &unattributed_metatag_entries,
+        names: HashMap::new(),
+        observations: Vec::new(),
+        diagnostics,
+    };
     for entry in &scan.entries {
-        let mut open_bookmarks: Vec<OpenBookmark> = Vec::new();
-        for event in &entry.events {
-            if let BoundaryEvent::BookmarkBegin {
-                pair,
-                bookmark_name,
-                meta_tags,
-                meta_tag_attribute,
-                ..
-            } = event
-            {
-                names.insert(pair.clone(), bookmark_name.clone());
-                let product = product_tag(
-                    &entry.entry,
-                    bookmark_name.as_deref(),
-                    meta_tags,
-                    meta_tag_attribute.as_deref(),
-                    &mut diagnostics,
-                );
-                if !entry.bookmark_topology_usable
-                    || unattributed_metatag_entries.contains(entry.entry.as_str())
-                {
-                    observations.push(ProductScopeObservation {
-                        pair: pair.clone(),
-                        entry: entry.entry.clone(),
-                        classification: product.classification,
-                        scope_role: ProductScopeRole::InvalidProduct,
-                        scope_usable: false,
-                        kind: product.kind,
-                        product_id: product.id,
-                        owning_slot_pair: None,
-                        product_label: product.label,
-                    });
-                    if entry.bookmark_topology_usable {
-                        open_bookmarks.push(OpenBookmark {
-                            pair: pair.clone(),
-                            kind: None,
-                            scope_usable: false,
-                        });
-                    }
-                    continue;
-                }
-                let scope_blocked = open_bookmarks.iter().any(|item| !item.scope_usable);
-                let slot_ancestors: Vec<_> = open_bookmarks
-                    .iter()
-                    .filter(|item| item.kind.as_deref() == Some(PRODUCT_KIND_SLOT))
-                    .map(|item| item.pair.clone())
-                    .collect();
-                let option_ancestors: Vec<_> = open_bookmarks
-                    .iter()
-                    .filter(|item| item.kind.as_deref() == Some(PRODUCT_KIND_OPTION))
-                    .map(|item| item.pair.clone())
-                    .collect();
-                let mut owning_slot = if !scope_blocked
-                    && product.kind.as_deref() == Some(PRODUCT_KIND_OPTION)
-                    && slot_ancestors.len() == 1
-                {
-                    slot_ancestors.first().cloned()
-                } else {
-                    None
-                };
-                let mut role = ProductScopeRole::None;
-                let mut usable = true;
-                if product.classification == ProductClassification::InvalidProduct {
-                    role = ProductScopeRole::InvalidProduct;
-                    usable = false;
-                } else if product.classification == ProductClassification::KnownProduct {
-                    if entry.kind != ContentEntryKind::Section {
-                        diagnostics.push(diagnostic(
-                            "unsupported-product-entry",
-                            &entry.entry,
-                            bookmark_name.as_deref(),
-                            "product Slot/Option is supported only in section entries",
-                        ));
-                        role = ProductScopeRole::InvalidProduct;
-                        usable = false;
-                    } else if product.kind.as_deref() == Some(PRODUCT_KIND_SLOT) {
-                        if !slot_ancestors.is_empty() {
-                            diagnostics.push(diagnostic(
-                                "nested-slot",
-                                &entry.entry,
-                                bookmark_name.as_deref(),
-                                "Slot is inside another Slot",
-                            ));
-                            role = ProductScopeRole::InvalidProduct;
-                            usable = false;
-                        } else {
-                            role = ProductScopeRole::Slot;
-                        }
-                    } else {
-                        if !option_ancestors.is_empty() {
-                            diagnostics.push(diagnostic(
-                                "nested-option",
-                                &entry.entry,
-                                bookmark_name.as_deref(),
-                                "Option is inside another Option",
-                            ));
-                            usable = false;
-                        }
-                        if slot_ancestors.is_empty() {
-                            diagnostics.push(diagnostic(
-                                "orphan-option",
-                                &entry.entry,
-                                bookmark_name.as_deref(),
-                                "Option has no product Slot ancestor",
-                            ));
-                            usable = false;
-                        } else if slot_ancestors.len() > 1 {
-                            diagnostics.push(diagnostic(
-                                "ambiguous-membership",
-                                &entry.entry,
-                                bookmark_name.as_deref(),
-                                "Option has more than one product Slot ancestor",
-                            ));
-                            usable = false;
-                        }
-                        role = if usable {
-                            ProductScopeRole::Option
-                        } else {
-                            ProductScopeRole::InvalidProduct
-                        };
-                    }
-                }
-                if scope_blocked {
-                    role = ProductScopeRole::InvalidProduct;
-                    usable = false;
-                    owning_slot = None;
-                }
-                observations.push(ProductScopeObservation {
-                    pair: pair.clone(),
-                    entry: entry.entry.clone(),
-                    classification: product.classification,
-                    scope_role: role,
-                    scope_usable: usable,
-                    kind: product.kind.clone(),
-                    product_id: product.id,
-                    owning_slot_pair: owning_slot,
-                    product_label: product.label,
-                });
-                open_bookmarks.push(OpenBookmark {
-                    pair: pair.clone(),
-                    kind: product.kind,
-                    scope_usable: usable,
-                });
-            } else if let BoundaryEvent::BookmarkEnd { pair, .. } = event {
-                if !entry.bookmark_topology_usable {
-                    continue;
-                }
-                if open_bookmarks.last().is_none_or(|item| item.pair != *pair) {
-                    return Err(ProductInspectionError(format!(
-                        "{}: BOOKMARK end contradicts usable topology",
-                        entry.entry
-                    )));
-                }
-                open_bookmarks.pop();
-            }
-        }
+        walk.entry(entry)?;
     }
-    let by_pair: HashMap<_, _> = observations
-        .iter()
-        .map(|item| (item.pair.clone(), item))
-        .collect();
-    let mut seen_slot_ids = HashSet::new();
-    let mut seen_option_ids: HashMap<BoundaryPairRef, HashSet<String>> = HashMap::new();
-    for item in &observations {
-        if item.classification != ProductClassification::KnownProduct
-            || item.product_id.is_none()
-            || !projection_pairs.contains(&item.pair)
-        {
-            continue;
-        }
-        let id = item.product_id.as_deref().unwrap();
-        if item.kind.as_deref() == Some(PRODUCT_KIND_SLOT) {
-            if !seen_slot_ids.insert(id.to_owned()) {
-                diagnostics.push(diagnostic(
-                    "duplicate-slot-id",
-                    &item.entry,
-                    names.get(&item.pair).and_then(|name| name.as_deref()),
-                    &format!("duplicate Slot id {}", py_repr(Some(id))),
-                ));
-            }
-        } else if let Some(owner_pair) = &item.owning_slot_pair {
-            let owner_ids = seen_option_ids.entry(owner_pair.clone()).or_default();
-            if !owner_ids.insert(id.to_owned()) {
-                let owner = by_pair[owner_pair];
-                diagnostics.push(diagnostic(
-                    "duplicate-option-id",
-                    &item.entry,
-                    names.get(&item.pair).and_then(|name| name.as_deref()),
-                    &format!(
-                        "duplicate Option id {} in Slot {}",
-                        py_repr(Some(id)),
-                        py_repr(owner.product_id.as_deref())
-                    ),
-                ));
-            }
-        }
-    }
+    let BookmarkWalk {
+        names,
+        observations,
+        mut diagnostics,
+        ..
+    } = walk;
+    diagnostics.extend(duplicate_id_diagnostics(
+        &observations,
+        &names,
+        &projection_pairs,
+    ));
     Ok(ProductBookmarkInspection {
         observations,
         diagnostics,
