@@ -14,7 +14,7 @@ use crate::template_authoring::{
     command_label, field_candidates, revert_template_message, whole_field_unset,
 };
 use crate::text_render::{python_repr, python_str, python_truthy};
-use hwpx_core::bookmark_region::unwrap_bookmark_region;
+use hwpx_core::bookmark_region::{BookmarkRegion, unwrap_bookmark_region};
 use hwpx_core::package::HwpxPackage;
 use hwpx_core::package::PackageEntry;
 use serde_json::{Map, Value, json};
@@ -175,6 +175,35 @@ fn unwrap_options(package: &mut HwpxPackage, slot_id: &str) -> Result<(), Author
         unwrap_bookmark_region(package, &region).map_err(error)?;
     }
 }
+fn delete_region(
+    package: &mut HwpxPackage,
+    kind: &str,
+    slot_id: &str,
+    option_id: &str,
+) -> Result<(), AuthoringCommandError> {
+    if kind == "option" {
+        remove_slot_option(package, slot_id, option_id).map_err(error)
+    } else {
+        remove_slot(package, slot_id).map_err(error)
+    }
+}
+/// Unwraps the region; a slot with options first unwraps them, then its fresh region.
+fn unwrap_region(
+    package: &mut HwpxPackage,
+    slot_id: &str,
+    region: &BookmarkRegion,
+    has_options: bool,
+) -> Result<(), AuthoringCommandError> {
+    if !has_options {
+        return unwrap_bookmark_region(package, region).map_err(error);
+    }
+    unwrap_options(package, slot_id)?;
+    let fresh = inspect_slot_regions(package).map_err(error)?;
+    let region = fresh.slot_regions.get(slot_id).ok_or_else(|| {
+        AuthoringCommandError::plain("항목이나 선택 영역을 찾을 수 없습니다.")
+    })?;
+    unwrap_bookmark_region(package, region).map_err(error)
+}
 fn remove_region(
     package: &mut HwpxPackage,
     command: &Value,
@@ -193,11 +222,7 @@ fn remove_region(
         .get("option_id")
         .map_or_else(|| "None".into(), python_str);
     if action == "delete" {
-        if kind == "option" {
-            remove_slot_option(package, &slot_id, &option_id).map_err(error)?;
-        } else {
-            remove_slot(package, &slot_id).map_err(error)?;
-        }
+        delete_region(package, kind, &slot_id, &option_id)?;
         return Ok(false);
     }
     let snapshot = inspect_slot_regions(package).map_err(error)?;
@@ -224,16 +249,7 @@ fn remove_region(
     if cascade && !projecting {
         return Err(cascade_error(children_for_cascade(impact_context)));
     }
-    if has_options {
-        unwrap_options(package, &slot_id)?;
-        let fresh = inspect_slot_regions(package).map_err(error)?;
-        let region = fresh.slot_regions.get(&slot_id).ok_or_else(|| {
-            AuthoringCommandError::plain("항목이나 선택 영역을 찾을 수 없습니다.")
-        })?;
-        unwrap_bookmark_region(package, region).map_err(error)?;
-    } else {
-        unwrap_bookmark_region(package, &region).map_err(error)?;
-    }
+    unwrap_region(package, &slot_id, &region, has_options)?;
     Ok(cascade)
 }
 
