@@ -143,6 +143,122 @@ fn eligible(
             .iter()
             .any(|name| values.get(name) == values.get(column))
 }
+/// The initial column set: left-to-right cognition picks with no filename tokens given,
+/// or a single token-mode marker step when tokens were given (no cognition picks then).
+fn seed_columns(
+    rows: &[Record],
+    cols: &[String],
+    given: &HashSet<&str>,
+    reasons: &HashMap<String, Option<&'static str>>,
+    values: &HashMap<String, Vec<String>>,
+) -> (Vec<String>, Vec<SummaryStep>) {
+    let mut columns = Vec::new();
+    let mut steps = Vec::new();
+    if given.is_empty() {
+        for column in cols {
+            if columns.len() >= COGNITION_WIDTH {
+                break;
+            }
+            if eligible(column, &columns, given, reasons, values) {
+                columns.push(column.clone());
+                steps.push(SummaryStep {
+                    layer: "cognition",
+                    column: Some(column.clone()),
+                    residual: Some(collisions(rows, &columns)),
+                });
+            }
+        }
+    } else {
+        steps.push(SummaryStep {
+            layer: "token-mode",
+            column: None,
+            residual: None,
+        });
+    }
+    (columns, steps)
+}
+/// Greedily add the best remaining discriminator column until collisions clear,
+/// no eligible column improves the residual, or `MAX_COLUMNS` is reached.
+fn discriminate(
+    rows: &[Record],
+    cols: &[String],
+    given: &HashSet<&str>,
+    reasons: &HashMap<String, Option<&'static str>>,
+    values: &HashMap<String, Vec<String>>,
+    columns: &mut Vec<String>,
+    steps: &mut Vec<SummaryStep>,
+) {
+    while columns.len() < MAX_COLUMNS {
+        let current = collisions(rows, columns);
+        if current == 0 {
+            break;
+        }
+        let mut best = None;
+        for column in cols {
+            if !eligible(column, columns, given, reasons, values) {
+                continue;
+            }
+            let mut probe = columns.clone();
+            probe.push(column.clone());
+            let score = collisions(rows, &probe);
+            if best
+                .as_ref()
+                .is_none_or(|(_, old_score)| score < *old_score)
+            {
+                best = Some((column.clone(), score));
+            }
+        }
+        let Some((column, score)) = best else {
+            steps.push(SummaryStep {
+                layer: "stop",
+                column: None,
+                residual: Some(current),
+            });
+            break;
+        };
+        if score >= current {
+            steps.push(SummaryStep {
+                layer: "stop",
+                column: None,
+                residual: Some(current),
+            });
+            break;
+        }
+        columns.push(column.clone());
+        steps.push(SummaryStep {
+            layer: "discrimination",
+            column: Some(column),
+            residual: Some(score),
+        });
+    }
+}
+/// Classify every column not already chosen or given by filename token into its disqualifier bucket.
+fn disqualify(
+    cols: &[String],
+    given: &HashSet<&str>,
+    reasons: &HashMap<String, Option<&'static str>>,
+    values: &HashMap<String, Vec<String>>,
+    columns: &[String],
+) -> DisqualifierStats {
+    let mut stats = DisqualifierStats::default();
+    for column in cols {
+        if given.contains(column.as_str()) {
+            continue;
+        }
+        match reasons[column] {
+            Some("empty") => stats.empty += 1,
+            Some("constant") => stats.constant += 1,
+            Some("ordinal") => stats.ordinal.push(column.clone()),
+            _ if !columns.contains(column)
+                && columns.iter().any(|name| values[name] == values[column]) =>
+            {
+                stats.duplicate.push(column.clone())
+            }
+            _ => (),
+        }
+    }
+    stats
+}
 pub fn identity_summary(
     rows: &[Record],
     columns: Option<&[String]>,
@@ -182,90 +298,20 @@ pub fn identity_summary(
         .iter()
         .map(|column| (column.clone(), static_reason(&values[column])))
         .collect::<HashMap<_, _>>();
-    if given.is_empty() {
-        for column in &cols {
-            if result.columns.len() >= COGNITION_WIDTH {
-                break;
-            }
-            if eligible(column, &result.columns, &given, &reasons, &values) {
-                result.columns.push(column.clone());
-                result.steps.push(SummaryStep {
-                    layer: "cognition",
-                    column: Some(column.clone()),
-                    residual: Some(collisions(rows, &result.columns)),
-                });
-            }
-        }
-    } else {
-        result.steps.push(SummaryStep {
-            layer: "token-mode",
-            column: None,
-            residual: None,
-        });
-    }
-    while result.columns.len() < MAX_COLUMNS {
-        let current = collisions(rows, &result.columns);
-        if current == 0 {
-            break;
-        }
-        let mut best = None;
-        for column in &cols {
-            if !eligible(column, &result.columns, &given, &reasons, &values) {
-                continue;
-            }
-            let mut probe = result.columns.clone();
-            probe.push(column.clone());
-            let score = collisions(rows, &probe);
-            if best
-                .as_ref()
-                .is_none_or(|(_, old_score)| score < *old_score)
-            {
-                best = Some((column.clone(), score));
-            }
-        }
-        let Some((column, score)) = best else {
-            result.steps.push(SummaryStep {
-                layer: "stop",
-                column: None,
-                residual: Some(current),
-            });
-            break;
-        };
-        if score >= current {
-            result.steps.push(SummaryStep {
-                layer: "stop",
-                column: None,
-                residual: Some(current),
-            });
-            break;
-        }
-        result.columns.push(column.clone());
-        result.steps.push(SummaryStep {
-            layer: "discrimination",
-            column: Some(column),
-            residual: Some(score),
-        });
-    }
+    let (seeded, seeded_steps) = seed_columns(rows, &cols, &given, &reasons, &values);
+    result.columns = seeded;
+    result.steps = seeded_steps;
+    discriminate(
+        rows,
+        &cols,
+        &given,
+        &reasons,
+        &values,
+        &mut result.columns,
+        &mut result.steps,
+    );
     result.residual_collisions = collisions(rows, &result.columns);
-    for column in &cols {
-        if given.contains(column.as_str()) {
-            continue;
-        }
-        match reasons[column] {
-            Some("empty") => result.disqualified.empty += 1,
-            Some("constant") => result.disqualified.constant += 1,
-            Some("ordinal") => result.disqualified.ordinal.push(column.clone()),
-            _ if !result.columns.contains(column)
-                && result
-                    .columns
-                    .iter()
-                    .any(|name| values[name] == values[column]) =>
-            {
-                result.disqualified.duplicate.push(column.clone())
-            }
-            _ => (),
-        }
-    }
+    result.disqualified = disqualify(&cols, &given, &reasons, &values, &result.columns);
     result
 }
 

@@ -93,23 +93,13 @@ struct VerifiedChain {
     evidence: QualificationEvidence,
     revision: TemplateRevision,
 }
-fn chain(
-    state: &impl WorkTemplateStateReadPort,
-    qualification: &impl QualificationReadPort,
-    candidate: &impl AppliedCandidateReadPort,
+/// The work's identity, initialization and (when requested) staleness checks; returns
+/// the current template application id.
+fn validate_work(
+    work: &crate::work_template_state::DocumentWork,
     expected_work_id: &str,
     expected_application_id: Option<&str>,
-) -> Result<VerifiedChain, ContextError> {
-    let aggregate = state
-        .load(expected_work_id)
-        .map_err(|e| error(ContextErrorKind::Read, e))?
-        .ok_or_else(|| {
-            error(
-                ContextErrorKind::TemplateInitializationRequired,
-                format!("work {expected_work_id} 는 template application 이 없다"),
-            )
-        })?;
-    let work = &aggregate.work;
+) -> Result<String, ContextError> {
     if work.work_id != expected_work_id {
         return Err(error(
             ContextErrorKind::CrossWork,
@@ -132,21 +122,24 @@ fn chain(
             ),
         ));
     }
-    let application = aggregate
-        .applications
-        .iter()
-        .find(|app| app.application_id == current)
-        .ok_or_else(|| integrity("current pointer 가 applications 에 없다"))?;
+    Ok(current)
+}
+fn validate_application(
+    application: &crate::work_template_state::WorkTemplateApplication,
+    expected_work_id: &str,
+) -> Result<(), ContextError> {
     if application.work_id != expected_work_id {
         return Err(error(
             ContextErrorKind::CrossWork,
             "Application.work_id 가 요청 WorkAuthorityId 와 불일치",
         ));
     }
-    let application_epoch = application.application_epoch;
-    let evidence = qualification
-        .get_evidence(&application.pass_evidence_id)
-        .map_err(|e| error(ContextErrorKind::Read, e))?;
+    Ok(())
+}
+fn validate_evidence(
+    evidence: &QualificationEvidence,
+    application: &crate::work_template_state::WorkTemplateApplication,
+) -> Result<(), ContextError> {
     if evidence.evidence_id != application.pass_evidence_id {
         return Err(integrity("Evidence id 가 Application 참조와 불일치"));
     }
@@ -155,22 +148,27 @@ fn chain(
             "current Application 의 Evidence 가 PASS 가 아니다",
         ));
     }
-    let projection = evidence
-        .structure_projection
-        .as_ref()
-        .ok_or_else(|| integrity("PASS Evidence 에 structure projection 부재"))?;
-    let revision = candidate
-        .get_revision(&evidence.revision_id)
-        .map_err(|e| error(ContextErrorKind::Read, e))?;
+    Ok(())
+}
+fn validate_revision(
+    revision: &TemplateRevision,
+    evidence: &QualificationEvidence,
+    work: &crate::work_template_state::DocumentWork,
+) -> Result<(), ContextError> {
     if revision.revision_id != evidence.revision_id {
         return Err(integrity("Revision id 가 Evidence 참조와 불일치"));
     }
     if revision.template_lineage_id != work.template_lineage_id {
         return Err(integrity("Revision lineage 가 Work lineage 와 불일치"));
     }
-    let manifest = qualification
-        .get_manifest(&evidence.qualification_profile_id)
-        .map_err(|e| error(ContextErrorKind::Read, e))?;
+    Ok(())
+}
+fn validate_manifest(
+    manifest: &QualificationProfileManifest,
+    evidence: &QualificationEvidence,
+    revision: &TemplateRevision,
+    projection: &crate::execution_structure::StructureProjection,
+) -> Result<(), ContextError> {
     if manifest.qualification_profile_id != evidence.qualification_profile_id {
         return Err(integrity("Manifest profile 이 Evidence 와 불일치"));
     }
@@ -182,6 +180,48 @@ fn chain(
             "Manifest projection schema 가 Evidence projection schema 와 불일치",
         ));
     }
+    Ok(())
+}
+fn chain(
+    state: &impl WorkTemplateStateReadPort,
+    qualification: &impl QualificationReadPort,
+    candidate: &impl AppliedCandidateReadPort,
+    expected_work_id: &str,
+    expected_application_id: Option<&str>,
+) -> Result<VerifiedChain, ContextError> {
+    let aggregate = state
+        .load(expected_work_id)
+        .map_err(|e| error(ContextErrorKind::Read, e))?
+        .ok_or_else(|| {
+            error(
+                ContextErrorKind::TemplateInitializationRequired,
+                format!("work {expected_work_id} 는 template application 이 없다"),
+            )
+        })?;
+    let current = validate_work(&aggregate.work, expected_work_id, expected_application_id)?;
+    let application = aggregate
+        .applications
+        .iter()
+        .find(|app| app.application_id == current)
+        .ok_or_else(|| integrity("current pointer 가 applications 에 없다"))?;
+    validate_application(application, expected_work_id)?;
+    let application_epoch = application.application_epoch;
+    let evidence = qualification
+        .get_evidence(&application.pass_evidence_id)
+        .map_err(|e| error(ContextErrorKind::Read, e))?;
+    validate_evidence(&evidence, application)?;
+    let projection = evidence
+        .structure_projection
+        .as_ref()
+        .ok_or_else(|| integrity("PASS Evidence 에 structure projection 부재"))?;
+    let revision = candidate
+        .get_revision(&evidence.revision_id)
+        .map_err(|e| error(ContextErrorKind::Read, e))?;
+    validate_revision(&revision, &evidence, &aggregate.work)?;
+    let manifest = qualification
+        .get_manifest(&evidence.qualification_profile_id)
+        .map_err(|e| error(ContextErrorKind::Read, e))?;
+    validate_manifest(&manifest, &evidence, &revision, projection)?;
     Ok(VerifiedChain {
         aggregate,
         application_id: current,

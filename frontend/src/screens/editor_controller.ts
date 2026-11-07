@@ -4,28 +4,23 @@ import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { ScreenPorts } from "./ports.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
-import { createContextMenu } from "./context_menu.ts";
-import type { ContextMenuItem, ContextMenuPopoverPort } from "./context_menu.ts";
-import { pickDataFile } from "./data_file_pick.ts";
-import { invokePathAction } from "./path_actions.ts";
-import {
-  POOL_DATA_GONE, POOL_GONE_FROM_LIST, ROW_DETAIL_LABEL, createPoolVerbs,
-  dataRowMenuItems, pclmSheetEditOptions, poolRefusalText, saveSheetOrder,
-} from "./pool_verbs.ts";
+import type { ContextMenuPopoverPort } from "./context_menu.ts";
+import { saveSheetOrder } from "./pool_verbs.ts";
 import { SETTINGS_MODAL_ID } from "./settings_sheet.ts";
 import type { PoolRegistrationPort } from "./pool_verbs.ts";
 import {
-  NAME_FIELD, PATTERN_FIELD, editorServerValues, editorSession,
-  emptyDraft, ingestSnapshot, issueToken, markField, rowField, settle, typeInto,
+  NAME_FIELD, PATTERN_FIELD, editorServerValues, editorSession, emptyDraft, ingestSnapshot,
 } from "./editor_state.ts";
-import type { DraftState, RowAxis } from "./editor_state.ts";
-import { createLatestIntentQueue } from "./latest_intent.ts";
-import { SESSION_DATA_KEY } from "./pool_column.ts";
+import type { DraftState } from "./editor_state.ts";
 import type { SlicePort } from "./slice_popover.ts";
+import { createBindingMenu, createSlotMenus, findDataItem, findLibItem } from "./editor_controller_slots.ts";
+import type { LibMenu } from "./editor_controller_slots.ts";
+import { createSelectionController } from "./editor_controller_selection.ts";
+import { createDraftOps } from "./editor_controller_draft.ts";
 export type Obj = Record<string, any>;
 type Listener = () => void;
 
-type ModalPort = {
+export type ModalPort = {
   confirm(spec: Obj): Promise<boolean>;
   prompt(spec: Obj): Promise<string | null>;
   open(id: string, spec?: Obj): void;
@@ -64,17 +59,6 @@ const RETURN_SCREEN: Record<string, string> = {
   data: "job", result: "job", documents: "job", library: "library",
 };
 
-type LibMenu = {
-  /** 어느 열의 행인가 — 두 열이 같은 ⋯ 를 쓰므로 **동사표가 이 값으로 갈린다**(③a).
-   *  키만으로는 가를 수 없다: 좌는 루트 상대경로, 우는 풀 슬롯 키라 우연히 같을 수 있다. */
-  side: "tpl" | "dat";
-  media: string;
-  kind: "row";
-  key?: string;
-  item?: Obj | null;
-  trigger: HTMLElement;
-};
-
 export type ViewState = {
   libMenu: LibMenu | null;
   /** 2단계 머리의 ⋯ 메뉴가 열려 있는가 — 항목·위치는 공용 `ContextMenu` 가 소유한다. */
@@ -105,44 +89,9 @@ export type ViewState = {
  *  수 있으므로 종전대로다. */
 const TPL_READONLY_ACTIONS = new Set(["refresh"]);
 
-/** 템플릿 행 ⋮ 의 동사표 — 메뉴와 상세 시트가 이 하나를 공유한다. */
-export function libRowMenuItems(media: string, item: Obj | null): ContextMenuItem[] {
-  if (item === null || item === undefined) return [];
-  const detail: ContextMenuItem = { action: "detail", label: ROW_DETAIL_LABEL };
-  if (media === "hwpx") {
-    return [
-      { action: "edit", label: "템플릿 편집" },
-      ...((item.actions || []) as Obj[]).map((action: Obj) =>
-        ({ action: `act:${String(action.key)}`, label: String(action.label) })),
-      detail,
-    ];
-  }
-  return !!item.error || !!item.reason
-    ? [detail] : [{ action: "edit", label: "내용 편집" }, detail];
-}
-
-/** 2단계 머리의 드문 동사(⋯) 표 — 행 ⋮ 표(`libRowMenuItems`)처럼 스냅샷만 읽는 순수 함수다. */
-function bindingMenuItems(snap: Obj): ContextMenuItem[] {
-  const items: ContextMenuItem[] = [
-    { action: "resuggest-all", label: "자동 제안 다시 받기" },
-    { action: "unconfirm-all", label: "모두 해제", danger: true },
-  ];
-  const undo = Number(snap.unconfirm_undo_count || 0);
-  if (undo) {
-    items.push({
-      action: "restore-confirmed", label: `직전 확인 ${undo}개 복원`,
-      separatorBefore: true,
-    });
-  }
-  return items;
-}
-
-/** 고르기 거절의 착지 — 끌어 놓기는 모아서(`refusals`) 한 번 말하고, 클릭은 바로 알린다.
- *  좌·우 열 선택이 같은 규칙을 쓴다(종전에는 두 함수가 같은 클로저를 각자 지었다). */
-function refuseInto(refusals: string[] | undefined, text: string, notice: (text: string) => void): boolean {
-  if (refusals) refusals.push(text); else notice(text);
-  return false;
-}
+/** 템플릿 행 ⋮ 의 동사표 — `editor_controller_slots.ts` 로 옮겼다(라이브러리 메뉴 책임
+ *  분리). `editor.ts` 가 이 이름으로 그대로 가져오므로 여기서 재-export 한다. */
+export { libRowMenuItems } from "./editor_controller_slots.ts";
 
 export function createEditorController(deps: EditorControllerDeps) {
   const model = deps.runtime.model<Obj | null>(SCREEN);
@@ -160,10 +109,6 @@ export function createEditorController(deps: EditorControllerDeps) {
     tokFoldOpen: false, saveMessage: null,
     invalidField: "", aim: "", aimed: "",
   };
-  const libContextMenu = createContextMenu();
-  /* 등록 데이터·시트 탭 전환은 연속으로 눌러도 마지막 대상 하나로 착지한다. */
-  const poolSwitches = createLatestIntentQueue();
-  const bindingContextMenu = createContextMenu();
   const draftListeners = new Set<Listener>();
   const viewListeners = new Set<Listener>();
 
@@ -239,166 +184,25 @@ export function createEditorController(deps: EditorControllerDeps) {
     return deps.chain.chained(EDIT_CHAIN, () => dispatch(SCREEN, action, payload));
   }
 
-  /** dirty draft를 발신열에 올리고 그 줄을 비운다 — 커밋(이동·저장·이탈) 전 관문이다.
-   *  버튼 행동이 먼저 온 경우에도 blur 이벤트의 발생 여부에 기대지 않는다. 이미 blur가 올린
-   *  field(`pendingToken > 0`)는 다시 보내지 않고 아래 sentinel이 그 발신만 기다린다. */
-  async function flushPendingEdits(): Promise<unknown> {
-    const commits: Promise<void>[] = [];
-    for (const [field, state] of Object.entries(draft.fields)) {
-      if (!state.dirty || state.pendingToken > 0 || state.composing) continue;
-      if (field === NAME_FIELD) {
-        commits.push(commit(field, "set_name", { name: state.draftValue }));
-        continue;
-      }
-      if (field === PATTERN_FIELD) {
-        commits.push(commit(field, "set_pattern", { pattern: state.draftValue }));
-        continue;
-      }
-      /* 행 축의 초안은 **고정값 입력 하나**다(U6-C 리뷰 2). 종전에는 데이터 열 select 도
-         초안을 가졌는데 그 값은 열 이름이 아니라 **항목 값**(`col:…`/`sp:…`)이라, 지연
-         flush 의 일반 갈래가 그것을 `set_source` 에 그대로 실어 존재하지 않는 열
-         「col:품명」에 결속시켰다 — R5 센티넬 금지의 정확한 위반이다. 두 select 는 이제
-         초안을 두지 않고 고른 그 자리에서 kind 로 갈라 발행한다. 「가공」 팝오버의 입력은
-         행 축 초안이 아니다(팝오버가 blur·Enter 에서 완성된 명세로 보낸다). */
-      const match = /^row:(\d+):(const)$/.exec(field);
-      if (match === null) throw new Error(`알 수 없는 편집 draft field입니다: ${field}`);
-      const index = Number(match[1]);
-      commits.push(commit(field, "set_const", { index, const: state.draftValue }));
-    }
-    await Promise.all(commits);
-    return deps.chain.chained(EDIT_CHAIN, () => Promise.resolve());
-  }
-
-  /* ---- draft 커밋: 컨트롤에서 온 값의 발신 자리 ---- */
-
-  function type(field: string, value: string): void {
-    draft = typeInto(draft, field, value);
-    /* 겨눈 칸을 사용자가 고치는 순간 그 차단 알림은 현 상태를 서술하지 않는다 — 겨눔과
-       사유를 같은 전이에서 함께 걷는다(#874). */
-    if (view.invalidField !== "" && field === view.invalidField) {
-      patchView({ invalidField: "", saveMessage: null });
-    }
-    emitDraft();
-  }
-
-  function focus(field: string, focused: boolean): void {
-    draft = markField(draft, field, { focused });
-    emitDraft();
-  }
-
-  function compose(field: string, composing: boolean): void {
-    draft = markField(draft, field, { composing });
-    emitDraft();
-  }
-
-  /** 값 커밋 — session·token 이 맞는 응답만 draft 를 clean 으로 올린다. */
-  async function commit(field: string, action: string, payload: Obj): Promise<void> {
-    const session = draft.session;
-    const issued = issueToken(draft, field);
-    draft = issued.state;
-    emitDraft();
-    try {
-      await sendEdit(action, payload);
-      draft = settle(draft, { ok: true, session, token: issued.token, key: field });
-    } catch (error) {
-      draft = settle(draft, {
-        ok: false, session, token: issued.token, key: field,
-        error: String((error as Obj)?.message || error),
-      });
-      deps.notify(String((error as Obj)?.message || error));
-    }
-    emitDraft();
-  }
-
-  /* 발신은 **호출 자리마다 리터럴**이다 — 액션 이름과 페이로드 키를 표로 감추면 정적
-     계약(dispatch 배선·페이로드 스키마)이 이 화면을 못 보고 공허하게 통과한다. */
-  function commitField(field: string): void {
-    const state = draft.fields[field];
-    if (state === undefined || !state.dirty) return;
-    if (field === NAME_FIELD) void commit(field, "set_name", { name: state.draftValue });
-    if (field === PATTERN_FIELD) void commit(field, "set_pattern", { pattern: state.draftValue });
-  }
-
-  /** 데이터 열 항목 값 → 발행할 액션(U6-C #977).
-   *
-   *  **값을 파싱하지 않는다** — Python 이 낸 항목 목록에서 그 값을 찾아 `kind` 를 읽는다.
-   *  접두 규칙(`col:`/`sp:`)을 여기서 다시 해석하면 그 규칙을 두 곳이 소유하게 되고,
-   *  Python 이 이름 공간을 바꾸는 날 웹만 옛 규칙으로 남는다. 목록에 없는 값은 조용히
-   *  무시하지 않고 시끄럽게 던진다(선택지에 없는 것이 선택됐다 = 배선 결함). */
-  /** 표 안의 두 select 가 쓰는 **초안 없는** 발신(U6-C 리뷰 2).
-   *
-   *  select 는 값을 들고 있을 이유가 없다 — 고르는 순간이 곧 커밋이고, 타이핑처럼 지켜야 할
-   *  중간 상태가 없다. 초안을 두면 그 값(항목 값)이 지연 flush 의 일반 갈래로 새어 액션
-   *  payload 를 오염시킨다. 실패하면 화면을 서버 값으로 되돌린다: 재렌더가 제어 select 의
-   *  DOM 값을 스냅샷 값으로 되맞추므로 「고른 것처럼 보이는데 안 고른」 자리가 남지 않는다. */
-  function sendRowChoice(action: string, payload: Obj): void {
-    void sendEdit(action, payload)
-      .catch((error) => { noticeSave(String((error as Obj)?.message || error)); })
-      /* 성공이든 실패든 한 번 더 그린다 — 실패는 되돌리기고, 성공은 push 가 오기 전까지
-         화면이 옛 값을 들고 있지 않게 하는 정산이다. */
-      .finally(() => { patchView({}); });
-  }
-
-  /** 데이터 열 항목 값 → 발행할 액션(U6-C #977).
-   *
-   *  **값을 파싱하지 않는다** — Python 이 낸 항목 목록에서 그 값을 찾아 `kind` 를 읽는다.
-   *  접두 규칙(`col:`/`sp:`)을 여기서 다시 해석하면 그 규칙을 두 곳이 소유하게 되고,
-   *  Python 이 이름 공간을 바꾸는 날 웹만 옛 규칙으로 남는다. 목록에 없는 값은 조용히
-   *  무시하지 않고 시끄럽게 던진다(선택지에 없는 것이 선택됐다 = 배선 결함). */
-  function chooseDataColumn(index: number, value: string): void {
-    const options = (snapshot().data_column_options || []) as Obj[];
-    const row = ((snapshot().rows || []) as Obj[]).find((r) => Number(r.index) === index);
-    /* 「데이터에 없음」 항목은 그 행에만 서는 자리라 공용 목록에 없다 — 지금 값 그대로
-       되보내는 무동작이므로 발신하지 않는다(같은 열을 다시 고른 것과 같다). */
-    if (row && row.source_missing_label && value === String(row.source_value)) return;
-    const picked = options.find((option) => String(option.value) === value);
-    if (picked === undefined) throw new Error(`알 수 없는 데이터 열 항목입니다: ${value}`);
-    const kind = String(picked.kind);
-    if (kind === "column") {
-      sendRowChoice("set_source", { index, source: String(picked.field) });
-    } else if (kind === "none") {
-      sendRowChoice("set_source", { index, source: "" });
-    } else {
-      /* 「고정값…」을 고르면 값을 적을 자리가 새로 생긴다. 그 입력은 **서버가 이 행을
-         const 로 인정한 뒤에야** 렌더되므로 지금 DOM 에는 없다 — 마이크로태스크로 겨누면
-         언제나 빈손이다. 표지를 남기고 그 입력이 실제로 선 렌더에서 초점을 준다(리뷰 8). */
-      if (kind === "const") patchView({ pendingConstFocus: index });
-      sendRowChoice("set_display", { index, type: kind, fmt: "" });
-    }
-  }
-
-  /** 표시형 항목 값 → (유형, 표시형) 한 쌍(U6-C 리뷰 1). 값 문자열은 파싱하지 않는다 —
-   *  항목이 `type`·`fmt` 를 따로 들고 오므로 접두 규칙을 웹이 소유하지 않는다. */
-  function chooseDisplay(index: number, value: string): void {
-    const row = ((snapshot().rows || []) as Obj[]).find((r) => Number(r.index) === index);
-    const groups = ((row || {}).display_options || []) as Obj[];
-    for (const group of groups) {
-      const picked = ((group.options || []) as Obj[])
-        .find((option) => String(option.value) === value);
-      if (picked !== undefined) {
-        sendRowChoice("set_display", {
-          index, type: String(picked.type), fmt: String(picked.fmt),
-        });
-        return;
-      }
-    }
-    throw new Error(`알 수 없는 표시형 항목입니다: ${value}`);
-  }
-
-  function commitRowValue(index: number, axis: RowAxis, value: string): void {
-    void commit(rowField(index, axis), "set_const", { index, const: value });
-  }
-
-  function commitRow(index: number, axis: RowAxis, value: string): void {
-    type(rowField(index, axis), value);
-    commitRowValue(index, axis, value);
-  }
-
-  function commitRowOnBlur(index: number, axis: RowAxis): void {
-    const state = draft.fields[rowField(index, axis)];
-    if (state === undefined || !state.dirty) return;
-    commitRowValue(index, axis, state.draftValue);
-  }
+  /* draft(이름·패턴·행 값) 발신·커밋과 데이터 열/표시형 select 발행(U6-C #977)은
+     `editor_controller_draft.ts` 가 진다(저장/더티 처리). `draft` 그 자체는 흡수(`absorb`)
+     도 쓰는 공유 가변 상태라 여기(main)가 계속 소유하고, get/set 만 넘긴다. */
+  const draftOps = createDraftOps({
+    getDraft: () => draft,
+    setDraft: (next: DraftState) => { draft = next; },
+    emitDraft,
+    sendEdit,
+    settleChain: () => deps.chain.chained(EDIT_CHAIN, () => Promise.resolve()),
+    notify: deps.notify,
+    noticeSave,
+    getView: () => view,
+    patchView,
+    snapshot,
+  });
+  const {
+    type, focus, compose, commitField, commitRow, commitRowOnBlur,
+    chooseDataColumn, chooseDisplay, flushPendingEdits,
+  } = draftOps;
 
   /* ---- 「가공」 팝오버 — 칩 하나와 칩에 붙어 서는 편집 칸(`slice_popover.ts`) ----
 
@@ -536,264 +340,43 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (aimAtTarget(target)) patchView({ aim: "", aimed: target });
   }
 
-  /* ---- 라이브러리 관리(F8 — tpl 화면 사망의 승계) ---- */
+  /* 라이브러리 좌·우 열 ⋮ 메뉴·항목 상세 시트·Slot(컴파일된 구간) 동사(F8·S8-03·U6-E #979)는
+     `editor_controller_slots.ts` 가, 템플릿·데이터 채택·등록 데이터(pool) 관리 동사·매핑
+     재판정 관문은 `editor_controller_selection.ts` 가 각각 진다. 공유 상태(뷰·스냅샷·발신·
+     알림)는 deps 로 넘긴다. */
+  const selectionCtl = createSelectionController({
+    modal: deps.modal,
+    client: deps.client,
+    services: deps.services,
+    poolRegistration: deps.poolRegistration,
+    tplModel, poolModel,
+    snapshot,
+    notify: deps.notify,
+    noticeSave,
+    sendEdit,
+    /* 관리 동사도 **편집 체인**에 선다(리뷰 6): 이 화면의 다른 발신과 순서를 나눠 갖지
+       않으면 보관·삭제가 마운트·저장 왕복 사이로 끼어든다. */
+    dispatchChained: (screen: string, action: string, payload: Obj = {}) =>
+      deps.chain.chained(EDIT_CHAIN, () => dispatch(screen, action, payload)),
+    invoke,
+    refreshScreen: () => deps.runtime.refresh(SCREEN),
+  });
 
-  /** 좌 열 항목 전수 — 정본은 `tpl` 채널의 **공용 열 존**(`column.rows`) 하나다.
-   *
-   *  종전에는 매체별 밴드(`hwpx`/`txt` 의 `sections[].items[]`)를 여기서 이어 붙여 한
-   *  목록으로 만들었다. 그 접기는 이제 Python 이 하고(좌·우 열이 같은 형을 쓰는 조건),
-   *  표면이 그 순서를 두 번 짓지 않는다 — 목록이 갈릴 자리가 사라진다. */
-  function libItems(): Obj[] {
-    return (((tplModel.getSnapshot() || {}).column || {}).rows || []) as Obj[];
-  }
-
-  /** 좌 열 항목 하나 — 매체는 행이 든 표지(`icon`)로 대조한다.
-   *
-   *  키만으로 찾지 않는 이유는 ⋮ 의 열림 상태가 `(media, key)` 쌍이기 때문이다: 겨눈 행이
-   *  바뀌었는데 키가 같으면 지난 행의 메뉴가 그대로 서 있게 된다. */
-  function findLibItem(media: string, key: string): Obj | null {
-    return libItems().find(
-      (row) => String(row.key) === key && String(row.icon || "") === media) || null;
-  }
-
-  /** 우 열 항목 하나 — 목록 행(`pool.column.rows`)과 세션 행(`pairing.data_row`)의 합.
-   *
-   *  세션 행은 풀에 없는 결속(파일로 연 데이터)이라 `pool` 채널에 없다. 그 행을 여기서
-   *  찾지 못하면 그 행의 ⋯ 가 조용히 빈 메뉴가 된다 — 두 출처를 같은 자리에서 본다. */
-  function findDataItem(key: string): Obj | null {
-    if (key === SESSION_DATA_KEY) {
-      return ((snapshot().pairing || {}) as Obj).data_row as Obj | null || null;
-    }
-    const rows = (((poolModel.getSnapshot() || {}).column || {}).rows || []) as Obj[];
-    return rows.find((row) => String(row.key) === key) || null;
-  }
-
-  function closeLibMenu(): void {
-    patchView({ libMenu: null });
-    libContextMenu.close();
-  }
-
-  /* 겨눔은 **행 하나**다 — 그룹 갈래는 U4 §2-30 에서 그룹 표면과 함께 사라졌다. */
-  function openLibMenu(
-    side: "tpl" | "dat", media: string, id: string, trigger: HTMLElement,
-  ): void {
-    const item = side === "tpl" ? findLibItem(media, id) : findDataItem(id);
-    const items: ContextMenuItem[] = side === "tpl"
-      ? libRowMenuItems(media, item) : dataRowMenuItems(item);
-    /* 동작이 0 이면 애초에 트리거가 비활성이라 여기 오지 않는다(어포던스는 `LibRowTail`
-       이 같은 술어로 잠근다) — 그래도 방어로 남긴다: 빈 팝오버는 「눌렀는데 아무 일도
-       없다」라서 조용한 no-op 이다. */
-    if (items.length === 0) return;
-    patchView({ libMenu: { side, media, kind: "row", key: id, item, trigger } });
-    libContextMenu.open(trigger, items);
-  }
-
-  function toggleLibMenu(
-    side: "tpl" | "dat", media: string, id: string, trigger: HTMLElement,
-  ): void {
-    const open = view.libMenu;
-    if (open !== null && open.side === side && open.media === media && open.key === id) {
-      closeLibMenu(); return;
-    }
-    openLibMenu(side, media, id, trigger);
-  }
-
-  /** 항목 동사의 **단일 분기표**(U6-E 리뷰 9) — 행 ⋯ 와 시트 동사 줄이 같은 것을 본다.
-   *
-   *  갈리는 것은 **대상과 실패의 착지**뿐이라 둘 다 인자로 받는다: 행 메뉴는 눌린 행을
-   *  겨누고 예외를 경보 백스톱으로 보내며, 시트는 열려 있는 항목을 겨누고 사유를 시트 안에
-   *  남긴다. 표를 복제하면 한쪽에만 동사가 늘어나는 날이 온다.
-   *
-   *  **닫힌 집합이다**: 모르는 키를 조용히 떨어뜨리면 메뉴에 항목을 더하고 배선을 잊은 날
-   *  「눌렀는데 아무 일도 없다」가 된다. 목록을 짓는 곳(`libRowMenuItems`)과 여기가 같은
-   *  집합을 봐야 하고, 어긋남은 던진다. `act:review` 가 없는 것은 계약이다 — 검토 왕복은
-   *  「자세히…」 하나가 진다(리뷰 10).
-   */
-  async function runItemVerb(
-    action: string, target: Obj, trigger: HTMLElement,
-  ): Promise<void> {
-    const path = String(target.path || "");
-    if (action === "edit") {
-      await deps.ports.authoring.current().open(path);
-    } else if (action === "detail") await openDetail(path, trigger);
-    else if (action === "act:compile") await compileTemplate(path);
-    else throw new Error(`알 수 없는 항목 동사입니다: ${action}`);
-  }
-
-  async function handleLibMenu(action: string): Promise<void> {
-    const menu = view.libMenu;
-    if (menu === null) return;
-    const item = (menu.item || {}) as Obj;
-    const trigger = menu.trigger;
-    const side = menu.side;
-    closeLibMenu();
-    try {
-      /* 우 열 분기표는 **공용 몸통 하나**다(공용 ⑤ 리뷰) — 이 화면이 데이터 동사를
-         발명하지 않는다. 좌 열(`runItemVerb`)은 tpl 채널이라 여기 남는다. */
-      if (side === "dat") await poolVerbs.runVerb(action, item, trigger);
-      else await runItemVerb(action, item, trigger);
-    } catch (error) {
-      deps.notify(String((error as Obj)?.message || error));
-    }
-  }
-
-  /** 「자세히…」 — 검토 왕복이 시트의 재료를 채우고 **그 뒤에** 시트를 연다(U6-E #979).
-   *
-   *  순서가 계약이다: 먼저 열면 지난 항목의 상세가 한 프레임 서 있다가 갈리고, 검토가
-   *  거절되면 빈 시트만 남는다. 실패는 왕복이 던지므로 호출자의 백스톱까지 올라간다.
-   *
-   *  열림·닫힘을 뷰 상태로 드는 이유는 **동사 결과의 채널**이 그 사실로 갈리기 때문이다
-   *  (리뷰 3): 시트가 화면을 덮는 동안 `#save-msg` 에 쓴 문장은 스크림 뒤에 그려진다. */
-  async function openDetail(path: string, trigger: HTMLElement): Promise<void> {
-    await dispatch("tpl", "review", { path });
-    patchView({ detailOpen: true, detailMessage: null });
-    deps.modal.open("tplDetailModal", {
-      returnFocus: trigger,
-      beforeClose: () => {
-        patchView({ detailOpen: false, detailMessage: null });
-        return true;
-      },
-    });
-  }
-
-  /** 동사 실패의 착지 — 시트가 열려 있으면 **시트 안**, 아니면 인라인 채널(#323).
-   *
-   *  같은 문장을 두 자리에 쓰지 않는다: 읽는 사람이 지금 보고 있는 면에 남긴다. */
-  function noticeVerb(message: string): void {
-    if (view.detailOpen) patchView({ detailMessage: message });
-    else noticeSave(message);
-  }
-
-  /** 누름틀·구간 변환 — 2단계(스캔 dry-run → 확인 왕복 → 제자리 적용).
-   *
-   *  문안·수치·차단 판정은 Python 이 낸다. 여기서 재조립하지 않는다: 차단(`blocked`)은
-   *  결과 줄로 이미 재진술됐으므로 확인을 띄우지 않고 조용히 끝난다. */
-  async function compileTemplate(path: string): Promise<void> {
-    const result = await dispatch("tpl", "compile", { path });
-    if (result.needs_confirm && await deps.modal.confirm({
-      body: `${result.confirm_text}\n\n지금 변환할까요?`,
-      confirmLabel: "제자리 변환", cancelLabel: "취소", danger: true,
-    })) {
-      await dispatch("tpl", "compile", { path, confirm: true });
-    }
-  }
-
-  /* 동봉 예제 세트의 설치(#891)·제거(#892) 진입점은 여기 있었다. 튜토리얼 진입 표면과 함께
-     배포본에서 걷혔고(#941), `tpl` 채널의 `install_examples`·`remove_examples` 액션과 그
-     스냅샷 축(`library.examples`)은 동결로 남는다 — 되살릴 때 이 자리에서 다시 소비한다. */
-
-  /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ----
-     동사가 서는 자리는 U6-E(#979)에서 **항목 상세 시트** 안으로 옮겼다. 겨누는 경로·목록은
-     그래서 `tpl` 채널의 `detail` 존이 낸다 — 시트가 그리는 것과 동사가 겨누는 것이 같은
-     값이어야 「보이는 항목과 다른 파일을 바꾸는」 자리가 생기지 않는다. */
-
-  /** 시트가 지금 겨눈 상세(없으면 빈 객체) — 동사와 렌더가 같은 값을 읽는 단일 자리. */
-  function detailZone(): Obj {
-    return ((tplModel.getSnapshot() || {}).detail || {}) as Obj;
-  }
-
-  function detailPath(): string {
-    return String(detailZone().path || "");
-  }
-
-  /** 항목 이름 바꾸기 — 파괴가 아니라 프롬프트 하나다(확인 왕복 없음). */
-  async function renameSlot(slotId: string, label: string, trigger: HTMLElement): Promise<void> {
-    const value = await deps.modal.prompt({
-      /* 빈 문자열도 유효한 답이다(이름 없는 항목으로 되돌리기) — 검증을 걸지 않는다. */
-      title: "항목 이름 바꾸기", body: `'${slotId}' 의 새 이름`, value: label,
-      returnFocus: trigger,
-    });
-    if (value === null) return;
-    await dispatch("tpl", "slot_rename", { path: detailPath(), slot_id: slotId, label: value });
-  }
-
-  /** 항목을 표기로 되돌리기 — 확인 본문(전이 결과 재진술)은 Python 이 싣는다. */
-  async function decompileSlot(slotId: string, trigger: HTMLElement): Promise<void> {
-    const path = detailPath();
-    const result = await dispatch("tpl", "slot_decompile", { path, slot_id: slotId });
-    if (result.needs_confirm && await deps.modal.confirm({
-      body: `${result.confirm_text}\n\n되돌릴까요?`,
-      confirmLabel: "표기로 되돌리기", cancelLabel: "취소", returnFocus: trigger, danger: true,
-    })) {
-      await dispatch("tpl", "slot_decompile", { path, slot_id: slotId, confirm: true });
-    }
-  }
-
-  /** 이 템플릿의 항목을 전부 표기로 되돌리기 — 대상이 항목이 아니라 파일이라 `slot_id` 가 없다. */
-  async function decompileAllSlots(trigger: HTMLElement): Promise<void> {
-    const path = detailPath();
-    const result = await dispatch("tpl", "slot_decompile_all", { path });
-    if (result.needs_confirm && await deps.modal.confirm({
-      body: `${result.confirm_text}\n\n되돌릴까요?`,
-      confirmLabel: "전부 되돌리기", cancelLabel: "취소", returnFocus: trigger, danger: true,
-    })) {
-      await dispatch("tpl", "slot_decompile_all", { path, confirm: true });
-    }
-  }
-
-  /** 항목 삭제 — 내용째 사라지는 파괴 확정. */
-  async function removeSlot(slotId: string, trigger: HTMLElement): Promise<void> {
-    const path = detailPath();
-    const result = await dispatch("tpl", "slot_remove", { path, slot_id: slotId });
-    if (result.needs_confirm && await deps.modal.confirm({
-      body: `${result.confirm_text}\n\n지울까요?`,
-      confirmLabel: "삭제", cancelLabel: "취소", returnFocus: trigger, danger: true,
-    })) {
-      await dispatch("tpl", "slot_remove", { path, slot_id: slotId, confirm: true });
-    }
-  }
-
-  /** 상세 시트 동사 줄의 단일 진입 — 겨누는 것은 **시트가 지금 든 항목**이다(리뷰 9).
-   *
-   *  분기표는 행 ⋮ 와 공유하고(`runItemVerb`) 여기가 정하는 것은 대상과 실패의 착지뿐이다. */
-  async function handleDetailVerb(action: string, trigger: HTMLElement): Promise<void> {
-    patchView({ detailMessage: null });   // 새 동사는 지난 사유를 이고 가지 않는다
-    try {
-      await runItemVerb(action, detailZone(), trigger);
-    } catch (error) {
-      noticeVerb(String((error as Obj)?.message || error));
-    }
-  }
-
-  /** Slot 동사의 단일 진입 — 실패는 인라인 채널로(#323 라우팅 규칙).
-   *
-   *  밴드 동사(`decompile-all`)는 `slotId` 를 쓰지 않는다 — 대상이 파일이다. */
-  async function handleSlotVerb(
-    verb: string, slotId: string, trigger: HTMLElement,
-  ): Promise<void> {
-    try {
-      if (verb === "decompile-all") await decompileAllSlots(trigger);
-      else if (verb === "rename") {
-        const rows = ((detailZone().slots || {}).rows || []) as Obj[];
-        const row = rows.find((item) => String(item.id) === slotId);
-        await renameSlot(slotId, String((row || {}).label || ""), trigger);
-      } else if (verb === "decompile") await decompileSlot(slotId, trigger);
-      else if (verb === "remove") await removeSlot(slotId, trigger);
-      else throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
-    } catch (error) {
-      /* 구간 동사는 **시트 안**에 서므로 실패도 그 면에 남는다(리뷰 3) — 시트가 닫혀 있는
-         호출(프로브·직접 호출)에서는 종전대로 인라인 채널이 받는다. */
-      noticeVerb(String((error as Obj)?.message || error));
-    }
-  }
-
-  /* ---- 확인 관문 ---- */
-
-  /** 확정·수동 매핑 보호 — 수치는 Python 이 **지금** 판정한다(stale 우회 차단).
-   *  `cause` 는 무엇을 바꾸려는지만 싣는다 — 데이터 계약을 든 작업에서 계약이 다시 판정할 행을
-   *  셈에서 빼는 것은 Python 이다(#1193). */
-  async function confirmMappingResetIfConfirmed(
-    verbPhrase: string, cause: "data" | "template",
-  ): Promise<boolean> {
-    const stakes = await sendEdit("mapping_reset_stakes", { cause });
-    const human = Number(stakes.human || 0);
-    if (!human) return true;
-    return deps.modal.confirm({
-      body: `${verbPhrase} 확정했거나 직접 편집한 매핑 ${human}개가 전부 미확정으로 돌아갑니다` +
-        `(값은 이월).\n\n계속할까요?`,
-      confirmLabel: "미확정으로 되돌리기", cancelLabel: "취소",
-    });
-  }
+  const slotMenus = createSlotMenus({
+    modal: deps.modal,
+    notify: deps.notify,
+    tplModel, poolModel,
+    snapshot,
+    dispatch,
+    openAuthoringAt: (path: string) => deps.ports.authoring.current().open(path),
+    /* 우 열 분기표는 데이터 선택 컨트롤러와 공유한다(공용 ⑤ 리뷰) — 이 화면이 데이터 동사를
+       발명하지 않는다. */
+    runPoolVerb: (action: string, item: Obj, trigger: HTMLElement) =>
+      selectionCtl.poolVerbs.runVerb(action, item, trigger),
+    getView: () => view,
+    patchView,
+    noticeSave,
+  });
 
   /* ---- 저장·이동·이탈 ---- */
 
@@ -849,6 +432,31 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
+  /** 저장 성공의 정산 — 사유가 해소된 표지·알림을 걷고, 저장은 제자리이므로(결정 40)
+   *  후보·문서 탐색 스냅샷만 호출자 선택에 따라 갱신한다. */
+  function settleSaveSuccess(options: { listRefresh?: "background" | "caller" }): void {
+    clearSaveMessage();   // 막았던 사유가 해소됐다 — 차단 문안을 남겨 두지 않는다(#874)
+    /* 겨눔 표지도 같은 전이에서 걷는다: 사유가 사라졌는데 칸만 빨갛게 남으면 화면이
+       「저장됐다」와 「이 칸이 잘못됐다」를 동시에 말한다. */
+    if (view.invalidField !== "") patchView({ invalidField: "" });
+    /* 저장은 제자리(결정 40). 후보·문서 탐색 스냅샷만 갱신해 새/개명 작업이 바로 보이게 한다. */
+    if (options.listRefresh !== "caller") void deps.ports.jobRead.current().refreshList();
+  }
+
+  /** 덮어쓰기 확인 — 동의하면 그 표지를 실어 저장을 재시도한다(#149). 판정은 Python 이
+   *  쓰기 잠금 안에서 다시 한다. */
+  async function confirmOverwriteThenRetry(
+    result: Obj, flags: Obj, options: { listRefresh?: "background" | "caller" },
+  ): Promise<boolean> {
+    if (!(await deps.modal.confirm({
+      body: `${result.overwrite_text}\n\n계속할까요?`,
+      confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
+    }))) return false;
+    return doSave({
+      ...flags, confirm_overwrite: true, confirmed_overwrite_text: result.overwrite_text,
+    }, options);
+  }
+
   /** 저장 한 번. ``listRefresh: "background"`` 가 기본이다 — 일반 [작업 저장]은 제자리
    *  저장이라(결정 40) 「문서 만들기」 목록만 뒤에서 다시 받게 하고 기다리지 않는다.
    *  ``"caller"`` 는 그 갱신을 호출자가 직접 순서 안에서 보내겠다는 뜻이다(`saveAndOpen`). */
@@ -868,26 +476,10 @@ export function createEditorController(deps: EditorControllerDeps) {
       return false;
     }
     if (result.ok) {
-      clearSaveMessage();   // 막았던 사유가 해소됐다 — 차단 문안을 남겨 두지 않는다(#874)
-      /* 겨눔 표지도 같은 전이에서 걷는다: 사유가 사라졌는데 칸만 빨갛게 남으면 화면이
-         「저장됐다」와 「이 칸이 잘못됐다」를 동시에 말한다. */
-      if (view.invalidField !== "") patchView({ invalidField: "" });
-      /* 저장은 제자리(결정 40). 후보·문서 탐색 스냅샷만 갱신해 새/개명 작업이 바로 보이게 한다. */
-      if (options.listRefresh !== "caller") void deps.ports.jobRead.current().refreshList();
+      settleSaveSuccess(options);
       return true;
     }
-    if (result.needs_overwrite) {
-      /* 본 문안을 그대로 되돌려 준다(#149) — 판정은 Python 이 쓰기 잠금 안에서 다시 한다. */
-      if (await deps.modal.confirm({
-        body: `${result.overwrite_text}\n\n계속할까요?`,
-        confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
-      })) {
-        return doSave({
-          ...flags, confirm_overwrite: true, confirmed_overwrite_text: result.overwrite_text,
-        }, options);
-      }
-      return false;
-    }
+    if (result.needs_overwrite) return confirmOverwriteThenRetry(result, flags, options);
     noticeSave(String(result.block_reason || "저장할 수 없습니다."));
     aimAtBlockedField(String(result.blocked_field || ""));
     return false;
@@ -991,215 +583,15 @@ export function createEditorController(deps: EditorControllerDeps) {
     // #957 에서 함께 사망했다 — 착지 화면은 자기 스냅샷으로 선다.
   }
 
-  /* ---- 본문 행동 ---- */
-
-  /** 템플릿 채택 — **같은 템플릿이면 아무 일도 하지 않고**, 교체면 먼저 묻는다.
-   *
-   *  둘 다 고르기 화면이 연 자리다(U6-B #976 리뷰 1·2). 종전 표면에서는 현재 항목이 클릭
-   *  핸들러 없는 span 이라 재선택이 구조적으로 불가능했고, 교체 확인은 데이터 쪽에만 있었다
-   *  — 이제 같은 제스처(클릭·끌어 놓기)가 좌·우에 다 서므로 규칙도 하나여야 한다.
-   *  수치는 Python 이 **지금** 판정한다(`mapping_reset_stakes` — 웹 지역 스냅샷 금지),
-   *  확인 UI 만 여기서 짓는다. 백엔드도 같은 no-op 을 진다(표면만 막으면 뚫린다). */
-  async function useLibraryTemplate(path: string): Promise<boolean> {
-    if (path === String(snapshot().template_path || "")) return true;
-    if (snapshot().template_path
-      && !(await confirmMappingResetIfConfirmed("템플릿을 바꾸면", "template"))) return false;
-    await sendEdit("use_library_template", { path });
-    return true;
-  }
-
-  async function importTemplate(): Promise<void> {
-    const result = await invoke("import_template_file", SCREEN);
-    if (typeof result === "string" && result.startsWith("ERROR:")) {
-      noticeSave(result.slice(6).trim());
-      return;
-    }
-    if (typeof result === "string" && result !== "") await deps.runtime.refresh(SCREEN);
-  }
-
-  async function pickData(): Promise<void> {
-    if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면", "data"))) return;
-    /* 응답 해석은 데이터 선택 면과 한 벌이다. 시트 확정 취소는 중단(첫 시트 강등 없음),
-       계약 목록 파일(.db·.pclm)은 데이터 선택 컨트롤러의 등록 폼으로 넘긴다(포트 위임). */
-    const picked = await pickDataFile(invoke, SCREEN, {
-      sheetPicker: deps.services.sheetPicker.current(),
-      openContractList: (db) => deps.poolRegistration.openPclm(db),
-    });
-    if (picked.kind === "error") noticeSave(picked.message);
-  }
-
-  /** 고정한 데이터 하나를 이 작업의 데이터로 — 파일 피커와 **같은 선행 규율**을 지킨다:
-   *  확정 매핑이 걸린 교체는 고르기 **전에** 한 번 묻는다(고른 뒤 되묻는 순서 금지).
-   *  `sheet` 은 「연결 확인」의 시트 탭이 싣는다 — 같은 등록의 다른 시트도 데이터 교체다.
-   *  연속으로 누르면 **마지막 대상**만 착지한다(작업 화면 `switchData` 와 같은 큐): 확인을
-   *  기다리는 사이 더 새 선택이 오면 앞 선택은 변이를 보내지 않고 `false` 로 끝난다. */
-  async function usePoolData(key: string, sheet?: string): Promise<boolean> {
-    return poolSwitches.run(async (isCurrent) => {
-      if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면", "data")) || !isCurrent()) return false;
-      const result = await sendEdit("use_pool_data", sheet === undefined ? { key } : { key, sheet });
-      if (result.ok === false) noticeSave(String(result.error || "등록 데이터를 불러올 수 없습니다."));
-      return result.ok !== false;
-    }, false);
-  }
-
-  /* 고를 수 없는 항목의 거절 문안과 「목록에서 사라졌다」는 **데이터 선택 다이얼로그와
-     공용**이다(③b — 두 자리가 같은 열을 그리므로 거절의 문형도 한 벌이다). 사유 자체는
-     Python 이 행에 실어 보낸 것을 그대로 재진술한다. */
-  function refuseSelection(name: string, reason: string): void {
-    noticeSave(poolRefusalText(name, reason));
-  }
-
-  /** 좌 열 선택 — 클릭도 드롭도 **이 한 자리**를 지난다(같은 액션, 같은 거절).
-   *
-   *  ``refusals`` 를 받으면 거절을 그 배열에 담고 알림은 **호출자가** 낸다(끌어 놓기는 두
-   *  반의 결과를 한 문장으로 말해야 하고, 알림 채널이 1슬롯이라 각자 쓰면 앞 문장이 사라진다).
-   *  반환값은 「이 반쪽이 적용됐는가」다. */
-  async function chooseTemplate(key: string, refusals?: string[]): Promise<boolean> {
-    const item = libItems().find((row) => String(row.key) === key);
-    const refuse = (text: string): boolean => refuseInto(refusals, text, noticeSave);
-    if (item === undefined) return refuse(`템플릿을 찾을 수 없습니다. ${POOL_GONE_FROM_LIST}`);
-    if (!item.selectable) {
-      return refuse(poolRefusalText(String(item.name), String(item.reason || "")));
-    }
-    return useLibraryTemplate(String(item.path));
-  }
-
-  /** 우 열 선택 — 좌 열과 대칭.
-   *
-   *  세션 행(파일로 연 데이터)은 **무동작**이다(③a): 이미 이 작업의 데이터라 다시 마운트할
-   *  것이 없고, 풀에 없으니 「목록에서 사라졌다」도 아니다. 거절 문장을 세우면 지금 쓰고
-   *  있는 것을 못 고른다고 말하는 꼴이 된다 — 좌 열의 「이미 고른 항목 재선택 = 무동작」과
-   *  같은 자리다. */
-  async function chooseData(key: string, refusals?: string[]): Promise<boolean> {
-    if (key === SESSION_DATA_KEY) return false;
-    /* 재료는 **그리고 있는 그 열**이다(고르기 열 공용 ④) — 다른 존을 곁눈질하면 화면에
-       선 사유와 거절이 재진술하는 사유가 서로 다른 출처에서 온다. */
-    const row = findDataItem(key);
-    const refuse = (text: string): boolean => refuseInto(refusals, text, noticeSave);
-    if (row === null) return refuse(POOL_DATA_GONE);
-    if (!row.selectable) {
-      return refuse(poolRefusalText(String(row.name), String(row.reason || "")));
-    }
-    return usePoolData(key);
-  }
-
-  /** 끌어 놓기 성사 — **클릭이 발행하는 액션 두 번**이다(새 액션 0).
-   *
-   *  순서는 템플릿 먼저다: 템플릿이 필드를 정하고 그 위에 데이터가 온다(U4 §2.4). 뒤집으면
-   *  데이터 마운트가 모델 재조립을 태운 뒤 템플릿 교체가 그것을 또 무너뜨린다.
-   *
-   *  우 열의 세션 행(`session`)이 상대가 되면 **데이터 쪽은 그대로 둔다**(③a) — 「지금 쓰는
-   *  데이터에 이 템플릿을 붙인다」는 뜻이고, 그 무동작은 `chooseData` 하나가 진다(거절 0). */
-  async function dropPair(sourceSide: string, sourceKey: string, targetKey: string): Promise<void> {
-    const [templateKey, dataKey] = sourceSide === "tpl"
-      ? [sourceKey, targetKey] : [targetKey, sourceKey];
-    /* 거절은 **모아서 한 번** 말한다(리뷰 5): 알림 채널이 1슬롯이라 두 반쪽이 각자 쓰면
-       먼저 쓴 문장이 조용히 사라지고, 사람은 무엇이 반만 바뀌었는지 알 수 없다. */
-    const refusals: string[] = [];
-    const gotTemplate = await chooseTemplate(templateKey, refusals);
-    const gotData = await chooseData(dataKey, refusals);
-    if (refusals.length === 0) return;
-    const applied = [gotTemplate ? "템플릿" : "", gotData ? "데이터" : ""].filter(Boolean);
-    noticeSave(applied.length
-      ? `${applied.join("·")}만 바뀌었습니다. ${refusals.join(" ")}`
-      : refusals.join(" "));
-  }
-
-  /* 동사 한 벌은 데이터 선택 다이얼로그와 **같은 몸통**이다(U6-B · 공용 ⑤ 리뷰) — 같은
-     `pool` 채널·같은 확인 왕복·같은 분기표·같은 검토 왕복·같은 통지 동사. 갈리는 것은
-     「사용」의 발행과 실패가 착지하는 자리, 그리고 네 포트뿐이다. */
-  const poolVerbs = createPoolVerbs({
-    /* 관리 동사도 **편집 체인**에 선다(리뷰 6): 이 화면의 다른 발신과 순서를 나눠 갖지
-       않으면 보관·삭제가 마운트·저장 왕복 사이로 끼어든다. 연타 차단은 공용 몸통의
-       in-flight 가드가 지고(다이얼로그와 같은 자리), 체인은 그 위의 직렬화다. */
-    dispatch: (screen: string, action: string, payload: Obj = {}) =>
-      deps.chain.chained(EDIT_CHAIN, () => dispatch(screen, action, payload)),
-    modal: deps.modal,
-    onError: noticeSave,
-    onUse: (row: Obj) => usePoolData(String(row.key)),
-    /* 프리필 재료는 **검토 왕복이 낸 상세 투영**이다(고르기 열 공용 ④) — 키 이름도
-       그 투영 그대로(`path`·`sheet`·`note`)다. */
-    openRelink: (row: Obj) => deps.poolRegistration.openRegDialog({
-      title: "데이터 다시 연결", okLabel: "다시 연결", targetKey: row.key,
-      name: row.name, path: row.path, sheet: row.sheet, note: row.note,
-    }),
-    openPclmSheets: (row: Obj) => deps.poolRegistration.openRegDialog({
-      ...pclmSheetEditOptions(row), refreshScreen: "editor",
-    }),
-    poolSnapshot: () => poolModel.getSnapshot() as Obj | null,
-    reveal: (path: string) => invokePathAction({
-      client: deps.client, path, action: "reveal", notify: deps.notify,
-    }),
-    /* 시트의 주인은 데이터 선택 컨트롤러다 — 이 화면은 문만 연다(두 번째 구현 금지). */
-    openDetail: (key: string, trigger: HTMLElement | null) =>
-      deps.poolRegistration.openDetail(key, trigger),
-  });
-  const { poolAction, resolveDuplicate } = poolVerbs;
-
-  /** 저장 폴더 변경은 기존 설정 모달을 연다. */
-  function openSettings(): void {
-    deps.modal.open(SETTINGS_MODAL_ID, {});
-  }
-
-  /** 「이 데이터 고정…」 — 파일로 연 데이터를 풀에 남긴다(`#poolRegModal` pin 모드). */
-  function openPin(): void {
-    const state = snapshot();
-    if (!state.data_path) return;
-    deps.poolRegistration.openRegDialog({
-      title: "이 데이터 고정", okLabel: "고정", name: state.data_name,
-      path: state.data_path, sheet: state.data_sheet || "", pinMode: true,
-    });
-  }
-
-  async function resuggestAll(): Promise<void> {
-    /* 수치는 **이 관문의 것**을 읽는다 — 관문마다 자기 수치를 읽는다. */
-    const stakes = await sendEdit("mapping_reset_stakes", {});
-    const manual = Number(stakes.resuggest_manual || 0);
-    const kept = Number(stakes.confirmed || 0);
-    if (manual && !(await deps.modal.confirm({
-      body: `직접 편집한 매핑 ${manual}개가 자동 제안으로 돌아갑니다.` +
-        `\n직접 입력한 상수·유형·표시형도 함께 지워집니다.` +
-        (kept ? `\n확정한 ${kept}개는 그대로 둡니다.` : "") +
-        `\n\n계속할까요?`,
-      confirmLabel: "다시 받기", cancelLabel: "취소",
-    }))) return;
-    const result = await sendEdit("resuggest_all", {});
-    /* 아무것도 안 바뀐 경우를 조용히 넘기지 않는다 — 무동작으로 보이면 그게 조용한 소실이다. */
-    if (!result.resuggested) {
-      noticeSave(`자동 제안을 다시 받을 행이 없습니다. 확정한 ${result.kept_confirmed}개는 그대로 둡니다.`);
-    }
-  }
-
-  /** 「제안 n건 모두 확인」 — 자동 제안 행만 승격한다(U6-C #977).
-   *
-   *  확인 왕복이 없는 이유: 이 동사는 **잃을 것을 만들지 않는다**(미확정 → 확정 한 방향
-   *  이고, 되돌리는 동사가 ⋯ 메뉴에 그대로 있다). 종전 「모두 확정」이 이름 재진술 모달을
-   *  세운 것은 채울 것이 없는 행까지 한 번에 비움 확정으로 밀어 넣었기 때문이고, 그 승격은
-   *  이제 행별 「비워 둠」 선언이 진다. 승격한 수치는 배지·pill 이 그 자리에서 말한다. */
-  async function confirmSuggested(): Promise<void> {
-    await sendEdit("confirm_suggested", {});
-  }
-
   /* ---- 2단계 머리의 드문 동사(⋯) ---- */
 
-  function closeBindingMenu(): void {
-    patchView({ bindingMenu: false });
-    bindingContextMenu.close();
-  }
-
-  function toggleBindingMenu(trigger: HTMLElement): void {
-    if (view.bindingMenu) { closeBindingMenu(); return; }
-    patchView({ bindingMenu: true });
-    bindingContextMenu.open(trigger, bindingMenuItems(snapshot()));
-  }
-
-  async function handleBindingMenu(action: string): Promise<void> {
-    closeBindingMenu();
-    if (action === "resuggest-all") { await resuggestAll(); return; }
-    if (action === "unconfirm-all") { await sendEdit("unconfirm_all", {}); return; }
-    if (action === "restore-confirmed") { await sendEdit("restore_confirmed", {}); return; }
-    throw new Error(`알 수 없는 연결 확인 메뉴 동작: ${action}`);
-  }
+  const bindingMenu = createBindingMenu({
+    snapshot, sendEdit, resuggestAll: () => selectionCtl.resuggestAll(),
+    getView: () => view, patchView,
+  });
+  const {
+    bindingContextMenu, closeBindingMenu, toggleBindingMenu, handleBindingMenu, isBindingMenuOpen,
+  } = bindingMenu;
 
   /** 변경 버리기 — 발신 **전에** 대기 중 편집을 정산한다(정산하지 않으면 방금 친 글자가
    *  되돌리기 뒤에 도착해 버린 상태를 다시 더럽힌다). 되돌렸다는 재진술은 컨트롤러 통지다. */
@@ -1264,14 +656,17 @@ export function createEditorController(deps: EditorControllerDeps) {
     type, focus, compose, commitField, commitRow, commitRowOnBlur,
     toggleSliceEditor, isSliceEditorOpen, slicePort,
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
-    toggleLibMenu, closeLibMenu, handleLibMenu, handleSlotVerb,
+    toggleLibMenu: slotMenus.toggleLibMenu,
+    closeLibMenu: slotMenus.closeLibMenu,
+    handleLibMenu: slotMenus.handleLibMenu,
+    handleSlotVerb: slotMenus.handleSlotVerb,
     /** 항목 상세 시트(U6-E #979) — 여는 자리 둘(행 ⋮ · 게이트 존)이 같은 한 문을 지난다. */
-    openDetail,
+    openDetail: slotMenus.openDetail,
     closeDetail: (): void => { deps.modal.close("tplDetailModal"); },
-    handleDetailVerb,
-    isLibMenuOpen: (): boolean => view.libMenu !== null,
-    libContextMenu,
-    findLibItem,
+    handleDetailVerb: slotMenus.handleDetailVerb,
+    isLibMenuOpen: slotMenus.isLibMenuOpen,
+    libContextMenu: slotMenus.libContextMenu,
+    findLibItem: (media: string, key: string): Obj | null => findLibItem(tplModel, media, key),
     openAuthoring: () => deps.ports.authoring.current().open(),
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
@@ -1279,15 +674,26 @@ export function createEditorController(deps: EditorControllerDeps) {
     refreshPool: (): Promise<Obj> => dispatch("pool", "refresh", {}),
     reorderSheets: (key: string, sheets: string[]) => saveSheetOrder(key, sheets, dispatch,
       () => deps.runtime.refresh(SCREEN), deps.notify),
-    useLibraryTemplate, importTemplate, pickData,
-    usePoolData, chooseTemplate, chooseData, dropPair, refuseSelection,
-    poolAction, resolveDuplicate, poolNoticeAction: poolVerbs.noticeAction, findDataItem,
-    openPin, openSettings,
+    useLibraryTemplate: selectionCtl.useLibraryTemplate,
+    importTemplate: selectionCtl.importTemplate,
+    pickData: selectionCtl.pickData,
+    usePoolData: selectionCtl.usePoolData,
+    chooseTemplate: selectionCtl.chooseTemplate,
+    chooseData: selectionCtl.chooseData,
+    dropPair: selectionCtl.dropPair,
+    refuseSelection: selectionCtl.refuseSelection,
+    poolAction: selectionCtl.poolVerbs.poolAction,
+    resolveDuplicate: selectionCtl.poolVerbs.resolveDuplicate,
+    poolNoticeAction: selectionCtl.poolVerbs.noticeAction,
+    findDataItem: (key: string): Obj | null => findDataItem(poolModel, snapshot, key),
+    openPin: selectionCtl.openPin,
+    openSettings: (): void => selectionCtl.openSettings(SETTINGS_MODAL_ID),
     tplModel, poolModel,
-    confirmSuggested, chooseDataColumn, chooseDisplay, takePendingConstFocus,
+    confirmSuggested: selectionCtl.confirmSuggested,
+    chooseDataColumn, chooseDisplay, takePendingConstFocus,
     discardPatch, cancelNewDraft,
     toggleBindingMenu, closeBindingMenu, handleBindingMenu, bindingContextMenu,
-    isBindingMenuOpen: (): boolean => view.bindingMenu,
+    isBindingMenuOpen,
     gotoSection, neighbour, doSave, saveAndOpen, returnScreen, flushPendingEdits, sendEdit,
     guarded,
     doc: deps.doc,

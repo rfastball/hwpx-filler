@@ -27,6 +27,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod review;
+mod slots;
+
 #[derive(Default)]
 struct TemplateState {
     result_text: String,
@@ -216,28 +219,9 @@ impl TemplateController {
         let target = Path::new(path);
         let row = self.live_row(target, None)?;
         let (detail, package) = if row.media == "txt" {
-            match read_template(target).and_then(|bytes| {
-                String::from_utf8(bytes)
-                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-            }) {
-                Ok(content) => (
-                    template_txt_detail(&row.name, path, &template_fields(&content), ""),
-                    None,
-                ),
-                Err(error) => (
-                    template_txt_detail(&row.name, path, &[], &error.to_string()),
-                    None,
-                ),
-            }
+            (review::txt_review_detail(&row, path, target), None)
         } else {
-            match read_package(target) {
-                Ok(package) => (
-                    template_hwpx_detail(&row.name, path, &package)
-                        .unwrap_or_else(|error| failed_detail(&row, path, &error)),
-                    Some(package),
-                ),
-                Err(error) => (failed_detail(&row, path, &error.to_string()), None),
-            }
+            review::hwpx_review_detail(&row, path, target)
         };
         let error = detail["error"].as_str().unwrap_or("");
         if !error.is_empty() {
@@ -252,40 +236,8 @@ impl TemplateController {
                 "ok",
             )?;
         } else {
-            let report = lint_template(
-                package.as_ref().ok_or("template package missing")?,
-                None,
-                DEFAULT_SIMILARITY_THRESHOLD,
-            )?;
-            let (line, level) = if report.findings.is_empty() {
-                (
-                    format!(
-                        "검토 {}: 이슈 없음.",
-                        target.file_name().unwrap().to_string_lossy()
-                    ),
-                    "ok",
-                )
-            } else {
-                let mut lines = vec![format!(
-                    "검토 결과 {}:",
-                    target.file_name().unwrap().to_string_lossy()
-                )];
-                for finding in report.findings {
-                    let severity = match finding.severity.as_str() {
-                        "warning" => "경고",
-                        "info" => "정보",
-                        "error" => "오류",
-                        _ => &finding.severity,
-                    };
-                    lines.push(format!("[{severity}] {}", finding.message));
-                }
-                let level = if lines.iter().any(|line| line.starts_with("[오류]")) {
-                    "danger"
-                } else {
-                    "warn"
-                };
-                (lines.join("\n"), level)
-            };
+            let (line, level) =
+                review::lint_summary(target, package.as_ref().ok_or("template package missing")?)?;
             self.result(line, level)?;
         }
         self.state()?.detail = Some(detail);
@@ -403,98 +355,19 @@ impl TemplateController {
             .file_name()
             .ok_or("template filename missing")?
             .to_string_lossy();
-        let slot_id = if action == "slot_decompile_all" {
-            String::new()
-        } else {
-            let raw = payload
-                .get("slot_id")
-                .and_then(Value::as_str)
-                .ok_or("slot_id must be a string")?;
-            let value = python_trim(raw);
-            if value.is_empty() {
-                return Err("대상 항목 id 가 비어 있습니다.".into());
-            }
-            value.to_owned()
-        };
+        let slot_id = slots::slot_target(action, payload)?;
         if matches!(
             action,
             "slot_decompile" | "slot_decompile_all" | "slot_remove"
         ) && payload.get("confirm").and_then(Value::as_bool) != Some(true)
         {
-            let text = match action {
-                "slot_decompile" => format!(
-                    "'{slot_id}' 항목을 구간 표기로 되돌립니다.\n되돌린 뒤: '{name}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다.\n한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
-                ),
-                "slot_decompile_all" => {
-                    let package = read_package(&path)?;
-                    let count = inspect_slots(&package)?.0.len();
-                    format!(
-                        "항목 {count}개를 전부 구간 표기로 되돌립니다.\n되돌린 뒤: '{name}' 은(는) 다시 변환하기 전까지 문서를 만들 수 없습니다.\n한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
-                    )
-                }
-                _ => {
-                    let package = read_package(&path)?;
-                    let options = inspect_slots(&package)?
-                        .0
-                        .into_iter()
-                        .find(|slot| slot.id == slot_id)
-                        .map_or(String::new(), |slot| {
-                            format!(" · 선택 {}개", slot.options.len())
-                        });
-                    format!(
-                        "'{slot_id}' 항목을 지웁니다.\n사라지는 것: 항목 범위의 본문{options}\n대상 파일: {name}"
-                    )
-                }
-            };
-            let mut answer = json!({"ok":true,"needs_confirm":true,"kind":action,"path":path,"confirm_text":text});
-            if action != "slot_decompile_all" {
-                answer["slot_id"] = json!(slot_id);
-            }
-            return Ok(answer);
+            return slots::slot_confirmation(action, &path, &name, &slot_id);
         }
-        let label = match payload.get("label") {
-            None | Some(Value::Null | Value::Bool(false)) => String::new(),
-            Some(Value::String(value)) => python_trim(value).to_owned(),
-            Some(Value::Number(value)) if value.as_f64() == Some(0.0) => String::new(),
-            Some(Value::Array(value)) if value.is_empty() => String::new(),
-            Some(Value::Object(value)) if value.is_empty() => String::new(),
-            Some(value) => python_repr(value),
-        };
+        let label = slots::slot_label(payload);
         let lock = DirectoryLock::new(&self.root.path())?;
-        let (count, mutated) = lock.with(|| -> Result<_, GraphError> {
-            let mut package = read_package(&path)?;
-            let mutated = match action {
-                "slot_rename" => {
-                    rename_slot_label(
-                        &mut package,
-                        &slot_id,
-                        (!label.is_empty()).then_some(label.as_str()),
-                    )?;
-                    true
-                }
-                "slot_decompile" => {
-                    decompile_slot(&mut package, &slot_id)?;
-                    true
-                }
-                "slot_decompile_all" => !decompile_structure(&mut package)?.is_empty(),
-                "slot_remove" => {
-                    remove_slot(&mut package, &slot_id)?;
-                    true
-                }
-                _ => return Err("unknown template slot action".into()),
-            };
-            if mutated {
-                write_bytes_atomic(&path, &package.to_bytes()?)?;
-            }
-            Ok((inspect_slots(&package)?.0.len(), mutated))
-        })?;
-        let told = match action {
-            "slot_rename" if label.is_empty() => format!("항목 이름을 지웠습니다 '{slot_id}'"),
-            "slot_rename" => format!("항목 이름을 바꿨습니다 '{slot_id}'"),
-            "slot_decompile" => format!("항목을 표기로 되돌렸습니다 '{slot_id}'"),
-            "slot_decompile_all" => "전 항목을 표기로 되돌렸습니다".into(),
-            _ => format!("항목을 지웠습니다 '{slot_id}'"),
-        };
+        let (count, mutated) =
+            lock.with(|| slots::mutate_slots(&path, action, &slot_id, &label))?;
+        let told = slots::slot_done_line(action, &label, &slot_id);
         self.result(format!("{told}: {name}"), "ok")?;
         if mutated {
             self.state()?.inventory.clear();

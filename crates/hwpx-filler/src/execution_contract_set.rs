@@ -607,6 +607,91 @@ fn field_id<'a>(entry: &'a Value, what: &str) -> Result<&'a str, ContractSetErro
         .filter(|field| !field.is_empty())
         .ok_or_else(|| plan_error(format!("{what} 에 field_id 가 없다")))
 }
+/// Rejects duplicate field ids within either list, and a mismatch between the
+/// two (differing set or order), before any rule-level check runs.
+fn verify_field_sets_match(
+    req_fields: &[&str],
+    apply_fields: &[&str],
+) -> Result<(), ContractSetError> {
+    if req_fields
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        != req_fields.len()
+    {
+        return Err(plan_error("active field requirement field 중복"));
+    }
+    if apply_fields
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        != apply_fields.len()
+    {
+        return Err(plan_error("APPLY_FIELD_BINDING field 중복"));
+    }
+    if req_fields != apply_fields {
+        return Err(plan_error(
+            "requirement ↔ APPLY_FIELD_BINDING 순서/집합 불일치",
+        ));
+    }
+    Ok(())
+}
+/// Confirms each active field requirement's recorded value expression still
+/// matches the effective binding rule computed for that field.
+fn verify_requirement_bindings(
+    requirements: &[Value],
+    rules: &HashMap<&str, Value>,
+) -> Result<(), ContractSetError> {
+    for req in requirements {
+        let field = field_id(req, "active field requirement")?;
+        let expected = rules.get(field).ok_or_else(|| {
+            plan_error(format!(
+                "requirement {} 에 대응하는 effective binding rule 이 없다",
+                repr(&Value::String(field.into()))
+            ))
+        })?;
+        if req.get("value_expression") != Some(expected) {
+            return Err(plan_error(format!(
+                "requirement {} 의 value_expression 이 effective binding rule 과 불일치",
+                repr(&Value::String(field.into()))
+            )));
+        }
+    }
+    Ok(())
+}
+/// Validates one ordered operation against canonical operation order:
+/// `REMOVE_OPTION` entries must all precede the single `APPLY_FIELD_BINDING`,
+/// and must carry non-empty `slot_id`/`option_id`.
+fn verify_operation_order(op: &Value, seen_apply: &mut bool) -> Result<(), ContractSetError> {
+    match op.get("op").and_then(Value::as_str) {
+        Some(PLAN_APPLY_FIELD_BINDING) => *seen_apply = true,
+        Some(PLAN_REMOVE_OPTION) => {
+            if *seen_apply {
+                return Err(plan_error(
+                    "operation order 비canonical: REMOVE_OPTION 이 APPLY_FIELD_BINDING 뒤에 온다",
+                ));
+            }
+            for name in ["slot_id", "option_id"] {
+                if op
+                    .get(name)
+                    .and_then(Value::as_str)
+                    .is_none_or(str::is_empty)
+                {
+                    return Err(plan_error(format!(
+                        "REMOVE_OPTION 에 {name} 가 없다/비어 있다"
+                    )));
+                }
+            }
+        }
+        _ => {
+            return Err(plan_error(format!(
+                "미지원 operation code: {}",
+                repr(op.get("op").unwrap_or(&Value::Null))
+            )));
+        }
+    }
+    Ok(())
+}
 pub fn verify_sealed_plan_integrity(
     plan: &SealedExecutionPlanSemanticPayload,
     supported_schemas: &[String],
@@ -641,27 +726,7 @@ pub fn verify_sealed_plan_integrity(
         .filter(|item| item.get("op") == Some(&json!(PLAN_APPLY_FIELD_BINDING)))
         .map(|item| field_id(item, "APPLY_FIELD_BINDING operation"))
         .collect::<Result<Vec<_>, _>>()?;
-    if req_fields
-        .iter()
-        .collect::<std::collections::HashSet<_>>()
-        .len()
-        != req_fields.len()
-    {
-        return Err(plan_error("active field requirement field 중복"));
-    }
-    if apply_fields
-        .iter()
-        .collect::<std::collections::HashSet<_>>()
-        .len()
-        != apply_fields.len()
-    {
-        return Err(plan_error("APPLY_FIELD_BINDING field 중복"));
-    }
-    if req_fields != apply_fields {
-        return Err(plan_error(
-            "requirement ↔ APPLY_FIELD_BINDING 순서/집합 불일치",
-        ));
-    }
+    verify_field_sets_match(&req_fields, &apply_fields)?;
     let rules: HashMap<_, _> = plan
         .execution_basis
         .field_binding
@@ -674,50 +739,10 @@ pub fn verify_sealed_plan_integrity(
             )
         })
         .collect();
-    for req in &plan.active_field_requirements {
-        let field = field_id(req, "active field requirement")?;
-        let expected = rules.get(field).ok_or_else(|| {
-            plan_error(format!(
-                "requirement {} 에 대응하는 effective binding rule 이 없다",
-                repr(&Value::String(field.into()))
-            ))
-        })?;
-        if req.get("value_expression") != Some(expected) {
-            return Err(plan_error(format!(
-                "requirement {} 의 value_expression 이 effective binding rule 과 불일치",
-                repr(&Value::String(field.into()))
-            )));
-        }
-    }
+    verify_requirement_bindings(&plan.active_field_requirements, &rules)?;
     let mut seen_apply = false;
     for op in &plan.ordered_operations {
-        match op.get("op").and_then(Value::as_str) {
-            Some(PLAN_APPLY_FIELD_BINDING) => seen_apply = true,
-            Some(PLAN_REMOVE_OPTION) => {
-                if seen_apply {
-                    return Err(plan_error(
-                        "operation order 비canonical: REMOVE_OPTION 이 APPLY_FIELD_BINDING 뒤에 온다",
-                    ));
-                }
-                for name in ["slot_id", "option_id"] {
-                    if op
-                        .get(name)
-                        .and_then(Value::as_str)
-                        .is_none_or(str::is_empty)
-                    {
-                        return Err(plan_error(format!(
-                            "REMOVE_OPTION 에 {name} 가 없다/비어 있다"
-                        )));
-                    }
-                }
-            }
-            _ => {
-                return Err(plan_error(format!(
-                    "미지원 operation code: {}",
-                    repr(op.get("op").unwrap_or(&Value::Null))
-                )));
-            }
-        }
+        verify_operation_order(op, &mut seen_apply)?;
     }
     Ok(())
 }

@@ -670,6 +670,113 @@ fn verified_premise_facts(
         "occurrence_owner_kind_counts":owners,
         "removal_target_count":s.option_regions.len()})
 }
+/// Resolves the native primitive contract id a composition contract is
+/// closed over, or the context error for an unsupported composition.
+fn resolve_expected_primitive_pair(
+    composition: &str,
+) -> Result<&'static str, Box<CompositionPremiseVerificationResult>> {
+    match composition {
+        COMPOSITION_CONTRACT_ID => Ok(NATIVE_PRIMITIVE_CONTRACT_ID),
+        TXT_COMPOSITION_CONTRACT_ID => Ok(TXT_NATIVE_PRIMITIVE_CONTRACT_ID),
+        _ => Err(Box::new(context_error(
+            "UNSUPPORTED_COMPOSITION_CONTRACT",
+            None,
+            format!("미지원 composition contract: {}", repr(composition)),
+        ))),
+    }
+}
+/// Confirms the supplied primitive manifest both names and exactly matches
+/// the canonical registration for the expected pair (no semantic drift
+/// under the same contract id).
+fn validate_native_primitive(
+    primitive: &NativePrimitiveContractManifest,
+    expected_pair: &str,
+) -> Result<(), Box<CompositionPremiseVerificationResult>> {
+    if primitive.native_primitive_contract_id != expected_pair {
+        return Err(Box::new(context_error(
+            "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
+            None,
+            format!(
+                "미지원 native primitive contract: {}",
+                repr(&primitive.native_primitive_contract_id)
+            ),
+        )));
+    }
+    let canonical = resolve_native_primitive_contract(expected_pair).expect("static primitive");
+    if primitive != &canonical {
+        return Err(Box::new(context_error(
+            "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
+            None,
+            "native primitive contract 가 등록된 canonical 과 불일치(같은 ID 의미 수정 금지)",
+        )));
+    }
+    Ok(())
+}
+/// Confirms every field occurrence and option region names the native
+/// primitive's own resolver/removal capability (premises C7, C2).
+fn check_structural_resolver_alignment(
+    s: &ExecutionTemplateStructure,
+    primitive: &NativePrimitiveContractManifest,
+) -> Result<(), Box<CompositionPremiseVerificationResult>> {
+    for occ in &s.field_occurrences {
+        if occ.resolver_contract_id != primitive.field_resolver_contract_id {
+            return Err(Box::new(context_error(
+                "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
+                Some("C7"),
+                format!(
+                    "Field {} resolver {} 가 native primitive field resolver {} 와 불일치",
+                    repr(&occ.field_id),
+                    repr(&occ.resolver_contract_id),
+                    repr(&primitive.field_resolver_contract_id)
+                ),
+            )));
+        }
+    }
+    for region in &s.option_regions {
+        if region.removal_capability_ref != primitive.option_removal_contract_id {
+            return Err(Box::new(context_error(
+                "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
+                Some("C2"),
+                format!(
+                    "Option {} removal {} 가 native primitive removal {} 와 불일치",
+                    repr(&region.option_id),
+                    repr(&region.removal_capability_ref),
+                    repr(&primitive.option_removal_contract_id)
+                ),
+            )));
+        }
+    }
+    Ok(())
+}
+/// Confirms every structural composition premise is settled (none
+/// `INCOMPLETE`), then that none settled `FAILED`, in that order.
+fn check_premise_outcomes(
+    outcomes: &BTreeMap<&'static str, PremiseOutcome>,
+) -> Result<(), Box<CompositionPremiseVerificationResult>> {
+    for id in PREMISE_IDS {
+        let verdict = &outcomes[id];
+        if verdict.status == INCOMPLETE {
+            return Err(Box::new(context_error(
+                "EXECUTION_COMPOSITION_PREMISE_INCOMPLETE",
+                Some(id),
+                &verdict.reason,
+            )));
+        }
+    }
+    for id in PREMISE_IDS {
+        let verdict = &outcomes[id];
+        if verdict.status == FAILED {
+            return Err(Box::new(CompositionPremiseVerificationResult::Blocked(
+                CompositionPremisesBlocked {
+                    code: "EXECUTION_COMPOSITION_PREMISE_FAILED".into(),
+                    premise_id: id.into(),
+                    reason: verdict.reason.clone(),
+                },
+            )));
+        }
+    }
+    Ok(())
+}
 pub fn admit_composition_premises(
     s: &ExecutionTemplateStructure,
     primitive: &NativePrimitiveContractManifest,
@@ -685,83 +792,19 @@ pub fn admit_composition_premises(
             ),
         );
     }
-    let expected_pair = match composition {
-        COMPOSITION_CONTRACT_ID => NATIVE_PRIMITIVE_CONTRACT_ID,
-        TXT_COMPOSITION_CONTRACT_ID => TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
-        _ => {
-            return context_error(
-                "UNSUPPORTED_COMPOSITION_CONTRACT",
-                None,
-                format!("미지원 composition contract: {}", repr(composition)),
-            );
-        }
+    let expected_pair = match resolve_expected_primitive_pair(composition) {
+        Ok(pair) => pair,
+        Err(result) => return *result,
     };
-    if primitive.native_primitive_contract_id != expected_pair {
-        return context_error(
-            "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
-            None,
-            format!(
-                "미지원 native primitive contract: {}",
-                repr(&primitive.native_primitive_contract_id)
-            ),
-        );
+    if let Err(result) = validate_native_primitive(primitive, expected_pair) {
+        return *result;
     }
-    let canonical = resolve_native_primitive_contract(expected_pair).expect("static primitive");
-    if primitive != &canonical {
-        return context_error(
-            "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
-            None,
-            "native primitive contract 가 등록된 canonical 과 불일치(같은 ID 의미 수정 금지)",
-        );
-    }
-    for occ in &s.field_occurrences {
-        if occ.resolver_contract_id != primitive.field_resolver_contract_id {
-            return context_error(
-                "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
-                Some("C7"),
-                format!(
-                    "Field {} resolver {} 가 native primitive field resolver {} 와 불일치",
-                    repr(&occ.field_id),
-                    repr(&occ.resolver_contract_id),
-                    repr(&primitive.field_resolver_contract_id)
-                ),
-            );
-        }
-    }
-    for region in &s.option_regions {
-        if region.removal_capability_ref != primitive.option_removal_contract_id {
-            return context_error(
-                "UNSUPPORTED_NATIVE_PRIMITIVE_CONTRACT",
-                Some("C2"),
-                format!(
-                    "Option {} removal {} 가 native primitive removal {} 와 불일치",
-                    repr(&region.option_id),
-                    repr(&region.removal_capability_ref),
-                    repr(&primitive.option_removal_contract_id)
-                ),
-            );
-        }
+    if let Err(result) = check_structural_resolver_alignment(s, primitive) {
+        return *result;
     }
     let outcomes = evaluate_composition_premises(s);
-    for id in PREMISE_IDS {
-        let verdict = &outcomes[id];
-        if verdict.status == INCOMPLETE {
-            return context_error(
-                "EXECUTION_COMPOSITION_PREMISE_INCOMPLETE",
-                Some(id),
-                &verdict.reason,
-            );
-        }
-    }
-    for id in PREMISE_IDS {
-        let verdict = &outcomes[id];
-        if verdict.status == FAILED {
-            return CompositionPremiseVerificationResult::Blocked(CompositionPremisesBlocked {
-                code: "EXECUTION_COMPOSITION_PREMISE_FAILED".into(),
-                premise_id: id.into(),
-                reason: verdict.reason.clone(),
-            });
-        }
+    if let Err(result) = check_premise_outcomes(&outcomes) {
+        return *result;
     }
     let facts = verified_premise_facts(s, &outcomes);
     let structure_digest = template_structure_digest(s);

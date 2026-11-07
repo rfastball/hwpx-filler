@@ -70,6 +70,23 @@ pub fn redact(text: &str, secret: Option<&str>) -> String {
         .into_owned()
 }
 
+/// The exclusive upper bound one calendar month after `begin`, clamped to the shorter month.
+fn one_month_limit(begin: NaiveDateTime) -> Option<NaiveDateTime> {
+    let (year, month) = if begin.month() == 12 {
+        (begin.year() + 1, 1)
+    } else {
+        (begin.year(), begin.month() + 1)
+    };
+    let next_month = if month == 12 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(year, month + 1, 1)
+    }?;
+    let last_day = (next_month - Duration::days(1)).day();
+    NaiveDate::from_ymd_opt(year, month, begin.day().min(last_day))
+        .and_then(|day| day.and_hms_opt(begin.hour(), begin.minute(), begin.second()))
+}
+
 pub fn validate_range(bgn: &str, end: &str) -> Option<String> {
     fn parse(value: &str) -> Option<NaiveDateTime> {
         static FIELDS: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
@@ -100,22 +117,7 @@ pub fn validate_range(bgn: &str, end: &str) -> Option<String> {
     if begin.year() == 9999 && begin.month() == 12 {
         return Some("year 10000 is out of range".into());
     }
-    let (year, month) = if begin.month() == 12 {
-        (begin.year() + 1, 1)
-    } else {
-        (begin.year(), begin.month() + 1)
-    };
-    let Some(next_month) = (if month == 12 {
-        NaiveDate::from_ymd_opt(year + 1, 1, 1)
-    } else {
-        NaiveDate::from_ymd_opt(year, month + 1, 1)
-    }) else {
-        return Some("일시를 해석할 수 없습니다(YYYYMMDDHHMM).".into());
-    };
-    let last_day = (next_month - Duration::days(1)).day();
-    let Some(limit) = NaiveDate::from_ymd_opt(year, month, begin.day().min(last_day))
-        .and_then(|day| day.and_hms_opt(begin.hour(), begin.minute(), begin.second()))
-    else {
+    let Some(limit) = one_month_limit(begin) else {
         return Some("일시를 해석할 수 없습니다(YYYYMMDDHHMM).".into());
     };
     if finish > limit {
@@ -165,16 +167,19 @@ fn python_value(value: &Value) -> String {
     }
 }
 
+/// `items` (or the unwrapped `items.item`) is absent, blank, or an empty list/object.
+fn is_empty_items(value: &Value) -> bool {
+    value.is_null()
+        || value.as_str() == Some("")
+        || value.as_array().is_some_and(Vec::is_empty)
+        || value.as_object().is_some_and(serde_json::Map::is_empty)
+}
+
 pub fn parse(raw: &[u8]) -> Result<Vec<Record>, NaraFetchError> {
     let data = envelope(raw)?;
     let body = body(&data)?;
     let mut items = body.get("items").unwrap_or(&Value::Null);
-    if items.is_null() || items.as_str() == Some("") {
-        return Ok(Vec::new());
-    }
-    if items.as_array().is_some_and(Vec::is_empty)
-        || items.as_object().is_some_and(serde_json::Map::is_empty)
-    {
+    if is_empty_items(items) {
         return Ok(Vec::new());
     }
     if let Some(map) = items.as_object()
@@ -184,11 +189,7 @@ pub fn parse(raw: &[u8]) -> Result<Vec<Record>, NaraFetchError> {
             return Err(fail("items.item 봉투에 미등록 형제 키가 있습니다."));
         }
         items = inner;
-        if items.is_null()
-            || items.as_str() == Some("")
-            || items.as_array().is_some_and(Vec::is_empty)
-            || items.as_object().is_some_and(serde_json::Map::is_empty)
-        {
+        if is_empty_items(items) {
             return Ok(Vec::new());
         }
     }
@@ -236,62 +237,68 @@ pub fn result(raw: &[u8]) -> Result<(String, String), NaraFetchError> {
     ))
 }
 
-fn page_meta(raw: &[u8]) -> Result<(u64, u64, u64), NaraFetchError> {
-    let data = envelope(raw)?;
-    let body = body(&data)?;
-    let integer = |name: &str, positive: bool| -> Result<u64, NaraFetchError> {
-        let value = body.get(name).unwrap_or(&Value::Null);
-        if value.is_boolean() {
-            return Err(fail(format!("{name}이 정수가 아닙니다.")));
-        }
-        let text = match value {
-            Value::String(text) => text.trim_matches(python_whitespace),
-            Value::Number(_) => {
-                let number = value.as_u64().or_else(|| {
-                    let float = value.as_f64()?;
-                    (float.is_finite()
-                        && float.fract() == 0.0
-                        && (0.0..18_446_744_073_709_551_616.0).contains(&float))
-                    .then_some(float as u64)
-                });
-                let Some(number) = number else {
-                    return Err(fail(format!(
-                        "{name}이 정수가 아닙니다: {}",
-                        python_repr(value)
-                    )));
-                };
-                if positive && number == 0 {
-                    return Err(fail(format!("{name} 범위가 올바르지 않습니다: {number}.")));
-                }
-                return Ok(number);
-            }
-            _ => {
+fn check_positive(name: &str, positive: bool, number: u64) -> Result<u64, NaraFetchError> {
+    if positive && number == 0 {
+        return Err(fail(format!("{name} 범위가 올바르지 않습니다: {number}.")));
+    }
+    Ok(number)
+}
+
+fn page_integer(
+    body: &serde_json::Map<String, Value>,
+    name: &str,
+    positive: bool,
+) -> Result<u64, NaraFetchError> {
+    let value = body.get(name).unwrap_or(&Value::Null);
+    if value.is_boolean() {
+        return Err(fail(format!("{name}이 정수가 아닙니다.")));
+    }
+    let text = match value {
+        Value::String(text) => text.trim_matches(python_whitespace),
+        Value::Number(_) => {
+            let number = value.as_u64().or_else(|| {
+                let float = value.as_f64()?;
+                (float.is_finite()
+                    && float.fract() == 0.0
+                    && (0.0..18_446_744_073_709_551_616.0).contains(&float))
+                .then_some(float as u64)
+            });
+            let Some(number) = number else {
                 return Err(fail(format!(
                     "{name}이 정수가 아닙니다: {}",
                     python_repr(value)
                 )));
-            }
-        };
-        let normalized = text
-            .chars()
-            .map(|ch| {
-                decimal_digit(ch)
-                    .and_then(|digit| char::from_digit(digit, 10))
-                    .unwrap_or(ch)
-            })
-            .collect::<String>();
-        let number: u64 = normalized
-            .parse()
-            .map_err(|_| fail(format!("{name}이 정수가 아닙니다: {}", python_repr(value))))?;
-        if positive && number == 0 {
-            return Err(fail(format!("{name} 범위가 올바르지 않습니다: {number}.")));
+            };
+            return check_positive(name, positive, number);
         }
-        Ok(number)
+        _ => {
+            return Err(fail(format!(
+                "{name}이 정수가 아닙니다: {}",
+                python_repr(value)
+            )));
+        }
     };
+    let normalized = text
+        .chars()
+        .map(|ch| {
+            decimal_digit(ch)
+                .and_then(|digit| char::from_digit(digit, 10))
+                .unwrap_or(ch)
+        })
+        .collect::<String>();
+    let number: u64 = normalized
+        .parse()
+        .map_err(|_| fail(format!("{name}이 정수가 아닙니다: {}", python_repr(value))))?;
+    check_positive(name, positive, number)
+}
+
+fn page_meta(raw: &[u8]) -> Result<(u64, u64, u64), NaraFetchError> {
+    let data = envelope(raw)?;
+    let body = body(&data)?;
     Ok((
-        integer("pageNo", true)?,
-        integer("numOfRows", true)?,
-        integer("totalCount", false)?,
+        page_integer(body, "pageNo", true)?,
+        page_integer(body, "numOfRows", true)?,
+        page_integer(body, "totalCount", false)?,
     ))
 }
 
@@ -354,135 +361,192 @@ impl NaraStdDataSource {
     pub fn fetch_one(&self) -> Result<Vec<u8>, NaraFetchError> {
         self.request(self.page_no)
     }
+    fn validate_query(&self) -> Result<(), NaraFetchError> {
+        if let Some(detail) = validate_range(&self.bgn_dt, &self.end_dt) {
+            return Err(fail(format!("조회 조건 오류: {detail}")));
+        }
+        if self.num_rows == 0 {
+            return Err(fail("조회 조건 오류: num_rows는 1 이상 정수여야 합니다."));
+        }
+        if self.page_no == 0 {
+            return Err(fail("조회 조건 오류: page_no는 1 이상 정수여야 합니다."));
+        }
+        Ok(())
+    }
+    /// Fetch one page and decode it, folding an auth failure into the decode error.
+    fn fetch_checked_page(&self, page: u64) -> Result<PageFetch, NaraFetchError> {
+        let raw = self.request(page)?;
+        decode_page(&raw).map_err(|error| {
+            if let Some(detail) = auth_failure_detail(&raw) {
+                fail(detail)
+            } else {
+                error
+            }
+        })
+    }
+    /// `None` keeps paginating; `Some(true)` returns the accumulated records, `Some(false)` an empty result.
+    fn boundary_outcome(
+        &self,
+        page: u64,
+        totals: &PageTotals,
+        page_records_empty: bool,
+        records_len: u64,
+    ) -> Result<Option<bool>, NaraFetchError> {
+        if self.page_no > totals.last_page {
+            if !page_records_empty {
+                return Err(fail("totalCount 범위 밖 페이지가 레코드를 반환했습니다."));
+            }
+            return Ok(Some(false));
+        }
+        if page >= totals.last_page {
+            if records_len != totals.expected_remaining {
+                return Err(fail(format!(
+                    "totalCount와 실제 취득 건수가 일치하지 않습니다: 예상 {}, 실제 {records_len}.",
+                    totals.expected_remaining
+                )));
+            }
+            return Ok(Some(true));
+        }
+        if page_records_empty {
+            return Err(fail(format!(
+                "totalCount 도달 전 중간 페이지 {page}가 비어 있습니다."
+            )));
+        }
+        Ok(None)
+    }
+    fn paginate(&self) -> Result<Vec<Record>, NaraFetchError> {
+        let mut page = self.page_no;
+        let mut totals = PageTotals::default();
+        let mut records = Vec::new();
+        let mut seen = HashSet::new();
+        loop {
+            let (page_records, (actual, size, total)) = self.fetch_checked_page(page)?;
+            check_page_matches(page, actual)?;
+            totals.observe(self.page_no, total, size)?;
+            check_page_size(page, page_records.len() as u64, size)?;
+            append_unique(&mut records, &mut seen, &page_records, page)?;
+            if let Some(use_records) =
+                self.boundary_outcome(page, &totals, page_records.is_empty(), records.len() as u64)?
+            {
+                return Ok(if use_records { records } else { Vec::new() });
+            }
+            page = page
+                .checked_add(1)
+                .ok_or_else(|| fail("페이지 번호가 범위를 벗어났습니다."))?;
+        }
+    }
     pub fn records_checked(&self) -> Result<Vec<Record>, NaraFetchError> {
         let run = || -> Result<Vec<Record>, NaraFetchError> {
-            if let Some(detail) = validate_range(&self.bgn_dt, &self.end_dt) {
-                return Err(fail(format!("조회 조건 오류: {detail}")));
-            }
-            if self.num_rows == 0 {
-                return Err(fail("조회 조건 오류: num_rows는 1 이상 정수여야 합니다."));
-            }
-            if self.page_no == 0 {
-                return Err(fail("조회 조건 오류: page_no는 1 이상 정수여야 합니다."));
-            }
-            let mut page = self.page_no;
-            let mut expected_total = None;
-            let mut response_size = None;
-            let mut expected_remaining = 0;
-            let mut last_page = 0;
-            let mut records = Vec::new();
-            let mut seen = HashSet::new();
-            loop {
-                let raw = self.request(page)?;
-                let current = || -> Result<_, NaraFetchError> {
-                    let (code, msg) = result(&raw)?;
-                    if code != OK_RESULT_CODE {
-                        return Err(fail(format!(
-                            "API 오류 [{}] {}",
-                            if code.is_empty() {
-                                "코드 없음"
-                            } else {
-                                &code
-                            },
-                            if msg.is_empty() {
-                                "메시지 없음"
-                            } else {
-                                &msg
-                            }
-                        )));
-                    }
-                    Ok((parse(&raw)?, page_meta(&raw)?))
-                };
-                let (page_records, (actual, size, total)) = current().map_err(|error| {
-                    if let Some(detail) = auth_failure_detail(&raw) {
-                        fail(detail)
-                    } else {
-                        error
-                    }
-                })?;
-                if actual != page {
-                    return Err(fail(format!(
-                        "페이지 응답 불일치: 요청 {page}, 응답 {actual}."
-                    )));
-                }
-                if expected_total.is_none() {
-                    expected_total = Some(total);
-                    response_size = Some(size);
-                    let skipped = self.page_no.saturating_sub(1).saturating_mul(size);
-                    expected_remaining = total.saturating_sub(skipped);
-                    last_page = total.div_ceil(size);
-                } else {
-                    if let Some(previous) = expected_total
-                        && total != previous
-                    {
-                        return Err(fail(format!(
-                            "페이지 취득 중 totalCount 변경: {} → {total}.",
-                            previous
-                        )));
-                    }
-                    if let Some(previous) = response_size
-                        && size != previous
-                    {
-                        return Err(fail(format!(
-                            "페이지 취득 중 numOfRows 변경: {} → {size}.",
-                            previous
-                        )));
-                    }
-                }
-                if page_records.len() as u64 > size {
-                    return Err(fail(format!(
-                        "페이지 {page} 레코드 수가 numOfRows를 초과했습니다: {} > {size}.",
-                        page_records.len()
-                    )));
-                }
-                for record in page_records.iter().cloned() {
-                    let notice = record.get("bidNtceNo").map(String::as_str).unwrap_or("");
-                    let identity = if !notice.is_empty() {
-                        format!(
-                            "notice\0{notice}\0{}",
-                            record.get("bidNtceOrd").map(String::as_str).unwrap_or("")
-                        )
-                    } else {
-                        let sorted: BTreeMap<_, _> = record.iter().collect();
-                        format!(
-                            "record\0{}",
-                            serde_json::to_string(&sorted).map_err(|e| fail(e.to_string()))?
-                        )
-                    };
-                    if !seen.insert(identity) {
-                        return Err(fail(format!(
-                            "페이지 {page}에 이전 페이지와 중복·겹침 레코드가 있습니다."
-                        )));
-                    }
-                    records.push(record);
-                }
-                if self.page_no > last_page {
-                    if !page_records.is_empty() {
-                        return Err(fail("totalCount 범위 밖 페이지가 레코드를 반환했습니다."));
-                    }
-                    return Ok(Vec::new());
-                }
-                if page >= last_page {
-                    if records.len() as u64 != expected_remaining {
-                        return Err(fail(format!(
-                            "totalCount와 실제 취득 건수가 일치하지 않습니다: 예상 {expected_remaining}, 실제 {}.",
-                            records.len()
-                        )));
-                    }
-                    return Ok(records);
-                }
-                if page_records.is_empty() {
-                    return Err(fail(format!(
-                        "totalCount 도달 전 중간 페이지 {page}가 비어 있습니다."
-                    )));
-                }
-                page = page
-                    .checked_add(1)
-                    .ok_or_else(|| fail("페이지 번호가 범위를 벗어났습니다."))?;
-            }
+            self.validate_query()?;
+            self.paginate()
         };
         run().map_err(|item| fail(redact(&item.0, Some(&self.service_key))))
     }
+}
+/// One decoded page's records plus its `(pageNo, numOfRows, totalCount)` metadata.
+type PageFetch = (Vec<Record>, (u64, u64, u64));
+/// Decode one page's result-code header, record list and pagination metadata.
+fn decode_page(raw: &[u8]) -> Result<PageFetch, NaraFetchError> {
+    let (code, msg) = result(raw)?;
+    if code != OK_RESULT_CODE {
+        return Err(fail(format!(
+            "API 오류 [{}] {}",
+            if code.is_empty() {
+                "코드 없음"
+            } else {
+                &code
+            },
+            if msg.is_empty() {
+                "메시지 없음"
+            } else {
+                &msg
+            }
+        )));
+    }
+    Ok((parse(raw)?, page_meta(raw)?))
+}
+fn check_page_matches(page: u64, actual: u64) -> Result<(), NaraFetchError> {
+    if actual != page {
+        return Err(fail(format!(
+            "페이지 응답 불일치: 요청 {page}, 응답 {actual}."
+        )));
+    }
+    Ok(())
+}
+fn check_page_size(page: u64, page_records_len: u64, size: u64) -> Result<(), NaraFetchError> {
+    if page_records_len > size {
+        return Err(fail(format!(
+            "페이지 {page} 레코드 수가 numOfRows를 초과했습니다: {page_records_len} > {size}."
+        )));
+    }
+    Ok(())
+}
+/// Running total/size/last-page bookkeeping across the paginated fetch loop.
+#[derive(Default)]
+struct PageTotals {
+    expected_total: Option<u64>,
+    response_size: Option<u64>,
+    expected_remaining: u64,
+    last_page: u64,
+}
+impl PageTotals {
+    fn observe(&mut self, start_page: u64, total: u64, size: u64) -> Result<(), NaraFetchError> {
+        if self.expected_total.is_none() {
+            self.expected_total = Some(total);
+            self.response_size = Some(size);
+            let skipped = start_page.saturating_sub(1).saturating_mul(size);
+            self.expected_remaining = total.saturating_sub(skipped);
+            self.last_page = total.div_ceil(size);
+            return Ok(());
+        }
+        if let Some(previous) = self.expected_total
+            && total != previous
+        {
+            return Err(fail(format!(
+                "페이지 취득 중 totalCount 변경: {previous} → {total}."
+            )));
+        }
+        if let Some(previous) = self.response_size
+            && size != previous
+        {
+            return Err(fail(format!(
+                "페이지 취득 중 numOfRows 변경: {previous} → {size}."
+            )));
+        }
+        Ok(())
+    }
+}
+/// The stable dedupe identity for one record: notice number/order when present, else the full row.
+fn record_identity(record: &Record) -> Result<String, NaraFetchError> {
+    let notice = record.get("bidNtceNo").map(String::as_str).unwrap_or("");
+    if !notice.is_empty() {
+        return Ok(format!(
+            "notice\0{notice}\0{}",
+            record.get("bidNtceOrd").map(String::as_str).unwrap_or("")
+        ));
+    }
+    let sorted: BTreeMap<_, _> = record.iter().collect();
+    Ok(format!(
+        "record\0{}",
+        serde_json::to_string(&sorted).map_err(|e| fail(e.to_string()))?
+    ))
+}
+fn append_unique(
+    records: &mut Vec<Record>,
+    seen: &mut HashSet<String>,
+    page_records: &[Record],
+    page: u64,
+) -> Result<(), NaraFetchError> {
+    for record in page_records.iter().cloned() {
+        let identity = record_identity(&record)?;
+        if !seen.insert(identity) {
+            return Err(fail(format!(
+                "페이지 {page}에 이전 페이지와 중복·겹침 레코드가 있습니다."
+            )));
+        }
+        records.push(record);
+    }
+    Ok(())
 }
 impl DataSource for NaraStdDataSource {
     fn records(&mut self) -> Result<Vec<Record>, DataSourceError> {

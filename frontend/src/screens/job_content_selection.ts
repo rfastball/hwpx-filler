@@ -28,6 +28,7 @@ import type {
   SlotConfigService,
   SlotConfigState,
   SlotCurrentView,
+  SlotProjection,
   SlotZoneError,
 } from "./job_slot_config.ts";
 
@@ -525,50 +526,36 @@ function PresetListSection(props: {
   );
 }
 
-/* ── zone 컴포넌트 — JobScreen composition 이 마운트한다 ─────────────────────────────────────── */
-export function JobContentSelection(props: {
-  controller: JobContentSelectionController;
-}): ReactNode {
-  const { controller } = props;
-  const state = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-    controller.getSnapshot,
-  );
-
-  const projection = state.view?.projection ?? null;
-  const status = statusLine(state);
-  const pending = state.phase === "pending";
-  /* 끝난 슬롯은 **기본 접힘**이고, 그 판정은 Python 이 낸다(`slot.settled`). 여기가 소유하는
-     것은 「사용자가 이 세션에서 편 것」뿐이다 — 표시 상태라 영속하지 않는다.
-
-     **U4-A 26번을 되돌리지 않는 것이 이 상태의 존재 이유다.** 26번은 「옵션을 고르면 구획이
-     접혔다 깜빡인다」를 고친 판정이었다. 접힘을 매 왕복마다 다시 계산하면 사용자가 라디오를
-     고른 순간 그 슬롯이 RESOLVED 가 되어 **눈앞에서 접힌다** — 같은 결함을 우리 손으로
-     되만드는 꼴이다. 그래서 만진 슬롯은 접지 않는다.
-
-     구성이 갈리면(작업 전환·successor 적용으로 slot 집합이 바뀌면) 기억을 버린다 — 다른
-     구성의 「만졌다」를 이 구성에 적용하면 남의 흔적으로 이 화면을 그리게 된다. */
+/** 끝난 슬롯은 **기본 접힘**이고, 그 판정은 Python 이 낸다(`slot.settled`). 이 훅이 소유하는
+ *  것은 「사용자가 이 세션에서 편 것」뿐이다 — 표시 상태라 영속하지 않는다.
+ *
+ *  **U4-A 26번을 되돌리지 않는 것이 이 상태의 존재 이유다.** 26번은 「옵션을 고르면 구획이
+ *  접혔다 깜빡인다」를 고친 판정이었다. 접힘을 매 왕복마다 다시 계산하면 사용자가 라디오를
+ *  고른 순간 그 슬롯이 RESOLVED 가 되어 **눈앞에서 접힌다** — 같은 결함을 우리 손으로
+ *  되만드는 꼴이다. 그래서 만진 슬롯은 접지 않는다.
+ *
+ *  구성이 갈리면(작업 전환·successor 적용으로 slot 집합이 바뀌면) 기억을 버린다 — 다른
+ *  구성의 「만졌다」를 이 구성에 적용하면 남의 흔적으로 이 화면을 그리게 된다.
+ *
+ *  프리셋 적용도 **만진 것**이다(#945 F2). 어느 슬롯이 채워졌는지는 backend 가
+ *  `applied_slot_ids` 로 이미 말해 주므로 여기서 slot 목록을 훑어 추측하지 않는다. 두 채널을
+ *  쓴다: `isTouched` 는 직전 왕복 사실(justApplied)을 그 자리에서 합쳐 **깜빡임 없이** 펼친
+ *  채 세우고, 효과가 그것을 `touched` 로 등재해 재진술이 지워진 뒤에도 살아남게 한다 —
+ *  등재하지 않으면 다음 선택 한 번에 나머지가 전부 접혀 같은 결함이 한 걸음 뒤에 다시 선다. */
+function useTouchedSlots(
+  slots: readonly ProjectedSlot[] | undefined,
+  presetNotice: PresetNotice | null,
+): { isTouched(slotId: string): boolean; markTouched(slotId: string): void } {
   const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set());
-  const slotSignature = (projection?.slots ?? []).map((slot) => slot.slot_id).join("\u0000");
+  const slotSignature = (slots ?? []).map((slot) => slot.slot_id).join("\u0000");
   const lastSignature = useRef(slotSignature);
   useEffect(() => {
     if (lastSignature.current === slotSignature) return;
     lastSignature.current = slotSignature;
     setTouched(new Set());
   }, [slotSignature]);
-  /* 프리셋 적용도 **만진 것**이다(#945 F2). 26번 수리는 옵션 선택 경로에만 서 있어서, 프리셋을
-     적용하면 그것이 채운 슬롯 전부가 응답이 오는 순간 settled 가 되어 **눈앞에서 한꺼번에
-     접혔다** — 같은 결함이 다른 문으로 다시 들어온 것이다. 어느 슬롯이 채워졌는지는 backend 가
-     `applied_slot_ids` 로 이미 말해 주므로 여기서 slot 목록을 훑어 추측하지 않는다.
-
-     두 채널을 쓴다. 렌더는 직전 왕복 사실(`justApplied`)을 그 자리에서 합쳐 **깜빡임 없이**
-     펼친 채 세우고, 효과가 그것을 `touched` 로 등재해 재진술이 지워진 뒤에도 살아남게 한다 —
-     등재하지 않으면 다음 선택 한 번에 나머지가 전부 접혀 같은 결함이 한 걸음 뒤에 다시 선다. */
-  const justApplied = state.presetNotice?.kind === "applied"
-    ? state.presetNotice.appliedSlotIds
-    : [];
-  const justAppliedKey = justApplied.join(" ");
+  const justApplied = presetNotice?.kind === "applied" ? presetNotice.appliedSlotIds : [];
+  const justAppliedKey = justApplied.join("\u0000");
   useEffect(() => {
     if (justApplied.length === 0) return;
     setTouched((current) => {
@@ -579,6 +566,27 @@ export function JobContentSelection(props: {
     });
     // 축은 재진술 객체의 동일성이 아니라 그 **내용**이다(같은 목록의 새 객체로 다시 돌지 않는다).
   }, [justAppliedKey]);
+  return {
+    isTouched: (slotId) => touched.has(slotId) || justApplied.includes(slotId),
+    markTouched: (slotId) => {
+      setTouched((current) => {
+        if (current.has(slotId)) return current;
+        const next = new Set(current);
+        next.add(slotId);
+        return next;
+      });
+    },
+  };
+}
+
+/** 상태·zone 오류·복구 동사 세 줄의 파생 — 실패·stale 사유(`statusNode`·`backendErrorNode`)는
+ *  웹이 수명을 소유하는 재진술 채널이라(#659) 노출 술어와 별개로 계산한다. */
+function deriveStatusNodes(
+  state: SlotConfigState,
+  status: { kind: string; text: string } | null,
+  pending: boolean,
+  onRefresh: () => void,
+): { statusNode: ReactNode; backendErrorNode: ReactNode; recoveryNode: ReactNode } {
   const backendError = state.zoneError?.message ?? state.view?.context_error_message ?? null;
   const statusNode = status === null
     ? null
@@ -597,15 +605,138 @@ export function JobContentSelection(props: {
   const recoveryNode = state.zoneError?.action?.key === "refresh"
     ? h(
         "button",
-        {
-          type: "button",
-          className: "btn",
-          disabled: pending,
-          onClick: () => { void controller.refresh(); },
-        },
+        { type: "button", className: "btn", disabled: pending, onClick: onRefresh },
         state.zoneError.action.label,
       )
     : null;
+  return { statusNode, backendErrorNode, recoveryNode };
+}
+
+/** 이 zone 을 세울 사실이 있는가(U4 13번) — 노출 술어(zone_actionable)거나, 술어가 숨겨도
+ *  남는 시끄러운 재진술(상태·오류·직전 preset 결과) 중 하나라도 있으면 세운다. */
+function hasZoneContent(
+  projection: SlotProjection, statusNode: ReactNode, backendErrorNode: ReactNode,
+  presetNotice: PresetNotice | null,
+): boolean {
+  return projection.zone_actionable === true || statusNode !== null
+    || backendErrorNode !== null || presetNotice !== null;
+}
+
+/** 이전 선택의 운명 파생 — slot 당 blocking 사유, 아직 있는 슬롯의 이전 선택, 사라진 슬롯의
+ *  이전 선택(정보 전용) 셋으로 가른다. 판정(fate·kind)은 전부 backend 것이고 여기는 모음뿐이다. */
+function deriveRetainedView(
+  view: SlotCurrentView | null, projection: SlotProjection,
+): {
+  attention: Map<string, SlotAttention>;
+  retainedBySlot: Map<string, ProjectedRetainedSelection>;
+  retainedGone: ProjectedRetainedSelection[];
+} {
+  const attention = blockingBySlot(view);
+  const retained = projection.retained_selections ?? [];
+  const retainedBySlot = new Map(
+    retained.filter((r) => r.fate !== "SLOT_REMOVED").map((r) => [r.slot_id, r]),
+  );
+  const retainedGone = retained.filter((r) => r.fate === "SLOT_REMOVED");
+  return { attention, retainedBySlot, retainedGone };
+}
+
+/** 보관된 선택 **목록**(슬롯 위, U4 14~17) — 지금 서야 할 사실이 있을 때만(목록이 actionable
+ *  하거나 직전 왕복 결과가 있을 때). 성격이 다른 저장 구획과는 술어도 자리도 갈린다. */
+function renderPresetsListSection(
+  props: { controller: JobContentSelectionController; state: SlotConfigState; pending: boolean },
+): ReactNode {
+  const { controller, state, pending } = props;
+  if (!(state.presets.supported && (state.presets.listActionable || state.presetNotice !== null))) {
+    return null;
+  }
+  return h(PresetListSection as any, {
+    presets: state.presets,
+    notice: state.presetNotice,
+    pending,
+    onApply: (presetKey: string) => { void controller.applyPreset(presetKey); },
+    onRefresh: () => { void controller.refresh(); },
+  });
+}
+
+/** slot 목록 — 비어 있으면 안내 한 줄, 아니면 fieldset 들. */
+function renderSlotsSection(
+  props: {
+    projection: SlotProjection;
+    attention: Map<string, SlotAttention>;
+    retainedBySlot: Map<string, ProjectedRetainedSelection>;
+    pending: boolean;
+    isTouched: (slotId: string) => boolean;
+    onSelect: (slotId: string, optionId: string) => void;
+  },
+): ReactNode {
+  const { projection, attention, retainedBySlot, pending, isTouched, onSelect } = props;
+  if (projection.slots.length === 0) {
+    return h("p", { className: "cs-empty" }, "이 문서 작업에는 선택할 내용이 없습니다.");
+  }
+  return h(
+    "div",
+    { className: "cs-slots" },
+    ...projection.slots.map((slot, slotIndex) =>
+      h(SlotFieldset as any, {
+        key: slot.slot_id,
+        slot,
+        slotIndex,
+        attention: attention.get(slot.slot_id),
+        retained: retainedBySlot.get(slot.slot_id),
+        pending,
+        // 「만진 슬롯」은 이 세션의 선택과 직전 프리셋 적용이 채운 것의 합집합이다
+        // (`useTouchedSlots`가 진다) — 판정(`settled`)은 그대로 Python 것이다.
+        collapsed: slot.settled === true && !isTouched(slot.slot_id),
+        onSelect,
+      }),
+    ),
+  );
+}
+
+/** 항목 자체가 사라진 이전 선택 — blocking 이 아니라 정보다. 현재 구성의 일부가 아니고
+ *  자동으로 되살아나지도 않는다. 이름을 댈 수 없으므로(현재 구조에 없다) 개수로만 말한다. */
+function renderRetainedGoneNote(retainedGone: readonly ProjectedRetainedSelection[]): ReactNode {
+  if (retainedGone.length === 0) return null;
+  return h(
+    "aside",
+    { className: "cs-retained-gone", "aria-label": "이 템플릿에서 사라진 이전 선택" },
+    h(
+      "p",
+      { className: "cs-retained-gone-note" },
+      `이전에 고르신 항목 ${retainedGone.length}개가 이 템플릿에는 없습니다. 현재 문서에는 반영되지 않습니다.`,
+    ),
+  );
+}
+
+/** 저장 동사 구획(슬롯 아래, U4 14~17) — 저장 게이트 그 자체(saveActionable)가 술어다. */
+function renderPresetsSaveSection(
+  props: { controller: JobContentSelectionController; state: SlotConfigState; pending: boolean },
+): ReactNode {
+  const { controller, state, pending } = props;
+  if (!(state.presets.supported && state.presets.saveActionable)) return null;
+  return h(PresetSaveSection as any, { pending, onSave: () => { void controller.savePreset(); } });
+}
+
+/* ── zone 컴포넌트 — JobScreen composition 이 마운트한다 ─────────────────────────────────────── */
+export function JobContentSelection(props: {
+  controller: JobContentSelectionController;
+}): ReactNode {
+  const { controller } = props;
+  const state = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getSnapshot,
+  );
+
+  const projection = state.view?.projection ?? null;
+  const status = statusLine(state);
+  const pending = state.phase === "pending";
+  // 끝난 슬롯이 기본 접힘인가 — 판정(`settled`)은 Python 것이고, 「이 세션에서 만졌다」는
+  // 표시 사실이라 이 훅이 든다(U4-A 26번 회귀 방지, #945 F2). 자세한 사유는 훅 주석에.
+  const { isTouched, markTouched } = useTouchedSlots(projection?.slots, state.presetNotice);
+  const { statusNode, backendErrorNode, recoveryNode } = deriveStatusNodes(
+    state, status, pending, () => { void controller.refresh(); },
+  );
 
   // view 부재(미지원·미초기화 zone)면 이 zone 은 적용 대상이 아니다 — 조용히 비운다(빈칸 누수 0).
   if (projection === null) {
@@ -627,31 +758,16 @@ export function JobContentSelection(props: {
   // 술어가 숨겨도 **시끄러운 재진술은 남는다**: 실패·stale 사유(`statusNode`·`backendErrorNode`)
   // 와 직전 preset 왕복 결과는 웹이 수명을 소유하는 채널이라(#659), 술어만으로 지우면 사용자가
   // 방금 겪은 거절이 화면에서 증발한다.
-  if (
-    projection.zone_actionable !== true
-    && statusNode === null
-    && backendErrorNode === null
-    && state.presetNotice === null
-  ) {
+  if (!hasZoneContent(projection, statusNode, backendErrorNode, state.presetNotice)) {
     return null;
   }
 
-  const attention = blockingBySlot(state.view);
-  const retained = projection.retained_selections ?? [];
-  const retainedBySlot = new Map(
-    retained.filter((r) => r.fate !== "SLOT_REMOVED").map((r) => [r.slot_id, r]),
-  );
-  const retainedGone = retained.filter((r) => r.fate === "SLOT_REMOVED");
+  const { attention, retainedBySlot, retainedGone } = deriveRetainedView(state.view, projection);
 
   /* 고른 슬롯을 기억한다 — 판정(`settled`)은 Python 것이고, 「방금 만졌다」는 이 세션의
      표시 사실이라 여기가 든다. 이 한 줄이 26번 회귀를 막는다. */
   const selectOption = (slotId: string, optionId: string) => {
-    setTouched((current) => {
-      if (current.has(slotId)) return current;
-      const next = new Set(current);
-      next.add(slotId);
-      return next;
-    });
+    markTouched(slotId);
     return controller.selectOption(slotId, optionId);
   };
 
@@ -664,51 +780,11 @@ export function JobContentSelection(props: {
     // 보관된 선택 **목록**이 슬롯 위에 선다(U4 14~17) — 한 번에 끝내는 길을 먼저 보여 준다.
     // 저장 동사는 아래 남는다: 「지금 고른 것을 보관한다」가 고르는 자리보다 앞에 서면 인과가
     // 뒤집힌다. 그래서 한 구획이 아니라 **성격이 다른 두 구획**이고 술어도 각자다.
-    state.presets.supported && (state.presets.listActionable || state.presetNotice !== null)
-      ? h(PresetListSection as any, {
-        presets: state.presets,
-        notice: state.presetNotice,
-        pending,
-        onApply: (presetKey: string) => { void controller.applyPreset(presetKey); },
-        onRefresh: () => { void controller.refresh(); },
-      })
-      : null,
-    projection.slots.length === 0
-      ? h("p", { className: "cs-empty" }, "이 문서 작업에는 선택할 내용이 없습니다.")
-      : h(
-          "div",
-          { className: "cs-slots" },
-          ...projection.slots.map((slot, slotIndex) =>
-            h(SlotFieldset as any, {
-              key: slot.slot_id,
-              slot,
-              slotIndex,
-              attention: attention.get(slot.slot_id),
-              retained: retainedBySlot.get(slot.slot_id),
-              pending,
-              // 「만진 슬롯」은 이 세션의 선택(`touched`)과 직전 프리셋 적용이 채운 것
-              // (`justApplied`)의 합집합이다 — 판정(`settled`)은 그대로 Python 것이다.
-              collapsed:
-                slot.settled === true
-                && !touched.has(slot.slot_id)
-                && !justApplied.includes(slot.slot_id),
-              onSelect: selectOption,
-            }),
-          ),
-        ),
-    // 항목 자체가 사라진 이전 선택 — blocking 이 아니라 정보다. 현재 구성의 일부가 아니고
-    // 자동으로 되살아나지도 않는다. 이름을 댈 수 없으므로(현재 구조에 없다) 개수로만 말한다.
-    retainedGone.length > 0
-      ? h(
-          "aside",
-          { className: "cs-retained-gone", "aria-label": "이 템플릿에서 사라진 이전 선택" },
-          h(
-            "p",
-            { className: "cs-retained-gone-note" },
-            `이전에 고르신 항목 ${retainedGone.length}개가 이 템플릿에는 없습니다. 현재 문서에는 반영되지 않습니다.`,
-          ),
-        )
-      : null,
+    renderPresetsListSection({ controller, state, pending }),
+    renderSlotsSection({
+      projection, attention, retainedBySlot, pending, isTouched, onSelect: selectOption,
+    }),
+    renderRetainedGoneNote(retainedGone),
     // 「이전 선택 모두 제거」(detached 정리 액션)는 #903 에서 제거됐다. 그것이 막던 사고 —
     // 사라진 Slot 이 다시 등장하면 backend 가 옛 선택을 같은 ID 라는 이유로 자동 복원하는 것 —
     // 은 SG-01(#733)이 compatibility gate 로 닫았고, 그 뒤로 승계 선언집합에는 target 에 있는
@@ -716,11 +792,6 @@ export function JobContentSelection(props: {
     // 운명은 위 `cs-retained-gone` 이 정보로 재진술한다.
     // 저장 동사는 **슬롯 아래**에 남는다(U4 14~17) — 고르고 나서 보관한다는 인과 그대로다.
     // 술어는 저장 게이트 그 자체이므로(13번의 결속) 저장할 것이 없으면 이 구획도 서지 않는다.
-    state.presets.supported && state.presets.saveActionable
-      ? h(PresetSaveSection as any, {
-          pending,
-          onSave: () => { void controller.savePreset(); },
-        })
-      : null,
+    renderPresetsSaveSection({ controller, state, pending }),
   );
 }

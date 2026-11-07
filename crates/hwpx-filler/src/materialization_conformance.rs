@@ -113,6 +113,39 @@ fn clean_candidate(candidate_bytes: &[u8]) -> Result<HwpxPackage, ConformanceExe
     HwpxPackage::from_bytes(candidate_bytes, PackageLimits::default())
         .map_err(|error| execution_error(error.to_string()))
 }
+/// Writes one Active Field's document value into every content entry that carries it,
+/// collecting dedup'd fill notes; fails if no entry accepted the write.
+fn apply_field_binding(
+    package: &mut HwpxPackage,
+    field: &str,
+    value: &str,
+    notes: &mut Vec<FillNote>,
+) -> Result<(), ConformanceExecutionError> {
+    let names = field_xml_names(package).map_err(|error| execution_error(error.to_string()))?;
+    let mut wrote = false;
+    for name in names {
+        let mut doc = FieldDocument::new(package, &name)
+            .map_err(|error| execution_error(error.to_string()))?;
+        if doc
+            .set_field(field, value)
+            .map_err(|error| execution_error(error.to_string()))?
+        {
+            wrote = true;
+        }
+        for note in doc.notes() {
+            if !notes.contains(note) {
+                notes.push(note.clone());
+            }
+        }
+    }
+    if !wrote {
+        return Err(execution_error(format!(
+            "Active Field {} 를 candidate 의 어느 content entry 에도 쓸 수 없다",
+            python_repr(&Value::String(field.into()))
+        )));
+    }
+    Ok(())
+}
 
 /// Execute the sealed operation order over a fresh package made from exact Candidate bytes.
 pub fn apply_execution_plan_in_memory(
@@ -167,30 +200,7 @@ pub(crate) fn apply_execution_operations_in_memory(
                         python_repr(&Value::String(field.into()))
                     ))
                 })?;
-                let names = field_xml_names(&package)
-                    .map_err(|error| execution_error(error.to_string()))?;
-                let mut wrote = false;
-                for name in names {
-                    let mut doc = FieldDocument::new(&mut package, &name)
-                        .map_err(|error| execution_error(error.to_string()))?;
-                    if doc
-                        .set_field(field, value)
-                        .map_err(|error| execution_error(error.to_string()))?
-                    {
-                        wrote = true;
-                    }
-                    for note in doc.notes() {
-                        if !notes.contains(note) {
-                            notes.push(note.clone());
-                        }
-                    }
-                }
-                if !wrote {
-                    return Err(execution_error(format!(
-                        "Active Field {} 를 candidate 의 어느 content entry 에도 쓸 수 없다",
-                        python_repr(&Value::String(field.into()))
-                    )));
-                }
+                apply_field_binding(&mut package, field, value, &mut notes)?;
             }
             code => {
                 return Err(execution_error(format!(
@@ -479,6 +489,246 @@ pub(crate) struct NativePlanView<'a> {
     pub active_field_requirements: &'a [Value],
 }
 
+/// One independent postcondition's outcome: either its value for later stages to use,
+/// or the final (failure) `ConformanceResult` to return immediately.
+enum PostconditionOutcome<T> {
+    Continue(T),
+    Blocked(ConformanceResult),
+}
+type FieldValues = Vec<(String, hwpx_core::text_extract::InlineText)>;
+
+fn check_native_contract(plan: &NativePlanView<'_>) -> Result<(), ConformanceExecutionError> {
+    if plan.native_primitive_contract_id
+        != crate::execution_composition::NATIVE_PRIMITIVE_CONTRACT_ID
+    {
+        return Err(execution_error(format!(
+            "미지원 native primitive contract(latest fallback 없음): {}",
+            python_repr(&Value::String(plan.native_primitive_contract_id.into()))
+        )));
+    }
+    Ok(())
+}
+fn removal_targets(remove_ops: &[&Value]) -> HashSet<(String, String)> {
+    remove_ops
+        .iter()
+        .filter_map(|op| {
+            Some((
+                op["slot_id"].as_str()?.to_owned(),
+                op["option_id"].as_str()?.to_owned(),
+            ))
+        })
+        .collect()
+}
+/// P-source: the source Candidate must still contain every removal target, byte-for-byte.
+fn check_source_untouched(
+    source_bytes: &[u8],
+    removal_targets: &HashSet<(String, String)>,
+) -> Result<PostconditionOutcome<HashSet<(String, String)>>, ConformanceExecutionError> {
+    let source = match HwpxPackage::from_bytes(source_bytes, PackageLimits::default()) {
+        Ok(source) => source,
+        Err(error) => {
+            return Ok(PostconditionOutcome::Blocked(failure(
+                SOURCE_CANDIDATE_MUTATED,
+                format!("source 재파싱 실패: {error}"),
+            )));
+        }
+    };
+    let source_options = match options(&source) {
+        Ok(options) => options,
+        Err(_) => {
+            return Ok(PostconditionOutcome::Blocked(failure(
+                SOURCE_CANDIDATE_MUTATED,
+                "source inspect 가 blocking diagnostics 를 낸다",
+            )));
+        }
+    };
+    if !removal_targets.is_subset(&source_options) {
+        return Ok(PostconditionOutcome::Blocked(failure(
+            SOURCE_CANDIDATE_MUTATED,
+            format!(
+                "removal target {} 가 source 에 없다(source 변형)",
+                sorted_pairs(
+                    &removal_targets
+                        .difference(&source_options)
+                        .cloned()
+                        .collect()
+                )
+            ),
+        )));
+    }
+    Ok(PostconditionOutcome::Continue(source_options))
+}
+/// The Field ids retained by `structure` once every removal target's owned occurrences are excluded.
+fn retained_field_ids(
+    structure: &ExecutionTemplateStructure,
+    removal_targets: &HashSet<(String, String)>,
+) -> HashSet<String> {
+    structure
+        .field_occurrences
+        .iter()
+        .filter(|occ| {
+            !(occ.owner_kind == "OPTION"
+                && occ
+                    .owner_slot_id
+                    .as_ref()
+                    .zip(occ.owner_option_id.as_ref())
+                    .is_some_and(|(slot, option)| {
+                        removal_targets.contains(&(slot.clone(), option.clone()))
+                    }))
+        })
+        .map(|occ| occ.field_id.clone())
+        .collect()
+}
+/// P-removal/P-preserved: reopened output must have removed exactly the targets and
+/// preserved every other Option and retained Field occurrence.
+fn check_removal_and_preservation(
+    output_bytes: &[u8],
+    structure: &ExecutionTemplateStructure,
+    source_options: &HashSet<(String, String)>,
+    removal_targets: &HashSet<(String, String)>,
+) -> Result<PostconditionOutcome<(HwpxPackage, FieldValues)>, ConformanceExecutionError> {
+    let output = match HwpxPackage::from_bytes(output_bytes, PackageLimits::default()) {
+        Ok(output) => output,
+        Err(error) => {
+            return Ok(PostconditionOutcome::Blocked(failure(
+                REPARSE_FAILED,
+                format!("output 재파싱 실패: {error}"),
+            )));
+        }
+    };
+    let out_options = match inspect_reopened_output(&output) {
+        Ok(options) => options,
+        Err(result) => return Ok(PostconditionOutcome::Blocked(result)),
+    };
+    let field_values = match field_values(&output) {
+        Ok(values) => values,
+        Err(detail) => {
+            return Ok(PostconditionOutcome::Blocked(failure(
+                REPARSE_FAILED,
+                format!("output 재파싱 실패: {detail}"),
+            )));
+        }
+    };
+    let still = removal_targets
+        .intersection(&out_options)
+        .cloned()
+        .collect::<HashSet<_>>();
+    if !still.is_empty() {
+        return Ok(PostconditionOutcome::Blocked(failure(
+            REMOVAL_INCOMPLETE,
+            format!("removal target 이 output 에 잔존: {}", sorted_pairs(&still)),
+        )));
+    }
+    let expected_remaining = source_options
+        .difference(removal_targets)
+        .cloned()
+        .collect::<HashSet<_>>();
+    let lost = expected_remaining
+        .difference(&out_options)
+        .cloned()
+        .collect::<HashSet<_>>();
+    if !lost.is_empty() {
+        return Ok(PostconditionOutcome::Blocked(failure(
+            PRESERVED_CONTENT_LOST,
+            format!(
+                "target 아닌 Option 이 output 에서 소실: {}",
+                sorted_pairs(&lost)
+            ),
+        )));
+    }
+    let retained = retained_field_ids(structure, removal_targets);
+    let present = field_values
+        .iter()
+        .map(|(id, _)| id.clone())
+        .collect::<HashSet<_>>();
+    let missing = retained
+        .difference(&present)
+        .cloned()
+        .collect::<HashSet<_>>();
+    if !missing.is_empty() {
+        return Ok(PostconditionOutcome::Blocked(failure(
+            PRESERVED_CONTENT_LOST,
+            format!(
+                "제거 대상이 아닌 retained content 가 output 에서 소실: {}",
+                sorted_names(&missing)
+            ),
+        )));
+    }
+    Ok(PostconditionOutcome::Continue((output, field_values)))
+}
+/// One Active Field requirement's occurrence-count match and every occurrence's exact text match.
+fn check_field_text_matches(
+    field: &str,
+    values: &[&hwpx_core::text_extract::InlineText],
+    want: &str,
+) -> Option<ConformanceResult> {
+    for value in values {
+        if !value.exact() {
+            return Some(failure(
+                FIELD_TEXT_MISMATCH,
+                format!(
+                    "Active Field {} 에 판독하지 못한 인라인 요소 {:?} 가 남았다",
+                    python_repr(&Value::String(field.into())),
+                    value.unmodelled
+                ),
+            ));
+        }
+        if value.text != want {
+            return Some(failure(
+                FIELD_TEXT_MISMATCH,
+                format!(
+                    "Active Field {} text {} != 기대 {}",
+                    python_repr(&Value::String(field.into())),
+                    python_repr(&Value::String(value.text.clone())),
+                    python_repr(&Value::String(want.to_owned()))
+                ),
+            ));
+        }
+    }
+    None
+}
+/// P-active: every Active Field requirement's occurrence count and exact text match the VDR.
+fn check_active_field_values(
+    requirements: &[Value],
+    field_values: &FieldValues,
+    document_values: &HashMap<String, String>,
+) -> Result<PostconditionOutcome<()>, ConformanceExecutionError> {
+    for requirement in requirements {
+        let Some(field) = requirement["field_id"].as_str() else {
+            return Err(execution_error("Active Field requirement missing field_id"));
+        };
+        let Some(count) = requirement["expected_active_occurrence_count"].as_u64() else {
+            return Err(execution_error("Active Field requirement missing count"));
+        };
+        let values = field_values
+            .iter()
+            .filter(|(id, _)| id == field)
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>();
+        if values.len() != count as usize {
+            return Ok(PostconditionOutcome::Blocked(failure(
+                OCCURRENCE_COUNT_MISMATCH,
+                format!(
+                    "Active Field {} occurrence {} != 기대 {count}",
+                    python_repr(&Value::String(field.into())),
+                    values.len()
+                ),
+            )));
+        }
+        let Some(raw) = document_values.get(field) else {
+            return Err(execution_error(format!(
+                "Active Field {field} 에 대응하는 VDR document value 가 없다"
+            )));
+        };
+        let want =
+            canonical_field_value(raw).map_err(|error| execution_error(error.to_string()))?;
+        if let Some(blocked) = check_field_text_matches(field, &values, &want) {
+            return Ok(PostconditionOutcome::Blocked(blocked));
+        }
+    }
+    Ok(PostconditionOutcome::Continue(()))
+}
+
 /// P0–P6: reopen actual output and independently check the sealed effects.
 pub fn verify_materialization_postconditions(
     source_bytes: &[u8],
@@ -514,193 +764,32 @@ pub(crate) fn verify_materialization_postconditions_parts(
     document_values: &HashMap<String, String>,
     execution_notes: &[FillNote],
 ) -> Result<ConformanceResult, ConformanceExecutionError> {
-    if plan.native_primitive_contract_id
-        != crate::execution_composition::NATIVE_PRIMITIVE_CONTRACT_ID
-    {
-        return Err(execution_error(format!(
-            "미지원 native primitive contract(latest fallback 없음): {}",
-            python_repr(&Value::String(plan.native_primitive_contract_id.into()))
-        )));
-    }
+    check_native_contract(&plan)?;
     let remove_ops = plan
         .ordered_operations
         .iter()
         .filter(|op| op["op"] == PLAN_REMOVE_OPTION)
         .collect::<Vec<_>>();
-    let removal_targets = remove_ops
-        .iter()
-        .filter_map(|op| {
-            Some((
-                op["slot_id"].as_str()?.to_owned(),
-                op["option_id"].as_str()?.to_owned(),
-            ))
-        })
-        .collect::<HashSet<_>>();
-    let source = match HwpxPackage::from_bytes(source_bytes, PackageLimits::default()) {
-        Ok(source) => source,
-        Err(error) => {
-            return Ok(failure(
-                SOURCE_CANDIDATE_MUTATED,
-                format!("source 재파싱 실패: {error}"),
-            ));
-        }
+    let removal_targets = removal_targets(&remove_ops);
+    let source_options = match check_source_untouched(source_bytes, &removal_targets)? {
+        PostconditionOutcome::Blocked(result) => return Ok(result),
+        PostconditionOutcome::Continue(value) => value,
     };
-    let source_options = match options(&source) {
-        Ok(options) => options,
-        Err(_) => {
-            return Ok(failure(
-                SOURCE_CANDIDATE_MUTATED,
-                "source inspect 가 blocking diagnostics 를 낸다",
-            ));
-        }
+    let (output, field_values) = match check_removal_and_preservation(
+        output_bytes,
+        structure,
+        &source_options,
+        &removal_targets,
+    )? {
+        PostconditionOutcome::Blocked(result) => return Ok(result),
+        PostconditionOutcome::Continue(value) => value,
     };
-    if !removal_targets.is_subset(&source_options) {
-        return Ok(failure(
-            SOURCE_CANDIDATE_MUTATED,
-            format!(
-                "removal target {} 가 source 에 없다(source 변형)",
-                sorted_pairs(
-                    &removal_targets
-                        .difference(&source_options)
-                        .cloned()
-                        .collect()
-                )
-            ),
-        ));
-    }
-    let output = match HwpxPackage::from_bytes(output_bytes, PackageLimits::default()) {
-        Ok(output) => output,
-        Err(error) => {
-            return Ok(failure(
-                REPARSE_FAILED,
-                format!("output 재파싱 실패: {error}"),
-            ));
-        }
-    };
-    let out_options = match inspect_reopened_output(&output) {
-        Ok(options) => options,
-        Err(result) => return Ok(result),
-    };
-    let field_values = match field_values(&output) {
-        Ok(values) => values,
-        Err(detail) => {
-            return Ok(failure(
-                REPARSE_FAILED,
-                format!("output 재파싱 실패: {detail}"),
-            ));
-        }
-    };
-    let still = removal_targets
-        .intersection(&out_options)
-        .cloned()
-        .collect::<HashSet<_>>();
-    if !still.is_empty() {
-        return Ok(failure(
-            REMOVAL_INCOMPLETE,
-            format!("removal target 이 output 에 잔존: {}", sorted_pairs(&still)),
-        ));
-    }
-    let expected_remaining = source_options
-        .difference(&removal_targets)
-        .cloned()
-        .collect::<HashSet<_>>();
-    let lost = expected_remaining
-        .difference(&out_options)
-        .cloned()
-        .collect::<HashSet<_>>();
-    if !lost.is_empty() {
-        return Ok(failure(
-            PRESERVED_CONTENT_LOST,
-            format!(
-                "target 아닌 Option 이 output 에서 소실: {}",
-                sorted_pairs(&lost)
-            ),
-        ));
-    }
-    let retained = structure
-        .field_occurrences
-        .iter()
-        .filter(|occ| {
-            !(occ.owner_kind == "OPTION"
-                && occ
-                    .owner_slot_id
-                    .as_ref()
-                    .zip(occ.owner_option_id.as_ref())
-                    .is_some_and(|(slot, option)| {
-                        removal_targets.contains(&(slot.clone(), option.clone()))
-                    }))
-        })
-        .map(|occ| occ.field_id.clone())
-        .collect::<HashSet<_>>();
-    let present = field_values
-        .iter()
-        .map(|(id, _)| id.clone())
-        .collect::<HashSet<_>>();
-    let missing = retained
-        .difference(&present)
-        .cloned()
-        .collect::<HashSet<_>>();
-    if !missing.is_empty() {
-        return Ok(failure(
-            PRESERVED_CONTENT_LOST,
-            format!(
-                "제거 대상이 아닌 retained content 가 output 에서 소실: {}",
-                sorted_names(&missing)
-            ),
-        ));
-    }
-    for requirement in plan.active_field_requirements {
-        let Some(field) = requirement["field_id"].as_str() else {
-            return Err(execution_error("Active Field requirement missing field_id"));
-        };
-        let Some(count) = requirement["expected_active_occurrence_count"].as_u64() else {
-            return Err(execution_error("Active Field requirement missing count"));
-        };
-        let values = field_values
-            .iter()
-            .filter(|(id, _)| id == field)
-            .map(|(_, value)| value)
-            .collect::<Vec<_>>();
-        if values.len() != count as usize {
-            return Ok(failure(
-                OCCURRENCE_COUNT_MISMATCH,
-                format!(
-                    "Active Field {} occurrence {} != 기대 {count}",
-                    python_repr(&Value::String(field.into())),
-                    values.len()
-                ),
-            ));
-        }
-        let Some(raw) = document_values.get(field) else {
-            return Err(execution_error(format!(
-                "Active Field {field} 에 대응하는 VDR document value 가 없다"
-            )));
-        };
-        let want =
-            canonical_field_value(raw).map_err(|error| execution_error(error.to_string()))?;
-        for value in values {
-            if !value.exact() {
-                return Ok(failure(
-                    FIELD_TEXT_MISMATCH,
-                    format!(
-                        "Active Field {} 에 판독하지 못한 인라인 요소 {:?} 가 남았다",
-                        python_repr(&Value::String(field.into())),
-                        value.unmodelled
-                    ),
-                ));
-            }
-            if value.text != want {
-                return Ok(failure(
-                    FIELD_TEXT_MISMATCH,
-                    format!(
-                        "Active Field {} text {} != 기대 {}",
-                        python_repr(&Value::String(field.into())),
-                        python_repr(&Value::String(value.text.clone())),
-                        python_repr(&Value::String(want.clone()))
-                    ),
-                ));
-            }
-        }
+    if let PostconditionOutcome::Blocked(result) = check_active_field_values(
+        plan.active_field_requirements,
+        &field_values,
+        document_values,
+    )? {
+        return Ok(result);
     }
     match protected_structure_loss(source_bytes, &output, &remove_ops) {
         Ok(Some(detail)) => return Ok(failure(PROTECTED_STRUCTURE_LOSS, detail)),

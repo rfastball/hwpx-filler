@@ -1,25 +1,18 @@
 /* R4-01 데이터 선택·pool registration React 표면. session/loading/status와 settle-once는
    controller가 소유하고, 두 modal의 content DOM과 모든 이벤트는 React가 소유한다. */
-import { Fragment, createElement, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
-
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { BridgeClient } from "../runtime/client.ts";
-import { ContextMenu, createContextMenu } from "./context_menu.ts";
+import { createContextMenu } from "./context_menu.ts";
 import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { invokePathAction } from "./path_actions.ts";
-import {
-  inspectedRegistrationSheets, newRegistrationState, selectedRegistrationSheets, registrationSheetError,
-} from "./registration_sheets.ts";
-import type { RegState } from "./registration_sheets.ts";
+import { createRegistrationForm } from "./data_picker_registration.ts";
 import { pickDataFile } from "./data_file_pick.ts";
-import { PoolColumn, SESSION_DATA_KEY } from "./pool_column.ts";
-import type { PoolColumnHost } from "./pool_column.ts";
+import { SESSION_DATA_KEY } from "./pool_column.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
-  POOL_DATA_GONE, createPoolVerbs, dataRowMenuItems, mergeSessionRow,
-  pclmSheetEditOptions, poolHeadSub, poolRefusalText,
+  POOL_DATA_GONE, createPoolVerbs, dataRowMenuItems,
+  pclmSheetEditOptions, poolRefusalText,
 } from "./pool_verbs.ts";
 
 type Obj = Record<string, any>;
@@ -85,10 +78,6 @@ type PickerState = {
   detailMessage: string;
 };
 
-function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
-  return createElement(tag, props, ...children);
-}
-
 export function createDataPickerController(args: {
   doc: Document;
   runtime: ScreenRuntime;
@@ -105,24 +94,10 @@ export function createDataPickerController(args: {
     session: null, loading: false, status: "", level: "",
     detailOpen: false, detailMessage: "",
   };
-  let reg: RegState | null = null;
-  let regRevision = 0;
-  let inspectionRevision = 0;
   const listeners = new Set<Listener>();
-  const regListeners = new Set<Listener>();
 
   function emit(): void { for (const listener of [...listeners]) listener(); }
-  function emitReg(): void { for (const listener of [...regListeners]) listener(); }
   function patch(next: Partial<PickerState>): void { state = { ...state, ...next }; emit(); }
-  function patchReg(next: Partial<RegState>): void {
-    if (reg === null) return;
-    if ((next.path !== undefined && next.path !== reg.path) || (next.db !== undefined && next.db !== reg.db)) {
-      inspectionRevision++;
-      next = { ...next, sheet: "", view: "", sheets: [], availableSheets: [], inspectedPath: "", inspecting: false, error: "" };
-    }
-    reg = { ...reg, ...next };
-    emitReg();
-  }
 
   const dispatch = async (screen: string, action: string, payload: Obj = {}): Promise<Obj> => {
     const call = client.dispatch as unknown as (
@@ -204,47 +179,18 @@ export function createDataPickerController(args: {
     }
   }
 
-  function openRegDialog(options: Partial<RegState>): void {
-    regRevision++;
-    reg = newRegistrationState(options);
-    emitReg();
-    /* 첫 빈 좌표에 선다 — 엑셀은 파일 경로, 고정(pin)과 계약 목록은 이름(계약 목록의 DB 자리는
-       파일 고르기가 이미 채웠다). */
-    const focusId = options.pinMode || reg.mode === "pclm" ? "poolRegName" : "poolRegPath";
-    modal.open("poolRegModal", { initialFocus: args.doc.getElementById(focusId) });
-    void inspectRegSheets();
-  }
-
-  async function inspectRegSheets(): Promise<void> {
-    if (reg === null || reg.submitting) return;
-    const pclm = reg.mode === "pclm";
-    const path = (pclm ? reg.db : reg.path).trim();
-    if (!path) return;
-    if (reg.inspectedPath === path || reg.inspecting) return;
-    const revision = regRevision;
-    const request = ++inspectionRevision;
-    const current = () => reg !== null && regRevision === revision && inspectionRevision === request;
-    patchReg({ inspecting: true, error: "" });
-    try {
-      const result = await dispatch("pool", "inspect_sheets", pclm ? { path, kind: "pclm" } : { path });
-      if (!current()) return;
-      if (result.ok !== true || !Array.isArray(result.sheets)) {
-        patchReg({ error: result.error || "등록하지 못했습니다." });
-        return;
-      }
-      const availableSheets = result.sheets as RegState["availableSheets"];
-      patchReg(inspectedRegistrationSheets(reg!, availableSheets, path));
-    } catch (error) {
-      if (current()) patchReg({ error: String((error as Obj)?.message || error) });
-    } finally {
-      if (current()) patchReg({ inspecting: false });
-    }
-  }
-
-  function selectRegSheets(sheets: string[]): void {
-    if (reg === null || reg.inspecting || reg.submitting) return;
-    patchReg(selectedRegistrationSheets(reg, sheets));
-  }
+  /* 등록 폼(`#poolRegModal`) 상태는 `data_picker_registration.ts` 가 진다. 이 폼은
+     「지금 마운트된 데이터」(`state`)와 독립적인 가변 상태라 깨끗이 나뉜다 — 여는 쪽이
+     프리필 값을 다 채워 넘긴다. */
+  const registrationForm = createRegistrationForm({
+    doc: args.doc,
+    modal,
+    dispatch,
+    pickPoolDataFile: () => invoke("pick_pool_data_file"),
+    notify,
+    refreshScreen: (screen) => args.runtime.refresh(screen),
+  });
+  const { openRegDialog, patchReg } = registrationForm;
 
   /** 「이 데이터 등록…」 — 프리필 재료는 **전부 Python 값**이다(③b): 이름·경로는 세션 행,
    *  시트는 마운트 대상 재진술(`data_target.sheet`)이다. 웹이 라벨을 다시 쪼개거나 경로
@@ -264,62 +210,6 @@ export function createDataPickerController(args: {
      리터럴로 들지 않는다. */
   function openPclm(db: string): void {
     openRegDialog({ title: "계약 목록 등록", okLabel: "등록", mode: "pclm", db, view: "" });
-  }
-
-  async function confirmedRegistration(
-    action: string, payload: Obj, okLabel: string, revision: number, result: Obj,
-  ): Promise<Obj | null> {
-    if (!result.needs_confirm) return result;
-    const accepted = await modal.confirm({
-      body: result.confirm_text, confirmLabel: okLabel, cancelLabel: "취소", danger: true,
-    });
-    if (!accepted || reg === null || regRevision !== revision) return null;
-    return dispatch("pool", action, { ...payload, confirm: true, basis: result.basis });
-  }
-
-  async function submitReg(): Promise<void> {
-    if (reg === null || reg.submitting) return;
-    const pclm = reg.mode === "pclm";
-    const action = pclm ? "register_pclm" : reg.targetKey ? "relink" : "register_excel";
-    const payload: Obj = pclm
-      ? { name: reg.name.trim(), db: reg.db.trim(), view: reg.view, views: [...reg.sheets], note: reg.note.trim() }
-      : {
-        name: reg.name.trim(), path: reg.path.trim(), sheet: reg.sheet.trim(), sheets: [...reg.sheets], note: reg.note.trim(),
-      };
-    if (reg.targetKey) payload.key = reg.targetKey;
-    if (pclm) {
-      if (!payload.name) { patchReg({ error: "이름을 입력하세요." }); return; }
-    } else if (!payload.name || !payload.path) {
-      patchReg({ error: "이름과 파일 경로를 입력하세요." });
-      return;
-    }
-    if (reg.inspecting || !reg.inspectedPath || reg.inspectedPath !== (pclm ? payload.db : payload.path)) return;
-    const sheetError = registrationSheetError(reg);
-    if (sheetError) { patchReg({ error: sheetError }); return; }
-    const revision = regRevision;
-    patchReg({ submitting: true });
-    try {
-      const initial = await dispatch("pool", action, payload);
-      if (reg === null || regRevision !== revision) return;
-      const result = await confirmedRegistration(action, payload, reg.okLabel, revision, initial);
-      if (result === null || reg === null || regRevision !== revision) return;
-      if (result.ok === false) { patchReg({ error: result.error || "등록하지 못했습니다." }); return; }
-      const refreshScreen = pclm && reg.targetKey ? reg.refreshScreen : "";
-      modal.close("poolRegModal");
-      reg = null;
-      emitReg();
-      await refreshRegisteredTabs(refreshScreen);
-    } catch (error) {
-      if (regRevision === revision) patchReg({ error: String((error as Obj)?.message || error) });
-    } finally {
-      if (regRevision === revision) patchReg({ submitting: false });
-    }
-  }
-
-  async function refreshRegisteredTabs(screen: RegState["refreshScreen"]): Promise<void> {
-    if (!screen) return;
-    try { await args.runtime.refresh(screen); }
-    catch (error) { notify(String((error as Obj)?.message || error)); }
   }
 
   /* 동사 한 벌은 **고르기 화면과 공유**한다(U6-B #976 · 공용 ⑤ 리뷰) — 같은 `pool` 채널,
@@ -475,10 +365,7 @@ export function createDataPickerController(args: {
       getSnapshot: () => state,
       subscribe(listener: Listener): () => void { listeners.add(listener); return () => { listeners.delete(listener); }; },
     },
-    regModel: {
-      getSnapshot: () => reg,
-      subscribe(listener: Listener): () => void { regListeners.add(listener); return () => { regListeners.delete(listener); }; },
-    },
+    regModel: registrationForm.regModel,
     open(options: DataPickerOpenOptions): Promise<string | null> {
       if (state.session !== null) return Promise.reject(new Error("데이터 선택 창이 이미 열려 있습니다."));
       return new Promise((resolve) => {
@@ -535,20 +422,11 @@ export function createDataPickerController(args: {
     popover: args.popover,
     openRegDialog,
     patchReg,
-    inspectRegSheets,
-    selectRegSheets,
-    closeReg(): void { modal.close("poolRegModal"); regRevision++; reg = null; emitReg(); },
-    browseRegPath: async (): Promise<void> => {
-      if (reg === null || reg.submitting) return;
-      const revision = regRevision;
-      const previousPath = reg.path;
-      const path = await invoke("pick_pool_data_file");
-      if (path && reg !== null && regRevision === revision && reg.path === previousPath) {
-        patchReg({ path: String(path) });
-        await inspectRegSheets();
-      }
-    },
-    submitReg,
+    inspectRegSheets: registrationForm.inspectRegSheets,
+    selectRegSheets: registrationForm.selectRegSheets,
+    closeReg: registrationForm.closeReg,
+    browseRegPath: registrationForm.browseRegPath,
+    submitReg: registrationForm.submitReg,
     client,
     notify,
   };
@@ -556,84 +434,8 @@ export function createDataPickerController(args: {
 
 export type DataPickerController = ReturnType<typeof createDataPickerController>;
 
-/** 이 다이얼로그가 공용 열에 넘기는 호스트 — 고르기 화면의 두 열과 **한 컴포넌트**다(③b).
- *
- *  종전에는 이 자리가 세 구획(현재 데이터 / 고정한 데이터 / 다른 데이터)을 그리는 별도
- *  컴포넌트(`pool_list.ts`)였다. 같은 등록 목록을 두 문법으로 그리던 자리라, 「고를 수
- *  있는가」의 시각적 얼굴과 행 동사가 화면마다 갈렸다 — 다이얼로그는 행 안 버튼 다섯,
- *  고르기 열은 ⋯ 하나. 이제 그림은 한 벌이고 갈리는 것은 넷이다: 좌표(`dataPicker*`),
- *  바닥 동사 줄, 짝 지을 상대 열이 없다는 것(`drop` 없음), 1차 동사가 발행하는 액션
- *  (`job/load_pool` — 고르기 화면은 `editor/use_pool_data`).
- *
- *  좌표는 살아 있는 것만 **불변**이다: `#dataPickerPinned` 는 목록 그대로이고,
- *  카드 시절의 `#dataPickerCurrent`·`#dataPickerDupes`·`#dataPickerCorrupt` 는 그 카드와
- *  함께 사라졌다(현재 데이터 = 목록 첫 행, 통지 = 목록 안 `[data-notice]`). */
-function dialogHost(
-  controller: DataPickerController, seen: ReturnType<PickerSessionRead>, column: Obj | null,
-): PoolColumnHost {
-  const sessionRow = seen.data_row;
-  return {
-    side: "dat",
-    rootId: "dataPickerPool",
-    listId: "dataPickerPinned",
-    title: "데이터",
-    headSub: poolHeadSub(column),
-    /* 고름 표지의 정본은 **작업 스냅샷**이다: 풀 겨눔이면 그 슬롯 키, 아니면 세션 행이다.
-       세션이 슬롯 키를 지어내지 않는다(추측 금지) — Python 이 이미 아는 사실이다. */
-    selectedKey: seen.data_pool_key || (sessionRow ? SESSION_DATA_KEY : ""),
-    choose: controller.choose,
-    /* `drop` 없음 = 끌기 props 0. 이 면에는 짝 지을 상대 열이 없다. */
-    onMore: (row: Obj, trigger: HTMLElement) => { controller.toggleRowMenu(row, trigger); },
-    onNoticeAction: controller.noticeAction,
-    reload: () => controller.refresh(),
-    notify: controller.notify,
-    acts: createElement(Fragment, null,
-      h("button", {
-        className: "btn sm", id: "dataPickerBrowse", "data-busy-lock": true, key: "browse",
-        onClick: () => { void controller.browseFile(); },
-      }, "파일 찾아보기…"),
-      /* 「이 데이터 등록…」은 **고정할 것이 있고 아직 고정되지 않았을 때만** 선다: 풀에서
-         고른 데이터는 이미 등록된 참조라 다시 고정하면 같은 파일의 참조가 둘로 갈린다. */
-      sessionRow && !seen.data_pool_key ? h("button", {
-        className: "btn sm", id: "dataPickerPin", "data-busy-lock": true, key: "pin",
-        onClick: controller.openPin,
-      }, "이 데이터 등록…") : null),
-    emptyFallback: "등록한 데이터를 읽는 중…",
-  };
-}
-
-export function DataPickerDialog(props: { controller: DataPickerController }): ReactNode {
-  const { controller } = props;
-  /* 세 번째 인자(getServerSnapshot)를 같은 getter 로 넘긴다(`EditorScreen` 선례): 제품
-     런타임은 쓰지 않지만, 없으면 이 면이 `react-dom/server` 로 한 번도 렌더되지 못해
-     노드 배치 계약을 단위층에서 잴 수 없다. */
-  const state = useSyncExternalStore(
-    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
-  const pool = useSyncExternalStore(
-    controller.poolModel.subscribe, controller.poolModel.getSnapshot,
-    controller.poolModel.getSnapshot);
-  const seen = state.session ? state.session.read() : NO_SESSION_DATA();
-  const column = ((pool || {}).column || null) as Obj | null;
-  /* 이어붙이기는 **공용 순수 함수 하나**다(공용 ⑤ 리뷰) — 고르기 우 열과 같은 목록이라
-     같은 순서·같은 최소 열을 써야 한다. */
-  const merged = mergeSessionRow(column, seen.data_row);
-  return h("div", { className: "modal-card data-picker" },
-    h("h3", { id: "dataPickerTitle" }, "데이터 선택"),
-    h("p", { id: "dataPickerNote", className: `note ${state.level === "danger" ? "dangerbox" : state.level === "ok" ? "okbox" : ""}`,
-      role: "status", "aria-live": "polite", style: { display: state.status ? "" : "none", whiteSpace: "pre-line" } }, state.status),
-    h(PoolColumn as any, { host: dialogHost(controller, seen, column), column: merged }),
-    h("div", { className: "modal-actions" },
-      h("button", { className: "btn", id: "dataPickerClose", onClick: controller.close }, "닫기")),
-    /* 행 ⋯ — 고르기 화면과 같은 컴포넌트를 이 면의 좌표로 세운다. 트리거 selector 가
-       갈리는 것이 두 팝오버의 dismissal 을 나눈다(`#scr-editor .job-more` ↔ 이 면). */
-    h(ContextMenu as any, {
-      id: "dataPickerRowMenu",
-      controller: controller.rowContextMenu,
-      popover: controller.popover,
-      triggerSelector: "#dataPickerModal .job-more",
-      onDismiss: controller.closeRowMenu,
-      onSelect: (action: string) => { void controller.handleRowMenu(action); },
-    }));
-}
-
+/** 이 다이얼로그의 렌더(`dialogHost`·`DataPickerDialog`)는 `data_picker_dialog.ts` 가 진다.
+ *  컨트롤러(상태·발신)는 여기 그대로 둔다 — `product_screens.ts` 가 이 이름으로 그대로
+ *  가져오므로 재-export 한다. */
+export { DataPickerDialog } from "./data_picker_dialog.ts";
 export { PoolRegistrationDialog } from "./registration_dialog.ts";

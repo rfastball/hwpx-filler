@@ -214,18 +214,17 @@ pub fn field_xml_names(package: &HwpxPackage) -> Result<Vec<String>, FieldError>
 /// Opportunistic native batch for independent plain text slots. A false result
 /// leaves the package untouched so the regular per-occurrence path retains its
 /// admission diagnostics and effects for complex XML.
-pub(crate) fn try_fill_simple_batch(
-    package: &mut HwpxPackage,
+/// Groups each request's matching occurrences by content entry, or `None` if
+/// any requested field has no match anywhere in the package.
+fn group_requests(
+    scan: &StructuralBoundaryScan,
     requests: &[(String, String)],
-) -> bool {
-    let Ok(scan) = scan_package(package) else {
-        return false;
-    };
+) -> Option<HashMap<String, Vec<(BoundaryPairRef, String)>>> {
     let mut grouped = HashMap::<String, Vec<(BoundaryPairRef, String)>>::new();
     for (field, value) in requests {
         let mut found = false;
         for entry in &scan.entries {
-            let matches = matching(candidates(&scan, Some(&entry.entry)), field);
+            let matches = matching(candidates(scan, Some(&entry.entry)), field);
             if !matches.is_empty() {
                 found = true;
                 grouped
@@ -235,9 +234,18 @@ pub(crate) fn try_fill_simple_batch(
             }
         }
         if !found {
-            return false;
+            return None;
         }
     }
+    Some(grouped)
+}
+/// Trials the batch fill per entry and collects the resulting bytes, or
+/// `None` if any entry's trial fill is rejected or disappears.
+fn apply_grouped_updates(
+    package: &HwpxPackage,
+    scan: &StructuralBoundaryScan,
+    grouped: &HashMap<String, Vec<(BoundaryPairRef, String)>>,
+) -> Option<Vec<(String, Vec<u8>)>> {
     let mut updates = Vec::new();
     for entry in &scan.entries {
         let Some(fills) = grouped.get(&entry.entry) else {
@@ -245,21 +253,33 @@ pub(crate) fn try_fill_simple_batch(
         };
         let mut trial = package.clone();
         if !matches!(
-            try_apply_simple_field_fill_batch(&mut trial, &scan, &entry.entry, fills),
+            try_apply_simple_field_fill_batch(&mut trial, scan, &entry.entry, fills),
             Ok(Some(()))
         ) {
-            return false;
+            return None;
         }
-        let Some(bytes) = trial
+        let bytes = trial
             .entries
             .iter()
             .find(|item| item.name == entry.entry)
-            .map(|item| item.data.clone())
-        else {
-            return false;
-        };
+            .map(|item| item.data.clone())?;
         updates.push((entry.entry.clone(), bytes));
     }
+    Some(updates)
+}
+pub(crate) fn try_fill_simple_batch(
+    package: &mut HwpxPackage,
+    requests: &[(String, String)],
+) -> bool {
+    let Ok(scan) = scan_package(package) else {
+        return false;
+    };
+    let Some(grouped) = group_requests(&scan, requests) else {
+        return false;
+    };
+    let Some(updates) = apply_grouped_updates(package, &scan, &grouped) else {
+        return false;
+    };
     for (name, bytes) in updates {
         package
             .entries
@@ -462,6 +482,40 @@ impl<'a> FieldDocument<'a> {
         precheck_for(self.package, &scan, Some(&self.entry))
     }
 
+    /// Re-locates one field occurrence by ordinal, verifies it is still the
+    /// same occurrence, applies the fill, and records any resulting notes.
+    /// Returns whether this occurrence was filled.
+    fn fill_occurrence(
+        &mut self,
+        scan: &mut StructuralBoundaryScan,
+        clean: &str,
+        canonical: &str,
+        index: usize,
+        original: Candidate,
+    ) -> Result<bool, FieldError> {
+        if index > 0 {
+            *scan = scan_entry(self.package, &self.entry)?;
+        }
+        let current = candidates(scan, Some(&self.entry))
+            .into_iter()
+            .find(|item| item.ordinal == original.ordinal)
+            .ok_or_else(|| fail("field occurrence disappeared during fill"))?;
+        if current.raw_name != original.raw_name || current.field_type != original.field_type {
+            return Err(fail("field occurrence changed during fill"));
+        }
+        let mutation = apply_field_fill(self.package, scan, &current.pair, canonical)
+            .map_err(|error| fail(error.to_string()))?;
+        if mutation.filled {
+            self.modified |= mutation.modified;
+            for effect in &mutation.effects {
+                if let Some(note) = note_from_effect(clean, effect) {
+                    push_note(&mut self.notes, note);
+                }
+            }
+        }
+        Ok(mutation.filled)
+    }
+
     pub fn set_field(&mut self, requested: &str, value: &str) -> Result<bool, FieldError> {
         let fields = self.required_fields()?;
         let Some(target) = requested_target(&fields, requested) else {
@@ -482,26 +536,8 @@ impl<'a> FieldDocument<'a> {
         let mut filled = false;
         let mut skipped = false;
         for (index, original) in targets.into_iter().enumerate() {
-            if index > 0 {
-                scan = scan_entry(self.package, &self.entry)?;
-            }
-            let current = candidates(&scan, Some(&self.entry))
-                .into_iter()
-                .find(|item| item.ordinal == original.ordinal)
-                .ok_or_else(|| fail("field occurrence disappeared during fill"))?;
-            if current.raw_name != original.raw_name || current.field_type != original.field_type {
-                return Err(fail("field occurrence changed during fill"));
-            }
-            let mutation = apply_field_fill(self.package, &scan, &current.pair, &canonical)
-                .map_err(|error| fail(error.to_string()))?;
-            if mutation.filled {
+            if self.fill_occurrence(&mut scan, &clean, &canonical, index, original)? {
                 filled = true;
-                self.modified |= mutation.modified;
-                for effect in &mutation.effects {
-                    if let Some(note) = note_from_effect(&clean, effect) {
-                        push_note(&mut self.notes, note);
-                    }
-                }
             } else {
                 skipped = true;
             }

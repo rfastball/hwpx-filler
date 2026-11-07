@@ -156,65 +156,63 @@ fn basename(value: &str) -> String {
 fn option_string(item: &DatasetReference, key: &str) -> String {
     item.opts.get(key).map_or_else(String::new, python_str)
 }
+/// Shared `excel`/`pclm` summary shape: a located-file label plus an optional sheet suffix.
+fn file_reference_summary(label: &str, path: &str, sheets: &str) -> String {
+    let mut text = format!("{label}: {}", basename(path));
+    if !sheets.is_empty() {
+        text.push_str(&format!(" · 시트 {sheets}"));
+    }
+    text
+}
+fn nara_reference_summary(item: &DatasetReference) -> String {
+    let bgn = item
+        .opts
+        .get("bgn_dt")
+        .map_or_else(|| "?".into(), python_str);
+    let end = item
+        .opts
+        .get("end_dt")
+        .map_or_else(|| "?".into(), python_str);
+    let mut text = format!("기간 {bgn}~{end}");
+    if let Some(rows) = item
+        .opts
+        .get("num_rows")
+        .filter(|value| python_truthy(value))
+    {
+        text.push_str(&format!(" · {}건", python_str(rows)));
+    }
+    text
+}
+fn pipeline_reference_summary(item: &DatasetReference) -> Result<String, DatasetReferenceError> {
+    let sources = item
+        .opts
+        .get("sources")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let steps = item.opts.get("steps").and_then(Value::as_array);
+    let mut labels = Vec::new();
+    if let Some(steps) = steps {
+        for step in steps {
+            let step = step.as_object().ok_or_else(|| {
+                DatasetReferenceError("등록 데이터 참조 형식이 올바르지 않습니다.".into())
+            })?;
+            labels.push(step.get("op").map_or_else(|| "?".into(), python_str));
+        }
+    }
+    let operations = if labels.is_empty() {
+        "스텝 없음".into()
+    } else {
+        labels.join("+")
+    };
+    Ok(format!("조립: 소스 {sources}개 · {operations}"))
+}
 pub fn reference_summary(item: &DatasetReference) -> Result<String, DatasetReferenceError> {
     let sheets = reference_sheets(item)?.join(", ");
     Ok(match item.kind.as_str() {
-        "excel" => {
-            let mut text = format!("파일: {}", basename(&option_string(item, "path")));
-            if !sheets.is_empty() {
-                text.push_str(&format!(" · 시트 {sheets}"));
-            }
-            text
-        }
-        "pclm" => {
-            let mut text = format!("DB: {}", basename(&option_string(item, "db")));
-            if !sheets.is_empty() {
-                text.push_str(&format!(" · 시트 {sheets}"));
-            }
-            text
-        }
-        "nara" => {
-            let bgn = item
-                .opts
-                .get("bgn_dt")
-                .map_or_else(|| "?".into(), python_str);
-            let end = item
-                .opts
-                .get("end_dt")
-                .map_or_else(|| "?".into(), python_str);
-            let mut text = format!("기간 {bgn}~{end}");
-            if let Some(rows) = item
-                .opts
-                .get("num_rows")
-                .filter(|value| python_truthy(value))
-            {
-                text.push_str(&format!(" · {}건", python_str(rows)));
-            }
-            text
-        }
-        "pipeline" => {
-            let sources = item
-                .opts
-                .get("sources")
-                .and_then(Value::as_array)
-                .map_or(0, Vec::len);
-            let steps = item.opts.get("steps").and_then(Value::as_array);
-            let mut labels = Vec::new();
-            if let Some(steps) = steps {
-                for step in steps {
-                    let step = step.as_object().ok_or_else(|| {
-                        DatasetReferenceError("등록 데이터 참조 형식이 올바르지 않습니다.".into())
-                    })?;
-                    labels.push(step.get("op").map_or_else(|| "?".into(), python_str));
-                }
-            }
-            let operations = if labels.is_empty() {
-                "스텝 없음".into()
-            } else {
-                labels.join("+")
-            };
-            format!("조립: 소스 {sources}개 · {operations}")
-        }
+        "excel" => file_reference_summary("파일", &option_string(item, "path"), &sheets),
+        "pclm" => file_reference_summary("DB", &option_string(item, "db"), &sheets),
+        "nara" => nara_reference_summary(item),
+        "pipeline" => return pipeline_reference_summary(item),
         _ => "(알 수 없는 소스)".into(),
     })
 }
