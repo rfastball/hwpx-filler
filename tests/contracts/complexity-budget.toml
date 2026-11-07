@@ -3,13 +3,19 @@
 # 이 파일은 **내려가기만** 한다. 실패를 고치는 길은 원장 상향이 아니라 책임 분리다.
 # 측정: scripts/complexity_axes.mjs + crates/hwpx-artifact/examples/complexity_axes.rs
 # 판정·작성: node scripts/complexity_budget.mjs --check|--tighten
-# 불가피한 상향·신규 항목은 그 항목을 표로 쓰고 새 이슈를 단다(탈출구):
+#
+# 항목은 세 형태 중 하나다.
+# - 숫자만(예전 동결): 책임 분리 전 실측값을 그대로 적은 과거 동결, 내려가기만 한다.
+# - { value, override = "#이슈", reason }: 분리 중간 단계·측정 보정의 임시 예외.
+#   불가피한 상향·신규 항목은 새 이슈를 달아 이 형태로 쓴다(탈출구):
 #   function_complexity = { value = 14, override = "#1234", reason = "왜 지금 쪼갤 수 없는가" }
+# - { value, reason } (override 없음): 쪼개도 나아지지 않는 구조에 사유를 단 상시 예외.
+#   내려가기만 하며 새로 추가할 수 없다 — base에 없는 reason-only 항목은 거부된다.
 
 schema = "complexity-budget/v1"
 
 [budget."crates/hwpx-core/src/authoring_edit.rs"]
-module_statements = { value = 348, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+module_statements = { value = 348, reason = "상시 예외: 단일 책임 모듈 — 토큰→Field 치환, 24개 소함수 분해됨" }
 
 [budget."crates/hwpx-core/src/authoring_edit.rs::apply_one"]
 function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -24,7 +30,7 @@ function_complexity = { value = 17, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/authoring_edit.rs::layout"]
-function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 17, reason = "상시 예외: 형식 명세 1:1 처리 — 문단 콘텐츠 모델 1:1 분류, depth 공유" }
 
 [budget."crates/hwpx-core/src/authoring_edit.rs::max_numeric_id"]
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -36,7 +42,7 @@ function_complexity = { value = 13, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/native_admission.rs::BookmarkRemovalBlockerKind.as_str"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 16, reason = "상시 예외: 값 매핑 표 — 15-variant enum→문자열 매핑" }
 
 [budget."crates/hwpx-core/src/native_authoring.rs::change_field_occurrences"]
 function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -45,16 +51,16 @@ function_complexity = { value = 22, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/native_authoring.rs::insert_boundary"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 단일 책임 알고리즘 — 삽입 지점 0/끝/중간 분기, index 공유" }
 
 [budget."crates/hwpx-core/src/native_authoring.rs::preflight"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/native_authoring.rs::simple_field_content"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 선언적 규칙 표 — 허용 자식 모양 allow-list 분류" }
 
 [budget."crates/hwpx-core/src/native_transfer.rs"]
-module_statements = { value = 341, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+module_statements = { value = 341, reason = "상시 예외: 단일 책임 모듈 — 붙여넣기 안전성 모듈, 25개 소함수" }
 
 [budget."crates/hwpx-core/src/native_transfer.rs::paste_bookmark_block"]
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -67,33 +73,33 @@ function_statements = { value = 76, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/native_transfer.rs::supported_paragraph"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 18, reason = "상시 예외: 선언적 규칙 표 — 문단 허용 모양 allow-list 분류" }
 
 [budget."crates/hwpx-core/src/package.rs::directory_start"]
-function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 23, reason = "상시 예외: 형식 명세 1:1 처리 — ZIP EOCD/ZIP64 역방향 탐색 명세" }
 
 [budget."crates/hwpx-core/src/package.rs::preflight_directory"]
-function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 86, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 21, reason = "상시 예외: 형식 명세 1:1 처리 — ZIP central directory 명세 검증" }
+function_statements = { value = 86, reason = "상시 예외: 형식 명세 1:1 처리 — ZIP central directory 명세 검증" }
 
 [budget."crates/hwpx-core/src/package.rs::zip64_locations"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 형식 명세 1:1 처리 — ZIP64 로케이터 탐색 명세" }
 
 [budget."crates/hwpx-core/src/shape_text.rs::shape_blocks"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — 도형 콘텐츠 명세 1:1 분류, 재귀" }
 
 [budget."crates/hwpx-core/src/structural_boundary.rs::StructuralDiagnosticKind.as_str"]
-function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 26, reason = "상시 예외: 값 매핑 표 — 25-variant enum→문자열 매핑" }
 
 [budget."crates/hwpx-core/src/xml_dom.rs"]
-module_statements = { value = 342, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+module_statements = { value = 342, reason = "상시 예외: 단일 책임 모듈 — NodeId 안정 XML트리, 20개 소함수" }
 
 [budget."crates/hwpx-core/src/xml_dom.rs::XmlDocument.write_node_with_scope"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 13, reason = "상시 예외: 형식 명세 1:1 처리 — XML Content enum 직렬화 1:1" }
 
 [budget."crates/hwpx-core/src/xml_dom.rs::parse_xml"]
-function_complexity = { value = 63, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 113, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 63, reason = "상시 예외: 형식 명세 1:1 처리 — XML 1.0 이벤트 종류와 1:1" }
+function_statements = { value = 113, reason = "상시 예외: 형식 명세 1:1 처리 — XML 1.0 이벤트 종류와 1:1" }
 
 [budget."crates/hwpx-desktop/examples/check_rust_coverage.rs::assignments"]
 function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -102,7 +108,7 @@ function_complexity = { value = 16, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/examples/nara_fixture.rs::curate"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 16, reason = "상시 예외: 선언적 규칙 표 — F1/F3/tour 등 독립 샘플링 기준 나열" }
 
 [budget."crates/hwpx-desktop/src/applied_template_asset.rs::AppliedTemplateAsset.adopt"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -112,19 +118,19 @@ function_complexity = { value = 20, override = "#1200", reason = "Python→Rust�
 function_statements = { value = 84, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_args"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 평평한 분배 표 — 하위명령명→Command 1:1 분배" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_drift"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 형식 명세 1:1 처리 — 고정 플래그 문법 파서" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_render"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 18, reason = "상시 예외: 형식 명세 1:1 처리 — render 플래그 문법 1:1 상태기계" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_schema"]
 function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::parse_template_option"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 18, reason = "상시 예외: 형식 명세 1:1 처리 — 옵션 파서 고정 문법 1:1" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::render_text"]
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -133,16 +139,16 @@ function_complexity = { value = 12, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller.rs::tests.parses_native_commands_and_default_generation"]
-function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 25, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 파싱 케이스 순차 assert" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs::parse"]
-function_complexity = { value = 34, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 34, reason = "상시 예외: 형식 명세 1:1 처리 — CLI 플래그 문법 1:1 파서" }
 
 [budget."crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs::prepare_generation"]
 function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/boot_budget.rs::runtime_version.read"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 13, reason = "상시 예외: 단일 책임 가드 나열 — FFI 호출별 에러 체크 가드" }
 
 [budget."crates/hwpx-desktop/src/current_execution_preparation.rs::prepare_current_records"]
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -170,14 +176,14 @@ function_complexity = { value = 25, override = "#1200", reason = "Python→Rust�
 function_statements = { value = 56, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/editor_controller/actions.rs::EditorController.mapping_action"]
-function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 21, reason = "상시 예외: 평평한 분배 표 — action→method 1:1 위임 분배" }
 
 [budget."crates/hwpx-desktop/src/editor_controller/save.rs::EditorController.save"]
 function_complexity = { value = 37, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 function_statements = { value = 83, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/editor_projection.rs::snapshot"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 14, reason = "상시 예외: 평평한 투영 렌더 — state→view 필드별 선언적 투영" }
 
 [budget."crates/hwpx-desktop/src/example_pack.rs::ExamplePack.install"]
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -187,7 +193,7 @@ function_statements = { value = 51, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/host_common.rs::call"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 15, reason = "상시 예외: 평평한 분배 표 — method명→graph.* 1:1 IPC 분배" }
 
 [budget."crates/hwpx-desktop/src/job_actions.rs::JobController.dispatch"]
 function_complexity = { value = 73, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -226,16 +232,16 @@ function_statements = { value = 74, override = "#1200", reason = "Python→Rust�
 class_methods = { value = 31, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/job_registry.rs::tests.transaction_preserves_revision_and_collision_and_isolates_corruption"]
-function_statements = { value = 121, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 121, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 저장 시나리오 순차 assert" }
 
 [budget."crates/hwpx-desktop/src/job_run_result.rs::project"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 15, reason = "상시 예외: 평평한 투영 렌더 — 결과 variant 1:1 투영" }
 
 [budget."crates/hwpx-desktop/src/legacy_practice.rs::LegacyPractice.cleanup_locked_with"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/legacy_practice.rs::LegacyPractice.validate"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 단일 책임 가드 나열 — 변조 탐지 가드 체인" }
 
 [budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController"]
 class_methods = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -244,10 +250,10 @@ class_methods = { value = 23, override = "#1200", reason = "Python→Rust·Node 
 function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/library_controller.rs::LibraryController.update"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 18, reason = "상시 예외: 평평한 분배 표 — action→method 1:1 분배" }
 
 [budget."crates/hwpx-desktop/src/nara_transport.rs::windows.fetch"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 15, reason = "상시 예외: 단일 책임 가드 나열 — WinHTTP FFI 호출별 에러 체크" }
 
 [budget."crates/hwpx-desktop/src/native_methods.rs"]
 module_statements = { value = 323, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -261,7 +267,7 @@ function_complexity = { value = 25, override = "#1200", reason = "Python→Rust�
 function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/native_methods.rs::validate_host_call"]
-function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 17, reason = "상시 예외: 선언적 규칙 표 — host_contract 타입 태그 1:1 검증" }
 
 [budget."crates/hwpx-desktop/src/onboarding_controller.rs"]
 module_statements = { value = 337, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -288,24 +294,24 @@ function_complexity = { value = 11, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/onboarding_match_authoring.rs::match_event"]
-function_complexity = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 51, reason = "상시 예외: 선언적 규칙 표 — event명→조건 1:1 평평한 규칙표" }
 
 [budget."crates/hwpx-desktop/src/onboarding_product.rs::editor_event"]
-function_complexity = { value = 142, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 142, reason = "상시 예외: 선언적 규칙 표 — event별 평평한 조건표(최대 사례)" }
 function_statements = { value = 59, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/onboarding_product.rs::job_event"]
-function_complexity = { value = 76, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 76, reason = "상시 예외: 선언적 규칙 표 — event별 평평한 조건표" }
 function_statements = { value = 70, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/onboarding_state.rs::OnboardingState.preflight"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 단일 책임 가드 나열 — payload 스키마 검증 가드 체인" }
 
 [budget."crates/hwpx-desktop/src/onboarding_state.rs::OnboardingState.resources"]
-function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 20, reason = "상시 예외: 단일 책임 가드 나열 — 연습환경 준비 readiness 가드" }
 
 [budget."crates/hwpx-desktop/src/onboarding_state.rs::OnboardingState.transition_context"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 단일 책임 가드 나열 — 재전송 방지 토큰 일치 가드" }
 
 [budget."crates/hwpx-desktop/src/pool_controller.rs::PoolController.perform"]
 function_complexity = { value = 33, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -341,22 +347,22 @@ function_complexity = { value = 14, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/tutorial_seed.rs::seed_mapping"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 16, reason = "상시 예외: 값 매핑 표 — 필드명→상수/서식 매핑표" }
 
 [budget."crates/hwpx-desktop/src/tutorial_workspace.rs::TutorialWorkspace.seed"]
 function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/src/tutorial_workspace.rs::TutorialWorkspace.sweep"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 단일 책임 가드 나열 — 안전 삭제 가드 체인" }
 
 [budget."crates/hwpx-desktop/src/web_assets.rs::WebAssets.get"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 16, reason = "상시 예외: 단일 책임 가드 나열 — 경로조작 차단 가드+MIME 매핑" }
 
 [budget."crates/hwpx-desktop/src/workspace_runtime.rs::RuntimeBuilder.build_inner"]
 function_statements = { value = 68, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-desktop/tests/tutorial_walk.rs::all_eight_lessons_walk_product_graph_and_isolate_output"]
-function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 21, reason = "상시 예외: 독립 사례 나열 테스트 — 8개 레슨 데이터기반 통합테스트" }
 
 [budget."crates/hwpx-filler/examples/fixture_common/legacy_zip.rs::write"]
 function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -380,10 +386,10 @@ function_complexity = { value = 11, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/document_creation_workbench.rs::compose_blockers"]
-function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 20, reason = "상시 예외: 평평한 분배 표 — 9개 독립 블로커 조건 위임 집계" }
 
 [budget."crates/hwpx-filler/src/document_creation_workbench.rs::compose_document_creation_workbench"]
-function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 17, reason = "상시 예외: 순차 배선 — 구성요소 조립 합성 루트" }
 
 [budget."crates/hwpx-filler/src/editor_mapping.rs"]
 module_statements = { value = 382, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -407,10 +413,10 @@ function_complexity = { value = 36, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/execution_composition.rs::c2"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 단일 책임 가드 나열 — 계약 조항 C2 단일 검증" }
 
 [budget."crates/hwpx-filler/src/execution_composition.rs::c6"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 단일 책임 가드 나열 — 계약 조항 C6 단일 검증" }
 
 [budget."crates/hwpx-filler/src/execution_contract_set.rs::verify_sealed_plan_integrity"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -419,10 +425,10 @@ function_complexity = { value = 13, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/field_induction.rs::number_grouping"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — 숫자 그룹핑 규칙 상태기계" }
 
 [budget."crates/hwpx-filler/src/field_induction.rs::render_transform"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 18, reason = "상시 예외: 평평한 분배 표 — PatternKind→헬퍼 1:1 위임" }
 
 [budget."crates/hwpx-filler/src/field_induction.rs::renderings"]
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -437,16 +443,16 @@ function_complexity = { value = 12, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/field_induction_labels.rs::label_matches"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 15, reason = "상시 예외: 평평한 분배 표 — 5개 매칭 전략 순차 위임 체인" }
 
 [budget."crates/hwpx-filler/src/field_induction_labels.rs::static_cue"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/field_proposal_reading.rs::cell_ref"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 형식 명세 1:1 처리 — HWPX 셀 주소 스키마 파서" }
 
 [budget."crates/hwpx-filler/src/field_proposal_reading.rs::walk"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — run/t/ctrl XML 구조 순회 파서" }
 
 [budget."crates/hwpx-filler/src/fields.rs::FieldDocument.set_field"]
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -476,10 +482,10 @@ function_complexity = { value = 11, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/format_engine.rs::reserved_date"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 값 매핑 표 — 예약 날짜 코드 소형 dispatch" }
 
 [budget."crates/hwpx-filler/src/format_engine.rs::strftime_with_precision"]
-function_complexity = { value = 43, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 43, reason = "상시 예외: 형식 명세 1:1 처리 — strftime 지시자별 1:1 분기" }
 
 [budget."crates/hwpx-filler/src/generation_delivery.rs::build_delivery_binding_basis"]
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -499,7 +505,7 @@ function_statements = { value = 58, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_commands.rs::dispatch"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 18, reason = "상시 예외: 평평한 분배 표 — 명령어별 핸들러 위임 dispatch" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_commands.rs::remove_region"]
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -513,7 +519,7 @@ function_complexity = { value = 18, override = "#1200", reason = "Python→Rust�
 function_statements = { value = 54, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::control_count"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — control 집계 규격 1:1 dispatch" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::field_range_refusal"]
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -544,7 +550,7 @@ function_complexity = { value = 21, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_transfer.rs::field_error"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 값 매핑 표 — 에러코드→한국어 메시지 매핑" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_trial.rs::trial_hwpx"]
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -554,19 +560,19 @@ function_complexity = { value = 37, override = "#1200", reason = "Python→Rust�
 function_statements = { value = 80, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/hwpx_structure.rs::marker_has_object"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — object 포함 여부 구조 술어 DFS" }
 
 [budget."crates/hwpx-filler/src/identity_summary.rs::identity_summary"]
 function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/mapping.rs::MappingProfile.from_dict"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 값 매핑 표 — JSON Value variant 1:1 오류매핑" }
 
 [budget."crates/hwpx-filler/src/mapping_state.rs::row_projection"]
 function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/mapping_state.rs::slice_label"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 값 매핑 표 — slice.mode→문구 1:1 매핑표" }
 
 [budget."crates/hwpx-filler/src/materialization_conformance.rs::apply_execution_operations_in_memory"]
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -588,13 +594,13 @@ function_complexity = { value = 15, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/output_name.rs::parse_filename_pattern"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 형식 명세 1:1 처리 — 중괄호 토큰 문법 단일 루프 파서" }
 
 [budget."crates/hwpx-filler/src/output_name.rs::render_output_name"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 평평한 분배 표 — PatternToken 4종 1:1 렌더 분배" }
 
 [budget."crates/hwpx-filler/src/schema_drift.rs::longest_match"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 13, reason = "상시 예외: 단일 책임 알고리즘 — 최장 공통 구간 탐색, index 공유" }
 
 [budget."crates/hwpx-filler/src/selection_compatibility.rs::classify_selection"]
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -603,34 +609,34 @@ function_complexity = { value = 14, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/structure_scan.rs::StructureDiagnosticKind.as_str"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 16, reason = "상시 예외: 값 매핑 표 — 15-variant enum→문자열 매핑" }
 
 [budget."crates/hwpx-filler/src/structure_scan.rs::token_matches"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 형식 명세 1:1 처리 — 중괄호 토큰화 단일 루프, 명세 그대로" }
 
 [budget."crates/hwpx-filler/src/template_authoring.rs::authoring_lint"]
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/template_authoring.rs::command_name"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 15, reason = "상시 예외: 값 매핑 표 — action→한글 라벨 1:1 매핑(14종)" }
 
 [budget."crates/hwpx-filler/src/template_change_product.rs::product_preparation_status"]
-function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 19, reason = "상시 예외: 값 매핑 표 — status×change 조합 투영표" }
 
 [budget."crates/hwpx-filler/src/text_authoring_trial.rs::trial_txt_authoring"]
 function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.from_dict"]
-function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 24, reason = "상시 예외: 평평한 분배 표 — mode(9종) 1:1 필드 구성 분배" }
 
 [budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.locate"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 12, reason = "상시 예외: 평평한 분배 표 — mode별 오프셋 계산 1:1 분배" }
 
 [budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.to_dict"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 13, reason = "상시 예외: 값 매핑 표 — mode 키 목록 1:1 직렬화표" }
 
 [budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.validate"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 13, reason = "상시 예외: 평평한 분배 표 — mode별 필수 필드 검증 1:1 분배" }
 
 [budget."crates/hwpx-filler/src/txt_authoring.rs"]
 module_statements = { value = 890, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -662,7 +668,7 @@ function_complexity = { value = 16, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/txt_authoring.rs::shared_reasons"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — 명령별 차단 사유 선언적 표" }
 
 [budget."crates/hwpx-filler/src/txt_authoring.rs::suggest_field_name"]
 function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -677,13 +683,13 @@ function_complexity = { value = 12, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."frontend/js/popover.js::place"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — below 판정+clamp 위치 계산" }
 
 [budget."frontend/src/bootstrap.js::bootProduct"]
-function_statements = 55
+function_statements = { value = 55, reason = "상시 예외: 순차 배선 — factory 호출 순서 계약 합성 루트" }
 
 [budget."frontend/src/domain/canonical_execution_encoding.ts::encodeValue"]
-function_complexity = 14
+function_complexity = { value = 14, reason = "상시 예외: 평평한 분배 표 — 타입별 폐쇄적 switch 인코딩" }
 
 [budget."frontend/src/editorview/rhwp_editor.ts"]
 module_statements = 352
@@ -693,34 +699,34 @@ function_complexity = 38
 function_statements = 92
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.rangeOf"]
-function_complexity = 18
+function_complexity = { value = 18, reason = "상시 예외: 단일 책임 가드 나열 — 경로 1건 추출 후 검증만" }
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.reportRect"]
 function_complexity = 13
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.selection"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 순차 배선 — 선택 폴링→좌표 변환 순차 처리" }
 
 [budget."frontend/src/editorview/rhwp_editor.ts::mountRhwp.setDecorations"]
 function_complexity = 40
 
 [budget."frontend/src/editorview/txt_lintpad.ts"]
-module_statements = 427
+module_statements = { value = 427, reason = "상시 예외: 단일 책임 모듈 — CodeMirror lifecycle 단일 모듈" }
 
 [budget."frontend/src/editorview/txt_lintpad.ts::lintpadDecorations"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 순차 배선 — EditorState 구성 후 순차 effect" }
 
 [budget."frontend/src/editorview/txt_lintpad.ts::lintpadPieces"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 선언적 규칙 표 — label 유무별 조각 구성 규칙" }
 
 [budget."frontend/src/editorview/txt_lintpad.ts::lintpadUpdate"]
-function_complexity = 14
+function_complexity = { value = 14, reason = "상시 예외: 순차 배선 — changes/effects 배열 순차 구성" }
 
 [budget."frontend/src/product_api.js::createProductApi.deliver"]
-function_complexity = 13
+function_complexity = { value = 13, reason = "상시 예외: 순차 배선 — payload→digest+저장소 기록 순차" }
 
 [budget."frontend/src/runtime/adapter.ts::classify"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — 실행결과→표시모드 분류 규칙" }
 
 [budget."frontend/src/screens/authoring.ts::AuthoringScreen"]
 function_complexity = 92
@@ -730,13 +736,13 @@ function_statements = 155
 function_complexity = 22
 
 [budget."frontend/src/screens/authoring_a11y.ts::isCurrentTarget"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 평평한 분배 표 — kind 판별 평평한 조기 반환" }
 
 [budget."frontend/src/screens/authoring_a11y.ts::liveStep"]
-function_complexity = 26
+function_complexity = { value = 26, reason = "상시 예외: 선언적 규칙 표 — prev/next 비교 diff-and-collect" }
 
 [budget."frontend/src/screens/authoring_a11y.ts::treeKey"]
-function_complexity = 23
+function_complexity = { value = 23, reason = "상시 예외: 값 매핑 표 — 키 이름→TreeAction 매핑표" }
 
 [budget."frontend/src/screens/authoring_controller.ts"]
 module_statements = 649
@@ -766,16 +772,16 @@ function_complexity = 14
 function_complexity = 26
 
 [budget."frontend/src/screens/authoring_controller.ts::echoes"]
-function_complexity = 16
+function_complexity = { value = 16, reason = "상시 예외: 단일 책임 가드 나열 — place/selection 비교 가드 나열" }
 
 [budget."frontend/src/screens/authoring_controller.ts::previewHighlight"]
-function_complexity = 18
+function_complexity = { value = 18, reason = "상시 예외: 값 매핑 표 — command.type→highlight 변환표" }
 
 [budget."frontend/src/screens/authoring_controller.ts::rangePickStep"]
-function_complexity = 13
+function_complexity = { value = 13, reason = "상시 예외: 선언적 규칙 표 — 2클릭 범위고르기 상태기계 1스텝" }
 
 [budget."frontend/src/screens/command_palette.ts::paletteModel"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 평평한 투영 렌더 — entries→palette option 평평한 투영" }
 
 [budget."frontend/src/screens/data_picker.ts"]
 module_statements = 323
@@ -793,7 +799,7 @@ module_statements = 696
 function_complexity = 22
 
 [budget."frontend/src/screens/data_zone.ts::ColumnPanel"]
-function_complexity = 14
+function_complexity = { value = 14, reason = "상시 예외: 평평한 투영 렌더 — 범위/텍스트 두 갈래 평평한 렌더" }
 
 [budget."frontend/src/screens/data_zone.ts::ColumnPicker"]
 function_complexity = 18
@@ -813,37 +819,37 @@ function_complexity = 68
 function_statements = 73
 
 [budget."frontend/src/screens/data_zone.ts::PresetChip"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 평평한 투영 렌더 — 토글+메뉴 단일 책임 렌더" }
 
 [budget."frontend/src/screens/data_zone.ts::pickerKey"]
-function_complexity = 15
+function_complexity = { value = 15, reason = "상시 예외: 값 매핑 표 — 키 입력→선택기 상태 판별표" }
 
 [budget."frontend/src/screens/data_zone.ts::rowsFromState"]
-function_complexity = 18
+function_complexity = { value = 18, reason = "상시 예외: 선언적 규칙 표 — 저장 상태→편집 행 배열 역직렬화" }
 
 [budget."frontend/src/screens/data_zone.ts::stateFromRows"]
-function_complexity = 18
+function_complexity = { value = 18, reason = "상시 예외: 선언적 규칙 표 — rowsFromState의 역변환" }
 
 [budget."frontend/src/screens/data_zone.ts::wordsFromRange"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 선언적 규칙 표 — 범위→단어 배열 순수 변환" }
 
 [budget."frontend/src/screens/detail_sheet.ts::DetailSheetFrame"]
-function_complexity = 13
+function_complexity = { value = 13, reason = "상시 예외: 평평한 투영 렌더 — empty/full 두 갈래 평평한 렌더" }
 
 [budget."frontend/src/screens/editor.ts::DataColumnCell"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 평평한 투영 렌더 — 표 셀 단일 렌더(select+배지)" }
 
 [budget."frontend/src/screens/editor.ts::EditorFooter"]
-function_complexity = 17
+function_complexity = { value = 17, reason = "상시 예외: 평평한 투영 렌더 — 편집/새작업 두 모드 평평한 렌더" }
 
 [budget."frontend/src/screens/editor.ts::NameSaveStage"]
-function_complexity = 18
+function_complexity = { value = 18, reason = "상시 예외: 평평한 투영 렌더 — 이름·패턴·폴더 행 평평한 렌더" }
 
 [budget."frontend/src/screens/editor.ts::TemplateGate"]
-function_complexity = 16
+function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 템플릿 상태 배지 backend 투영" }
 
 [budget."frontend/src/screens/editor.ts::TplDetailSheet"]
-function_complexity = 17
+function_complexity = { value = 17, reason = "상시 예외: 평평한 투영 렌더 — 상세 유무 분기, backend 값 투영" }
 
 [budget."frontend/src/screens/editor_controller.ts"]
 module_statements = 562
@@ -861,22 +867,22 @@ function_complexity = 11
 function_complexity = 32
 
 [budget."frontend/src/screens/job_content_selection.ts::presetNoticeText"]
-function_complexity = 14
+function_complexity = { value = 14, reason = "상시 예외: 값 매핑 표 — notice.kind→메시지 switch 매핑" }
 
 [budget."frontend/src/screens/job_read.ts"]
 module_statements = 423
 
 [budget."frontend/src/screens/job_read.ts::BrowseRow"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 평평한 투영 렌더 — needs/일반 두 갈래 평평한 렌더" }
 
 [budget."frontend/src/screens/job_read.ts::CandidateCard"]
-function_complexity = 19
+function_complexity = { value = 19, reason = "상시 예외: 평평한 투영 렌더 — 카드 단위 버튼 세쌍 평평한 렌더" }
 
 [budget."frontend/src/screens/job_read.ts::JobBrowseDialog"]
-function_complexity = 16
+function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 섹션별 목록+탭 평평한 렌더" }
 
 [budget."frontend/src/screens/job_read.ts::JobCandidates"]
-function_complexity = 15
+function_complexity = { value = 15, reason = "상시 예외: 평평한 투영 렌더 — 섹션·카드·문구 평평한 조립" }
 
 [budget."frontend/src/screens/job_read.ts::createJobReadController.switchData"]
 function_complexity = 13
@@ -885,22 +891,22 @@ function_complexity = 13
 function_complexity = 15
 
 [budget."frontend/src/screens/job_result.ts::Evidence"]
-function_complexity = 16
+function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 독립 항목 평평한 목록 조립" }
 
 [budget."frontend/src/screens/job_result.ts::JobResultZone"]
-function_complexity = 36
+function_complexity = { value = 36, reason = "상시 예외: 평평한 투영 렌더 — head/summary 등 독립 블록 나열" }
 
 [budget."frontend/src/screens/job_run.ts"]
 module_statements = 407
 
 [budget."frontend/src/screens/job_run.ts::JobActionBar"]
-function_complexity = 23
+function_complexity = { value = 23, reason = "상시 예외: 평평한 투영 렌더 — 버튼·상태 backend 투영 렌더" }
 
 [budget."frontend/src/screens/job_run.ts::JobDelivery"]
-function_complexity = 25
+function_complexity = { value = 25, reason = "상시 예외: 평평한 투영 렌더 — 계획·사유·폴더 평평한 렌더" }
 
 [budget."frontend/src/screens/job_run.ts::JobTemplateChange"]
-function_complexity = 27
+function_complexity = { value = 27, reason = "상시 예외: 평평한 투영 렌더 — 노출 술어 backend 제공 평평한 렌더" }
 
 [budget."frontend/src/screens/job_run.ts::JobWorkbenchStatus"]
 function_complexity = 33
@@ -909,28 +915,28 @@ function_complexity = 33
 function_complexity = 11
 
 [budget."frontend/src/screens/job_run_state.ts::disposeBySession"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 선언적 규칙 표 — 세션 종료 조건 평평한 규칙표" }
 
 [budget."frontend/src/screens/job_slot_config.ts::createSlotConfigService.hydrate"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — 상태 전이 객체 평평한 리듀서" }
 
 [budget."frontend/src/screens/library.ts::LibraryDetail"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 평평한 투영 렌더 — 상세 유무 두 갈래 평평한 렌더" }
 
 [budget."frontend/src/screens/library.ts::LibraryToolbar"]
 function_complexity = 18
 
 [budget."frontend/src/screens/library.ts::PairCard"]
-function_complexity = 14
+function_complexity = { value = 14, reason = "상시 예외: 평평한 투영 렌더 — 템플릿·연결·데이터 세 블록 렌더" }
 
 [budget."frontend/src/screens/pool_column.ts::PoolColumn"]
-function_complexity = 15
+function_complexity = { value = 15, reason = "상시 예외: 평평한 투영 렌더 — 머리·목록·결과줄 평평한 렌더" }
 
 [budget."frontend/src/screens/pool_column.ts::PoolRow"]
-function_complexity = 16
+function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 행 하나 평평한 렌더(끌기 포함)" }
 
 [budget."frontend/src/screens/pool_detail.ts::PoolDetailSheet"]
-function_complexity = 13
+function_complexity = { value = 13, reason = "상시 예외: 평평한 투영 렌더 — 상세 유무 분기, 얇은 투영 위임" }
 
 [budget."frontend/src/screens/product_screen_executor.ts::restoreMemory"]
 function_complexity = 16
@@ -939,7 +945,7 @@ function_complexity = 16
 function_complexity = 11
 
 [budget."frontend/src/screens/sheet_picker.ts::SheetPickerDialog"]
-function_complexity = 16
+function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 시트 체크박스 목록 평평한 렌더" }
 
 [budget."frontend/src/screens/sheet_picker.ts::createSheetPickerController.pick"]
 function_complexity = 16
@@ -961,7 +967,7 @@ function_complexity = 35
 function_complexity = 24
 
 [budget."frontend/src/screens/slice_popover.ts::composeSliceSpec"]
-function_complexity = 15
+function_complexity = { value = 15, reason = "상시 예외: 선언적 규칙 표 — part 목록 순회 선언적 변환" }
 
 [budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
 function_complexity = 46
@@ -970,39 +976,39 @@ function_complexity = 46
 function_complexity = 23
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js"]
-module_statements = 2187
+module_statements = { value = 2187, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 e2e 시나리오 나열 모듈" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::createEditorWorkbenchDataProbes.run"]
-function_complexity = 53
-function_statements = 166
+function_complexity = { value = 53, reason = "상시 예외: 독립 사례 나열 테스트 — 9개 독립 probe 순회 실행" }
+function_statements = { value = 166, reason = "상시 예외: 독립 사례 나열 테스트 — 9개 시나리오 루프+검사" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::probeAuthoringA11y"]
-function_complexity = 38
-function_statements = 148
+function_complexity = { value = 38, reason = "상시 예외: 독립 사례 나열 테스트 — 접근성 검사 통합 시나리오" }
+function_statements = { value = 148, reason = "상시 예외: 독립 사례 나열 테스트 — 문서변경·선택·검증 순차 단계" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::probeAuthoringKeyboard"]
 function_complexity = 58
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::probeHwpxAuthoring"]
-function_complexity = 41
+function_complexity = { value = 41, reason = "상시 예외: 독립 사례 나열 테스트 — 문서→편집→저장→검증 선형 시나리오" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::probeLintpad"]
-function_complexity = 49
+function_complexity = { value = 49, reason = "상시 예외: 독립 사례 나열 테스트 — lint 문제/필드/짝 복합 시나리오" }
 
 [budget."frontend/src/selftest/probes/editor_workbench_data.js::runHwpxAuthoringBand"]
 function_complexity = 56
-function_statements = 255
+function_statements = { value = 255, reason = "상시 예외: 독립 사례 나열 테스트 — 편집타입×검증 조합 나열" }
 
 [budget."frontend/src/selftest/probes/job.js"]
-module_statements = 897
+module_statements = { value = 897, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 작업 시나리오 나열 모듈" }
 
 [budget."frontend/src/selftest/probes/job.js::runJobMirror"]
 function_complexity = 63
-function_statements = 230
+function_statements = { value = 230, reason = "상시 예외: 독립 사례 나열 테스트 — 미러링 4단계 시나리오" }
 
 [budget."frontend/src/selftest/probes/job.js::runJobResult"]
-function_complexity = 38
-function_statements = 196
+function_complexity = { value = 38, reason = "상시 예외: 독립 사례 나열 테스트 — 필드·레코드·출력 3종 검증" }
+function_statements = { value = 196, reason = "상시 예외: 독립 사례 나열 테스트 — 초기화+3가지 assertion 나열" }
 
 [budget."frontend/src/selftest/probes/react_runtime.js::measureTutorialSurface"]
 function_complexity = 28
@@ -1011,11 +1017,11 @@ function_complexity = 28
 function_complexity = 53
 
 [budget."frontend/src/shell/app.ts::createAppShell"]
-function_complexity = 14
-function_statements = 59
+function_complexity = { value = 14, reason = "상시 예외: 순차 배선 — 라우팅·nav·listener 순차 구성" }
+function_statements = { value = 59, reason = "상시 예외: 순차 배선 — 구성 순서 계약, 단순 호출" }
 
 [budget."frontend/src/shell/nav.ts::createShellNav.go"]
-function_complexity = 11
+function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — current/overlay/modal 라우팅 분기" }
 
 [budget."frontend/src/tutorial/panel.ts::TutorialLessons"]
 function_complexity = 37
@@ -1033,13 +1039,13 @@ module_statements = 463
 function_complexity = 18
 
 [budget."scripts/extract_js_ast_axes.mjs::domFactoryOrigin"]
-function_complexity = 12
+function_complexity = { value = 12, reason = "상시 예외: 평평한 분배 표 — AST 노드 종류별 평평한 분기" }
 
 [budget."scripts/extract_js_ast_axes.mjs::expressionIdentity"]
-function_complexity = 17
+function_complexity = { value = 17, reason = "상시 예외: 평평한 분배 표 — AST 노드별 식별자 생성 분류" }
 
 [budget."scripts/extract_js_ast_axes.mjs::jsTemplateIds"]
-function_complexity = 13
+function_complexity = { value = 13, reason = "상시 예외: 평평한 분배 표 — 2개 노드 종류 독립 추출" }
 
 [budget."scripts/extract_js_ast_axes.mjs::sources"]
 function_complexity = 11
@@ -1059,7 +1065,7 @@ function_statements = { value = 53, override = "#1200", reason = "Python→Rust�
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."scripts/live101_native/journey.mjs::runJourney"]
-function_statements = { value = 55, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_statements = { value = 55, reason = "상시 예외: 독립 사례 나열 테스트 — H1~H7 가설별 독립 시나리오" }
 
 [budget."scripts/live101_native/legacy.mjs::runLegacy"]
 function_statements = { value = 138, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -1069,19 +1075,19 @@ function_complexity = { value = 32, override = "#1200", reason = "Python→Rust�
 function_statements = { value = 68, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."scripts/live101_native/run.mjs::options"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 13, reason = "상시 예외: 형식 명세 1:1 처리 — CLI 플래그별 평평한 파서" }
 
 [budget."scripts/live101_native/verdict.mjs::judgeLegacy"]
-function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 17, reason = "상시 예외: 독립 사례 나열 테스트 — 독립 판정 단언 나열" }
 
 [budget."scripts/live101_native/verdict.mjs::judgePhase"]
-function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
+function_complexity = { value = 25, reason = "상시 예외: 독립 사례 나열 테스트 — phase별 독립 단언 나열" }
 
 [budget."tests/js/authoring.test.js"]
-module_statements = 1787
+module_statements = { value = 1787, reason = "상시 예외: 독립 사례 나열 테스트 — 26개 describe, 항목별 독립 테스트" }
 
 [budget."tests/js/authoring_render.test.js"]
-module_statements = 1308
+module_statements = { value = 1308, reason = "상시 예외: 독립 사례 나열 테스트 — 20개 describe, 상태조합 나열" }
 
 [budget."tests/js/n06_editor.test.js"]
-module_statements = 1131
+module_statements = { value = 1131, reason = "상시 예외: 독립 사례 나열 테스트 — 16개 describe, e2e 시나리오 나열" }

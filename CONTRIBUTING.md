@@ -82,6 +82,7 @@ JavaScript·Rust 모듈·함수의 문장·분기 상한은 [복잡도 게이트
 [동결 원장](tests/contracts/complexity-budget.toml)의 기존 초과는 내려가기만 하며,
 책임을 분리한 뒤 `node scripts/complexity_budget.mjs --tighten`으로 줄인다.
 추가·상향은 추적 이슈와 사유를 기록한 임시 `override`만 허용한다.
+`reason`만 있는 항목은 쪼개도 나아지지 않는 구조(평평한 분배·매핑 표, 형식 명세 처리, 독립 사례 테스트)를 사유와 함께 둔 상시 예외이며, 이것도 내려가기만 한다.
 
 커밋은 한국어 Conventional Commits와 PR 번호를 사용한다. 빌드·비밀값·coverage
 보고서·로컬 에이전트 설정은 커밋하지 않는다. 봇 리뷰는 자문이며 고칠 것은 고치고 독립 작업은
