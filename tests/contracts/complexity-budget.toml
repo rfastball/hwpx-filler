@@ -91,15 +91,6 @@ function_complexity = { value = 15, reason = "상시 예외: 평평한 분배 �
 [budget."crates/hwpx-desktop/src/job_actions.rs::JobController.dispatch"]
 function_complexity = { value = 56, reason = "상시 예외: 평평한 분배 표 — 화면 액션 54갈래를 각 한 줄 호출로 위임" }
 
-[budget."crates/hwpx-desktop/src/job_controller.rs::JobController"]
-class_methods = { value = 29, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/job_controller.rs::JobController.restore_active_after_data_change"]
-function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-desktop/src/job_controller.rs::JobController.select_job"]
-function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-desktop/src/job_registry.rs::JobRegistry"]
 class_methods = { value = 31, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
