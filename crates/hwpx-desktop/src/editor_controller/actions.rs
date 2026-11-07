@@ -419,7 +419,7 @@ impl EditorController {
             .rows
             .get(index)
             .ok_or("매핑 행 범위가 올바르지 않습니다.")?;
-        Ok(slice_query(
+        slice_query(
             if action == "preview_slice" {
                 "preview"
             } else {
@@ -432,7 +432,7 @@ impl EditorController {
             &state.records,
             payload,
         )
-        .map_err(|error| -> GraphError { error.into() })?)
+        .map_err(|error| -> GraphError { error.into() })
     }
 }
 

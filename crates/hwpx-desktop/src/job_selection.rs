@@ -219,11 +219,11 @@ fn reseed_hwpx_filter(state: &mut JobState) -> Result<(), JobControllerError> {
         return Ok(());
     };
     if state.data.records.is_empty()
-        || !state
+        || state
             .data
             .filter
             .as_ref()
-            .is_some_and(|filter| !filter.is_active())
+            .is_none_or(|filter| filter.is_active())
         || seat.job.media() != "hwpx"
     {
         return Ok(());

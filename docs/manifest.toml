@@ -153,7 +153,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
-source_sha256 = "7c937d00c20a27e282939e1a34d60ca7e14f20f84e75fd6e938ac766e99e47db"
+source_sha256 = "92fe028c8db59d2750dbfb092502922c46be4a1e1599def973cf1e929b18a180"
 body_sha256 = "0faeb20d797961ad20e0dce979ee7f6425ba669ac368513e5becc332df63cf9a"
 
 [[topic]]
@@ -161,7 +161,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
-source_sha256 = "848082e27ae6cca255e97d6824bab7dde7b8c4c20e80d81acebdef2c2cdf0ddf"
+source_sha256 = "b96cb6512a24b21c380926e90f8bb617f55545debf1d6b1508f8cbf2309d7831"
 body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "workflow-definition"
 document = "docs/workflow.md"
 sources = ["crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/editor_*.rs", "crates/hwpx-desktop/src/editor_controller/*.rs", "frontend/src/screens/editor*.ts", "crates/hwpx-filler/src/editor_*.rs", "crates/hwpx-filler/src/mapping_state.rs", "crates/hwpx-filler/src/job.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-filler/src/field_binding*.rs", "crates/hwpx-filler/src/field_binding/*.rs", "crates/hwpx-filler/src/job_binding_projection.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-filler/src/execution_capture.rs", "crates/hwpx-filler/src/format_engine.rs", "crates/hwpx-filler/src/field_induction.rs", "crates/hwpx-filler/src/data_contract*.rs"]
 tests = ["crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-filler/src/editor_save_policy.rs","crates/hwpx-desktop/src/job_registry.rs","crates/hwpx-desktop/src/job_management.rs","crates/hwpx-desktop/src/seal_execution_service.rs","crates/hwpx-filler/src/format_engine.rs","crates/hwpx-desktop/src/editor_controller.rs","crates/hwpx-filler/src/mapping_state.rs","crates/hwpx-desktop/src/workbench_controller.rs","crates/hwpx-desktop/src/bin/hwpxfiller.rs","crates/hwpx-filler/src/data_contract.rs","tests/js/editor_contract_reason.test.js"]
-source_sha256 = "e4d6524fd9d49f7c69ddb7f3705272705537d5129d65e9ebe4162ee038671b09"
+source_sha256 = "5918ad037adfec52534c45a593798ad9e0ab87b6beeb8e0f5e19910fa93b1ad3"
 body_sha256 = "6b4f28aa40e3067bd9f5be2f544e2ba4310c2990859bb17533dc81c6ad1c0267"
 
 [[topic]]
