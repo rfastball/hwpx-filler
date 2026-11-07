@@ -1,7 +1,8 @@
 //! Guarded, pure-byte replacement of one authoring token with a native Field.
 
+mod splice;
+
 use crate::lineseg::serialize_modified_section;
-use crate::native_admission::{copy_run_attributes, native_element};
 use crate::text_extract::{decimal_digit, read_inline_text};
 use crate::text_model::HP_NS;
 use crate::xml_dom::{Content, NodeId, XmlDocument, XmlError, parse_xml};
@@ -238,6 +239,29 @@ fn is_extra_digit(ch: char) -> bool {
         .iter()
         .any(|(start, end)| (*start..=*end).contains(&(ch as u32)))
 }
+/// Normalized ASCII digits of one numeric ID attribute; `None` when the value
+/// is not numeric at all, an error when it is numeric but not a plain integer.
+fn decimal_id(key: &str, value: &str) -> Result<Option<String>, TokenEditError> {
+    let digits = value.trim_start_matches('-');
+    if digits.is_empty()
+        || !digits
+            .chars()
+            .all(|ch| decimal_digit(ch).is_some() || is_extra_digit(ch))
+    {
+        return Ok(None);
+    }
+    if value.starts_with("--") || digits.chars().any(is_extra_digit) {
+        return Err(invalid(format!("invalid integer ID attribute: {key}")));
+    }
+    let ascii: String = digits
+        .chars()
+        .map(|ch| char::from(b'0' + decimal_digit(ch).unwrap() as u8))
+        .collect();
+    let number = ascii.trim_start_matches('0');
+    Ok(Some(
+        if number.is_empty() { "0" } else { number }.to_owned(),
+    ))
+}
 pub(crate) fn max_numeric_id(doc: &XmlDocument) -> Result<String, TokenEditError> {
     let mut max = "0".to_owned();
     for id in doc.descendants(doc.root) {
@@ -245,25 +269,11 @@ pub(crate) fn max_numeric_id(doc: &XmlDocument) -> Result<String, TokenEditError
             let Some(value) = doc.attr(id, key) else {
                 continue;
             };
-            let digits = value.trim_start_matches('-');
-            if digits.is_empty()
-                || !digits
-                    .chars()
-                    .all(|ch| decimal_digit(ch).is_some() || is_extra_digit(ch))
-            {
+            let Some(number) = decimal_id(key, value)? else {
                 continue;
-            }
-            if value.starts_with("--") || digits.chars().any(is_extra_digit) {
-                return Err(invalid(format!("invalid integer ID attribute: {key}")));
-            }
-            let ascii: String = digits
-                .chars()
-                .map(|ch| char::from(b'0' + decimal_digit(ch).unwrap() as u8))
-                .collect();
-            let number = ascii.trim_start_matches('0');
-            let number = if number.is_empty() { "0" } else { number };
-            if (number.len(), number) > (max.len(), max.as_str()) {
-                max = number.to_owned();
+            };
+            if (number.len(), number.as_str()) > (max.len(), max.as_str()) {
+                max = number;
             }
         }
     }
@@ -283,352 +293,43 @@ pub(crate) fn add_one(value: &mut String) {
     *value = String::from_utf8(digits).unwrap();
 }
 
-fn zero_in(pos: usize, lo: usize, hi: usize, keep_lo: bool, keep_hi: bool) -> bool {
-    if lo < pos && pos < hi {
-        true
-    } else if pos == lo {
-        keep_lo
-    } else if pos == hi {
-        keep_hi
-    } else {
-        false
-    }
-}
 fn slice_chars(value: &str, lo: usize, hi: usize) -> String {
     value.chars().skip(lo).take(hi.saturating_sub(lo)).collect()
 }
-fn append(doc: &mut XmlDocument, parent: NodeId, part: Content) {
-    if let Content::Element(child) = part {
-        doc.node_mut(child).parent = Some(parent);
-        doc.node_mut(parent).children.push(Content::Element(child));
-    } else {
-        doc.node_mut(parent).children.push(part);
-    }
-}
-fn clone_empty(doc: &mut XmlDocument, source: NodeId) -> NodeId {
-    let node = doc.node(source).clone();
-    let clone = doc.new_element(node.name, node.attributes);
-    doc.node_mut(clone).namespaces = node.namespaces;
-    clone
-}
-
-fn clip_t(
-    doc: &mut XmlDocument,
-    text: NodeId,
-    base: usize,
-    lo: usize,
-    hi: usize,
-    keep_lo: bool,
-    keep_hi: bool,
-) -> Option<NodeId> {
-    let parts = doc.node(text).children.clone();
-    let empty = parts.iter().all(
-        |part| matches!(part, Content::Text(value) | Content::CData(value) if value.is_empty()),
-    );
-    if empty {
-        return zero_in(base, lo, hi, keep_lo, keep_hi).then(|| clone_empty(doc, text));
-    }
-    let out = clone_empty(doc, text);
-    let mut pos = base;
-    for part in parts {
-        match part {
-            Content::Text(value) | Content::CData(value) => {
-                for ch in value.chars() {
-                    if lo <= pos && pos < hi {
-                        if let Some(Content::Text(last)) = doc.node_mut(out).children.last_mut() {
-                            last.push(ch);
-                        } else {
-                            append(doc, out, Content::Text(ch.to_string()));
-                        }
-                    }
-                    pos += 1;
-                }
-            }
-            Content::Element(child) => {
-                let width = usize::from(matches!(local(doc, child), "tab" | "lineBreak"));
-                let keep = if width == 0 {
-                    zero_in(pos, lo, hi, keep_lo, keep_hi)
-                } else {
-                    lo <= pos && pos < hi
-                };
-                if keep {
-                    let copy = doc.clone_subtree(child);
-                    append(doc, out, Content::Element(copy));
-                }
-                pos += width;
-            }
-            Content::Comment(value) => {
-                if zero_in(pos, lo, hi, keep_lo, keep_hi) {
-                    append(doc, out, Content::Comment(value));
-                }
-            }
-            Content::ProcessingInstruction(value) => {
-                if zero_in(pos, lo, hi, keep_lo, keep_hi) {
-                    append(doc, out, Content::ProcessingInstruction(value));
-                }
-            }
-        }
-    }
-    (!doc.node(out).children.is_empty()).then_some(out)
-}
-
-fn clip_run(
-    doc: &mut XmlDocument,
-    run: NodeId,
-    base: usize,
-    lo: usize,
-    hi: usize,
-    keep_lo: bool,
-    keep_hi: bool,
-) -> Option<NodeId> {
-    let parts = doc.node(run).children.clone();
-    let out = clone_empty(doc, run);
-    let mut pos = base;
-    let mut at = 0;
-    while at < parts.len() {
-        match &parts[at] {
-            Content::Element(child) if local(doc, *child) == "t" => {
-                let text = *child;
-                if let Some(piece) = clip_t(doc, text, pos, lo, hi, keep_lo, keep_hi) {
-                    append(doc, out, Content::Element(piece));
-                }
-                pos += t_value(doc, text).0.chars().count();
-                at += 1;
-                while at < parts.len() && matches!(parts[at], Content::Text(_) | Content::CData(_))
-                {
-                    at += 1;
-                }
-            }
-            Content::Element(child) => {
-                let width = usize::from(matches!(local(doc, *child), "tab" | "lineBreak"));
-                let keep = if width == 0 {
-                    zero_in(pos, lo, hi, keep_lo, keep_hi)
-                } else {
-                    lo <= pos && pos < hi
-                };
-                if keep {
-                    let copy = doc.clone_subtree(*child);
-                    append(doc, out, Content::Element(copy));
-                }
-                pos += width;
-                at += 1;
-                while at < parts.len() {
-                    match &parts[at] {
-                        Content::Text(value) | Content::CData(value) => {
-                            if keep {
-                                append(doc, out, Content::Text(value.clone()));
-                            }
-                            at += 1;
-                        }
-                        _ => break,
-                    }
-                }
-            }
-            Content::Comment(value) | Content::ProcessingInstruction(value) => {
-                let keep = zero_in(pos, lo, hi, keep_lo, keep_hi);
-                if keep {
-                    append(doc, out, parts[at].clone());
-                }
-                let _ = value;
-                at += 1;
-                while at < parts.len() {
-                    match &parts[at] {
-                        Content::Text(value) | Content::CData(value) => {
-                            if keep {
-                                append(doc, out, Content::Text(value.clone()));
-                            }
-                            at += 1;
-                        }
-                        _ => break,
-                    }
-                }
-            }
-            Content::Text(_) | Content::CData(_) => at += 1,
-        }
-    }
-    doc.node(out)
-        .children
-        .iter()
-        .any(|part| {
-            matches!(
-                part,
-                Content::Element(_) | Content::Comment(_) | Content::ProcessingInstruction(_)
-            )
-        })
-        .then_some(out)
-}
-
-fn text_run(doc: &mut XmlDocument, source: NodeId, value: &str) -> NodeId {
-    let run = native_element(doc, "run", &[]);
-    copy_run_attributes(doc, source, run);
-    let text = native_element(doc, "t", &[]);
-    append(doc, text, Content::Text(value.to_owned()));
-    append(doc, run, Content::Element(text));
-    run
-}
-fn boundary_run(
-    doc: &mut XmlDocument,
-    source: NodeId,
-    name: &str,
-    begin_id: &str,
-    field_id: &str,
-    begin: bool,
-) -> NodeId {
-    let run = native_element(doc, "run", &[]);
-    copy_run_attributes(doc, source, run);
-    let ctrl = native_element(doc, "ctrl", &[]);
-    let marker = if begin {
-        native_element(
-            doc,
-            "fieldBegin",
-            &[
-                ("id", begin_id),
-                ("type", "CLICK_HERE"),
-                ("name", name),
-                ("editable", "1"),
-                ("dirty", "1"),
-                ("zorder", "-1"),
-                ("fieldid", field_id),
-                ("metaTag", ""),
-            ],
-        )
-    } else {
-        native_element(
-            doc,
-            "fieldEnd",
-            &[("beginIDRef", begin_id), ("fieldid", field_id)],
-        )
-    };
-    append(doc, ctrl, Content::Element(marker));
-    append(doc, run, Content::Element(ctrl));
-    run
-}
-
-fn simple_slices(doc: &mut XmlDocument, pieces: &[&Piece], lo: usize, hi: usize) -> Vec<NodeId> {
+fn distinct<T: PartialEq>(items: impl Iterator<Item = T>) -> Vec<T> {
     let mut out = Vec::new();
-    for piece in pieces {
-        let start = piece.start.max(lo);
-        let end = piece.end.min(hi);
-        if start >= end {
-            continue;
+    for item in items {
+        if !out.contains(&item) {
+            out.push(item);
         }
-        let text = elements(doc, piece.run)
-            .find(|id| local(doc, *id) == "t")
-            .unwrap();
-        let source = t_value(doc, text).0;
-        let part = slice_chars(&source, start - piece.start, end - piece.start);
-        out.push(text_run(doc, piece.run, &part));
     }
     out
 }
 
-fn replacement(
-    doc: &mut XmlDocument,
-    layout: &Layout,
-    covered: &[&Piece],
-    edit: &TokenFieldEdit<'_>,
-    begin_id: &str,
-    field_id: &str,
-) -> Result<(), TokenEditError> {
-    let mut runs = Vec::new();
-    for piece in covered {
-        if !runs.contains(&piece.run) {
-            runs.push(piece.run);
-        }
-    }
-    let first = runs[0];
-    let last = *runs.last().unwrap();
-    let paragraph = doc
-        .parent(first)
-        .ok_or_else(|| invalid("detached token run"))?;
-    let index = doc
-        .node(paragraph)
-        .children
-        .iter()
-        .position(|part| matches!(part, Content::Element(id) if *id == first))
-        .ok_or_else(|| invalid("detached token run"))?;
-    let mut created = Vec::new();
-    if covered.iter().all(|piece| piece.simple) {
-        created.extend(simple_slices(doc, covered, 0, edit.start));
-        created.push(boundary_run(
-            doc, first, edit.name, begin_id, field_id, true,
-        ));
-        created.extend(simple_slices(doc, covered, edit.start, edit.end));
-        created.push(boundary_run(
-            doc, last, edit.name, begin_id, field_id, false,
-        ));
-        created.extend(simple_slices(doc, covered, edit.end, usize::MAX));
-    } else {
-        for run in &runs {
-            if let Some(part) = clip_run(doc, *run, layout.run_base[run], 0, edit.start, true, true)
-            {
-                created.push(part);
-            }
-        }
-        created.push(boundary_run(
-            doc, first, edit.name, begin_id, field_id, true,
-        ));
-        for run in &runs {
-            if let Some(part) = clip_run(
-                doc,
-                *run,
-                layout.run_base[run],
-                edit.start,
-                edit.end,
-                false,
-                false,
-            ) {
-                created.push(part);
-            }
-        }
-        created.push(boundary_run(
-            doc, last, edit.name, begin_id, field_id, false,
-        ));
-        for run in &runs {
-            if let Some(part) = clip_run(
-                doc,
-                *run,
-                layout.run_base[run],
-                edit.end,
-                usize::MAX,
-                true,
-                true,
-            ) {
-                created.push(part);
-            }
-        }
-    }
-    for run in runs {
-        doc.remove_element_with_tail(run)?;
-    }
-    for (offset, run) in created.into_iter().enumerate() {
-        doc.insert_element(paragraph, index + offset, run)?;
-    }
-    Ok(())
-}
-
-fn apply_one(
-    doc: &mut XmlDocument,
-    edit: &TokenFieldEdit<'_>,
-    begin_id: &str,
-    field_id: &str,
-) -> Result<(), TokenEditError> {
+fn unique_paragraph(doc: &XmlDocument, path: &str) -> Result<NodeId, TokenEditError> {
     let paragraphs: Vec<_> = doc
         .descendants(doc.root)
         .into_iter()
-        .filter(|id| native(doc, *id, "p") && path_for_doc(doc, *id) == edit.paragraph_path)
+        .filter(|id| native(doc, *id, "p") && path_for_doc(doc, *id) == path)
         .collect();
     if paragraphs.len() != 1 {
         return Err(invalid("token paragraph path is absent or ambiguous"));
     }
-    let paragraph = paragraphs[0];
-    let layout = layout(doc, paragraph);
+    Ok(paragraphs[0])
+}
+fn check_selection(layout: &Layout, edit: &TokenFieldEdit<'_>) -> Result<(), TokenEditError> {
     if edit.start >= edit.end
         || edit.end > layout.text.chars().count()
         || slice_chars(&layout.text, edit.start, edit.end) != edit.literal
     {
         return Err(invalid("token selection does not match source text"));
     }
+    Ok(())
+}
+fn covered_pieces<'l>(
+    layout: &'l Layout,
+    edit: &TokenFieldEdit<'_>,
+) -> Result<Vec<&'l Piece>, TokenEditError> {
     let covered: Vec<_> = layout
         .pieces
         .iter()
@@ -642,16 +343,11 @@ fn apply_one(
     {
         return Err(invalid("token selection intersects unsupported content"));
     }
-    let mut runs = Vec::new();
-    let mut indexes = Vec::new();
-    for piece in &covered {
-        if !runs.contains(&piece.run) {
-            runs.push(piece.run);
-        }
-        if !indexes.contains(&piece.child_index) {
-            indexes.push(piece.child_index);
-        }
-    }
+    Ok(covered)
+}
+fn ensure_safe_lane(doc: &XmlDocument, covered: &[&Piece]) -> Result<(), TokenEditError> {
+    let runs = distinct(covered.iter().map(|piece| piece.run));
+    let indexes = distinct(covered.iter().map(|piece| piece.child_index));
     let char_prs: HashSet<_> = runs
         .iter()
         .map(|run| doc.attr(*run, "charPrIDRef"))
@@ -666,7 +362,58 @@ fn apply_one(
     if !same_format || !contiguous || has_field {
         return Err(invalid("token selection is not a safe native Field lane"));
     }
-    replacement(doc, &layout, &covered, edit, begin_id, field_id)?;
+    Ok(())
+}
+
+fn apply_one(
+    doc: &mut XmlDocument,
+    edit: &TokenFieldEdit<'_>,
+    begin_id: &str,
+    field_id: &str,
+) -> Result<(), TokenEditError> {
+    let paragraph = unique_paragraph(doc, edit.paragraph_path)?;
+    let layout = layout(doc, paragraph);
+    check_selection(&layout, edit)?;
+    let covered = covered_pieces(&layout, edit)?;
+    ensure_safe_lane(doc, &covered)?;
+    splice::replacement(doc, &layout, &covered, edit, begin_id, field_id)
+}
+
+type FieldMarkers<'d> = HashMap<&'d str, Vec<NodeId>>;
+fn field_markers(after: &XmlDocument) -> (FieldMarkers<'_>, FieldMarkers<'_>) {
+    let mut begins: FieldMarkers<'_> = HashMap::new();
+    let mut ends: FieldMarkers<'_> = HashMap::new();
+    for id in after.descendants(after.root) {
+        if native(after, id, "fieldBegin") {
+            if let Some(key) = after.attr(id, "id") {
+                begins.entry(key).or_default().push(id);
+            }
+        } else if native(after, id, "fieldEnd")
+            && let Some(key) = after.attr(id, "beginIDRef")
+        {
+            ends.entry(key).or_default().push(id);
+        }
+    }
+    (begins, ends)
+}
+/// Each generated pair must appear exactly once with its name, type and Field ID.
+fn verify_generated_fields(
+    after: &XmlDocument,
+    generated: Vec<(&str, String, String)>,
+) -> Result<(), TokenEditError> {
+    let (begins, ends) = field_markers(after);
+    for (name, begin_id, field_id) in generated {
+        let begin = begins.get(begin_id.as_str());
+        let end = ends.get(begin_id.as_str());
+        if begin.is_none_or(|nodes| nodes.len() != 1)
+            || end.is_none_or(|nodes| nodes.len() != 1)
+            || after.attr(begin.unwrap()[0], "name") != Some(name)
+            || after.attr(begin.unwrap()[0], "type") != Some("CLICK_HERE")
+            || after.attr(end.unwrap()[0], "fieldid") != Some(field_id.as_str())
+        {
+            return Err(invalid("token compilation Field postcondition failed"));
+        }
+    }
     Ok(())
 }
 
@@ -715,31 +462,7 @@ pub fn compile_field_tokens(
     if document_text(&after) != before_text {
         return Err(invalid("token compilation changed surrounding text"));
     }
-    let mut begins: HashMap<&str, Vec<NodeId>> = HashMap::new();
-    let mut ends: HashMap<&str, Vec<NodeId>> = HashMap::new();
-    for id in after.descendants(after.root) {
-        if native(&after, id, "fieldBegin") {
-            if let Some(key) = after.attr(id, "id") {
-                begins.entry(key).or_default().push(id);
-            }
-        } else if native(&after, id, "fieldEnd")
-            && let Some(key) = after.attr(id, "beginIDRef")
-        {
-            ends.entry(key).or_default().push(id);
-        }
-    }
-    for (name, begin_id, field_id) in generated {
-        let begin = begins.get(begin_id.as_str());
-        let end = ends.get(begin_id.as_str());
-        if begin.is_none_or(|nodes| nodes.len() != 1)
-            || end.is_none_or(|nodes| nodes.len() != 1)
-            || after.attr(begin.unwrap()[0], "name") != Some(name)
-            || after.attr(begin.unwrap()[0], "type") != Some("CLICK_HERE")
-            || after.attr(end.unwrap()[0], "fieldid") != Some(field_id.as_str())
-        {
-            return Err(invalid("token compilation Field postcondition failed"));
-        }
-    }
+    verify_generated_fields(&after, generated)?;
     Ok(bytes)
 }
 
