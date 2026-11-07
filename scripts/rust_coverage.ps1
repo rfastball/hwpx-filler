@@ -31,8 +31,14 @@ $locationPushed = $false
 $code = 1
 
 function Restore-Environment {
+    # pwsh 는 $null 을 [string] 인자로 넘길 때 빈 문자열로 바꾼다 — 원래 없던 변수는 지운다
+    # (빈 CARGO_TARGET_DIR 은 cargo 가 거절한다).
     foreach ($entry in $saved.GetEnumerator()) {
-        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+        if ($null -eq $entry.Value) {
+            Remove-Item -LiteralPath "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+        } else {
+            [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+        }
     }
 }
 
