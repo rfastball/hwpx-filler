@@ -381,6 +381,72 @@ fn format_numeric(number: &ParsedNumber, spec: &str) -> Option<String> {
     }
 }
 
+/// Marks the field index as automatic or explicit, rejecting `{}`/`{0}` mixes
+/// and any explicit index other than the single positional argument `0`.
+fn validate_field_index(
+    field_index: &str,
+    explicit: &mut bool,
+    automatic: &mut bool,
+    automatic_index: &mut usize,
+) -> Option<()> {
+    if field_index.is_empty() {
+        *automatic = true;
+        if *explicit || *automatic_index != 0 {
+            return None;
+        }
+        *automatic_index += 1;
+    } else {
+        *explicit = true;
+        if *automatic || field_index != "0" {
+            return None;
+        }
+    }
+    Some(())
+}
+/// Resolves a field's format spec, treating the literal placeholder `{0}` as
+/// a request to render the number with Python's default numeric format.
+fn resolve_format_spec(format_spec: String, number: &ParsedNumber) -> Option<String> {
+    if format_spec == "{0}" {
+        format_numeric(number, "")
+    } else if format_spec.contains(['{', '}']) {
+        None
+    } else {
+        Some(format_spec)
+    }
+}
+/// Picks the real or imaginary part addressed by a field's attribute suffix.
+fn select_number_attribute(attribute: &str, number: &ParsedNumber) -> Option<ParsedNumber> {
+    Some(match attribute {
+        "" | "real" => number.clone(),
+        "imag" => match number {
+            ParsedNumber::Integer(_) => ParsedNumber::Integer("0".into()),
+            ParsedNumber::Float(_) => ParsedNumber::Float(0.0),
+        },
+        _ => return None,
+    })
+}
+/// Renders the selected number, honoring an explicit `!s`/`!r`/`!a` conversion.
+fn render_field_value(
+    selected: &ParsedNumber,
+    spec: &str,
+    conversion_spec: Option<char>,
+) -> Option<String> {
+    if let Some(conversion) = conversion_spec {
+        if !matches!(conversion, 's' | 'r' | 'a') {
+            return None;
+        }
+        let raw = match selected {
+            ParsedNumber::Integer(integer) => integer.clone(),
+            ParsedNumber::Float(float) => format!("{float:?}"),
+        };
+        FormatSpec::parse(spec)
+            .ok()?
+            .format_string(&PythonString(raw))
+            .ok()
+    } else {
+        format_numeric(selected, spec)
+    }
+}
 fn amount_template(code: &str, number: &ParsedNumber) -> Option<String> {
     let parsed = FormatString::from_str(code).ok()?;
     let mut out = String::new();
@@ -397,48 +463,15 @@ fn amount_template(code: &str, number: &ParsedNumber) -> Option<String> {
             } => {
                 let (field_index, attribute) =
                     field_name.split_once('.').unwrap_or((&field_name, ""));
-                if field_index.is_empty() {
-                    automatic = true;
-                    if explicit || automatic_index != 0 {
-                        return None;
-                    }
-                    automatic_index += 1;
-                } else {
-                    explicit = true;
-                    if automatic || field_index != "0" {
-                        return None;
-                    }
-                }
-                let spec = if format_spec == "{0}" {
-                    format_numeric(number, "")?
-                } else if format_spec.contains(['{', '}']) {
-                    return None;
-                } else {
-                    format_spec
-                };
-                let selected = match attribute {
-                    "" | "real" => number.clone(),
-                    "imag" => match number {
-                        ParsedNumber::Integer(_) => ParsedNumber::Integer("0".into()),
-                        ParsedNumber::Float(_) => ParsedNumber::Float(0.0),
-                    },
-                    _ => return None,
-                };
-                let rendered = if let Some(conversion) = conversion_spec {
-                    if !matches!(conversion, 's' | 'r' | 'a') {
-                        return None;
-                    }
-                    let raw = match &selected {
-                        ParsedNumber::Integer(integer) => integer.clone(),
-                        ParsedNumber::Float(float) => format!("{float:?}"),
-                    };
-                    FormatSpec::parse(&spec)
-                        .ok()?
-                        .format_string(&PythonString(raw))
-                        .ok()?
-                } else {
-                    format_numeric(&selected, &spec)?
-                };
+                validate_field_index(
+                    field_index,
+                    &mut explicit,
+                    &mut automatic,
+                    &mut automatic_index,
+                )?;
+                let spec = resolve_format_spec(format_spec, number)?;
+                let selected = select_number_attribute(attribute, number)?;
+                let rendered = render_field_value(&selected, &spec, conversion_spec)?;
                 out.push_str(&rendered);
             }
         }
