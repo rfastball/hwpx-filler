@@ -1,12 +1,10 @@
-/* R4-01 DataZone 저장한 필터 칩 줄(`FilterChipRow`) — 열 조건 지우기·정리·숨긴 열 되살리기는
-   `controller.zone("filter_clear_col"/"filter_prune"/"unhide_columns", …)`가 한다. 칩 하나
-   (`PresetChip`)는 data_zone.ts가 그리고, 그 칩이 여는 메뉴(`PresetMenu`)·메뉴 키 판정
-   (`isMenuKey`)은 여기 둔다. */
-import { createElement, useEffect, useRef, useState } from "react";
+/* R4-01 DataZone 저장한 필터 칩 줄(`FilterChipRow`, data_zone.ts)의 조각 — 칩 메뉴(`PresetMenu`)·
+   메뉴 키 판정(`isMenuKey`)·칩 무리·열 조건·가지·숨긴 열 칩·「+ 필터」. 열 조건 지우기·정리·숨긴 열
+   되살리기는 `controller.zone("filter_clear_col"/"filter_prune"/"unhide_columns", …)`가 한다. */
+import { createElement, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { roveFocus } from "./authoring_a11y.ts";
-import { PresetChip } from "./data_zone.ts";
 import type { JobReadController } from "./data_zone.ts";
 import type { BuilderSpec } from "./data_zone_filter_state.ts";
 
@@ -80,7 +78,7 @@ export function PresetMenu(props: {
 
 /** 저장한 필터 무리 — 같은 차원(같은 열)을 보는 칩이 둘 이상이면 알약 묶음 + 열 이름 표지로,
  *  홀로 선 칩은 묶지 않는다. */
-function renderPresetGroups(groups: Obj[], byName: Map<string, Obj>, chip: (preset: Obj) => ReactNode): ReactNode[] {
+export function renderPresetGroups(groups: Obj[], byName: Map<string, Obj>, chip: (preset: Obj) => ReactNode): ReactNode[] {
   return groups.map((group: Obj) => {
     const members = ((group.names || []) as string[])
       .map((name) => byName.get(String(name))).filter(Boolean) as Obj[];
@@ -96,7 +94,7 @@ function renderPresetGroups(groups: Obj[], byName: Map<string, Obj>, chip: (pres
 
 /** 열 머리에서 세운 지금 조건 — 저장한 필터와 갈라 읽히게 「열 조건」으로 부른다. × 는 그 열의
  *  조건만 지운다(검색 칩은 검색창이 편집기라 × 가 없다). 문안은 Python 정의줄 조각 그대로. */
-function renderColumnConditionChips(chips: Obj[], controller: JobReadController): ReactNode[] {
+export function renderColumnConditionChips(chips: Obj[], controller: JobReadController): ReactNode[] {
   return chips.map((item: Obj, index: number) => h("span", {
     className: "fchip definition", key: `c-${index}`, title: String(item.text || ""),
     "data-chip-column": item.column ? String(item.column) : undefined,
@@ -110,14 +108,14 @@ function renderColumnConditionChips(chips: Obj[], controller: JobReadController)
   }, "×") : null));
 }
 
-function renderBranchChips(branches: string[], controller: JobReadController): ReactNode[] {
+export function renderBranchChips(branches: string[], controller: JobReadController): ReactNode[] {
   return branches.map((branch: string) => h("span", { className: "fchip branch", key: `b-${branch}` },
     h("span", { className: "chip-role" }, "가지"), branch,
     h("button", { "data-prune": branch, "data-busy-lock": true, "aria-label": `${branch} 가지 제거`,
       onClick: () => { void controller.zone("filter_prune", { column: branch }); } }, "×")));
 }
 
-function renderHiddenColumnsChip(hiddenColumns: string[], controller: JobReadController): ReactNode {
+export function renderHiddenColumnsChip(hiddenColumns: string[], controller: JobReadController): ReactNode {
   if (!hiddenColumns.length) return null;
   return h("span", { className: "fchip hidecols", title: hiddenColumns.join(", "), key: "hidecols" },
     h("span", { className: "chip-role" }, "보기"), `열 ${hiddenColumns.length}개 숨김 — 생성에는 그대로 쓰입니다`,
@@ -126,7 +124,7 @@ function renderHiddenColumnsChip(hiddenColumns: string[], controller: JobReadCon
 }
 
 /** 「+ 필터」 — 저장할 곳(등록 데이터)이 없으면 눌러도 사유를 알린다(판정·사유는 Python). */
-function renderNewFilterButton(
+export function renderNewFilterButton(
   builder: BuilderSpec | null, source: Obj, controller: JobReadController, onNew: (trigger: HTMLElement) => void,
 ): ReactNode {
   return h("button", {
@@ -146,7 +144,7 @@ function renderNewFilterButton(
 
 /** 칩 줄이 읽는 필터 뷰 — 칩·가지는 필터가 꺼져 있으면 보이지 않는다(열 조건은 필터가 서야
  *  뜻이 있다). 네 `||` 기본값·두 조건부를 한 자리로 모은다. */
-function readFilterView(
+export function readFilterView(
   filter: Obj,
 ): { presets: Obj[]; groups: Obj[]; source: Obj; chips: Obj[]; branches: string[] } {
   return {
@@ -158,37 +156,4 @@ function readFilterView(
   };
 }
 
-export function FilterChipRow(props: {
-  filter: Obj;
-  hasData: boolean;
-  hiddenColumns: string[];
-  controller: JobReadController;
-  builder: BuilderSpec | null;
-  onNew(trigger: HTMLElement): void;
-  onEdit(name: string, trigger: HTMLElement): void;
-}): ReactNode {
-  const { filter, hasData, hiddenColumns, controller, builder, onNew, onEdit } = props;
-  const [menu, setMenu] = useState<MenuSpec | null>(null);
-  const { presets, groups, source, chips, branches } = readFilterView(filter);
-  const byName = new Map(presets.map((preset) => [String(preset.name), preset]));
-  const tail = chips.length + branches.length + (hiddenColumns.length ? 1 : 0);
-  const openMenu = (name: string, trigger: HTMLElement) => setMenu({ name, trigger });
-  const closeMenu = (focusTrigger: boolean) => {
-    const trigger = menu?.trigger;
-    setMenu(null);
-    if (focusTrigger && trigger && trigger.isConnected) trigger.focus();
-  };
-  const chip = (preset: Obj) => h(PresetChip as any, {
-    key: `p-${preset.name}`, preset, controller, onEdit, openMenu, closeMenu,
-    menu: menu && byName.has(menu.name) ? menu : null,
-  });
-  return h("div", { className: `fchips${presets.length ? "" : " nocap"}`, id: "jobFilterChips", hidden: !hasData },
-    presets.length ? h("span", { className: "fchips-cap", key: "preset-cap" }, "저장한 필터") : null,
-    h("div", { className: "fchips-area", key: "area" },
-      ...renderPresetGroups(groups, byName, chip),
-      presets.length && tail ? h("span", { className: "fchips-sep", "aria-hidden": "true", key: "sep" }) : null,
-      ...renderColumnConditionChips(chips, controller),
-      ...renderBranchChips(branches, controller),
-      renderHiddenColumnsChip(hiddenColumns, controller)),
-    renderNewFilterButton(builder, source, controller, onNew));
-}
+

@@ -18,9 +18,9 @@ import { createElement, useEffect, useLayoutEffect, useRef, useState } from "rea
 import type { ReactNode } from "react";
 
 import { builderPlacement } from "./data_zone.ts";
-import { SlicePopoverView } from "./slice_popover_view.ts";
+import { SlicePopoverView, sliceKeyAction } from "./slice_popover_view.ts";
 
-export { SlicePopoverView } from "./slice_popover_view.ts";
+export { SlicePopoverView, sliceKeyAction } from "./slice_popover_view.ts";
 
 export type Obj = Record<string, any>;
 type Inputs = Record<string, Record<string, string>>;
@@ -117,15 +117,6 @@ export function sameSpec(a: Obj | null, b: Obj | null): boolean {
   return norm(a) === norm(b);
 }
 
-/** 팝오버 안 키 하나의 뜻 — 한글 조합 중(Enter·Escape 가 조합 확정)은 아무 뜻도 없다. */
-export function sliceKeyAction(
-  event: { key: string; isComposing?: boolean; keyCode?: number },
-): "close" | "commit" | null {
-  if (event.isComposing || event.keyCode === 229) return null;
-  if (event.key === "Escape") return "close";
-  if (event.key === "Enter") return "commit";
-  return null;
-}
 
 /* ---- 칩 ---- */
 

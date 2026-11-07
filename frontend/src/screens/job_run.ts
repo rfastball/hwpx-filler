@@ -41,6 +41,7 @@ import {
   createTokenFactory, disposeBySession, endRun, initialRunState, sessionKeyOf,
 } from "./job_run_state.ts";
 import type { JobRunState } from "./job_run_state.ts";
+import { isManagedHwpx, useRunSnapshot } from "./job_run_snapshot.ts";
 import { openJobInEditor, openTemplateRepairInEditor, TemplateRepairButton } from "./job_template_repair.ts";
 import {
   applyNotice, composeGuardBody, DELIVERY_DISPOSITION_COPY, gateStep, newTplRequestId,
@@ -80,13 +81,6 @@ export {
   overwriteBody, composeGuardBody,
 } from "./job_run_copy.ts";
 
-/** HWPX 문서 생성 작업인가 — 판정은 Python 이 낸 `managed_hwpx` 하나를 읽는다. 문서 생성
- *  경로는 managed 하나라(#1081 PR2) 이 값은 「권위가 선 HWPX 작업」이다. 거짓이면 TXT(복사)·
- *  미선택 표면이거나, 초기 등록이 거절돼 권위가 서지 않은 HWPX 작업이다(그 작업의 생성은
- *  backend 가 초기 등록 거절 문장으로 닫고, 사유는 템플릿 존이 진단과 함께 말한다). */
-export function isManagedHwpx(s: Obj | null): boolean {
-  return s?.managed_hwpx === true;
-}
 
 export function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
@@ -569,13 +563,11 @@ export function useRun(controller: JobRunController): JobRunState & UiState {
   return { ...state, ...ui };
 }
 
-export function useRunSnapshot(controller: JobRunController): Obj | null {
-  return useSyncExternalStore(controller.subscribe, controller.getRun, controller.getRun).lastFull;
-}
 
 /* ------------------------------------------------------------------ 표면 */
 
 export { JobPreflight, JobWorkbenchStatus, JobStatusPill, JobRunCap } from "./job_run_views.ts";
+export { isManagedHwpx, useRunSnapshot } from "./job_run_snapshot.ts";
 
 /* 구 위험 배너(`JobDangerBanner` · `#jobMirror`)와 저장 폴더 한 줄(`JobOutFolderLine` ·
    `#jobOutDirLine`)은 legacy HWPX 생성 갈래의 표면이었다 — 문서 생성이 managed 하나가 되며

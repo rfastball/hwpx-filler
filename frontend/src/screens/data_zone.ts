@@ -4,7 +4,6 @@ import {
   createElement,
   Fragment,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -13,22 +12,34 @@ import type { ReactNode } from "react";
 
 import { icon } from "./icons.ts";
 import { ColumnValues, useColumnPanel } from "./job_column_panel.ts";
-import { FilterChipRow, isMenuKey, PresetMenu } from "./data_zone_filter_chips.ts";
+import { renderPickerOption, useFilterColumnQuery } from "./data_zone_card_editor.ts";
+import {
+  isMenuKey, PresetMenu, readFilterView, renderBranchChips, renderColumnConditionChips,
+  renderHiddenColumnsChip, renderNewFilterButton, renderPresetGroups,
+} from "./data_zone_filter_chips.ts";
 import type { MenuSpec } from "./data_zone_filter_chips.ts";
-import { FilterBuilder } from "./data_zone_filter_builder.ts";
+import {
+  buildCardList, createBuilderEdits, deletePreset, renderFbFoot, renderFbHead, renderUnplacedError,
+  resolveCountSummary, resolveFailureCard, resolvePrunedSearch, useFilterBuilderDismiss,
+  useFilterBuilderPlacement, useFilterCount, useFocusNewRow,
+} from "./data_zone_filter_builder.ts";
 import {
   blankRow, builderKeyAction, builderPlacement, createCountRequester,
   FOLD_ROW, focusFinder, focusReturnTarget, formatAmount, kindOf, pickerOptions,
-  rangeFromWords, RANGE_WORDS, SEARCH_ROW,
+  rangeFromWords, RANGE_OPS, RANGE_WORDS, SEARCH_ROW,
 } from "./data_zone_filter_state.ts";
 import type { BuilderColumn, BuilderFocus, BuilderRow, BuilderSpec } from "./data_zone_filter_state.ts";
+import {
+  usePanelPlacement, usePendingBuilderFocus, useFilterBuilderSlot, useRestoreScrollTop, useSyncSearchQuery,
+} from "./data_zone_hooks.ts";
 import { resolveHeadSelection, useOptimisticSelection } from "./data_zone_selection.ts";
 import {
-  renderHiddenSelectionStrip, renderRecsHead, renderTableBodyRows, renderTableHeadRow,
+  emptyTableMessage, renderExpandButton, renderHiddenSelectionStrip, renderRecsHead, renderTableBodyRows,
+  renderTableHeadRow,
 } from "./data_zone_table.ts";
 
 export {
-  FilterBuilder, FilterChipRow, isMenuKey,
+  deletePreset, isMenuKey, RANGE_OPS,
   blankRow, builderKeyAction, builderPlacement, createCountRequester, FOLD_ROW,
   focusFinder, focusReturnTarget, formatAmount, pickerOptions, rangeFromWords, RANGE_WORDS,
   SEARCH_ROW,
@@ -68,32 +79,8 @@ function useUi(controller: JobReadController) {
   );
 }
 
-function asObject(value: unknown, label: string): Obj {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label}: 객체가 아닙니다.`);
-  }
-  return value as Obj;
-}
-export function columnMeta(column: unknown): Obj {
-  return typeof column === "string"
-    ? { name: column, kind: "text", visible: true }
-    : asObject(column, "job table column");
-}
 
-/** 비교 연산자 — 열 머리 범위 편집기와 필터 빌더가 **같은 목록·같은 순서**를 쓴다. */
-export const RANGE_OPS: ReadonlyArray<readonly [string, string]> = [
-  ["ge", "≥"], ["gt", ">"], ["le", "≤"], ["lt", "<"], ["eq", "="], ["ne", "≠"],
-];
 
-export function Segments({ value }: { value: unknown }): ReactNode {
-  if (!Array.isArray(value)) return null;
-  return createElement(Fragment, null, ...value.map((segment, index) => {
-    if (!Array.isArray(segment)) throw new Error("job table segment 형식이 손상됐습니다.");
-    return segment[1]
-      ? h("mark", { key: index }, String(segment[0] ?? ""))
-      : String(segment[0] ?? "");
-  }));
-}
 
 function ColumnPanel(props: {
   controller: JobReadController;
@@ -145,31 +132,6 @@ function ColumnPanel(props: {
         onClick: () => { close(); void controller.zone("hide_column", { column }); } }, "이 열 숨기기") : null));
 }
 
-/* 저장한 필터 칩 줄(2026-09-30 재설계) — 판정(켜짐·사용 가부·사유·차원·무리·조건 문안·저장 가부)은
-   전부 Python 이 싣고, 여기는 그리기와 동사 호출만 한다.
-
-   - 줄은 세 칸 격자다: 「저장한 필터」 머리표 | 칩 영역 | 「+ 필터」. 칩 영역만 줄을 바꾸고(둘째 줄은
-     첫 칩 시작선에 맞는다), 「+ 필터」는 칩 수와 무관하게 첫 줄 오른쪽에 선다.
-   - 같은 차원(같은 열)을 보는 칩이 둘 이상이면 **무리**(알약 묶음 + 열 이름 표지)로 선다 — 무리 안은
-     「또는」, 무리 사이는 「그리고」라는 합성 규칙을 모양이 말한다. 홀로 선 칩은 묶지 않는다.
-   - 칩은 이름 하나를 든 `<button aria-pressed>` 이고, 조건 문안은 Python 이 지은 `description` 을
-     `title` 로 싣는다. 켜진 칩에만 ▾ 메뉴 단추(「고치기」·「삭제」)가 선다 — 꺼진 칩은 빈자리를
-     남기지 않는다. 어느 칩이든 문맥 메뉴 동작(오른쪽 누름·Shift+F10·메뉴 키)이 같은 메뉴를 연다.
-   - 쓸 수 없는 칩도 눌리게 두고(aria-disabled) 거절은 백엔드 사유를 그대로 알린다 — 비활성
-     단추는 사유를 말할 자리가 없다. */
-
-/** 저장한 필터 삭제 확인 — 칩 메뉴와 빌더 「삭제」가 같은 모달을 쓴다(손실 집합 = 그 저장본 하나).
- *  지금 조건·다른 칩은 그대로라 손실로 적지 않는다. 확인하면 삭제 동사의 결과를, 취소면 null 을 준다. */
-export async function deletePreset(
-  controller: JobReadController, name: string, returnFocus: HTMLElement | null,
-): Promise<Obj | null> {
-  const accepted = await controller.confirm({
-    title: "저장한 필터 삭제", body: `사라지는 것: 저장한 필터 '${name}'`,
-    confirmLabel: "삭제", cancelLabel: "취소", danger: true, returnFocus,
-  });
-  if (!accepted) return null;
-  return controller.zone("delete_filter_preset", { name });
-}
 
 export function PresetChip(props: {
   preset: Obj;
@@ -238,9 +200,10 @@ export function PresetChip(props: {
 }
 
 /* ---------------------------------------------------------------- 필터 빌더(「+ 필터」·칩 메뉴 「고치기」)
-   FilterChipRow(저장한 필터 칩 줄)·FilterBuilder(「+ 필터」 면)와 그 타입·순수 헬퍼는
-   data_zone_filter_chips.ts·data_zone_filter_builder.ts·data_zone_filter_state.ts가 진다.
-   여기는 저장 범위·상태와 카드 행을 오가는 변환(`wordsFromRange`·`rowsFromState`·`stateFromRows`)을 둔다. */
+   저장 범위·상태와 카드 행을 오가는 변환(`wordsFromRange`·`rowsFromState`·`stateFromRows`)과 열 고르기
+   키 판정(`pickerKey`), 그 변환·판정을 쓰는 칩 줄(`FilterChipRow`)·열 고르기(`ColumnPicker`)·빌더 본체
+   (`FilterBuilder`)를 둔다. 그 조각·효과 훅·순수 상태는 data_zone_filter_chips.ts·data_zone_card_editor.ts·
+   data_zone_filter_builder.ts·data_zone_filter_state.ts가 진다. */
 
 /** 저장 범위 → 비교 말. 1절이면 그 연산자, `≥ a 그리고 < b` 면 「사이」, 그 밖은 null(기호 2절로 선다). */
 export function wordsFromRange(range: Obj | null | undefined): { op: string; a: string; b: string } | null {
@@ -340,99 +303,12 @@ export function pickerKey(
   return none;
 }
 
-type PendingFocus = { find(): HTMLElement | null; until: number };
 
-/** 필터 빌더(「+ 필터」·칩 메뉴 「고치기」) 슬롯 — 열 머리 패널과 같은 배치·같은 트리거 ref
- *  규칙이다. 여는 순간 패널을 닫는다(`closePanel`); 패널이 열리면 이 빌더를 닫는 쪽은
- *  `closeSilently`(판정 없는 생 setter — `closeBuilder`의 포커스 예약 없이). 닫은 뒤의 초점
- *  옮기기는 `usePendingBuilderFocus`가 한다. */
-function useFilterBuilderSlot(
-  controller: JobReadController, closePanel: () => void,
-): {
-  builder: BuilderSpec | null;
-  builderRoot: { current: HTMLElement | null };
-  builderTrigger: { current: HTMLElement | null };
-  pendingFocus: { current: PendingFocus | null };
-  openBuilder(spec: BuilderSpec, trigger: HTMLElement): void;
-  closeBuilder(focus: BuilderFocus): void;
-  closeSilently(): void;
-} {
-  const [builder, setBuilder] = useState<BuilderSpec | null>(null);
-  const builderRoot = useRef<HTMLElement | null>(null);
-  const builderTrigger = useRef<HTMLElement | null>(null);
-  const pendingFocus = useRef<PendingFocus | null>(null);
 
-  function closeBuilder(focus: BuilderFocus): void {
-    const find = focusFinder(focus, builderTrigger.current, controller.doc);
-    setBuilder(null);
-    // 칩 줄은 저장 뒤의 push 로 다시 그려진다 — 고친 칩(새 이름)·「+ 필터」가 **선 뒤에** 초점을
-    // 옮기도록 찾을 자리를 걸어 두고 렌더마다 찾는다(잠깐 뒤엔 포기 — 늦게 나타난 요소가 초점을 훔치지 않게).
-    pendingFocus.current = find ? { find, until: Date.now() + 2000 } : null;
-  }
 
-  function openBuilder(spec: BuilderSpec, trigger: HTMLElement): void {
-    const same = builder && builder.mode === spec.mode && builder.name === spec.name;
-    if (same) { closeBuilder("trigger"); return; }
-    closePanel();
-    pendingFocus.current = null;
-    builderTrigger.current = trigger;
-    setBuilder(spec);
-  }
 
-  return {
-    builder, builderRoot, builderTrigger, pendingFocus, openBuilder, closeBuilder,
-    closeSilently: () => setBuilder(null),
-  };
-}
 
-/** 빌더를 닫으며 걸어 둔 초점 자리를 렌더마다 찾아 옮긴다 — 존의 다른 효과가 모두 돈 뒤 마지막에 돈다. */
-function usePendingBuilderFocus(pendingFocus: { current: PendingFocus | null }): void {
-  useEffect(() => {
-    const pending = pendingFocus.current;
-    if (pending === null) return;
-    if (Date.now() > pending.until) { pendingFocus.current = null; return; }
-    const target = pending.find();
-    if (target) {
-      pendingFocus.current = null;
-      target.focus();
-    }
-  });
-}
 
-/** 검색창에 초점이 없을 때만 필터 값으로 되맞춘다 — 치는 중에 덮어쓰지 않는다. */
-function useSyncSearchQuery(controller: JobReadController, filterSearch: unknown, setQuery: (text: string) => void): void {
-  useEffect(() => {
-    if (controller.doc.activeElement?.id !== "jobFilterSearch") setQuery(String(filterSearch || ""));
-  }, [filterSearch, controller]); // eslint-disable-line react-hooks/exhaustive-deps
-}
-
-/** 표 틀을 시트로 열고 닫아도 스크롤 자리를 되돌린다. */
-function useRestoreScrollTop(wrapRef: { current: HTMLDivElement | null }, ui: Obj): void {
-  useEffect(() => {
-    if (wrapRef.current) wrapRef.current.scrollTop = ui.tableScrollTop;
-  }, [ui.sheetOpen, ui.tableScrollTop]); // eslint-disable-line react-hooks/exhaustive-deps
-}
-
-/** 열 머리 패널을 **그린 뒤** 잰다 — `Popover.place` 는 실제 렌더 크기로 viewport clamp·
- *  flip 을 하므로 측정 전에는 답을 낼 수 없다. */
-function usePanelPlacement(
-  controller: JobReadController, panel: Obj | null,
-  panelRoot: { current: HTMLElement | null }, panelTrigger: { current: HTMLElement | null },
-): void {
-  useLayoutEffect(() => {
-    const root = panelRoot.current;
-    const trigger = panelTrigger.current;
-    if (!panel || !root || !trigger) return;
-    controller.placePopover(root, trigger);
-  }, [controller, panel]); // eslint-disable-line react-hooks/exhaustive-deps
-}
-
-/** 표가 빈 자리에 서는 안내 — 데이터 없음·필터 불일치·행 없음 셋을 가른다. */
-function emptyTableMessage(snapshot: Obj, filter: Obj): string {
-  if (!snapshot.has_data) return "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.";
-  if (filter.active) return "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.";
-  return "데이터에 행이 없습니다.";
-}
 
 /** 스냅샷의 필터·표 존 — 둘 다 없으면 빈 기본값(아직 데이터가 없는 작업). */
 function resolveZoneData(snapshot: Obj): { filter: Obj; table: Obj } {
@@ -441,16 +317,6 @@ function resolveZoneData(snapshot: Obj): { filter: Obj; table: Obj } {
   return { filter, table };
 }
 
-/** 「표 크게 열기」 — 표 오른쪽 위 모서리의 그림 단추(U4 10번의 표를 여는 동사). 스크롤하는 표 안이
- *  아니라 표 틀(`.jobtb-host`)에 붙어 가로 스크롤에도 제자리다. **시트 안에서는 그리지 않는다** —
- *  자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의 취소·적용이 이미 진다. */
-function renderExpandButton(sheetOpen: boolean, snapshot: Obj, controller: JobReadController): ReactNode {
-  return !sheetOpen ? h("button", {
-    className: "jobtb-expand", id: "jobDataExpand", type: "button", hidden: !snapshot.has_data,
-    "aria-label": "표 크게 열기", title: "표 크게 열기",
-    onClick: (event: Obj) => { void controller.openDataSheet(event.currentTarget); },
-  }, icon("expand")) : null;
-}
 
 /** 열 머리 패널 — 열려 있을 때만 선다. */
 function renderColumnPanelOverlay(props: {
@@ -569,4 +435,181 @@ function RangeFooter(props: { snapshot: Obj; controller: JobReadController }): R
       onClick: () => { props.controller.closeDataSheet(); } }, "취소"),
     h("button", { className: "btn primary", id: "jobRangeApply", type: "button", "data-busy-lock": true,
       onClick: () => { void props.controller.applyRange(); } }, `선택 적용: ${draft.sel_count || 0}건`));
+}
+
+export function FilterChipRow(props: {
+  filter: Obj;
+  hasData: boolean;
+  hiddenColumns: string[];
+  controller: JobReadController;
+  builder: BuilderSpec | null;
+  onNew(trigger: HTMLElement): void;
+  onEdit(name: string, trigger: HTMLElement): void;
+}): ReactNode {
+  const { filter, hasData, hiddenColumns, controller, builder, onNew, onEdit } = props;
+  const [menu, setMenu] = useState<MenuSpec | null>(null);
+  const { presets, groups, source, chips, branches } = readFilterView(filter);
+  const byName = new Map(presets.map((preset) => [String(preset.name), preset]));
+  const tail = chips.length + branches.length + (hiddenColumns.length ? 1 : 0);
+  const openMenu = (name: string, trigger: HTMLElement) => setMenu({ name, trigger });
+  const closeMenu = (focusTrigger: boolean) => {
+    const trigger = menu?.trigger;
+    setMenu(null);
+    if (focusTrigger && trigger && trigger.isConnected) trigger.focus();
+  };
+  const chip = (preset: Obj) => h(PresetChip as any, {
+    key: `p-${preset.name}`, preset, controller, onEdit, openMenu, closeMenu,
+    menu: menu && byName.has(menu.name) ? menu : null,
+  });
+  return h("div", { className: `fchips${presets.length ? "" : " nocap"}`, id: "jobFilterChips", hidden: !hasData },
+    presets.length ? h("span", { className: "fchips-cap", key: "preset-cap" }, "저장한 필터") : null,
+    h("div", { className: "fchips-area", key: "area" },
+      ...renderPresetGroups(groups, byName, chip),
+      presets.length && tail ? h("span", { className: "fchips-sep", "aria-hidden": "true", key: "sep" }) : null,
+      ...renderColumnConditionChips(chips, controller),
+      ...renderBranchChips(branches, controller),
+      renderHiddenColumnsChip(hiddenColumns, controller)),
+    renderNewFilterButton(builder, source, controller, onNew));
+}
+
+/** 맨 아래 점선 「새 조건」 카드 — 열 이름을 적으면 Python 이 자모 부분일치로 거른 목록이 선다. */
+export function ColumnPicker(props: {
+  controller: JobReadController;
+  rows: BuilderRow[];
+  choose(column: string): void;
+  inputRef: { current: HTMLInputElement | null };
+}): ReactNode {
+  const { controller, rows, choose, inputRef } = props;
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const [matched, setMatched] = useState<Obj[]>([]);
+  const [expanded, setExpanded] = useState(false);
+  useFilterColumnQuery(controller, open, query, setMatched);
+  const options = pickerOptions(matched, rows, { query, expanded });
+  const pick = (index: number): void => {
+    const option = options[index];
+    if (!option) return;
+    if (option.fold) { setExpanded(!expanded); setOpen(true); setActive(index); return; } // 접기 줄은 목록을 펼칠 뿐
+    setQuery("");
+    setOpen(false);
+    setActive(-1);
+    choose(option.value);
+  };
+  const optionId = (index: number) => `jobFilterColumnOption-${index}`;
+  return h("div", { className: "fb-card fb-new" },
+    h("label", { className: "fb-new-cap", id: "jobFilterColumnPickerLabel", htmlFor: "jobFilterColumnPicker" },
+      "조건 더하기"),
+    h("input", {
+      className: "field", id: "jobFilterColumnPicker", ref: inputRef, "data-busy-lock": true,
+      role: "combobox", "aria-expanded": open ? "true" : "false", "aria-controls": "jobFilterColumnList",
+      "aria-autocomplete": "list", "aria-activedescendant": open && active >= 0 ? optionId(active) : undefined,
+      placeholder: "열 이름을 적어 고르세요", autoComplete: "off", value: query,
+      onChange: (event: Obj) => { setQuery(event.currentTarget.value); setOpen(true); setActive(0); },
+      onClick: () => setOpen(true),
+      onBlur: () => setOpen(false),
+      onKeyDown: (event: Obj) => {
+        const next = pickerKey({
+          key: event.key, isComposing: event.nativeEvent?.isComposing, keyCode: event.keyCode,
+        }, { open, active, count: options.length });
+        if (!next.handled) return;
+        event.preventDefault();
+        event.stopPropagation(); // 목록만 닫는 Escape 가 빌더까지 닫지 않게
+        if (next.choose !== null) { pick(next.choose); return; }
+        setOpen(next.open);
+        setActive(next.active);
+      },
+    }),
+    open ? h("ul", { className: "fb-options", id: "jobFilterColumnList", role: "listbox" },
+      ...options.map((option, index) => renderPickerOption(option, index, active, optionId, pick, setActive))) : null);
+}
+
+/** 초안의 처음 값 — 고치기는 그 저장본(또는 열 머리 adhoc 조건)에서, 새로 만들기는 adhoc
+ *  조건(있으면)에서 채운다. */
+function buildInitialDraft(
+  filter: Obj, spec: BuilderSpec, columns: BuilderColumn[], source: Obj,
+): { rows: BuilderRow[]; search: string; pruned: string[]; fromAdhoc: boolean } {
+  const preset = spec.mode === "edit"
+    ? ((filter.presets || []) as Obj[]).find((item) => item.name === spec.name) : null;
+  const prefill = (spec.mode === "edit" ? preset?.state : source.adhoc) as Obj | null | undefined;
+  return {
+    rows: rowsFromState(prefill, columns),
+    search: typeof prefill?.search === "string" ? prefill.search.trim() : "",
+    pruned: Array.isArray(prefill?.pruned) ? (prefill.pruned as string[]) : [],
+    fromAdhoc: spec.mode === "create" && !!source.adhoc,
+  };
+}
+
+export function FilterBuilder(props: {
+  controller: JobReadController;
+  filter: Obj;
+  spec: BuilderSpec;
+  trigger: { current: HTMLElement | null };
+  rootRef: { current: HTMLElement | null };
+  close(focus: BuilderFocus): void;
+}): ReactNode {
+  const { controller, filter, spec, trigger, rootRef, close } = props;
+  const source = (filter.builder || {}) as Obj;
+  const columns = (source.columns || []) as BuilderColumn[];
+  const [init] = useState(() => buildInitialDraft(filter, spec, columns, source));
+  const [name, setName] = useState(spec.mode === "edit" ? spec.name : "");
+  const [rows, setRows] = useState<BuilderRow[]>(init.rows);
+  const [fromAdhoc, setFromAdhoc] = useState(init.fromAdhoc);
+  const [count, setCount] = useState<Obj | null>(null);
+  const [countError, setCountError] = useState<{ error: string; column: string }>({ error: "", column: "" });
+  const [saveError, setSaveError] = useState<{ error: string; column: string }>({ error: "", column: "" });
+  const [saving, setSaving] = useState(false);
+  const nextId = useRef(Math.max(0, ...init.rows.map((row) => row.id)) + 1);
+  const pickerRef = useRef<HTMLInputElement | null>(null);
+  const focusRow = useRef<number | null>(null);
+  // 삭제 확인(공용 모달)이 떠 있는 동안은 바깥 누름·Escape 가 모달의 몫이다.
+  const suspended = useRef(false);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+
+  const pruned = resolvePrunedSearch(rows, init.search, init.pruned);
+  const state = stateFromRows(rows, pruned);
+  const stateKey = JSON.stringify(state);
+
+  useFilterCount(controller, stateKey, setCount, setCountError);
+  useEffect(() => { pickerRef.current?.focus(); }, []);
+  useFocusNewRow(focusRow, rootRef);
+  useFilterBuilderPlacement(controller, rootRef, trigger);
+  useFilterBuilderDismiss(controller, rootRef, trigger, suspended, closeRef);
+
+  const { clearSaveError, patch, remove, choose, submit, removePreset, resetDraft } = createBuilderEdits({
+    controller, spec, columns, name, state, fromAdhoc, saving,
+    setRows, setSaveError, setSaving, setFromAdhoc, close, pickerRef, nextId, focusRow, suspended,
+  });
+
+  // 오류는 가리키는 열의 카드 아래에, 열을 모르는 오류는 카드 목록 아래에 선다.
+  const { failure, cardOf } = resolveFailureCard(rows, saveError, countError);
+  const listed = buildCardList({
+    rows, columns, patch, remove, cardOf, failure,
+    picker: h(ColumnPicker as any, { key: "picker", controller, rows, choose, inputRef: pickerRef }),
+  });
+  const { total, matchedCount, ratio } = resolveCountSummary(count, source);
+  return h("div", {
+    className: "colpanel fbuilder", id: "jobFilterBuilder", ref: rootRef,
+    role: "dialog", "aria-modal": "false", "aria-labelledby": "jobFilterBuilderTitle",
+    "data-fb-spec": spec.mode,
+  },
+  renderFbHead(spec, fromAdhoc, rows, resetDraft),
+  h("div", { className: "fb-rows" }, ...listed),
+  renderUnplacedError(failure, cardOf),
+  h("label", { className: "cp-sec fb-name" },
+    h("span", { className: "cp-cap" }, "이름 ", h("span", { className: "fb-hint" }, "(비우면 조건이 이름이 됩니다)")),
+    h("input", {
+      className: "field", "data-fb-name": true, "data-busy-lock": true, value: name, autoComplete: "off",
+      placeholder: String(count?.summary || ""),
+      onChange: (event: Obj) => { clearSaveError(); setName(event.currentTarget.value); },
+      onKeyDown: (event: Obj) => {
+        if (builderKeyAction({
+          key: event.key, isComposing: event.nativeEvent?.isComposing, keyCode: event.keyCode,
+        }, true) !== "submit") return;
+        event.preventDefault();
+        void submit();
+      },
+    })),
+  renderFbFoot({ spec, count, total, matchedCount, ratio, saving, removePreset, close, submit }));
 }

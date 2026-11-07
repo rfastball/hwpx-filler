@@ -2,13 +2,18 @@
    표시순서·선택 동작은 `controller.zone("filter_reapply"/"filter_clear"/"set_view_order"/
    "set_none"/"set_all"/"toggle_record", …)`이 한다. React 컴포넌트가 아니라 `JobDataZone`이
    부르는 일반 렌더 함수다(스크롤 복원·낙관적 선택은 `JobDataZone`이 쥔다). */
+import { createElement } from "react";
 import type { ReactNode } from "react";
 
 import { icon } from "./icons.ts";
-import { columnMeta, h, Segments } from "./data_zone.ts";
 import type { JobReadController } from "./data_zone.ts";
+import { columnMeta, Segments } from "./data_zone_cells.ts";
 
 type Obj = Record<string, any>;
+
+function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
+  return createElement(tag, props, ...children);
+}
 
 /** 표시순서 축 — 초안이 열려 있으면 초안의 것이다(§18.11-21 — 적용 전 메인 범위 불변). */
 function resolveViewOrder(snapshot: Obj): string {
@@ -180,4 +185,22 @@ export function renderHiddenSelectionStrip(
       h("span", { className: "chip-role" }, "선택"), row.name || row.summary || `${row.index + 1}행`,
       h("button", { "data-unsel": row.index, "data-busy-lock": true, "aria-label": `${row.index + 1}행 선택 해제`,
         onClick: () => { void controller.zone("toggle_record", { index: row.index, value: false }); } }, "×"))));
+}
+
+/** 표가 빈 자리에 서는 안내 — 데이터 없음·필터 불일치·행 없음 셋을 가른다. */
+export function emptyTableMessage(snapshot: Obj, filter: Obj): string {
+  if (!snapshot.has_data) return "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.";
+  if (filter.active) return "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.";
+  return "데이터에 행이 없습니다.";
+}
+
+/** 「표 크게 열기」 — 표 오른쪽 위 모서리의 그림 단추(U4 10번의 표를 여는 동사). 스크롤하는 표 안이
+ *  아니라 표 틀(`.jobtb-host`)에 붙어 가로 스크롤에도 제자리다. **시트 안에서는 그리지 않는다** —
+ *  자기 자신을 여는 단추는 무동작이고, 닫는 동사는 면 footer 의 취소·적용이 이미 진다. */
+export function renderExpandButton(sheetOpen: boolean, snapshot: Obj, controller: JobReadController): ReactNode {
+  return !sheetOpen ? h("button", {
+    className: "jobtb-expand", id: "jobDataExpand", type: "button", hidden: !snapshot.has_data,
+    "aria-label": "표 크게 열기", title: "표 크게 열기",
+    onClick: (event: Obj) => { void controller.openDataSheet(event.currentTarget); },
+  }, icon("expand")) : null;
 }

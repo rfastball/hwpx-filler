@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   /* R5-02: 미사용 useState import 제거. */
-  useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
 
@@ -22,6 +21,7 @@ import { expectHostValue } from "./runtime.ts";
 import { NewWorkButton } from "./job_read_views.ts";
 import { createJobReadActions } from "./job_read_actions.ts";
 import { createJobReadBrowse } from "./job_read_browse.ts";
+import { fullSnapshot, useJob, useUi } from "./job_read_snapshot.ts";
 import type { BrowseSession } from "./job_read_browse.ts";
 
 export type Obj = Record<string, any>;
@@ -77,21 +77,7 @@ export function h(tag: string, props: Obj | null, ...children: ReactNode[]): Rea
   return createElement(tag, props, ...children);
 }
 
-function asObject(value: unknown, label: string): Obj {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label}: snapshot 객체가 아닙니다.`);
-  }
-  return value as Obj;
-}
 
-function fullSnapshot(model: JobScreenModel): Obj | null {
-  if (model.full === null) return null;
-  const snapshot = asObject(model.full, "job");
-  if (typeof snapshot.has_data !== "boolean" || typeof snapshot.has_job !== "boolean") {
-    throw new Error("job snapshot: has_data/has_job 판정이 없습니다.");
-  }
-  return snapshot;
-}
 
 function hostValue(result: Awaited<ReturnType<BridgeClient["dispatch"]>>, label: string): Obj {
   return (expectHostValue(result, label) ?? {}) as Obj;
@@ -439,17 +425,7 @@ export function createJobReadController(deps: JobReadControllerDeps) {
 
 export type JobReadController = ReturnType<typeof createJobReadController>;
 
-export function useJob(controller: JobReadController): Obj | null {
-  /* 세 번째 인자는 정적 렌더의 스냅샷이다 — 같은 출처를 준다(다른 화면의 관례와 동일).
-     없으면 `renderToStaticMarkup` 이 이 화면에서만 던져 정적 렌더 계약을 못 세운다. */
-  const model = useSyncExternalStore(
-    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
-  return fullSnapshot(model);
-}
 
-export function useUi(controller: JobReadController): UiState {
-  return useSyncExternalStore(controller.uiModel.subscribe, controller.uiModel.getSnapshot, controller.uiModel.getSnapshot);
-}
 
 export {
   JobDataHeader, JobDataBody, JobDataTabs, JobNoDataExit, JobReadEffects,

@@ -9,7 +9,11 @@ import { NoticeBox } from "./notice_box.ts";
 import { RefreshButton } from "./refresh_button.ts";
 import { SheetTabs } from "./sheet_tabs.ts";
 import type { JobReadController, Obj } from "./job_read.ts";
-import { h, useJob, useUi } from "./job_read.ts";
+import { useJob, useUi } from "./job_read_snapshot.ts";
+
+function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
+  return createElement(tag, props, ...children);
+}
 
 export function JobDataHeader(props: { controller: JobReadController }): ReactNode {
   const snapshot = useJob(props.controller);

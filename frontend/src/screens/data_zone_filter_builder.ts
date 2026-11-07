@@ -1,6 +1,6 @@
-/* R4-01 DataZone 필터 빌더(「+ 필터」·칩 메뉴 「고치기」). 저장·개수 세기는
-   `controller.zone("update_filter_preset"/"create_filter_preset"/"count_filter_state", …)`·
-   `deletePreset`(`"delete_filter_preset"`)이 한다.
+/* R4-01 DataZone 필터 빌더(「+ 필터」·칩 메뉴 「고치기」)의 효과 훅·판독·렌더 조각. 빌더 본체
+   (`FilterBuilder`)는 data_zone.ts가 그리고, 저장·개수 세기는
+   `controller.zone("update_filter_preset"/"create_filter_preset"/"count_filter_state", …)`가 한다.
 
    조건 = 열 하나당 카드 하나(상태 문법이 열마다 조건 하나를 든다). 카드는 세로로 쌓이고 사이에
    가운데 「그리고」 줄이 선다. 맨 아래에는 늘 점선 「새 조건」 카드가 있고, 그 안의 콤보박스가 열을
@@ -11,16 +11,13 @@
    < b), 텍스트 = 값 고르기(태그) | 포함 글자. 열 머리 메뉴에서 건 2절 AND/OR 범위처럼 7개 말로
    옮길 수 없는 조건은 그 편집기(기호 2절) 그대로 보인다 — 옮기다 조용히 바꾸지 않는다.
    검증·수·요약·저장은 전부 Python 동사다. */
-import { createElement, Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { createElement, Fragment, useEffect, useLayoutEffect, useRef } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 
-import { deletePreset, rowsFromState, stateFromRows } from "./data_zone.ts";
 import type { JobReadController } from "./data_zone.ts";
-import {
-  blankRow, builderKeyAction, builderPlacement, createCountRequester, kindOf,
-} from "./data_zone_filter_state.ts";
+import { blankRow, builderKeyAction, builderPlacement, createCountRequester, kindOf } from "./data_zone_filter_state.ts";
 import type { BuilderColumn, BuilderFocus, BuilderRow, BuilderSpec } from "./data_zone_filter_state.ts";
-import { CardEditor, ColumnPicker } from "./data_zone_card_editor.ts";
+import { CardEditor } from "./data_zone_card_editor.ts";
 
 type Obj = Record<string, any>;
 
@@ -44,26 +41,11 @@ function placeBuilder(root: HTMLElement, anchor: HTMLElement, view: Window | nul
   root.dataset.placement = plan.placement === "below" ? "bottom" : "top";
 }
 
-/** 초안의 처음 값 — 고치기는 그 저장본(또는 열 머리 adhoc 조건)에서, 새로 만들기는 adhoc
- *  조건(있으면)에서 채운다. */
-function buildInitialDraft(
-  filter: Obj, spec: BuilderSpec, columns: BuilderColumn[], source: Obj,
-): { rows: BuilderRow[]; search: string; pruned: string[]; fromAdhoc: boolean } {
-  const preset = spec.mode === "edit"
-    ? ((filter.presets || []) as Obj[]).find((item) => item.name === spec.name) : null;
-  const prefill = (spec.mode === "edit" ? preset?.state : source.adhoc) as Obj | null | undefined;
-  return {
-    rows: rowsFromState(prefill, columns),
-    search: typeof prefill?.search === "string" ? prefill.search.trim() : "",
-    pruned: Array.isArray(prefill?.pruned) ? (prefill.pruned as string[]) : [],
-    fromAdhoc: spec.mode === "create" && !!source.adhoc,
-  };
-}
 
 /** 트리거에 **그린 뒤** 붙인다(`builderPlacement` — 넘치면 트리거를 가리지 않고 높이를 자른다).
  *  카드·오류·수가 바뀌면 높이가 바뀌므로 그릴 때마다 다시 재고, 자식(열 콤보박스 목록·태그)이
  *  스스로 자라도 같은 규칙으로 다시 잰다(빌더의 렌더를 거치지 않는 높이 변화). */
-function useFilterBuilderPlacement(
+export function useFilterBuilderPlacement(
   controller: JobReadController,
   rootRef: { current: HTMLElement | null },
   trigger: { current: HTMLElement | null },
@@ -87,7 +69,7 @@ function useFilterBuilderPlacement(
 }
 
 /** 바깥 누름·Escape 로 닫는다 — 삭제 확인(공용 모달)이 떠 있는 동안은 `suspended`가 막는다. */
-function useFilterBuilderDismiss(
+export function useFilterBuilderDismiss(
   controller: JobReadController,
   rootRef: { current: HTMLElement | null },
   trigger: { current: HTMLElement | null },
@@ -117,7 +99,7 @@ function useFilterBuilderDismiss(
 }
 
 /** 살아 있는 수 — 커밋된 상태가 바뀔 때마다 다시 묻고, 언마운트에서 발신기를 닫는다. */
-function useFilterCount(
+export function useFilterCount(
   controller: JobReadController, stateKey: string,
   setCount: (count: Obj | null) => void,
   setCountError: (error: { error: string; column: string }) => void,
@@ -145,7 +127,7 @@ function useFilterCount(
 }
 
 /** 고른 열의 카드가 선 뒤 그 카드의 첫 컨트롤로 초점을 옮긴다. */
-function useFocusNewRow(focusRow: { current: number | null }, rootRef: { current: HTMLElement | null }): void {
+export function useFocusNewRow(focusRow: { current: number | null }, rootRef: { current: HTMLElement | null }): void {
   useEffect(() => {
     if (focusRow.current === null) return;
     const card = rootRef.current?.querySelector(`[data-fb-row="${focusRow.current}"]`);
@@ -156,14 +138,14 @@ function useFocusNewRow(focusRow: { current: number | null }, rootRef: { current
 
 /** 검색 카드가 프리필과 같은 글자로 그대로면 쳐낸 가지를 잇고, 고쳤으면 잃는다(쳐낸 가지 =
  *  검색 텍스트 수명). */
-function resolvePrunedSearch(rows: BuilderRow[], initSearch: string, initPruned: string[]): string[] {
+export function resolvePrunedSearch(rows: BuilderRow[], initSearch: string, initPruned: string[]): string[] {
   const searchRow = rows.find((row) => row.mode === "search");
   return searchRow && searchRow.text.trim() === initSearch ? initPruned : [];
 }
 
 /** 오류는 가리키는 열의 카드 아래에, 열을 모르는 오류는 카드 목록 아래에 선다 — 저장 오류가
  *  수 오류보다 먼저다(둘 다 서면 저장 거절이 더 급하다). */
-function resolveFailureCard(
+export function resolveFailureCard(
   rows: BuilderRow[], saveError: { error: string; column: string }, countError: { error: string; column: string },
 ): { failure: { error: string; column: string }; cardOf: BuilderRow | undefined } {
   const failure = saveError.error ? saveError : countError;
@@ -173,14 +155,14 @@ function resolveFailureCard(
 }
 
 /** 카드 목록 — 사이사이 「그리고」 줄, 맨 아래 늘 점선 「새 조건」 카드. */
-function buildCardList(
+export function buildCardList(
   props: {
     rows: BuilderRow[]; columns: BuilderColumn[]; patch: (id: number, change: Partial<BuilderRow>) => void;
     remove: (id: number) => void; cardOf: BuilderRow | undefined; failure: { error: string; column: string };
-    controller: JobReadController; choose: (column: string) => void; pickerRef: { current: HTMLInputElement | null };
+    picker: ReactNode;
   },
 ): ReactNode[] {
-  const { rows, columns, patch, remove, cardOf, failure, controller, choose, pickerRef } = props;
+  const { rows, columns, patch, remove, cardOf, failure, picker } = props;
   const listed: ReactNode[] = [];
   rows.forEach((row, index) => {
     if (index) listed.push(h("div", { className: "fb-and", key: `and-${row.id}`, "aria-hidden": "true" }, "그리고"));
@@ -190,13 +172,13 @@ function buildCardList(
     }));
   });
   if (rows.length) listed.push(h("div", { className: "fb-and", key: "and-new", "aria-hidden": "true" }, "그리고"));
-  listed.push(h(ColumnPicker as any, { key: "picker", controller, rows, choose, inputRef: pickerRef }));
+  listed.push(picker);
   return listed;
 }
 
 /** 저장 왕복 — 고치기는 기존 이름·새 이름·상태를, 새로 만들기는 이름·상태·
  *  (열 머리에서 채웠으면) `from_adhoc` 표지를 싣는다. */
-function savePreset(
+export function savePreset(
   controller: JobReadController, spec: BuilderSpec, name: string, state: Obj, fromAdhoc: boolean,
 ): Promise<Obj> {
   return spec.mode === "edit"
@@ -212,7 +194,7 @@ type SubmitOutcome =
   | { kind: "ok"; focus: BuilderFocus };
 
 /** 저장 응답의 뜻 — stale(세션이 그사이 갈림)·거절(사유·열)·성사(닫힌 뒤 초점) 셋. */
-function resolveSubmitOutcome(result: Obj, spec: BuilderSpec, name: string): SubmitOutcome {
+export function resolveSubmitOutcome(result: Obj, spec: BuilderSpec, name: string): SubmitOutcome {
   if (result.stale) return { kind: "stale" };
   if (result.ok === false) {
     return { kind: "error", error: String(result.error || ""), column: String(result.column || "") };
@@ -222,7 +204,7 @@ function resolveSubmitOutcome(result: Obj, spec: BuilderSpec, name: string): Sub
 
 /** 수 상태 요약 — 아직 못 받았으면(count===null) 막대·행 수 어느 것도 그리지 않는다
  *  (`renderFbFoot`가 `count`로 그 여부를 판정한다). */
-function resolveCountSummary(count: Obj | null, source: Obj): { total: number; matchedCount: number; ratio: number } {
+export function resolveCountSummary(count: Obj | null, source: Obj): { total: number; matchedCount: number; ratio: number } {
   const total = Number(count?.total ?? source.total ?? 0);
   const matchedCount = Number(count?.count ?? 0);
   const ratio = total > 0 ? Math.min(1, matchedCount / total) : 0;
@@ -230,13 +212,13 @@ function resolveCountSummary(count: Obj | null, source: Obj): { total: number; m
 }
 
 /** 열을 모르는 오류 — 가리키는 카드가 있으면 그 카드 아래가 이미 말하므로 여기 또 세우지 않는다. */
-function renderUnplacedError(failure: { error: string }, cardOf: BuilderRow | undefined): ReactNode {
+export function renderUnplacedError(failure: { error: string }, cardOf: BuilderRow | undefined): ReactNode {
   if (!failure.error || cardOf) return null;
   return h("div", { className: "cp-err", role: "alert", "data-fb-error": true }, failure.error);
 }
 
 /** 머리 — 제목·열 머리 조건에서 채웠다는 표지·「비우고 시작」(새로 만들기이고 카드가 있을 때만). */
-function renderFbHead(spec: BuilderSpec, fromAdhoc: boolean, rows: BuilderRow[], resetDraft: () => void): ReactNode {
+export function renderFbHead(spec: BuilderSpec, fromAdhoc: boolean, rows: BuilderRow[], resetDraft: () => void): ReactNode {
   const title = spec.mode === "edit" ? "필터 고치기" : "필터 만들기";
   return h("div", { className: "cp-head fb-head" },
     h("span", { id: "jobFilterBuilderTitle" }, title),
@@ -248,7 +230,7 @@ function renderFbHead(spec: BuilderSpec, fromAdhoc: boolean, rows: BuilderRow[],
 }
 
 /** 발 — 삭제(고치기일 때만)·수 상태(진행률 막대)·취소·저장. */
-function renderFbFoot(
+export function renderFbFoot(
   props: {
     spec: BuilderSpec; count: Obj | null; total: number; matchedCount: number; ratio: number; saving: boolean;
     removePreset: (button: HTMLElement) => void; close: (focus: BuilderFocus) => void; submit: () => void;
@@ -275,43 +257,35 @@ function renderFbFoot(
     }, "저장"));
 }
 
-export function FilterBuilder(props: {
-  controller: JobReadController;
-  filter: Obj;
-  spec: BuilderSpec;
-  trigger: { current: HTMLElement | null };
-  rootRef: { current: HTMLElement | null };
+type SaveFailure = { error: string; column: string };
+
+/** 빌더의 편집 동작 — 카드 고치기·지우기·열 더하기·저장·삭제·「비우고 시작」. 렌더마다 그 렌더의
+ *  초안 값(이름·상태·저장 중 여부)으로 다시 지어, 닫힌 값이 지난 렌더에 머물지 않는다. */
+export function createBuilderEdits(deps: {
+  controller: JobReadController; spec: BuilderSpec; columns: BuilderColumn[];
+  name: string; state: Obj; fromAdhoc: boolean; saving: boolean;
+  setRows: Dispatch<SetStateAction<BuilderRow[]>>;
+  setSaveError: (failure: SaveFailure) => void;
+  setSaving: (saving: boolean) => void;
+  setFromAdhoc: (fromAdhoc: boolean) => void;
   close(focus: BuilderFocus): void;
-}): ReactNode {
-  const { controller, filter, spec, trigger, rootRef, close } = props;
-  const source = (filter.builder || {}) as Obj;
-  const columns = (source.columns || []) as BuilderColumn[];
-  const [init] = useState(() => buildInitialDraft(filter, spec, columns, source));
-  const [name, setName] = useState(spec.mode === "edit" ? spec.name : "");
-  const [rows, setRows] = useState<BuilderRow[]>(init.rows);
-  const [fromAdhoc, setFromAdhoc] = useState(init.fromAdhoc);
-  const [count, setCount] = useState<Obj | null>(null);
-  const [countError, setCountError] = useState<{ error: string; column: string }>({ error: "", column: "" });
-  const [saveError, setSaveError] = useState<{ error: string; column: string }>({ error: "", column: "" });
-  const [saving, setSaving] = useState(false);
-  const nextId = useRef(Math.max(0, ...init.rows.map((row) => row.id)) + 1);
-  const pickerRef = useRef<HTMLInputElement | null>(null);
-  const focusRow = useRef<number | null>(null);
-  // 삭제 확인(공용 모달)이 떠 있는 동안은 바깥 누름·Escape 가 모달의 몫이다.
-  const suspended = useRef(false);
-  const closeRef = useRef(close);
-  closeRef.current = close;
-
-  const pruned = resolvePrunedSearch(rows, init.search, init.pruned);
-  const state = stateFromRows(rows, pruned);
-  const stateKey = JSON.stringify(state);
-
-  useFilterCount(controller, stateKey, setCount, setCountError);
-  useEffect(() => { pickerRef.current?.focus(); }, []);
-  useFocusNewRow(focusRow, rootRef);
-  useFilterBuilderPlacement(controller, rootRef, trigger);
-  useFilterBuilderDismiss(controller, rootRef, trigger, suspended, closeRef);
-
+  pickerRef: { current: HTMLInputElement | null };
+  nextId: { current: number };
+  focusRow: { current: number | null };
+  suspended: { current: boolean };
+}): {
+  clearSaveError(): void;
+  patch(id: number, change: Partial<BuilderRow>): void;
+  remove(id: number): void;
+  choose(column: string): void;
+  submit(): Promise<void>;
+  removePreset(button: HTMLElement): Promise<void>;
+  resetDraft(): void;
+} {
+  const {
+    controller, spec, columns, name, state, fromAdhoc, saving,
+    setRows, setSaveError, setSaving, setFromAdhoc, close, pickerRef, nextId, focusRow, suspended,
+  } = deps;
   const clearSaveError = () => setSaveError({ error: "", column: "" });
   function patch(id: number, change: Partial<BuilderRow>): void {
     clearSaveError();
@@ -368,31 +342,31 @@ export function FilterBuilder(props: {
     pickerRef.current?.focus();
   }
 
-  // 오류는 가리키는 열의 카드 아래에, 열을 모르는 오류는 카드 목록 아래에 선다.
-  const { failure, cardOf } = resolveFailureCard(rows, saveError, countError);
-  const listed = buildCardList({ rows, columns, patch, remove, cardOf, failure, controller, choose, pickerRef });
-  const { total, matchedCount, ratio } = resolveCountSummary(count, source);
-  return h("div", {
-    className: "colpanel fbuilder", id: "jobFilterBuilder", ref: rootRef,
-    role: "dialog", "aria-modal": "false", "aria-labelledby": "jobFilterBuilderTitle",
-    "data-fb-spec": spec.mode,
-  },
-  renderFbHead(spec, fromAdhoc, rows, resetDraft),
-  h("div", { className: "fb-rows" }, ...listed),
-  renderUnplacedError(failure, cardOf),
-  h("label", { className: "cp-sec fb-name" },
-    h("span", { className: "cp-cap" }, "이름 ", h("span", { className: "fb-hint" }, "(비우면 조건이 이름이 됩니다)")),
-    h("input", {
-      className: "field", "data-fb-name": true, "data-busy-lock": true, value: name, autoComplete: "off",
-      placeholder: String(count?.summary || ""),
-      onChange: (event: Obj) => { clearSaveError(); setName(event.currentTarget.value); },
-      onKeyDown: (event: Obj) => {
-        if (builderKeyAction({
-          key: event.key, isComposing: event.nativeEvent?.isComposing, keyCode: event.keyCode,
-        }, true) !== "submit") return;
-        event.preventDefault();
-        void submit();
-      },
-    })),
-  renderFbFoot({ spec, count, total, matchedCount, ratio, saving, removePreset, close, submit }));
+  return { clearSaveError, patch, remove, choose, submit, removePreset, resetDraft };
+}
+
+/* 저장한 필터 칩 줄(2026-09-30 재설계) — 판정(켜짐·사용 가부·사유·차원·무리·조건 문안·저장 가부)은
+   전부 Python 이 싣고, 여기는 그리기와 동사 호출만 한다.
+
+   - 줄은 세 칸 격자다: 「저장한 필터」 머리표 | 칩 영역 | 「+ 필터」. 칩 영역만 줄을 바꾸고(둘째 줄은
+     첫 칩 시작선에 맞는다), 「+ 필터」는 칩 수와 무관하게 첫 줄 오른쪽에 선다.
+   - 같은 차원(같은 열)을 보는 칩이 둘 이상이면 **무리**(알약 묶음 + 열 이름 표지)로 선다 — 무리 안은
+     「또는」, 무리 사이는 「그리고」라는 합성 규칙을 모양이 말한다. 홀로 선 칩은 묶지 않는다.
+   - 칩은 이름 하나를 든 `<button aria-pressed>` 이고, 조건 문안은 Python 이 지은 `description` 을
+     `title` 로 싣는다. 켜진 칩에만 ▾ 메뉴 단추(「고치기」·「삭제」)가 선다 — 꺼진 칩은 빈자리를
+     남기지 않는다. 어느 칩이든 문맥 메뉴 동작(오른쪽 누름·Shift+F10·메뉴 키)이 같은 메뉴를 연다.
+   - 쓸 수 없는 칩도 눌리게 두고(aria-disabled) 거절은 백엔드 사유를 그대로 알린다 — 비활성
+     단추는 사유를 말할 자리가 없다. */
+
+/** 저장한 필터 삭제 확인 — 칩 메뉴와 빌더 「삭제」가 같은 모달을 쓴다(손실 집합 = 그 저장본 하나).
+ *  지금 조건·다른 칩은 그대로라 손실로 적지 않는다. 확인하면 삭제 동사의 결과를, 취소면 null 을 준다. */
+export async function deletePreset(
+  controller: JobReadController, name: string, returnFocus: HTMLElement | null,
+): Promise<Obj | null> {
+  const accepted = await controller.confirm({
+    title: "저장한 필터 삭제", body: `사라지는 것: 저장한 필터 '${name}'`,
+    confirmLabel: "삭제", cancelLabel: "취소", danger: true, returnFocus,
+  });
+  if (!accepted) return null;
+  return controller.zone("delete_filter_preset", { name });
 }

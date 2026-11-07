@@ -4175,19 +4175,19 @@ text = "이름을 입력하세요."
 file = "frontend/src/screens/data_picker.ts"
 text = "파일 선택 창에서 파일을 고르세요…"
 [[sentence]]
-file = "frontend/src/screens/data_zone_filter_builder.ts"
+file = "frontend/src/screens/data_zone.ts"
 text = "(비우면 조건이 이름이 됩니다)"
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_cells.ts"
 text = "job table segment 형식이 손상됐습니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_cells.ts"
 text = "{}: 객체가 아닙니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "데이터에 행이 없습니다."
 [[sentence]]
 file = "frontend/src/screens/data_zone.ts"
@@ -4196,13 +4196,13 @@ text = "보기에서만 숨깁니다. 생성에는 그대로 쓰입니다."
 file = "frontend/src/screens/data_zone_filter_chips.ts"
 text = "열 {}개 숨김 — 생성에는 그대로 쓰입니다"
 [[sentence]]
-file = "frontend/src/screens/data_zone_card_editor.ts"
+file = "frontend/src/screens/data_zone.ts"
 text = "열 이름을 적어 고르세요"
 [[sentence]]
 file = "frontend/src/screens/data_zone_table.ts"
 text = "표의 정렬 순서를 바꿉니다. 생성 순서와 파일 이름 순번이 함께 따라갑니다."
 [[sentence]]
-file = "frontend/src/screens/data_zone.ts"
+file = "frontend/src/screens/data_zone_table.ts"
 text = "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요."
 [[sentence]]
 file = "frontend/src/screens/detail_sheet.ts"
@@ -4414,13 +4414,13 @@ text = "JobReadPort: 탐색 닫힘 뒤 흐름이 이미 예약돼 있습니다."
 file = "frontend/src/screens/job_read_browse.ts"
 text = "JobReadPort: 확인할 작업 이름이 비었습니다."
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_snapshot.ts"
 text = "job snapshot: has_data/has_job 판정이 없습니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"
 text = "{} 다시 읽을까요?"
 [[sentence]]
-file = "frontend/src/screens/job_read.ts"
+file = "frontend/src/screens/job_read_snapshot.ts"
 text = "{}: snapshot 객체가 아닙니다."
 [[sentence]]
 file = "frontend/src/screens/job_read.ts"

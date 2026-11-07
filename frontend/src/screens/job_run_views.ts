@@ -6,7 +6,11 @@ import { Fragment, createElement } from "react";
 import type { ReactNode } from "react";
 
 import type { JobRunController, Obj } from "./job_run.ts";
-import { h, isManagedHwpx, useRunSnapshot } from "./job_run.ts";
+import { isManagedHwpx, useRunSnapshot } from "./job_run_snapshot.ts";
+
+function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
+  return createElement(tag, props, ...children);
+}
 
 export function JobPreflight(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);

@@ -193,3 +193,8 @@ export function focusFinder(
   return () => Array.from(doc.querySelectorAll<HTMLElement>("[data-preset]"))
     .find((element) => element.getAttribute("data-preset") === focus.edit) || null;
 }
+
+/** 비교 연산자 — 열 머리 범위 편집기와 필터 빌더가 **같은 목록·같은 순서**를 쓴다. */
+export const RANGE_OPS: ReadonlyArray<readonly [string, string]> = [
+  ["ge", "≥"], ["gt", ">"], ["le", "≤"], ["lt", "<"], ["eq", "="], ["ne", "≠"],
+];

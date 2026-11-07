@@ -1,15 +1,12 @@
-/* R4-01 DataZone 필터 빌더의 카드 둘 — 조건 카드 편집기(`CardEditor`)와 열 고르기 콤보박스
-   (`ColumnPicker`). 열 이름 거르기는 `controller.zone("list_filter_columns", …)`가 한다. */
-import { createElement, useEffect, useRef, useState } from "react";
+/* R4-01 DataZone 필터 빌더의 조건 카드 편집기(`CardEditor`)와 열 고르기 콤보박스(`ColumnPicker`,
+   data_zone.ts)의 목록 줄·질의 훅. 열 이름 거르기는 `controller.zone("list_filter_columns", …)`가 한다. */
+import { createElement, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { icon } from "./icons.ts";
-import { pickerKey, RANGE_OPS, Segments } from "./data_zone.ts";
 import type { JobReadController } from "./data_zone.ts";
-import {
-  columnOf, formatAmount, isRangeKind, pickerOptions,
-  RANGE_WORDS,
-} from "./data_zone_filter_state.ts";
+import { Segments } from "./data_zone_cells.ts";
+import { columnOf, formatAmount, isRangeKind, RANGE_OPS, RANGE_WORDS } from "./data_zone_filter_state.ts";
 import type { BuilderColumn, BuilderRow } from "./data_zone_filter_state.ts";
 
 type Obj = Record<string, any>;
@@ -150,7 +147,7 @@ export function CardEditor(props: {
 }
 
 /** 콤보박스 목록의 줄 하나 — 숨긴 열 접기 표지는 fold-mark, 그 밖은 유형 라벨을 꼬리에 단다. */
-function renderPickerOption(
+export function renderPickerOption(
   option: Obj, index: number, active: number, optionId: (index: number) => string,
   pick: (index: number) => void, setActive: (index: number) => void,
 ): ReactNode {
@@ -171,7 +168,7 @@ function renderPickerOption(
 
 /** 열 이름 질의 — 목록이 열려 있는 동안 질의마다 80ms 쉼 뒤 한 번 묻고, 늦게 온 옛 응답은
  *  세대 대조로 버린다. */
-function useFilterColumnQuery(
+export function useFilterColumnQuery(
   controller: JobReadController, open: boolean, query: string, setMatched: (columns: Obj[]) => void,
 ): void {
   const seq = useRef(0);
@@ -188,54 +185,4 @@ function useFilterColumnQuery(
   }, [controller, open, query]);
 }
 
-/** 맨 아래 점선 「새 조건」 카드 — 열 이름을 적으면 Python 이 자모 부분일치로 거른 목록이 선다. */
-export function ColumnPicker(props: {
-  controller: JobReadController;
-  rows: BuilderRow[];
-  choose(column: string): void;
-  inputRef: { current: HTMLInputElement | null };
-}): ReactNode {
-  const { controller, rows, choose, inputRef } = props;
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(-1);
-  const [matched, setMatched] = useState<Obj[]>([]);
-  const [expanded, setExpanded] = useState(false);
-  useFilterColumnQuery(controller, open, query, setMatched);
-  const options = pickerOptions(matched, rows, { query, expanded });
-  const pick = (index: number): void => {
-    const option = options[index];
-    if (!option) return;
-    if (option.fold) { setExpanded(!expanded); setOpen(true); setActive(index); return; } // 접기 줄은 목록을 펼칠 뿐
-    setQuery("");
-    setOpen(false);
-    setActive(-1);
-    choose(option.value);
-  };
-  const optionId = (index: number) => `jobFilterColumnOption-${index}`;
-  return h("div", { className: "fb-card fb-new" },
-    h("label", { className: "fb-new-cap", id: "jobFilterColumnPickerLabel", htmlFor: "jobFilterColumnPicker" },
-      "조건 더하기"),
-    h("input", {
-      className: "field", id: "jobFilterColumnPicker", ref: inputRef, "data-busy-lock": true,
-      role: "combobox", "aria-expanded": open ? "true" : "false", "aria-controls": "jobFilterColumnList",
-      "aria-autocomplete": "list", "aria-activedescendant": open && active >= 0 ? optionId(active) : undefined,
-      placeholder: "열 이름을 적어 고르세요", autoComplete: "off", value: query,
-      onChange: (event: Obj) => { setQuery(event.currentTarget.value); setOpen(true); setActive(0); },
-      onClick: () => setOpen(true),
-      onBlur: () => setOpen(false),
-      onKeyDown: (event: Obj) => {
-        const next = pickerKey({
-          key: event.key, isComposing: event.nativeEvent?.isComposing, keyCode: event.keyCode,
-        }, { open, active, count: options.length });
-        if (!next.handled) return;
-        event.preventDefault();
-        event.stopPropagation(); // 목록만 닫는 Escape 가 빌더까지 닫지 않게
-        if (next.choose !== null) { pick(next.choose); return; }
-        setOpen(next.open);
-        setActive(next.active);
-      },
-    }),
-    open ? h("ul", { className: "fb-options", id: "jobFilterColumnList", role: "listbox" },
-      ...options.map((option, index) => renderPickerOption(option, index, active, optionId, pick, setActive))) : null);
-}
+

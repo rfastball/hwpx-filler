@@ -1,12 +1,16 @@
 /* 「가공」 팝오버의 순수 렌더 — 상태를 받아 그리기만 하는 `SlicePopoverView`와 그 하위 조각(방식 줄·
-   입력 파트·머리·예시·미리보기·바닥). 상태·동작(`SlicePopover`)과 명세 조립(`composeSliceSpec`)은
+   입력 파트·머리·예시·미리보기·바닥), 팝오버 안 키 하나의 뜻(`sliceKeyAction`). 상태·동작(`SlicePopover`)과 명세 조립(`composeSliceSpec`)은
    slice_popover.ts 가 진다. 조각은 React 컴포넌트가 아니라 일반 렌더 함수(`renderMethodRow`·
    `renderSlicePart` 등)로 부른다 — 팝오버의 자식 자리와 재마운트 동작이 그대로 남는다. */
+import { createElement } from "react";
 import type { ReactNode } from "react";
 
 import { icon } from "./icons.ts";
-import { h, sliceKeyAction } from "./slice_popover.ts";
 import type { Obj } from "./slice_popover.ts";
+
+function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
+  return createElement(tag, props, ...children);
+}
 
 type Inputs = Record<string, Record<string, string>>;
 
@@ -305,4 +309,14 @@ export function SlicePopoverView(props: {
     renderMethodsGroup(groups, titleId, methodRowCtx),
     renderPreviewZone({ preview, rows, missChoice, pressed, on })),
   renderPopoverFoot(spec, on));
+}
+
+/** 팝오버 안 키 하나의 뜻 — 한글 조합 중(Enter·Escape 가 조합 확정)은 아무 뜻도 없다. */
+export function sliceKeyAction(
+  event: { key: string; isComposing?: boolean; keyCode?: number },
+): "close" | "commit" | null {
+  if (event.isComposing || event.keyCode === 229) return null;
+  if (event.key === "Escape") return "close";
+  if (event.key === "Enter") return "commit";
+  return null;
 }
