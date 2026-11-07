@@ -571,7 +571,7 @@ function deriveNoteText(card: Obj): string {
   const emptyNote = lastCopy.empty_fields && lastCopy.empty_fields.length
     ? ` (빈 값: ${lastCopy.empty_fields.join(", ")})` : "";
   const stampNote = lastCopy.stamp_error ? ` — 최근 사용 기록은 실패했습니다: ${lastCopy.stamp_error}` : "";
-  return `${lastCopy.row}행을 복사했습니다.${emptyNote}${stampNote}`;
+  return `${lastCopy.row}행을 복사했습니다.` + emptyNote + stampNote;
 }
 
 /** 지금 카드의 파생값 묶음 — 작업점 표시(1-기반)·린트·판본·큐 퇴화 여부. 판정은 전부

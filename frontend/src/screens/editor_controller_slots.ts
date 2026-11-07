@@ -296,7 +296,7 @@ export function createSlotMenus(deps: SlotMenusDeps) {
     verb: string, slotId: string, trigger: HTMLElement,
   ): Promise<void> {
     try {
-      const handler = slotVerbHandlers[verb];
+      const handler = Object.hasOwn(slotVerbHandlers, verb) ? slotVerbHandlers[verb] : undefined;
       if (handler === undefined) throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
       await handler(slotId, trigger);
     } catch (error) {
