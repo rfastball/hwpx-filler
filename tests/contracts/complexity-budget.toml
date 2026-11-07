@@ -367,15 +367,6 @@ function_complexity = { value = 21, reason = "상시 예외: 독립 사례 나�
 [budget."crates/hwpx-filler/examples/fixture_common/legacy_zip.rs::write"]
 function_statements = { value = 62, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."crates/hwpx-filler/src/authoring.rs::classify_composite"]
-function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/authoring.rs::paragraph_model"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/authoring.rs::scan_paragraph"]
-function_complexity = { value = 20, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-filler/src/data_contract.rs::FieldContract.validate"]
 function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
@@ -396,15 +387,6 @@ module_statements = { value = 382, override = "#1200", reason = "Python→Rust·
 
 [budget."crates/hwpx-filler/src/editor_mapping.rs::EditorMappingModel"]
 class_methods = { value = 38, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/editor_slice.rs::candidate_specs"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/editor_slice.rs::preview"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/editor_slice.rs::propose"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/execution_capture.rs::judge_captured_execution"]
 function_complexity = { value = 36, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
@@ -497,67 +479,14 @@ function_statements = { value = 100, override = "#1200", reason = "Python→Rust
 [budget."crates/hwpx-filler/src/generation_delivery.rs::resolve_delivery_field_value"]
 function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
-[budget."crates/hwpx-filler/src/hwpx_authoring_availability.rs::available_commands_hwpx"]
-function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 58, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_availability.rs::shared_reasons"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-filler/src/hwpx_authoring_commands.rs::dispatch"]
 function_complexity = { value = 18, reason = "상시 예외: 평평한 분배 표 — 명령어별 핸들러 위임 dispatch" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_commands.rs::remove_region"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_fields.rs::change_field"]
-function_complexity = { value = 28, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 54, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_preview.rs::preview_content_context"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 54, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::control_count"]
 function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — control 집계 규격 1:1 dispatch" }
 
-[budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::field_range_refusal"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_reading.rs::simple_field_content"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_regions.rs::adjust_region"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_regions.rs::create_region"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_regions.rs::rename_region"]
-function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_search.rs::same_text_hwpx"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_search.rs::stray_token_problems"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_syntax.rs::syntax_view_hwpx"]
-function_complexity = { value = 21, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_transfer.rs::block_paste"]
-function_complexity = { value = 23, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-filler/src/hwpx_authoring_transfer.rs::field_error"]
 function_complexity = { value = 11, reason = "상시 예외: 값 매핑 표 — 에러코드→한국어 메시지 매핑" }
-
-[budget."crates/hwpx-filler/src/hwpx_authoring_trial.rs::trial_hwpx"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/hwpx_product_inspection.rs::inspect_product_bookmarks"]
-function_complexity = { value = 37, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 80, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/hwpx_structure.rs::marker_has_object"]
 function_complexity = { value = 12, reason = "상시 예외: 형식 명세 1:1 처리 — object 포함 여부 구조 술어 DFS" }
@@ -614,17 +543,11 @@ function_complexity = { value = 16, reason = "상시 예외: 값 매핑 표 — 
 [budget."crates/hwpx-filler/src/structure_scan.rs::token_matches"]
 function_complexity = { value = 11, reason = "상시 예외: 형식 명세 1:1 처리 — 중괄호 토큰화 단일 루프, 명세 그대로" }
 
-[budget."crates/hwpx-filler/src/template_authoring.rs::authoring_lint"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-filler/src/template_authoring.rs::command_name"]
 function_complexity = { value = 15, reason = "상시 예외: 값 매핑 표 — action→한글 라벨 1:1 매핑(14종)" }
 
 [budget."crates/hwpx-filler/src/template_change_product.rs::product_preparation_status"]
 function_complexity = { value = 19, reason = "상시 예외: 값 매핑 표 — status×change 조합 투영표" }
-
-[budget."crates/hwpx-filler/src/text_authoring_trial.rs::trial_txt_authoring"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.from_dict"]
 function_complexity = { value = 24, reason = "상시 예외: 평평한 분배 표 — mode(9종) 1:1 필드 구성 분배" }
@@ -637,50 +560,6 @@ function_complexity = { value = 13, reason = "상시 예외: 값 매핑 표 — 
 
 [budget."crates/hwpx-filler/src/text_slice.rs::TextSlice.validate"]
 function_complexity = { value = 13, reason = "상시 예외: 평평한 분배 표 — mode별 필수 필드 검증 1:1 분배" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs"]
-module_statements = { value = 890, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::available_commands"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::block_edits"]
-function_complexity = { value = 26, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 51, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::confirm_tier"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::field_edits"]
-function_complexity = { value = 14, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::line_block_children"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::project"]
-function_complexity = { value = 25, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 103, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::region_edits"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::repair_suggestion"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::shared_reasons"]
-function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — 명령별 차단 사유 선언적 표" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::suggest_field_name"]
-function_complexity = { value = 18, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring.rs::trial"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring_transfer.rs::capture_txt"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-filler/src/txt_authoring_transfer.rs::paste_txt"]
-function_complexity = { value = 24, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."frontend/js/popover.js::place"]
 function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — below 판정+clamp 위치 계산" }
