@@ -194,6 +194,105 @@ fn field_children(
     Ok(children)
 }
 
+/// Where a region preview reads from, before the paragraph range is checked.
+struct PreviewSpan<'a> {
+    target_name: Value,
+    /// The current region of an adjust_range, shown as the "before" text.
+    prior: Option<&'a BookmarkRegion>,
+    entry: Option<&'a str>,
+    start: Option<u64>,
+    end: Option<u64>,
+}
+
+/// Resolves the previewed paragraphs: the command's range for create and adjust,
+/// otherwise the existing target region.
+fn preview_span<'a>(
+    command: &'a Value,
+    action: &str,
+    snapshot: &'a SlotSnapshot,
+) -> PreviewSpan<'a> {
+    let slot_id = command.get("slot_id").and_then(Value::as_str).unwrap_or("");
+    let on_option = command.get("kind").and_then(Value::as_str) == Some("option");
+    let option_id = command.get("option_id").and_then(Value::as_str);
+    let creating = matches!(action, "create_slot" | "create_option");
+    let mut span = PreviewSpan {
+        target_name: Value::Null,
+        prior: None,
+        entry: None,
+        start: None,
+        end: None,
+    };
+    if creating || action == "adjust_range" {
+        span.entry = command.get("entry").and_then(Value::as_str);
+        span.start = command.get("start_paragraph").and_then(Value::as_u64);
+        span.end = command.get("end_paragraph").and_then(Value::as_u64);
+    }
+    if creating {
+        return span;
+    }
+    span.target_name = region_name(snapshot, slot_id, on_option.then_some(option_id).flatten())
+        .map_or(Value::Null, Value::String);
+    let region = target_region(snapshot, slot_id, option_id, on_option);
+    if action == "adjust_range" {
+        span.prior = region;
+        if span.entry.is_none() {
+            span.entry = region.map(|item| item.section.as_str());
+        }
+    } else if let Some(region) = region {
+        span.entry = Some(&region.section);
+        span.start = Some(region.start_paragraph as u64);
+        span.end = Some(region.end_paragraph as u64);
+    }
+    span
+}
+
+fn paragraphs_text(view: &XmlView, paragraphs: &[NodeId]) -> String {
+    paragraphs
+        .iter()
+        .map(|id| paragraph_text(view, *id))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn table_count(view: &XmlView, paragraphs: &[NodeId]) -> usize {
+    paragraphs
+        .iter()
+        .map(|id| {
+            view.descendants(*id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|child| is_hp(view, *child, "tbl"))
+                .count()
+        })
+        .sum::<usize>()
+}
+
+/// The option a command acts on, which is not its own child.
+fn excluded_option<'a>(command: &'a Value, action: &str) -> Option<(&'a str, &'a str)> {
+    let on_option = command.get("kind").and_then(Value::as_str) == Some("option");
+    if !on_option || matches!(action, "create_slot" | "create_option") {
+        return None;
+    }
+    let slot_id = command.get("slot_id").and_then(Value::as_str).unwrap_or("");
+    command
+        .get("option_id")
+        .and_then(Value::as_str)
+        .map(|option| (slot_id, option))
+}
+
+/// Whether creating a region widens a partial selection to whole paragraphs.
+fn selection_expanded(command: &Value, action: &str, last_line: &str) -> bool {
+    matches!(action, "create_slot" | "create_option")
+        && (command
+            .get("start")
+            .and_then(Value::as_i64)
+            .is_some_and(|at| at > 0)
+            || command
+                .get("end")
+                .and_then(Value::as_u64)
+                .is_some_and(|at| (at as usize) < last_line.chars().count()))
+}
+
 pub fn preview_content_context(
     package: &HwpxPackage,
     command: &Value,
@@ -211,39 +310,11 @@ pub fn preview_content_context(
     ) {
         return Ok(json!({}));
     }
-    let slot_id = command.get("slot_id").and_then(Value::as_str).unwrap_or("");
-    let on_option = command.get("kind").and_then(Value::as_str) == Some("option");
-    let option_id = command.get("option_id").and_then(Value::as_str);
     let snapshot =
         inspect_slot_regions(package).map_err(|error| AuthoringPreviewError(error.to_string()))?;
-    let mut target_name = Value::Null;
-    let mut prior = None;
-    let (mut entry, mut start, mut end) =
-        if matches!(action, "create_slot" | "create_option" | "adjust_range") {
-            (
-                command.get("entry").and_then(Value::as_str),
-                command.get("start_paragraph").and_then(Value::as_u64),
-                command.get("end_paragraph").and_then(Value::as_u64),
-            )
-        } else {
-            (None, None, None)
-        };
-    if !matches!(action, "create_slot" | "create_option") {
-        target_name = region_name(&snapshot, slot_id, on_option.then_some(option_id).flatten())
-            .map_or(Value::Null, Value::String);
-        let region = target_region(&snapshot, slot_id, option_id, on_option);
-        if action == "adjust_range" {
-            prior = region;
-            if entry.is_none() {
-                entry = region.map(|item| item.section.as_str());
-            }
-        } else if let Some(region) = region {
-            entry = Some(&region.section);
-            start = Some(region.start_paragraph as u64);
-            end = Some(region.end_paragraph as u64);
-        }
-    }
-    let (Some(entry), Some(start), Some(end)) = (entry, start, end) else {
+    let span = preview_span(command, action, &snapshot);
+    let target_name = span.target_name;
+    let (Some(entry), Some(start), Some(end)) = (span.entry, span.start, span.end) else {
         return Ok(json!({"target_name": target_name}));
     };
     let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
@@ -258,26 +329,13 @@ pub fn preview_content_context(
     if start > end || end >= paragraphs.len() {
         return Ok(json!({"target_name": target_name}));
     }
-    let lines: Vec<_> = paragraphs[start..=end]
-        .iter()
-        .map(|id| paragraph_text(&view, *id))
-        .collect();
-    let included = lines.join("\n");
-    let previous = if let Some(region) = prior {
-        paragraphs[region.start_paragraph..=region.end_paragraph]
-            .iter()
-            .map(|id| paragraph_text(&view, *id))
-            .collect::<Vec<_>>()
-            .join("\n")
-    } else {
-        included.clone()
-    };
-    let exclude = if on_option && !matches!(action, "create_slot" | "create_option") {
-        option_id.map(|option| (slot_id, option))
-    } else {
-        None
-    };
-    let mut children = option_children(&snapshot, entry, start, end, exclude);
+    let included = paragraphs_text(&view, &paragraphs[start..=end]);
+    let previous = span.prior.map_or_else(
+        || included.clone(),
+        |region| paragraphs_text(&view, &paragraphs[region.start_paragraph..=region.end_paragraph]),
+    );
+    let last_line = paragraph_text(&view, paragraphs[end]);
+    let mut children = option_children(&snapshot, entry, start, end, excluded_option(command, action));
     let options = children.len();
     let fields = field_children(package, entry, start, end)?;
     let field_count: usize = fields
@@ -285,16 +343,7 @@ pub fn preview_content_context(
         .map(|field| field["count"].as_u64().unwrap_or(0) as usize)
         .sum();
     children.extend(fields);
-    let tables = paragraphs[start..=end]
-        .iter()
-        .map(|id| {
-            view.descendants(*id)
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|child| is_hp(&view, *child, "tbl"))
-                .count()
-        })
-        .sum::<usize>();
+    let tables = table_count(&view, &paragraphs[start..=end]);
     let counts = json!({"paragraphs": end - start + 1, "fields": field_count, "options": options, "tables": tables});
     let detail = format!(
         "\n\n포함: 문단 {}개 · 필드 {}곳 · 하위 영역 {}곳",
@@ -302,15 +351,7 @@ pub fn preview_content_context(
         field_count,
         options
     );
-    let expanded = matches!(action, "create_slot" | "create_option")
-        && (command
-            .get("start")
-            .and_then(Value::as_i64)
-            .is_some_and(|at| at > 0)
-            || command
-                .get("end")
-                .and_then(Value::as_u64)
-                .is_some_and(|at| (at as usize) < lines.last().unwrap().chars().count()));
+    let expanded = selection_expanded(command, action, &last_line);
     let after = if action == "delete" {
         "본문과 의미가 삭제됩니다.".into()
     } else {
