@@ -158,12 +158,14 @@ impl TutorialWorkspace {
         self.seed(lesson_id, "", "")
     }
 
-    pub fn seed(
+    /// Confirms `lesson_id`, the derived-data shape, and that every bundled original
+    /// asset is still present, before `seed` reserves a home and starts copying.
+    fn validate_seed_request(
         &self,
         lesson_id: &str,
         derived: &str,
         derived_name: &str,
-    ) -> io::Result<SeededLesson> {
+    ) -> io::Result<()> {
         if crate::tutorial_lessons::lesson(lesson_id).is_none() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -202,12 +204,15 @@ impl TutorialWorkspace {
                 format!("동봉 예제를 찾을 수 없습니다: {}", missing.join(", ")),
             ));
         }
-        let lesson_root = self.root.join("lessons").join(lesson_id);
-        fs::create_dir_all(&lesson_root)?;
-        let (batch, home) = (0..8)
+        Ok(())
+    }
+    /// Retries a fresh random batch id until an unused lesson-home directory is
+    /// reserved, or gives up after 8 collisions.
+    fn reserve_lesson_home(lesson_root: &Path) -> io::Result<(String, PathBuf)> {
+        (0..8)
             .find_map(|_| {
                 let batch = Uuid::new_v4().simple().to_string()[..10].to_owned();
-                match reserve_home(&lesson_root, &batch) {
+                match reserve_home(lesson_root, &batch) {
                     Ok(home) => Some(Ok((batch, home))),
                     Err(error) if error.kind() == io::ErrorKind::AlreadyExists => None,
                     Err(error) => Some(Err(error)),
@@ -218,7 +223,18 @@ impl TutorialWorkspace {
                     io::ErrorKind::AlreadyExists,
                     "연습 회차 홈을 만들 수 없습니다.",
                 ))
-            })?;
+            })
+    }
+    pub fn seed(
+        &self,
+        lesson_id: &str,
+        derived: &str,
+        derived_name: &str,
+    ) -> io::Result<SeededLesson> {
+        self.validate_seed_request(lesson_id, derived, derived_name)?;
+        let lesson_root = self.root.join("lessons").join(lesson_id);
+        fs::create_dir_all(&lesson_root)?;
+        let (batch, home) = Self::reserve_lesson_home(&lesson_root)?;
         let placed: io::Result<Vec<PracticeEntry>> = ORIGINALS
             .iter()
             .map(|name| self.place(&home, name, name, &batch))

@@ -9,26 +9,34 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 
 impl MountedData {
-    pub fn seed_presets(&mut self, registry: &DatasetPoolRegistry) -> Result<(), JobDataError> {
-        let key = if !self.pool_key.is_empty() {
-            self.pool_key.clone()
-        } else if self.path.is_empty() {
-            String::new()
+    /// Resolves the dataset pool key already saved on this mount, or finds it by
+    /// identity from `path`/`sheet` when none is saved yet. Keeps the existing
+    /// "no key" vs "damaged registry entry" distinction: either collapses to an empty
+    /// key (so the caller clears any stale preset selection) while an unexpected
+    /// registry failure still surfaces as an error.
+    fn resolve_pool_key(&self, registry: &DatasetPoolRegistry) -> Result<String, JobDataError> {
+        if !self.pool_key.is_empty() {
+            return Ok(self.pool_key.clone());
+        }
+        if self.path.is_empty() {
+            return Ok(String::new());
+        }
+        let identity = if self.kind == "pclm" {
+            pclm_identity(&self.path, &self.sheet)
         } else {
-            let identity = if self.kind == "pclm" {
-                pclm_identity(&self.path, &self.sheet)
-            } else {
-                excel_identity(&self.path, Some(&self.sheet))
-            };
-            match registry.find_identity_raw(&identity) {
-                Ok(Some((key, _))) => key,
-                Ok(None) | Err(PoolError::Codec(_) | PoolError::Invalid(_)) => String::new(),
-                Err(PoolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
-                    String::new()
-                }
-                Err(error) => return Err(fail(error.to_string())),
-            }
+            excel_identity(&self.path, Some(&self.sheet))
         };
+        match registry.find_identity_raw(&identity) {
+            Ok(Some((key, _))) => Ok(key),
+            Ok(None) | Err(PoolError::Codec(_) | PoolError::Invalid(_)) => Ok(String::new()),
+            Err(PoolError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(String::new())
+            }
+            Err(error) => Err(fail(error.to_string())),
+        }
+    }
+    pub fn seed_presets(&mut self, registry: &DatasetPoolRegistry) -> Result<(), JobDataError> {
+        let key = self.resolve_pool_key(registry)?;
         if key.is_empty() {
             self.preset_key.clear();
             return Ok(());

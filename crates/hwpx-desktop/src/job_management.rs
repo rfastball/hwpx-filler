@@ -11,6 +11,17 @@ fn confirmed_missing(result: Result<Job, StoreError>) -> bool {
     matches!(result, Err(StoreError::Io(failure)) if failure.kind() == io::ErrorKind::NotFound)
 }
 
+/// Prefixes the newly re-mounted data's label with its source kind, matching the
+/// wording `remount_data` already showed the user per source.
+fn remounted_data_label(mounted: &MountedData) -> String {
+    match mounted.source_kind.as_str() {
+        "file" => format!("파일: {}", mounted.label),
+        "pool" => format!("등록 데이터: {}", mounted.label),
+        "pclm" => format!("계약 목록: {}", mounted.label),
+        _ => mounted.label.clone(),
+    }
+}
+
 impl JobController {
     pub fn relink_template(
         &self,
@@ -76,6 +87,27 @@ impl JobController {
         Ok(Value::Null)
     }
 
+    /// Re-mounts a `pclm` data source: rebinds it under the same mutation that clears
+    /// the last-failed state and restores the active selection, then remembers it as
+    /// the current data source and pushes a snapshot, in the same order as before.
+    fn remount_pclm_data(&self, data: &MountedData) -> Result<(), JobControllerError> {
+        let mounted = self
+            .generation
+            .with_mutation("데이터를 바꾸세요", || {
+                let mut state = self.state()?;
+                state
+                    .data
+                    .mount_binding(&self.pool, &data.path, &data.sheet, data.header_row, "pclm")
+                    .map_err(error)?;
+                state.last_failed.clear();
+                self.restore_active_after_data_change(&mut state);
+                Ok(())
+            })
+            .map_err(error)?;
+        let result = mounted.and_then(|()| self.remember_current_data_source());
+        let pushed = self.push_snapshot();
+        result.and(pushed)
+    }
     pub fn remount_data(&self, confirm: bool) -> Result<Value, JobControllerError> {
         let _session = self.session()?;
         let data = self.data()?;
@@ -96,42 +128,13 @@ impl JobController {
                 (!data.sheet.is_empty()).then_some(data.sheet.as_str()),
                 usize::try_from(data.header_row).map_err(error)?,
             ),
-            "pclm" => {
-                let mounted = self
-                    .generation
-                    .with_mutation("데이터를 바꾸세요", || {
-                        let mut state = self.state()?;
-                        state
-                            .data
-                            .mount_binding(
-                                &self.pool,
-                                &data.path,
-                                &data.sheet,
-                                data.header_row,
-                                "pclm",
-                            )
-                            .map_err(error)?;
-                        state.last_failed.clear();
-                        self.restore_active_after_data_change(&mut state);
-                        Ok(())
-                    })
-                    .map_err(error)?;
-                let result = mounted.and_then(|()| self.remember_current_data_source());
-                let pushed = self.push_snapshot();
-                result.and(pushed)
-            }
+            "pclm" => self.remount_pclm_data(&data),
             _ => Err(error("알 수 없는 데이터 소스 종류")),
         };
         match result {
             Ok(()) => {
                 let mounted = self.data()?;
-                let label = match mounted.source_kind.as_str() {
-                    "file" => format!("파일: {}", mounted.label),
-                    "pool" => format!("등록 데이터: {}", mounted.label),
-                    "pclm" => format!("계약 목록: {}", mounted.label),
-                    _ => mounted.label,
-                };
-                Ok(json!({"ok":true,"label":label}))
+                Ok(json!({"ok":true,"label":remounted_data_label(&mounted)}))
             }
             Err(failure) => {
                 Ok(json!({"ok":false,"error":format!("데이터를 다시 읽지 못했습니다. {failure}")}))

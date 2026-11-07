@@ -47,6 +47,30 @@ pub struct RuntimeBuilder {
     pub alert: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
+/// The locations/registries/workbench that `build_inner` assembles before any of the
+/// screen controllers (which depend on them, and on each other).
+struct CoreStores {
+    locations: Locations,
+    settings: Arc<ShellSettings>,
+    templates: Arc<TemplateRoot>,
+    jobs: Arc<JobRegistry>,
+    datasets: Arc<DatasetPoolRegistry>,
+    presets: Arc<PresetRegistry>,
+    template_files: Arc<TemplateFileStore>,
+    change: Arc<TemplateChangeCoordinator>,
+    workbench: Arc<WorkbenchController>,
+}
+
+/// The screen controllers `build_inner` assembles on top of `CoreStores`.
+struct Controllers {
+    job: Arc<JobController>,
+    editor: Arc<EditorController>,
+    authoring: Arc<AuthoringController>,
+    template: Arc<TemplateController>,
+    library: Arc<LibraryController>,
+    pool: Arc<PoolController>,
+}
+
 impl RuntimeBuilder {
     pub fn build(
         &self,
@@ -67,13 +91,13 @@ impl RuntimeBuilder {
         self.build_inner(home, push, token, true)
     }
 
-    fn build_inner(
+    /// Builds the locations/registries/workbench that every screen controller depends
+    /// on, in the exact construction order `build_inner` used to run inline.
+    fn build_core_stores(
         &self,
         home: Option<&Path>,
         push: PushGate,
-        token: u64,
-        registered_data: bool,
-    ) -> Result<WorkspaceGraph<RuntimeResources>, GraphError> {
+    ) -> Result<CoreStores, GraphError> {
         let mut locations = self.locations.clone();
         locations.activate_workspace(home.map(Path::to_path_buf));
         let settings = Arc::new(ShellSettings::new(locations.global_settings(), {
@@ -126,19 +150,41 @@ impl RuntimeBuilder {
         let workbench = Arc::new(WorkbenchController::new(
             jobs.clone(),
             workspace_settings,
-            push.clone(),
+            push,
             Some(selected),
             Some(materialization_port(
                 locations.template_authority(),
                 jobs.clone(),
             )),
         )?);
+        Ok(CoreStores {
+            locations,
+            settings,
+            templates,
+            jobs,
+            datasets,
+            presets,
+            template_files,
+            change,
+            workbench,
+        })
+    }
+
+    /// Builds the screen controllers on top of `stores`, in the exact construction
+    /// order `build_inner` used to run inline.
+    fn build_controllers(
+        &self,
+        home: Option<&Path>,
+        push: PushGate,
+        registered_data: bool,
+        stores: &CoreStores,
+    ) -> Result<Controllers, GraphError> {
         let job = JobController::new(
-            jobs.clone(),
-            datasets.clone(),
-            change.clone(),
+            stores.jobs.clone(),
+            stores.datasets.clone(),
+            stores.change.clone(),
             self.generation.clone(),
-            locations.workspace_settings(),
+            stores.locations.workspace_settings(),
             self.alert.clone(),
         )
         .with_push_gate(push.clone())
@@ -152,12 +198,12 @@ impl RuntimeBuilder {
             }
         })
         .with_workbench_open({
-            let workbench = workbench.clone();
+            let workbench = stores.workbench.clone();
             move |job, rows| workbench.open(job, rows)
         });
         let job = if registered_data && home.is_none() {
             job.with_registered_data({
-                let datasets = datasets.clone();
+                let datasets = stores.datasets.clone();
                 move || crate::registered_contract_data::discover_registered_data(&datasets)
             })
         } else {
@@ -166,9 +212,9 @@ impl RuntimeBuilder {
         let job = Arc::new(job);
         let editor = Arc::new(
             EditorController::new(
-                jobs.clone(),
-                templates.clone(),
-                datasets.clone(),
+                stores.jobs.clone(),
+                stores.templates.clone(),
+                stores.datasets.clone(),
                 push.clone(),
             )?
             .with_generation_gate(self.generation.clone())
@@ -190,21 +236,21 @@ impl RuntimeBuilder {
             }),
         );
         let authoring = Arc::new(
-            AuthoringController::new(&locations, jobs.clone(), push.clone())
-                .with_proposal_data(datasets.clone(), {
+            AuthoringController::new(&stores.locations, stores.jobs.clone(), push.clone())
+                .with_proposal_data(stores.datasets.clone(), {
                     let job = job.clone();
                     move || job.current_pool_source().map_err(|error| error.to_string())
                 })
-                .with_template_change(change)
+                .with_template_change(stores.change.clone())
                 .with_mutation_sink({
                     let editor = editor.clone();
                     move |kind, path| editor.reconcile_template_mutation(kind, path)
                 }),
         );
         let template = Arc::new(TemplateController::new_live(
-            templates.clone(),
+            stores.templates.clone(),
             Arc::new(crate::template_groups::GroupSettings::new(
-                locations.workspace_settings(),
+                stores.locations.workspace_settings(),
                 {
                     let alert = self.alert.clone();
                     move |message| alert(message)
@@ -222,12 +268,12 @@ impl RuntimeBuilder {
         ));
         let library = Arc::new(LibraryController::new(
             LibraryStores {
-                jobs: jobs.clone(),
-                datasets: datasets.clone(),
-                presets,
-                template_files: template_files.clone(),
+                jobs: stores.jobs.clone(),
+                datasets: stores.datasets.clone(),
+                presets: stores.presets.clone(),
+                template_files: stores.template_files.clone(),
             },
-            locations.clone(),
+            stores.locations.clone(),
             false,
             push.clone(),
             Arc::new({
@@ -239,35 +285,54 @@ impl RuntimeBuilder {
                 move || generation.is_active()
             }),
         ));
-        let pool = Arc::new(PoolController::new(datasets.clone(), push.clone()));
+        let pool = Arc::new(PoolController::new(stores.datasets.clone(), push));
+        Ok(Controllers {
+            job,
+            editor,
+            authoring,
+            template,
+            library,
+            pool,
+        })
+    }
+
+    fn build_inner(
+        &self,
+        home: Option<&Path>,
+        push: PushGate,
+        token: u64,
+        registered_data: bool,
+    ) -> Result<WorkspaceGraph<RuntimeResources>, GraphError> {
+        let stores = self.build_core_stores(home, push.clone())?;
+        let controllers = self.build_controllers(home, push.clone(), registered_data, &stores)?;
         self.onboarding.bind_push(push, home.is_some());
-        let controllers: Vec<(String, Arc<dyn ScreenController>)> = vec![
-            ("authoring".into(), authoring.clone()),
-            ("library".into(), library.clone()),
-            ("editor".into(), editor.clone()),
-            ("job".into(), job.clone()),
-            ("tpl".into(), template.clone()),
-            ("pool".into(), pool.clone()),
-            ("workbench".into(), workbench.clone()),
+        let controller_list: Vec<(String, Arc<dyn ScreenController>)> = vec![
+            ("authoring".into(), controllers.authoring.clone()),
+            ("library".into(), controllers.library.clone()),
+            ("editor".into(), controllers.editor.clone()),
+            ("job".into(), controllers.job.clone()),
+            ("tpl".into(), controllers.template.clone()),
+            ("pool".into(), controllers.pool.clone()),
+            ("workbench".into(), stores.workbench.clone()),
             ("tutorial".into(), self.onboarding.clone()),
         ];
         Ok(WorkspaceGraph::new(
             home.map(Path::to_path_buf),
-            controllers,
+            controller_list,
             RuntimeResources {
-                jobs,
-                datasets,
+                jobs: stores.jobs,
+                datasets: stores.datasets,
                 generation: self.generation.clone(),
-                settings,
-                templates,
-                template_files,
-                template,
-                authoring,
-                library,
-                editor,
-                job,
-                pool,
-                workbench,
+                settings: stores.settings,
+                templates: stores.templates,
+                template_files: stores.template_files,
+                template: controllers.template,
+                authoring: controllers.authoring,
+                library: controllers.library,
+                editor: controllers.editor,
+                job: controllers.job,
+                pool: controllers.pool,
+                workbench: stores.workbench,
             },
             token,
         ))

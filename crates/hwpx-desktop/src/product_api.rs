@@ -352,6 +352,43 @@ fn names(value: Option<&Value>) -> Option<Vec<&str>> {
     let values = value?.as_array()?;
     values.iter().map(Value::as_str).collect()
 }
+/// `applied` named every preference it touched, so figures out which `expected`
+/// entries it covered — unless `delivery_ok` is false while `applied` claims full
+/// coverage (a contradiction), in which case nothing is attributed and all of
+/// `expected` is reported failed instead, with a note explaining why. Returns
+/// `(applied, failed, attributed, notes)`.
+fn applied_name_outcome(
+    delivery_ok: bool,
+    expected: &[&'static str],
+    names: &[&str],
+) -> (Vec<&'static str>, Vec<&'static str>, bool, Vec<String>) {
+    let applied: Vec<_> = expected
+        .iter()
+        .copied()
+        .filter(|name| names.contains(name))
+        .collect();
+    let failed: Vec<_> = expected
+        .iter()
+        .copied()
+        .filter(|name| !applied.contains(name))
+        .collect();
+    let contradiction = failed.is_empty() && !delivery_ok;
+    (
+        if contradiction { vec![] } else { applied },
+        if contradiction {
+            expected.to_vec()
+        } else {
+            failed
+        },
+        !contradiction,
+        if contradiction {
+            vec!["applied 와 ok 가 모순".into()]
+        } else {
+            vec![]
+        },
+    )
+}
+
 pub fn preferences_outcome(delivery: DeliveryOutcome, theme_sent: bool) -> PreferencesOutcome {
     let mut expected = vec!["personalization"];
     if theme_sent {
@@ -372,28 +409,15 @@ pub fn preferences_outcome(delivery: DeliveryOutcome, theme_sent: bool) -> Prefe
         other => names(other),
     };
     if let Some(names) = applied_names {
-        let applied: Vec<_> = expected
-            .iter()
-            .copied()
-            .filter(|name| names.contains(name))
-            .collect();
-        let failed: Vec<_> = expected
-            .iter()
-            .copied()
-            .filter(|name| !applied.contains(name))
-            .collect();
-        let contradiction = failed.is_empty() && !delivery.ok;
+        let (applied, failed, attributed, notes) =
+            applied_name_outcome(delivery.ok, &expected, &names);
         return PreferencesOutcome {
             delivery,
-            expected: expected.clone(),
-            applied: if contradiction { vec![] } else { applied },
-            failed: if contradiction { expected } else { failed },
-            attributed: !contradiction,
-            notes: if contradiction {
-                vec!["applied 와 ok 가 모순".into()]
-            } else {
-                vec![]
-            },
+            expected,
+            applied,
+            failed,
+            attributed,
+            notes,
         };
     }
     let missing = delivery

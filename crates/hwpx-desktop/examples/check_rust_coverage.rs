@@ -116,6 +116,16 @@ fn relative(root: &Path, path: &Path) -> Result<String, Box<dyn Error>> {
         .replace('\\', "/"))
 }
 
+fn floor_is_invalid(floor: &Floor) -> bool {
+    floor.rust_files.is_empty()
+        || !floor.line.is_finite()
+        || !floor.branch.is_finite()
+        || floor.line <= 0.0
+        || floor.branch <= 0.0
+        || floor.line > 100.0
+        || floor.branch > 100.0
+}
+
 fn assignments(
     policy: &Policy,
     sources: &BTreeSet<String>,
@@ -125,14 +135,7 @@ fn assignments(
     }
     let mut assigned = BTreeMap::new();
     for (name, floor) in &policy.packages {
-        if floor.rust_files.is_empty()
-            || !floor.line.is_finite()
-            || !floor.branch.is_finite()
-            || floor.line <= 0.0
-            || floor.branch <= 0.0
-            || floor.line > 100.0
-            || floor.branch > 100.0
-        {
+        if floor_is_invalid(floor) {
             return Err(format!("{name}: missing or invalid package floor").into());
         }
         for file in &floor.rust_files {
@@ -205,6 +208,27 @@ fn measured_counts(
     Ok(result)
 }
 
+/// Confirms a file with no LLVM record is still only module exports or data declarations.
+/// Returns `Ok(None)` to keep skipping it, or an error once it has gained executable code.
+fn check_non_executable_source(
+    root: &Path,
+    name: &str,
+    file: &str,
+) -> Result<Option<Counts>, Box<dyn Error>> {
+    let source = fs::read_to_string(root.join(file))?;
+    if source.contains("fn ")
+        || source.contains("impl ")
+        || source.contains("macro_rules!")
+        || source.contains("static ")
+        || source.contains("const ")
+    {
+        return Err(
+            format!("{name}: {file} acquired executable code without LLVM evidence").into(),
+        );
+    }
+    Ok(None)
+}
+
 fn evaluate<'a>(
     policy: &'a Policy,
     root: &Path,
@@ -222,23 +246,14 @@ fn evaluate<'a>(
         };
         for file in &floor.rust_files {
             let count = match measured.remove(file) {
-                Some(count) => count,
+                Some(count) => Some(count),
                 None if NON_EXECUTABLE_SOURCE.contains(&file.as_str()) => {
-                    let source = fs::read_to_string(root.join(file))?;
-                    if source.contains("fn ")
-                        || source.contains("impl ")
-                        || source.contains("macro_rules!")
-                        || source.contains("static ")
-                        || source.contains("const ")
-                    {
-                        return Err(format!(
-                            "{name}: {file} acquired executable code without LLVM evidence"
-                        )
-                        .into());
-                    }
-                    continue;
+                    check_non_executable_source(root, name, file)?
                 }
                 None => return Err(format!("{name}: no LLVM evidence for {file}").into()),
+            };
+            let Some(count) = count else {
+                continue;
             };
             row.total.add(count);
             row.files.push((file, count));

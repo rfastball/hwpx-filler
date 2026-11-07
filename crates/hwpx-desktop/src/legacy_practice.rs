@@ -244,15 +244,13 @@ impl LegacyPractice {
         self.cleanup_locked_with(token, |path| fs::remove_file(path))
     }
 
-    fn cleanup_locked_with(
+    /// Validates each `Action::Unlink` entry still matches its on-disk state, then
+    /// collects the non-`Keep` entries' `(path, unlink)` pairs in manifest order.
+    fn plan_cleanup_targets<'a>(
         &self,
-        token: &str,
-        mut remove: impl FnMut(&Path) -> io::Result<()>,
-    ) -> Result<Value, CleanupError> {
-        let (preview, manifest, actions) = self.scan()?;
-        if preview["token"] != token {
-            return Err(CHANGED.into());
-        }
+        manifest: &'a Value,
+        actions: Vec<Action>,
+    ) -> Result<Vec<(&'a str, bool)>, CleanupError> {
         let mut targets = Vec::new();
         for (entry, action) in manifest["entries"]
             .as_array()
@@ -270,6 +268,17 @@ impl LegacyPractice {
                 ));
             }
         }
+        Ok(targets)
+    }
+    /// Deletes each `unlink` target in order (stopping at the first delete failure)
+    /// and, if anything was removed, persists the retained manifest before surfacing
+    /// that failure — preserving the original delete-then-persist-then-fail order.
+    fn delete_and_persist(
+        &self,
+        manifest: &Value,
+        targets: Vec<(&str, bool)>,
+        mut remove: impl FnMut(&Path) -> io::Result<()>,
+    ) -> Result<Vec<String>, CleanupError> {
         let mut removed = Vec::new();
         let mut failure = None;
         for (path, unlink) in targets {
@@ -301,6 +310,19 @@ impl LegacyPractice {
         } else if let Some(error) = failure {
             return Err(error.into());
         }
+        Ok(removed)
+    }
+    fn cleanup_locked_with(
+        &self,
+        token: &str,
+        remove: impl FnMut(&Path) -> io::Result<()>,
+    ) -> Result<Value, CleanupError> {
+        let (preview, manifest, actions) = self.scan()?;
+        if preview["token"] != token {
+            return Err(CHANGED.into());
+        }
+        let targets = self.plan_cleanup_targets(&manifest, actions)?;
+        let removed = self.delete_and_persist(&manifest, targets, remove)?;
         Ok(json!({"removed":removed.len(),
             "preserved":preview["rows"].as_array().expect("rows array").len()-removed.len()}))
     }
