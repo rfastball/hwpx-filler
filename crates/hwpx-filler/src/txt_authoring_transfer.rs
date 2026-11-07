@@ -68,41 +68,64 @@ fn field_plain(text: &str) -> String {
 }
 /// Capture one exact TXT meaning unit from the caller's immutable snapshot.
 pub fn capture_txt(text: &str, selector: &Value) -> Result<Value, TxtTransferError> {
-    let kind = selector["kind"].as_str().unwrap_or("");
+    match selector["kind"].as_str().unwrap_or("") {
+        "field" => capture_field(text, selector),
+        "text" => capture_text(text, selector),
+        kind @ ("slot" | "option") => capture_region(text, selector, kind),
+        _ => Err(fail("복사할 의미 요소를 고르세요.")),
+    }
+}
+fn capture_field(text: &str, selector: &Value) -> Result<Value, TxtTransferError> {
+    let position = offset(text, selector.get("start"))?;
+    let found = iter_field_token_matches(text)
+        .into_iter()
+        .find(|found| {
+            let start = chars(&text[..found.start]);
+            let end = chars(&text[..found.end]);
+            start <= position && position < end
+        })
+        .ok_or_else(|| fail("복사할 필드 사용 위치를 고르세요."))?;
+    let name = python_trim(found.body);
+    Ok(json!({"media":"txt","kind":"field","name":name,"text":found.source,"plain":name}))
+}
+fn capture_text(text: &str, selector: &Value) -> Result<Value, TxtTransferError> {
+    let start = offset(text, selector.get("start"))?;
+    let end = offset(text, selector.get("end"))?;
+    if start >= end {
+        return Err(fail("복사할 본문을 고르세요."));
+    }
+    if scan_text_token_spans(text, None)
+        .iter()
+        .any(|span| span.start < end && start < span.end)
+    {
+        return Err(fail("의미를 포함한 범위는 필드·항목·선택으로 복사하세요."));
+    }
+    let snippet = part(text, start, end);
+    Ok(json!({"media":"txt","kind":"text","text":snippet,"plain":snippet}))
+}
+fn has_diagnostics(detail: &Value) -> bool {
+    detail["diagnostics"]
+        .as_array()
+        .is_some_and(|rows| !rows.is_empty())
+}
+/// The region text without its structure marker lines and with fields as plain names.
+fn region_plain(snippet: &str) -> String {
+    let plain = splitlines(snippet)
+        .into_iter()
+        .filter(|line| {
+            let row = line
+                .content
+                .trim_start_matches(crate::fields::python_whitespace);
+            !["{{#항목", "{{#선택", "{{/항목", "{{/선택"]
+                .iter()
+                .any(|prefix| row.starts_with(prefix))
+        })
+        .map(|line| line.whole)
+        .collect::<String>();
+    field_plain(&plain)
+}
+fn capture_region(text: &str, selector: &Value, kind: &str) -> Result<Value, TxtTransferError> {
     let detail = analyze(text);
-    if kind == "field" {
-        let position = offset(text, selector.get("start"))?;
-        let found = iter_field_token_matches(text)
-            .into_iter()
-            .find(|found| {
-                let start = chars(&text[..found.start]);
-                let end = chars(&text[..found.end]);
-                start <= position && position < end
-            })
-            .ok_or_else(|| fail("복사할 필드 사용 위치를 고르세요."))?;
-        let name = python_trim(found.body);
-        return Ok(
-            json!({"media":"txt","kind":"field","name":name,"text":found.source,"plain":name}),
-        );
-    }
-    if kind == "text" {
-        let start = offset(text, selector.get("start"))?;
-        let end = offset(text, selector.get("end"))?;
-        if start >= end {
-            return Err(fail("복사할 본문을 고르세요."));
-        }
-        if scan_text_token_spans(text, None)
-            .iter()
-            .any(|span| span.start < end && start < span.end)
-        {
-            return Err(fail("의미를 포함한 범위는 필드·항목·선택으로 복사하세요."));
-        }
-        let snippet = part(text, start, end);
-        return Ok(json!({"media":"txt","kind":"text","text":snippet,"plain":snippet}));
-    }
-    if !matches!(kind, "slot" | "option") {
-        return Err(fail("복사할 의미 요소를 고르세요."));
-    }
     let slot = detail["slots"]
         .as_array()
         .into_iter()
@@ -122,34 +145,112 @@ pub fn capture_txt(text: &str, selector: &Value) -> Result<Value, TxtTransferErr
     let location = item
         .and_then(|item| item.get("location"))
         .filter(|location| !location.is_null());
-    if location.is_none()
-        || detail["diagnostics"]
-            .as_array()
-            .is_some_and(|rows| !rows.is_empty())
-    {
+    let Some(location) = location.filter(|_| !has_diagnostics(&detail)) else {
         return Err(fail("구조 오류가 있어 의미 영역을 복사할 수 없습니다."));
-    }
-    let location = location.unwrap();
+    };
     let start = offset(text, location.get("start"))?;
     let end = offset(text, location.get("end"))?;
     let snippet = part(text, start, end);
-    let plain = splitlines(snippet)
-        .into_iter()
-        .filter(|line| {
-            let row = line
-                .content
-                .trim_start_matches(crate::fields::python_whitespace);
-            !["{{#항목", "{{#선택", "{{/항목", "{{/선택"]
-                .iter()
-                .any(|prefix| row.starts_with(prefix))
-        })
-        .map(|line| line.whole)
-        .collect::<String>();
-    let plain = field_plain(&plain);
     Ok(
         json!({"media":"txt","kind":kind,"id":if kind=="slot"{&selector["slot_id"]}else{&selector["option_id"]},
-        "label":item.and_then(|item|item["label"].as_str()).unwrap_or(""),"text":snippet,"plain":plain}),
+        "label":item.and_then(|item|item["label"].as_str()).unwrap_or(""),"text":snippet,"plain":region_plain(snippet)}),
     )
+}
+
+/// Whether pasting fields would silently join same-named fields without consent.
+fn unconfirmed_field_link(snippet: &str, before: &Value, destination: &Value) -> bool {
+    let names = iter_field_token_matches(snippet)
+        .into_iter()
+        .map(|found| python_trim(found.body).to_owned())
+        .collect::<HashSet<_>>();
+    let existing = before["fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|row| row["name"].as_str())
+        .collect::<HashSet<_>>();
+    names.iter().any(|name| existing.contains(name.as_str()))
+        && destination.get("link_existing") != Some(&Value::Bool(true))
+}
+fn identifier_taken(kind: &str, identifier: &str, before: &Value, destination: &Value) -> bool {
+    let slots = || before["slots"].as_array().into_iter().flatten();
+    if kind == "slot" {
+        return slots().any(|slot| slot["id"] == identifier);
+    }
+    let owner = slots().find(|slot| slot["id"] == destination["slot_id"]);
+    owner.is_none_or(|owner| {
+        owner["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|option| option["id"] == identifier)
+    })
+}
+/// The identifier a pasted region takes: the new one given, else the captured one.
+fn region_identifier<'a>(
+    captured: &'a Value,
+    destination: &'a Value,
+    kind: &str,
+    before: &Value,
+) -> Result<&'a str, TxtTransferError> {
+    let identifier = destination
+        .get("new_id")
+        .filter(|value| python_truthy(value))
+        .or_else(|| captured.get("id"));
+    let Some(identifier) = identifier
+        .and_then(Value::as_str)
+        .filter(|value| !python_trim(value).is_empty())
+    else {
+        return Err(fail("새 식별자를 입력하세요."));
+    };
+    if !identifier_taken(kind, identifier, before, destination) {
+        return Ok(identifier);
+    }
+    Err(fail(if kind == "slot" {
+        "같은 항목 식별자가 있습니다. 새 식별자를 입력하세요."
+    } else {
+        "상위 항목이나 선택 식별자를 확인하세요."
+    }))
+}
+/// The captured region re-opened under its pasted identifier.
+fn region_paste_snippet(
+    text: &str,
+    captured: &Value,
+    destination: &Value,
+    paste: (&str, &Value, usize, usize),
+    snippet: &str,
+) -> Result<String, TxtTransferError> {
+    let (kind, before, start, end) = paste;
+    if has_diagnostics(before) {
+        return Err(fail("대상 문서의 구조 오류를 먼저 수정하세요."));
+    }
+    if start != end || (start != 0 && !matches!(text.chars().nth(start - 1), Some('\r' | '\n'))) {
+        return Err(fail("의미 영역은 줄 시작 위치에 붙여넣으세요."));
+    }
+    let identifier = region_identifier(captured, destination, kind, before)?;
+    let lines = splitlines(snippet);
+    let Some(first) = lines.first() else {
+        return Err(fail("복사한 의미 데이터가 올바르지 않습니다."));
+    };
+    let eol = if first.whole.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let opening = begin_marker_text(
+        kind,
+        identifier,
+        captured["label"].as_str().filter(|value| !value.is_empty()),
+    )
+    .map_err(|error| fail(error.to_string()))?;
+    Ok(format!(
+        "{opening}{eol}{}",
+        lines
+            .iter()
+            .skip(1)
+            .map(|line| line.whole)
+            .collect::<String>()
+    ))
 }
 
 /// Paste into a disposable TXT snapshot; failures leave the input unchanged.
@@ -180,96 +281,15 @@ pub fn paste_txt(
     .ok_or_else(|| fail("복사한 의미 데이터가 올바르지 않습니다."))?;
     let mut snippet = python_str(raw);
     let before = analyze(text);
-    if with_meaning {
-        let names = iter_field_token_matches(&snippet)
-            .into_iter()
-            .map(|found| python_trim(found.body).to_owned())
-            .collect::<HashSet<_>>();
-        let existing = before["fields"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|row| row["name"].as_str())
-            .collect::<HashSet<_>>();
-        if names.iter().any(|name| existing.contains(name.as_str()))
-            && destination.get("link_existing") != Some(&Value::Bool(true))
-        {
-            return Err(fail(
-                "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요.",
-            ));
-        }
+    if with_meaning && unconfirmed_field_link(&snippet, &before, destination) {
+        return Err(fail(
+            "같은 이름의 필드가 있습니다. 기존 필드 연결을 확인하세요.",
+        ));
     }
-    if with_meaning && matches!(kind, "slot" | "option") {
-        if before["diagnostics"]
-            .as_array()
-            .is_some_and(|rows| !rows.is_empty())
-        {
-            return Err(fail("대상 문서의 구조 오류를 먼저 수정하세요."));
-        }
-        if start != end || (start != 0 && !matches!(text.chars().nth(start - 1), Some('\r' | '\n')))
-        {
-            return Err(fail("의미 영역은 줄 시작 위치에 붙여넣으세요."));
-        }
-        let identifier = destination
-            .get("new_id")
-            .filter(|value| python_truthy(value))
-            .or_else(|| captured.get("id"));
-        let Some(identifier) = identifier
-            .and_then(Value::as_str)
-            .filter(|value| !python_trim(value).is_empty())
-        else {
-            return Err(fail("새 식별자를 입력하세요."));
-        };
-        if kind == "slot"
-            && before["slots"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .any(|slot| slot["id"] == identifier)
-        {
-            return Err(fail("같은 항목 식별자가 있습니다. 새 식별자를 입력하세요."));
-        }
-        if kind == "option" {
-            let owner = before["slots"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|slot| slot["id"] == destination["slot_id"]);
-            if owner.is_none()
-                || owner.is_some_and(|owner| {
-                    owner["options"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .any(|option| option["id"] == identifier)
-                })
-            {
-                return Err(fail("상위 항목이나 선택 식별자를 확인하세요."));
-            }
-        }
-        let lines = splitlines(&snippet);
-        let Some(first) = lines.first() else {
-            return Err(fail("복사한 의미 데이터가 올바르지 않습니다."));
-        };
-        let eol = if first.whole.contains("\r\n") {
-            "\r\n"
-        } else {
-            "\n"
-        };
-        let opening = begin_marker_text(
-            kind,
-            identifier,
-            captured["label"].as_str().filter(|value| !value.is_empty()),
-        )
-        .map_err(|error| fail(error.to_string()))?;
-        snippet = format!(
-            "{opening}{eol}{}",
-            lines
-                .iter()
-                .skip(1)
-                .map(|line| line.whole)
-                .collect::<String>()
-        );
+    let region = with_meaning && matches!(kind, "slot" | "option");
+    if region {
+        snippet =
+            region_paste_snippet(text, captured, destination, (kind, &before, start, end), &snippet)?;
     }
     let result = format!(
         "{}{}{}",
@@ -278,12 +298,7 @@ pub fn paste_txt(
         part(text, end, chars(text))
     );
     let after = analyze(&result);
-    if with_meaning
-        && matches!(kind, "slot" | "option")
-        && after["diagnostics"]
-            .as_array()
-            .is_some_and(|rows| !rows.is_empty())
-    {
+    if region && has_diagnostics(&after) {
         return Err(fail("이 위치에 붙여넣으면 항목·선택 구조가 깨집니다."));
     }
     let previous = part(text, start, end);
