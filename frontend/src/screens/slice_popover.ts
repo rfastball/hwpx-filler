@@ -18,7 +18,9 @@ import { createElement, useEffect, useLayoutEffect, useRef, useState } from "rea
 import type { ReactNode } from "react";
 
 import { builderPlacement } from "./data_zone.ts";
-import { icon } from "./icons.ts";
+import { SlicePopoverView } from "./slice_popover_view.ts";
+
+export { SlicePopoverView } from "./slice_popover_view.ts";
 
 export type Obj = Record<string, any>;
 type Inputs = Record<string, Record<string, string>>;
@@ -41,7 +43,7 @@ export type SlicePort = {
 /** 키보드로 범위를 넓히는 동안(Shift+화살표) 후보를 한 번만 묻는 대기 시간(ms). */
 const KEY_PROPOSE_DELAY = 300;
 
-function h(tag: any, props: Obj | null, ...children: ReactNode[]): ReactNode {
+export function h(tag: any, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
 }
 
@@ -152,67 +154,32 @@ export function SliceCell(props: {
 
 type Draft = { mode: string; edited: boolean };
 
-function SlicePopover(props: {
-  row: Obj; port: SlicePort; field: string; chipRef: { current: HTMLElement | null };
-}): ReactNode {
-  const { row, port, field, chipRef } = props;
-  const spec = (row.slice || null) as Obj | null;
-  const specKey = JSON.stringify(spec);
-  const groups = (row.slice_methods || []) as Obj[];
-  const methods = flatMethods(groups);
-  const currentMethod = spec ? methods.find((m) => m.mode === spec.mode) || null : null;
+/** 팝오버를 칩 곁에 붙인다 — 넘치면 칩을 가리지 않고 높이를 자른다(필터 빌더와 같은 배치
+ *  규칙). 칩에 **그린 뒤** 자리를 재므로 layout effect 하나, 그 자리가 늙는 사건(크기·스크롤·
+ *  창 크기)마다 다시 재는 effect 하나로 선다 — `SlicePopover`가 쥐던 둘을 훅으로 승격했을
+ *  뿐 의존성·순서·로직은 그대로다. */
+function usePopoverPlacement(
+  doc: Document,
+  rootRef: { current: HTMLDivElement | null },
+  anchorRef: { current: HTMLElement | null },
+): void {
+  function place(): void {
+    const root = rootRef.current;
+    const anchor = anchorRef.current;
+    const view = doc.defaultView;
+    if (!root || !anchor || !anchor.isConnected || !view) return;
+    const rect = anchor.getBoundingClientRect();
+    const plan = builderPlacement(rect, { width: view.innerWidth, height: view.innerHeight },
+      root.getBoundingClientRect().width);
+    const cap = `${Math.floor(plan.maxHeight)}px`;
+    if (root.style.maxHeight !== cap) root.style.maxHeight = cap;
+    const height = root.getBoundingClientRect().height;
+    const top = plan.placement === "below" ? rect.bottom + 4 : rect.top - 4 - height;
+    root.style.left = `${plan.left}px`;
+    root.style.top = `${top}px`;
+    root.dataset.placement = plan.placement === "below" ? "bottom" : "top";
+  }
 
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const valueRef = useRef<HTMLInputElement | null>(null);
-  const underRef = useRef<HTMLDivElement | null>(null);
-  const [sample, setSample] = useState<number | null>(null);
-  const [preview, setPreview] = useState<Obj | null>(null);
-  const [tags, setTags] = useState<Record<string, Obj>>({});
-  const [message, setMessage] = useState("");
-  const [pending, setPending] = useState<string | null>(null);
-  const [inputs, setInputs] = useState<Inputs>(() => seedInputs(spec));
-  const draftRef = useRef<Draft | null>(null);
-  const inputsRef = useRef(inputs);
-  inputsRef.current = inputs;
-  const composing = useRef(false);
-  const lastSelection = useRef("");
-  const keyTimer = useRef<number | null>(null);
-  const previewSeq = useRef(0);
-  const alive = useRef(true);
-  /* 표면은 그릴 때마다 새 문(`SlicePort`)을 건넨다 — 효과의 의존으로 두면 그릴 때마다 질의·
-     listener 가 다시 선다. 문서는 바뀌지 않으므로 효과는 `doc` 에 걸고, 문·동작은 최신 것을 ref 로
-     읽는다(한 번 붙인 listener 가 옛 명세로 커밋하지 않게). */
-  const doc = port.doc;
-  const portRef = useRef(port);
-  portRef.current = port;
-  const latest = useRef<{ close(focusChip: boolean): void; flush(): void; propose(): void }>({
-    close() {}, flush() {}, propose() {},
-  });
-
-  useEffect(() => () => {
-    alive.current = false;
-    if (keyTimer.current !== null) doc.defaultView?.clearTimeout(keyTimer.current);
-  }, [doc]);
-
-  // 명세가 바뀌면(커밋 성사·다른 표면의 편집) 그 방식의 칸을 새 값으로 채우고 보이기 선택을 푼다.
-  useEffect(() => {
-    setInputs((current) => ({ ...current, ...seedInputs(spec) }));
-    setPending(null);
-    draftRef.current = null;
-  }, [specKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 미리보기는 커밋된 명세·예시 행이 바뀔 때마다 다시 묻는다(늦게 온 옛 응답은 버린다).
-  useEffect(() => {
-    const seq = ++previewSeq.current;
-    portRef.current.preview(sample).then(
-      (result) => { if (alive.current && seq === previewSeq.current) setPreview(result); },
-      () => { /* 거절 문장은 표면이 알렸다 */ },
-    );
-  }, [specKey, sample]);
-
-  useEffect(() => { valueRef.current?.focus(); }, []);
-
-  // 칩에 **그린 뒤** 붙인다 — 넘치면 칩을 가리지 않고 높이를 자른다(필터 빌더와 같은 배치 규칙).
   useLayoutEffect(() => { place(); });
   useEffect(() => {
     const view = doc.defaultView;
@@ -234,9 +201,169 @@ function SlicePopover(props: {
       view.removeEventListener("resize", onResize);
     };
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** 지금 걸린 명세가 가리키는 방식 — 명세가 없으면 없다. */
+function resolveCurrentMethod(methods: Obj[], spec: Obj | null): Obj | null {
+  if (!spec) return null;
+  return methods.find((m) => m.mode === spec.mode) || null;
+}
+
+/** 입력 칸의 글자·보이기 선택·커밋 — `SlicePopover`가 쥐던 상태·동작 묶음을 훅으로
+ *  승격했을 뿐 로직·순서는 그대로다(최초 state·effect 선언 순서만 바뀐다 — 옮겨진
+ *  specKey 리셋 효과는 unmount 효과보다 먼저 서는데, unmount 효과의 설치부가 빈
+ *  본문이라 두 효과의 순서는 관찰 가능한 차이를 내지 않는다).
+ *
+ *  `choose`가 빈 칸으로 초점을 옮기는 자리를 찾느라 `rootRef`를 읽는다 — 팝오버 DOM이지만
+ *  이 훅이 함께 받는 이유는 그 조회가 입력 커밋 흐름 자체의 일부이기 때문이다(다른 자리로
+ *  빼면 같은 "빈 칸 채우기" 결정이 두 곳에 흩어진다). */
+function useSliceDraft(
+  spec: Obj | null, currentMethod: Obj | null, methods: Obj[],
+  send: (next: Obj | null) => void, rootRef: { current: HTMLDivElement | null },
+): {
+  inputs: Inputs; inputsRef: { current: Inputs }; pending: string | null;
+  setInputs: (updater: (current: Inputs) => Inputs) => void;
+  setPending: (mode: string | null) => void;
+  clearDraft(): void;
+  flushDraft(): void;
+  choose(method: Obj): void;
+  edit(mode: string, key: string, value: string): void;
+  focusInput(mode: string): void;
+  blurInput(mode: string): void;
+  composingRef: { current: boolean };
+} {
+  const specKey = JSON.stringify(spec);
+  const [pending, setPending] = useState<string | null>(null);
+  const [inputs, setInputs] = useState<Inputs>(() => seedInputs(spec));
+  const draftRef = useRef<Draft | null>(null);
+  const inputsRef = useRef(inputs);
+  inputsRef.current = inputs;
+  const composingRef = useRef(false);
+
+  // 명세가 바뀌면(커밋 성사·다른 표면의 편집) 그 방식의 칸을 새 값으로 채우고 보이기 선택을 푼다.
+  useEffect(() => {
+    setInputs((current) => ({ ...current, ...seedInputs(spec) }));
+    setPending(null);
+    draftRef.current = null;
+  }, [specKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function clearDraft(): void { draftRef.current = null; }
+
+  /** 고친 입력이 있으면 그 방식의 명세를 보낸다(불완전하면 보내지 않고 보이기 선택만 남긴다). */
+  function flushDraft(): void {
+    const draft = draftRef.current;
+    if (!draft || !draft.edited || composingRef.current) return;
+    const method = methods.find((m) => m.mode === draft.mode);
+    if (!method) return;
+    const next = composeSliceSpec(method, inputsRef.current[draft.mode] || {}, spec, currentMethod);
+    if (next === null) return;
+    draftRef.current = { mode: draft.mode, edited: false };
+    send(next);
+  }
+
+  function choose(method: Obj): void {
+    const mode = String(method.mode);
+    setPending(mode);
+    const next = composeSliceSpec(method, inputsRef.current[mode] || {}, spec, currentMethod);
+    if (next === null) {
+      // 빈 칸이 남았다 — 첫 빈 칸으로 초점을 옮겨 채우게 한다(보내지 않는다).
+      const empty = rootRef.current?.querySelector<HTMLElement>(`[data-slice-empty="${mode}"]`);
+      empty?.focus();
+      return;
+    }
+    send(next);
+  }
+
+  function edit(mode: string, key: string, value: string): void {
+    setInputs((current) => ({ ...current, [mode]: { ...(current[mode] || {}), [key]: value } }));
+    draftRef.current = { mode, edited: true };
+  }
+
+  function focusInput(mode: string): void {
+    const draft = draftRef.current;
+    if (draft && draft.mode !== mode && draft.edited) flushDraft();
+    if (!draftRef.current || draftRef.current.mode !== mode) draftRef.current = { mode, edited: false };
+    setPending(mode);
+  }
+
+  function blurInput(mode: string): void {
+    if (composingRef.current) return;
+    const draft = draftRef.current;
+    if (draft && draft.mode === mode && draft.edited) {
+      flushDraft();
+      return;
+    }
+    // 고치지 않고 떠났다 — 보이기 선택을 커밋된 방식으로 되돌린다(같은 방식의 다음 칸이면 다시 선다).
+    setPending(null);
+  }
+
+  return {
+    inputs, inputsRef, pending, setInputs, setPending, clearDraft, flushDraft, choose, edit,
+    focusInput, blurInput, composingRef,
+  };
+}
+
+function SlicePopover(props: {
+  row: Obj; port: SlicePort; field: string; chipRef: { current: HTMLElement | null };
+}): ReactNode {
+  const { row, port, field, chipRef } = props;
+  const spec = (row.slice || null) as Obj | null;
+  const specKey = JSON.stringify(spec);
+  const groups = (row.slice_methods || []) as Obj[];
+  const methods = flatMethods(groups);
+  const currentMethod = resolveCurrentMethod(methods, spec);
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const valueRef = useRef<HTMLInputElement | null>(null);
+  const underRef = useRef<HTMLDivElement | null>(null);
+  const [sample, setSample] = useState<number | null>(null);
+  const [preview, setPreview] = useState<Obj | null>(null);
+  const [tags, setTags] = useState<Record<string, Obj>>({});
+  const [message, setMessage] = useState("");
+  const {
+    inputs, inputsRef, pending, setInputs, setPending, clearDraft, flushDraft, choose, edit,
+    focusInput, blurInput, composingRef,
+  } = useSliceDraft(spec, currentMethod, methods, (next) => { void send(next); }, rootRef);
+  const lastSelection = useRef("");
+  const keyTimer = useRef<number | null>(null);
+  const previewSeq = useRef(0);
+  const alive = useRef(true);
+  /* 표면은 그릴 때마다 새 문(`SlicePort`)을 건넨다 — 효과의 의존으로 두면 그릴 때마다 질의·
+     listener 가 다시 선다. 문서는 바뀌지 않으므로 효과는 `doc` 에 걸고, 문·동작은 최신 것을 ref 로
+     읽는다(한 번 붙인 listener 가 옛 명세로 커밋하지 않게). */
+  const doc = port.doc;
+  const portRef = useRef(port);
+  portRef.current = port;
+  const latest = useRef<{ close(focusChip: boolean): void; flush(): void; propose(): void }>({
+    close() {}, flush() {}, propose() {},
+  });
+
+  useEffect(() => () => {
+    alive.current = false;
+    if (keyTimer.current !== null) doc.defaultView?.clearTimeout(keyTimer.current);
+  }, [doc]);
+
+  /** 늦게 온 옛 미리보기 응답(다른 명세·예시 행으로 넘어간 뒤 도착)은 세대 대조로 버린다. */
+  function applyPreviewResult(result: Obj, seq: number): void {
+    if (alive.current && seq === previewSeq.current) setPreview(result);
+  }
+
+  // 미리보기는 커밋된 명세·예시 행이 바뀔 때마다 다시 묻는다(늦게 온 옛 응답은 버린다).
+  useEffect(() => {
+    const seq = ++previewSeq.current;
+    portRef.current.preview(sample).then(
+      (result) => applyPreviewResult(result, seq),
+      () => { /* 거절 문장은 표면이 알렸다 */ },
+    );
+  }, [specKey, sample]);
+
+  useEffect(() => { valueRef.current?.focus(); }, []);
+
+  usePopoverPlacement(doc, rootRef, chipRef);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent): void {
-      if (sliceKeyAction(event) !== "close" || composing.current) return;
+      if (sliceKeyAction(event) !== "close" || composingRef.current) return;
       event.preventDefault();
       event.stopPropagation();
       latest.current.close(true);
@@ -255,23 +382,6 @@ function SlicePopover(props: {
     };
   }, [doc]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function place(): void {
-    const root = rootRef.current;
-    const anchor = chipRef.current;
-    const view = doc.defaultView;
-    if (!root || !anchor || !anchor.isConnected || !view) return;
-    const rect = anchor.getBoundingClientRect();
-    const plan = builderPlacement(rect, { width: view.innerWidth, height: view.innerHeight },
-      root.getBoundingClientRect().width);
-    const cap = `${Math.floor(plan.maxHeight)}px`;
-    if (root.style.maxHeight !== cap) root.style.maxHeight = cap;
-    const height = root.getBoundingClientRect().height;
-    const top = plan.placement === "below" ? rect.bottom + 4 : rect.top - 4 - height;
-    root.style.left = `${plan.left}px`;
-    root.style.top = `${top}px`;
-    root.dataset.placement = plan.placement === "below" ? "bottom" : "top";
-  }
-
   function close(focusChip: boolean): void {
     portRef.current.close();
     if (focusChip) chipRef.current?.focus();
@@ -284,57 +394,27 @@ function SlicePopover(props: {
     if (ok && alive.current) setMessage("");
   }
 
-  /** 고친 입력이 있으면 그 방식의 명세를 보낸다(불완전하면 보내지 않고 보이기 선택만 남긴다). */
-  function flushDraft(): void {
-    const draft = draftRef.current;
-    if (!draft || !draft.edited || composing.current) return;
-    const method = methods.find((m) => m.mode === draft.mode);
-    if (!method) return;
-    const next = composeSliceSpec(method, inputsRef.current[draft.mode] || {}, spec, currentMethod);
-    if (next === null) return;
-    draftRef.current = { mode: draft.mode, edited: false };
-    void send(next);
-  }
-
-  function choose(method: Obj): void {
-    const mode = String(method.mode);
-    setPending(mode);
-    const next = composeSliceSpec(method, inputsRef.current[mode] || {}, spec, currentMethod);
-    if (next === null) {
-      // 빈 칸이 남았다 — 첫 빈 칸으로 초점을 옮겨 채우게 한다(보내지 않는다).
-      const empty = rootRef.current?.querySelector<HTMLElement>(`[data-slice-empty="${mode}"]`);
-      empty?.focus();
-      return;
-    }
-    void send(next);
-  }
-
-  function edit(mode: string, key: string, value: string): void {
-    setInputs((current) => ({ ...current, [mode]: { ...(current[mode] || {}), [key]: value } }));
-    draftRef.current = { mode, edited: true };
-  }
-
-  function focusInput(mode: string): void {
-    const draft = draftRef.current;
-    if (draft && draft.mode !== mode && draft.edited) flushDraft();
-    if (!draftRef.current || draftRef.current.mode !== mode) draftRef.current = { mode, edited: false };
-    setPending(mode);
-  }
-
-  function blurInput(mode: string): void {
-    if (composing.current) return;
-    const draft = draftRef.current;
-    if (draft && draft.mode === mode && draft.edited) {
-      flushDraft();
-      return;
-    }
-    // 고치지 않고 떠났다 — 보이기 선택을 커밋된 방식으로 되돌린다(같은 방식의 다음 칸이면 다시 선다).
-    setPending(null);
-  }
-
   function pickSample(index: number): void {
     lastSelection.current = "";
     setSample(index);
+  }
+
+  /** 끌어 고른 범위의 후보 응답을 반영한다 — 늦게 온 옛 응답(다른 범위를 고른 뒤 도착)은
+   *  `lastSelection` 대조로 버린다. `propose`의 `.then` 콜백을 이름째 뽑아 그 복잡도를
+   *  옮겼을 뿐 순서·판정은 그대로다. */
+  function applyProposeResult(result: Obj, key: string): void {
+    if (!alive.current || lastSelection.current !== key) return;
+    const candidates = (result.candidates || []) as Obj[];
+    const nextTags: Record<string, Obj> = {};
+    const seeded: Inputs = {};
+    for (const candidate of candidates) {
+      nextTags[String(candidate.mode)] = candidate;
+      Object.assign(seeded, seedInputs(candidate.slice));
+    }
+    setTags(nextTags);
+    setInputs((current) => ({ ...current, ...seeded }));
+    setMessage(String(result.message || ""));
+    if (candidates.length) void send(candidates[0].slice);
   }
 
   function propose(): void {
@@ -347,20 +427,10 @@ function SlicePopover(props: {
     const key = `${sampleIndex}:${start}:${end}`;
     if (key === lastSelection.current) return;
     lastSelection.current = key;
-    port.propose(sampleIndex, start, end).then((result) => {
-      if (!alive.current || lastSelection.current !== key) return;
-      const candidates = (result.candidates || []) as Obj[];
-      const nextTags: Record<string, Obj> = {};
-      const seeded: Inputs = {};
-      for (const candidate of candidates) {
-        nextTags[String(candidate.mode)] = candidate;
-        Object.assign(seeded, seedInputs(candidate.slice));
-      }
-      setTags(nextTags);
-      setInputs((current) => ({ ...current, ...seeded }));
-      setMessage(String(result.message || ""));
-      if (candidates.length) void send(candidates[0].slice);
-    }, () => { /* 거절 문장은 표면이 알렸다 */ });
+    port.propose(sampleIndex, start, end).then(
+      (result) => applyProposeResult(result, key),
+      () => { /* 거절 문장은 표면이 알렸다 */ },
+    );
   }
 
   function proposeLater(): void {
@@ -378,9 +448,9 @@ function SlicePopover(props: {
     selected: pending ?? (spec ? String(spec.mode) : null), inputs, rootRef, valueRef, underRef,
     on: {
       close: () => { flushDraft(); close(true); },
-      clear: () => { draftRef.current = null; void send(null); },
+      clear: () => { clearDraft(); void send(null); },
       choose, edit, focusInput, blurInput, pickSample,
-      compose: (active: boolean) => { composing.current = active; },
+      compose: (active: boolean) => { composingRef.current = active; },
       enter: () => flushDraft(),
       ordinal: (method: Obj, value: string) => {
         const mode = String(method.mode);
@@ -402,196 +472,3 @@ function SlicePopover(props: {
   });
 }
 
-/* ---- 팝오버(그리기) — 상태를 받아 그리기만 한다(정적 렌더 테스트의 대상). ---- */
-
-type ViewHandlers = {
-  close(): void; clear(): void;
-  choose(method: Obj): void;
-  edit(mode: string, key: string, value: string): void;
-  focusInput(mode: string): void; blurInput(mode: string): void;
-  pickSample(index: number): void;
-  compose(active: boolean): void; enter(): void;
-  ordinal(method: Obj, value: string): void;
-  miss(value: string): void;
-  selectEnd(): void; selectKey(event: Obj): void; scroll(): void;
-};
-
-const NOOP_HANDLERS: ViewHandlers = {
-  close() {}, clear() {}, choose() {}, edit() {}, focusInput() {}, blurInput() {},
-  pickSample() {}, compose() {}, enter() {}, ordinal() {}, miss() {},
-  selectEnd() {}, selectKey() {}, scroll() {},
-};
-
-/** 팝오버 그리기 — 열린 명세·방식 목록·미리보기·후보 꼬리표·입력 글자를 받아 그린다. */
-export function SlicePopoverView(props: {
-  field: string; column: string; spec: Obj | null; groups: Obj[];
-  preview: Obj | null; tags: Record<string, Obj>; message: string;
-  selected: string | null; inputs: Inputs;
-  rootRef?: { current: HTMLDivElement | null };
-  valueRef?: { current: HTMLInputElement | null };
-  underRef?: { current: HTMLDivElement | null };
-  on?: ViewHandlers;
-}): ReactNode {
-  const { field, column, spec, groups, preview, tags, message, selected, inputs } = props;
-  const on = props.on || NOOP_HANDLERS;
-  const sampleBlock = (preview?.sample || {}) as Obj;
-  const sampleValue = String(sampleBlock.value || "");
-  const hint = message || String(preview?.hint || "");
-  const titleId = "sliceTitle";
-  const methodName = "slice-method";
-
-  const methodRow = (method: Obj): ReactNode => {
-    const mode = String(method.mode);
-    const values = inputs[mode] || {};
-    const tag = tags[mode];
-    const checked = selected === mode;
-    let firstEmptyMarked = false;
-    const parts = ((method.parts || []) as Obj[]).map((part, index) => {
-      if (!part.input) {
-        return h("span", {
-          key: `t${index}`, className: `slice-word${part.attach ? " attach" : ""}`,
-        }, String(part.text));
-      }
-      const key = String(part.input);
-      const value = values[key] ?? "";
-      if (part.kind === "ordinal") {
-        const options = (part.options || []) as Obj[];
-        return h("select", {
-          key: `i${index}`, className: "sel sm slice-ordinal", "aria-label": String(part.label),
-          "data-slice-input": `${mode}.${key}`,
-          value: value || String(options[0]?.value ?? ""),
-          onFocus: () => on.focusInput(mode),
-          onBlur: () => on.blurInput(mode),
-          onChange: (event: Obj) => on.ordinal(method, String(event.currentTarget.value)),
-        }, ...options.map((option) => h("option", {
-          key: String(option.value), value: String(option.value),
-        }, String(option.label))));
-      }
-      const markEmpty = !firstEmptyMarked && value === "" && !part.optional;
-      if (markEmpty) firstEmptyMarked = true;
-      return h("input", {
-        key: `i${index}`,
-        className: `field sm slice-in${part.wide ? " wide" : ""}${part.kind === "number" ? " num" : ""}`,
-        type: part.kind === "number" ? "number" : "text",
-        min: part.kind === "number" ? 1 : undefined,
-        inputMode: part.kind === "number" ? "numeric" : undefined,
-        "aria-label": String(part.label), "data-slice-input": `${mode}.${key}`,
-        "data-slice-empty": markEmpty ? mode : undefined,
-        autoComplete: "off", spellCheck: false, value,
-        onFocus: () => on.focusInput(mode),
-        onBlur: () => on.blurInput(mode),
-        onChange: (event: Obj) => on.edit(mode, key, String(event.currentTarget.value)),
-        onCompositionStart: () => on.compose(true),
-        onCompositionEnd: () => on.compose(false),
-        onKeyDown: (event: Obj) => {
-          if (sliceKeyAction({
-            key: event.key, isComposing: event.nativeEvent?.isComposing, keyCode: event.keyCode,
-          }) !== "commit") return;
-          event.preventDefault();
-          on.enter();
-        },
-      });
-    });
-    return h("label", {
-      key: mode, className: `slice-method${checked ? " on" : ""}`, "data-slice-method": mode,
-    },
-    h("input", {
-      type: "radio", name: methodName, checked, value: mode,
-      onChange: () => on.choose(method),
-    }),
-    ...parts,
-    tag ? h("span", {
-      className: `slice-tag ${tag.full ? "good" : "bad"}`, title: String(tag.tip || ""),
-    }, String(tag.tag || "")) : null);
-  };
-
-  const rows = (preview?.rows || []) as Obj[];
-  const missChoice = preview?.miss_choice as Obj | null | undefined;
-  const pressed = spec ? String(spec.on_missing || "empty") : "";
-  return h("div", {
-    className: "slicepop", ref: props.rootRef, role: "dialog", "aria-modal": "false",
-    "aria-labelledby": titleId,
-  },
-  h("div", { className: "slicepop-head" },
-    h("div", { className: "slicepop-title" },
-      h("span", { id: titleId, className: "slicepop-name" }, `${field} 가공`),
-      column ? h("span", { className: "slicepop-sub" }, `데이터 열 ${column}`) : null),
-    h("button", {
-      type: "button", className: "slicepop-x", "aria-label": "닫기", title: "닫기",
-      "data-act": "slice-close", onClick: () => on.close(),
-    }, icon("close"))),
-  h("div", { className: "slicepop-strip" },
-    h("div", { className: "slicepop-strip-head" },
-      h("span", { className: "slicepop-cap" }, "예시 값"),
-      h("div", { className: "slicepop-samples" },
-        ...((preview?.samples || []) as Obj[]).map((item) => h("button", {
-          key: String(item.index), type: "button", className: "slicepop-sample",
-          "aria-label": String(item.aria), "aria-pressed": !!item.pressed,
-          "data-slice-sample": item.index,
-          disabled: !!item.disabled, onClick: () => on.pickSample(Number(item.index)),
-        }, String(item.label))))),
-    h("div", { className: "slicepop-pick" },
-      h("div", { className: "slicepop-under", ref: props.underRef, "aria-hidden": "true" },
-        String(sampleBlock.pre || ""),
-        h("span", { className: "slicepop-keep" }, String(sampleBlock.keep || "")),
-        String(sampleBlock.post || "")),
-      h("input", {
-        className: "slicepop-value", ref: props.valueRef, readOnly: true, value: sampleValue,
-        "aria-label": "예시 값", title: "예시 값: 쓸 부분을 끌어 고르면 방식이 맞춰집니다",
-        "data-slice-value": true, spellCheck: false,
-        onMouseUp: () => on.selectEnd(),
-        onKeyUp: (event: Obj) => on.selectKey(event),
-        onScroll: () => on.scroll(),
-      })),
-    h("div", { className: "slicepop-status", role: "status", "aria-live": "polite" },
-      hint ? h("span", { className: message ? "slicepop-none" : "slicepop-hint" }, hint) : null,
-      sampleBlock.miss_tag
-        ? h("span", { className: "slice-warn" }, String(sampleBlock.miss_tag)) : null)),
-  h("div", { className: "slicepop-body" },
-    h("div", { className: "slicepop-methods", role: "radiogroup", "aria-labelledby": titleId },
-      ...groups.flatMap((group) => [
-        h("div", { key: `g-${String(group.label)}`, className: "slicepop-cap slicepop-group" },
-          String(group.label)),
-        ...((group.methods || []) as Obj[]).map(methodRow),
-      ])),
-    h("div", { className: "slicepop-preview" },
-      h("div", { className: "slicepop-preview-head" },
-        h("span", { className: "slicepop-cap" }, String(preview?.rows_label || "")),
-        h("span", { className: "slicepop-summary" }, String(preview?.summary || ""))),
-      h("div", { className: "slicepop-grid" },
-        ...rows.flatMap((item) => [
-          h("span", { key: `n${item.index}`, className: "slicepop-rn" }, String(item.label)),
-          h("span", {
-            key: `o${item.index}`, className: "slicepop-orig",
-            title: `${item.pre || ""}${item.keep || ""}${item.post || ""}`,
-          }, String(item.pre || ""),
-          h("span", { className: "slicepop-keep" }, String(item.keep || "")),
-          String(item.post || "")),
-          h("span", { key: `a${item.index}`, className: "slicepop-arrow", "aria-hidden": "true" }, "→"),
-          h("span", { key: `r${item.index}`, className: "slicepop-out", "data-slice-status": item.status },
-            h("span", {
-              className: `slicepop-res${item.marker ? " marker" : ""}${item.status === "odd" ? " odd" : ""}`,
-              title: String(item.result || ""),
-            }, String(item.result || "")),
-            ...((item.tags || []) as string[]).map((text, index) =>
-              h("span", { key: `t${index}`, className: "slice-warn" }, text))),
-        ])),
-      missChoice ? h("div", { className: "slicepop-miss" },
-        h("span", null, String(missChoice.label || "")),
-        h("div", { className: "slicepop-seg", role: "group", "aria-label": String(missChoice.label || "") },
-          ...((missChoice.choices || []) as Obj[]).map((choice) => h("button", {
-            key: String(choice.value), type: "button",
-            "aria-pressed": pressed === String(choice.value),
-            "data-slice-miss": String(choice.value),
-            onClick: () => on.miss(String(choice.value)),
-          }, String(choice.label))))) : null)),
-  h("div", { className: "slicepop-foot" },
-    h("button", {
-      type: "button", className: "btn sm quiet", "data-act": "slice-clear",
-      disabled: !spec, onClick: () => on.clear(),
-    }, "가공 지우기"),
-    h("button", {
-      type: "button", className: "btn sm primary", "data-act": "slice-done",
-      onClick: () => on.close(),
-    }, "완료")));
-}

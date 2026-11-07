@@ -495,6 +495,15 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
   return h(LibraryDetailRoot as any, null, scroll, actions);
 }
 
+/** 「보기」 탭 4개의 정체 — 키·라벨만 다르고 마크업은 완전히 같다(같은 분기 중복). 하나의
+ *  버튼 템플릿으로 .map() 렌더해 복잡도 예산의 같은 분기 반복을 없앤다. */
+const LIBRARY_VIEW_TABS: readonly { key: string; label: string }[] = [
+  { key: "all", label: "모든 작업" },
+  { key: "recent", label: "최근 사용" },
+  { key: "favorites", label: "즐겨찾기" },
+  { key: "needsAction", label: "확인 필요" },
+];
+
 function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController }): ReactNode {
   const { snapshot, controller } = props;
   const [search, setSearch] = useState(String(snapshot.query || ""));
@@ -503,7 +512,7 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
     if (controller.doc.activeElement?.id !== "librarySearch") setSearch(String(snapshot.query || ""));
   }, [snapshot.query]);
   useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
-  const views = ["all", "recent", "favorites", "needsAction"];
+  const views = LIBRARY_VIEW_TABS.map((tab) => tab.key);
   const modes = [["all", "전체"], ["hwpx", "HWPX 문서 생성"], ["txt", "온나라 기안 검토·복사"]];
   return h("div", { className: "library-toolbar" },
     h("label", { className: "library-search-field" }, h("span", { className: "lbl" }, "작업 검색"),
@@ -527,26 +536,12 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
           const next = views[(index + (event.key === "ArrowRight" ? 1 : views.length - 1)) % views.length];
           event.preventDefault(); void controller.axis("set_view", { view: next });
         } },
-        h("button", { type: "button", role: "tab", id: "library-view-all", "data-library-view": "all", "data-label": "모든 작업",
-          "aria-controls": "libraryPanel", "aria-selected": snapshot.view === "all" ? "true" : "false",
-          tabIndex: snapshot.view === "all" ? 0 : -1, "data-busy-lock": true,
-          onClick: () => { void controller.axis("set_view", { view: "all" }); } },
-        `모든 작업${typeof snapshot.counts?.all === "number" ? ` · ${snapshot.counts.all}` : ""}`),
-        h("button", { type: "button", role: "tab", id: "library-view-recent", "data-library-view": "recent", "data-label": "최근 사용",
-          "aria-controls": "libraryPanel", "aria-selected": snapshot.view === "recent" ? "true" : "false",
-          tabIndex: snapshot.view === "recent" ? 0 : -1, "data-busy-lock": true,
-          onClick: () => { void controller.axis("set_view", { view: "recent" }); } },
-        `최근 사용${typeof snapshot.counts?.recent === "number" ? ` · ${snapshot.counts.recent}` : ""}`),
-        h("button", { type: "button", role: "tab", id: "library-view-favorites", "data-library-view": "favorites", "data-label": "즐겨찾기",
-          "aria-controls": "libraryPanel", "aria-selected": snapshot.view === "favorites" ? "true" : "false",
-          tabIndex: snapshot.view === "favorites" ? 0 : -1, "data-busy-lock": true,
-          onClick: () => { void controller.axis("set_view", { view: "favorites" }); } },
-        `즐겨찾기${typeof snapshot.counts?.favorites === "number" ? ` · ${snapshot.counts.favorites}` : ""}`),
-        h("button", { type: "button", role: "tab", id: "library-view-needsAction", "data-library-view": "needsAction", "data-label": "확인 필요",
-          "aria-controls": "libraryPanel", "aria-selected": snapshot.view === "needsAction" ? "true" : "false",
-          tabIndex: snapshot.view === "needsAction" ? 0 : -1, "data-busy-lock": true,
-          onClick: () => { void controller.axis("set_view", { view: "needsAction" }); } },
-        `확인 필요${typeof snapshot.counts?.needsAction === "number" ? ` · ${snapshot.counts.needsAction}` : ""}`)),
+        ...LIBRARY_VIEW_TABS.map(({ key, label }) => h("button", {
+          type: "button", role: "tab", id: `library-view-${key}`, "data-library-view": key, "data-label": label,
+          "aria-controls": "libraryPanel", "aria-selected": snapshot.view === key ? "true" : "false",
+          tabIndex: snapshot.view === key ? 0 : -1, "data-busy-lock": true, key,
+          onClick: () => { void controller.axis("set_view", { view: key }); },
+        }, `${label}${typeof snapshot.counts?.[key] === "number" ? ` · ${snapshot.counts[key]}` : ""}`))),
     ),
     h("div", { className: "library-filter-group" }, h("span", { className: "library-filter-label", id: "libraryModeLabel" }, "작업 방식"),
       h("div", { className: "library-modes", role: "group", "aria-labelledby": "libraryModeLabel", id: "libraryModeFilters" },
