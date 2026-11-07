@@ -14,63 +14,17 @@
 
 schema = "complexity-budget/v1"
 
-[budget."crates/hwpx-core/src/authoring_edit.rs"]
-module_statements = { value = 348, reason = "상시 예외: 단일 책임 모듈 — 토큰→Field 치환, 24개 소함수 분해됨" }
-
-[budget."crates/hwpx-core/src/authoring_edit.rs::apply_one"]
-function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/authoring_edit.rs::clip_run"]
-function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/authoring_edit.rs::clip_t"]
-function_complexity = { value = 17, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/authoring_edit.rs::compile_field_tokens"]
-function_complexity = { value = 15, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-core/src/authoring_edit.rs::layout"]
 function_complexity = { value = 17, reason = "상시 예외: 형식 명세 1:1 처리 — 문단 콘텐츠 모델 1:1 분류, depth 공유" }
-
-[budget."crates/hwpx-core/src/authoring_edit.rs::max_numeric_id"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/authoring_edit.rs::replacement"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/marker_edit.rs::insert_marker_paragraphs"]
-function_complexity = { value = 11, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/native_admission.rs::BookmarkRemovalBlockerKind.as_str"]
 function_complexity = { value = 16, reason = "상시 예외: 값 매핑 표 — 15-variant enum→문자열 매핑" }
 
-[budget."crates/hwpx-core/src/native_authoring.rs::change_field_occurrences"]
-function_complexity = { value = 22, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/native_authoring.rs::create_field_ranges"]
-function_complexity = { value = 19, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-core/src/native_authoring.rs::insert_boundary"]
 function_complexity = { value = 11, reason = "상시 예외: 단일 책임 알고리즘 — 삽입 지점 0/끝/중간 분기, index 공유" }
 
-[budget."crates/hwpx-core/src/native_authoring.rs::preflight"]
-function_complexity = { value = 13, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
 [budget."crates/hwpx-core/src/native_authoring.rs::simple_field_content"]
 function_complexity = { value = 12, reason = "상시 예외: 선언적 규칙 표 — 허용 자식 모양 allow-list 분류" }
-
-[budget."crates/hwpx-core/src/native_transfer.rs"]
-module_statements = { value = 341, reason = "상시 예외: 단일 책임 모듈 — 붙여넣기 안전성 모듈, 25개 소함수" }
-
-[budget."crates/hwpx-core/src/native_transfer.rs::paste_bookmark_block"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/native_transfer.rs::paste_field"]
-function_complexity = { value = 16, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-function_statements = { value = 76, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
-
-[budget."crates/hwpx-core/src/native_transfer.rs::selected_texts"]
-function_complexity = { value = 12, override = "#1200", reason = "Python→Rust·Node 전환에서 처음 측정한 이식 단위(측정 보정). 책임 분리는 이슈에서 진행" }
 
 [budget."crates/hwpx-core/src/native_transfer.rs::supported_paragraph"]
 function_complexity = { value = 18, reason = "상시 예외: 선언적 규칙 표 — 문단 허용 모양 allow-list 분류" }

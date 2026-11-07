@@ -1,5 +1,8 @@
 //! Guarded cross-document native XML transfer primitives.
 
+mod block_splice;
+mod field_splice;
+
 use crate::bookmark_region::{BookmarkRegion, resolve_bookmark_topology};
 use crate::field_occurrence::resolve_field_occurrences;
 use crate::lineseg::serialize_modified_section;
@@ -168,6 +171,32 @@ fn child_element(doc: &XmlDocument, id: NodeId, local: &str) -> Option<NodeId> {
     let children = doc.elements(id).collect::<Vec<_>>();
     (children.len() == 1 && native(doc, children[0], local)).then_some(children[0])
 }
+/// Child index range of `run` that lies strictly between the Field controls.
+fn control_bounds(
+    source: &XmlDocument,
+    occ: &crate::field_occurrence::FieldOccurrence,
+    run: NodeId,
+) -> Result<(usize, usize), NativeTransferError> {
+    let children = &source.node(run).children;
+    let lower = if run == occ.begin_run {
+        children
+            .iter()
+            .position(|item| matches!(item,Content::Element(id) if *id==occ.begin_ctrl))
+            .ok_or_else(|| fail("source-control", "missing begin control"))?
+            + 1
+    } else {
+        0
+    };
+    let upper = if run == occ.end_run {
+        children
+            .iter()
+            .position(|item| matches!(item,Content::Element(id) if *id==occ.end_ctrl))
+            .ok_or_else(|| fail("source-control", "missing end control"))?
+    } else {
+        children.len()
+    };
+    Ok((lower, upper))
+}
 fn selected_texts(
     source: &XmlDocument,
     occ: &crate::field_occurrence::FieldOccurrence,
@@ -186,25 +215,8 @@ fn selected_texts(
         .ok_or_else(|| fail("source-control", "missing end run"))?;
     let mut texts = Vec::new();
     for run in &runs[first..=last] {
-        let children = &source.node(*run).children;
-        let lower = if *run == occ.begin_run {
-            children
-                .iter()
-                .position(|item| matches!(item,Content::Element(id) if *id==occ.begin_ctrl))
-                .ok_or_else(|| fail("source-control", "missing begin control"))?
-                + 1
-        } else {
-            0
-        };
-        let upper = if *run == occ.end_run {
-            children
-                .iter()
-                .position(|item| matches!(item,Content::Element(id) if *id==occ.end_ctrl))
-                .ok_or_else(|| fail("source-control", "missing end control"))?
-        } else {
-            children.len()
-        };
-        for item in &children[lower..upper] {
+        let (lower, upper) = control_bounds(source, occ, *run)?;
+        for item in &source.node(*run).children[lower..upper] {
             match item {
                 Content::Element(id)
                     if native(source, *id, "t")
@@ -263,26 +275,7 @@ pub fn paste_field(
     let source_doc = parse_xml(entry(source, request.source_entry)?)
         .map_err(|error| fail("invalid-xml", error.to_string()))?;
     let resolved = resolve_field_occurrences(request.source_entry, &source_doc);
-    if !resolved.diagnostics.is_empty() {
-        return Err(fail("source-pairing", "source Field pairing is unusable"));
-    }
-    let occurrence = resolved
-        .occurrences
-        .get(request.source_ordinal)
-        .ok_or_else(|| fail("source-ordinal", "source Field ordinal missing"))?;
-    if source_doc.attr(occurrence.begin, "id") != request.source_pairing_id {
-        return Err(fail(
-            "source-pairing-changed",
-            "source Field pairing changed",
-        ));
-    }
-    if occurrence
-        .raw_name
-        .as_deref()
-        .is_none_or(|name| name.trim().is_empty())
-    {
-        return Err(fail("source-name", "source Field name missing"));
-    }
+    let occurrence = field_splice::source_occurrence(&source_doc, &resolved, request)?;
     let texts = selected_texts(&source_doc, occurrence)?;
     let copied = texts
         .iter()
@@ -293,133 +286,34 @@ pub fn paste_field(
     } else {
         None
     };
-    let second = next.as_deref().map(add_one);
+    let ids = next.map(|next| {
+        let second = add_one(&next);
+        (next, second)
+    });
     let mut candidate = parse_xml(entry(target, request.target_entry)?)
         .map_err(|error| fail("invalid-xml", error.to_string()))?;
-    let paragraphs = candidate
-        .elements(candidate.root)
-        .filter(|id| native(&candidate, *id, "p"))
-        .collect::<Vec<_>>();
-    let paragraph = *paragraphs
-        .get(request.target_paragraph)
-        .ok_or_else(|| fail("target-paragraph", "target paragraph missing"))?;
-    if request.start > request.end {
-        return Err(fail("target-range", "invalid target range"));
-    }
-    let runs = candidate
-        .elements(paragraph)
-        .filter(|id| native(&candidate, *id, "run"))
-        .collect::<Vec<_>>();
-    let run = if runs.len() == 1 {
-        runs[0]
-    } else {
-        return Err(fail("target-complex", "target paragraph is complex"));
-    };
-    let text_id = child_element(&candidate, run, "t")
-        .ok_or_else(|| fail("target-complex", "target paragraph is complex"))?;
-    if candidate.node(text_id).children.iter().any(|part| {
-        matches!(
-            part,
-            Content::Element(_) | Content::Comment(_) | Content::ProcessingInstruction(_)
-        )
-    }) {
-        return Err(fail("target-complex", "target paragraph is complex"));
-    }
-    let original = candidate.direct_text(text_id);
+    let slot = field_splice::target_slot(&candidate, request)?;
+    let original = candidate.direct_text(slot.text);
     let left = split_char(&original, request.start)
         .ok_or_else(|| fail("target-outside", "target range outside paragraph"))?;
     let right = split_char(&original, request.end)
         .ok_or_else(|| fail("target-outside", "target range outside paragraph"))?;
-    let mut new_runs = Vec::new();
-    if left != 0 {
-        let prefix = candidate.clone_subtree(run);
-        let t = child_element(&candidate, prefix, "t").unwrap();
-        candidate.node_mut(t).children = vec![Content::Text(original[..left].into())];
-        new_runs.push(prefix);
-    }
-    if let Some(next) = &next {
-        let begin = native_run(&mut candidate, &source_doc, occurrence.begin_run);
-        let ctrl = import_subtree(&mut candidate, &source_doc, occurrence.begin_ctrl);
-        let marker = child_element(&candidate, ctrl, "fieldBegin")
-            .ok_or_else(|| fail("source-control", "invalid begin control"))?;
-        set_attr(&mut candidate, marker, "id", next);
-        set_attr(
-            &mut candidate,
-            marker,
-            "fieldid",
-            second.as_deref().unwrap(),
-        );
-        candidate
-            .insert_element(begin, 0, ctrl)
-            .map_err(|error| fail("write", error.to_string()))?;
-        new_runs.push(begin);
-    }
-    for text in texts {
-        let source_run = source_doc
-            .parent(text)
-            .ok_or_else(|| fail("source-control", "missing source text run"))?;
-        let fresh = native_run(&mut candidate, &source_doc, source_run);
-        let cloned = import_subtree(&mut candidate, &source_doc, text);
-        candidate
-            .insert_element(fresh, 0, cloned)
-            .map_err(|error| fail("write", error.to_string()))?;
-        new_runs.push(fresh);
-    }
-    if let Some(next) = &next {
-        let end = native_run(&mut candidate, &source_doc, occurrence.end_run);
-        let ctrl = import_subtree(&mut candidate, &source_doc, occurrence.end_ctrl);
-        let marker = child_element(&candidate, ctrl, "fieldEnd")
-            .ok_or_else(|| fail("source-control", "invalid end control"))?;
-        set_attr(&mut candidate, marker, "beginIDRef", next);
-        set_attr(
-            &mut candidate,
-            marker,
-            "fieldid",
-            second.as_deref().unwrap(),
-        );
-        candidate
-            .insert_element(end, 0, ctrl)
-            .map_err(|error| fail("write", error.to_string()))?;
-        new_runs.push(end);
-    }
-    if right < original.len() {
-        let suffix = candidate.clone_subtree(run);
-        let t = child_element(&candidate, suffix, "t").unwrap();
-        candidate.node_mut(t).children = vec![Content::Text(original[right..].into())];
-        new_runs.push(suffix);
-    }
-    let position = candidate
-        .node(paragraph)
-        .children
-        .iter()
-        .position(|part| matches!(part,Content::Element(id) if *id==run))
-        .ok_or_else(|| fail("write", "target run detached"))?;
-    candidate
-        .remove_element_with_tail(run)
-        .map_err(|error| fail("write", error.to_string()))?;
-    for (offset, fresh) in new_runs.into_iter().enumerate() {
-        candidate
-            .insert_element(paragraph, position + offset, fresh)
-            .map_err(|error| fail("write", error.to_string()))?;
-    }
-    let bytes = serialize_modified_section(&mut candidate)
-        .map_err(|error| fail("write", error.to_string()))?;
-    let checked = parse_xml(&bytes).map_err(|error| fail("write", error.to_string()))?;
-    if !resolve_field_occurrences(request.target_entry, &checked)
-        .diagnostics
-        .is_empty()
-    {
-        return Err(fail(
-            "target-pairing",
-            "target Field pairing became unusable",
-        ));
-    }
-    let slot = target
-        .entries
-        .iter_mut()
-        .find(|item| item.name == request.target_entry)
-        .ok_or_else(|| fail("missing-entry", "target entry disappeared"))?;
-    slot.data = bytes;
+    let cut = field_splice::TargetCut {
+        run: slot.run,
+        original: &original,
+        left,
+        right,
+    };
+    let new_runs = field_splice::replacement_runs(
+        &mut candidate,
+        &source_doc,
+        occurrence,
+        texts,
+        &cut,
+        ids.as_ref(),
+    )?;
+    field_splice::swap_run(&mut candidate, slot.paragraph, slot.run, new_runs)?;
+    field_splice::commit_paired(target, request.target_entry, &mut candidate)?;
     Ok(FieldPasteResult {
         previous: original[left..right].into(),
         inserted: copied,
@@ -741,7 +635,7 @@ pub fn paste_bookmark_block(
             "target paragraph boundary outside section",
         ));
     }
-    let mut clones = block
+    let clones = block
         .iter()
         .map(|id| import_subtree(&mut candidate, &source_doc, *id))
         .collect::<Vec<_>>();
@@ -750,42 +644,15 @@ pub fn paste_bookmark_block(
         let mapping = id_map(target, &candidate, &clones)?;
         remap_block(&mut candidate, &clones, &mapping, request.name_edits)?;
     }
-    let insertion=if request.destination_paragraph<target_paragraphs.len() {
-        candidate.node(candidate.root).children.iter().position(|part|matches!(part,Content::Element(id) if *id==target_paragraphs[request.destination_paragraph]))
-    } else {
-        candidate.node(candidate.root).children.iter().position(|part|matches!(part,Content::Element(id) if *id==*target_paragraphs.last().unwrap())).map(|at| {
-            let children=&candidate.node(candidate.root).children;
-            at+1+children[at+1..].iter().take_while(|part|matches!(part,Content::Text(_)|Content::CData(_))).count()
-        })
-    }.ok_or_else(||fail("target-boundary","target paragraph detached"))?;
-    let mut at = insertion;
-    for (source_paragraph, clone) in block.iter().zip(clones.drain(..)) {
-        candidate
-            .insert_element(candidate.root, at, clone)
-            .map_err(|error| fail("write", error.to_string()))?;
-        at += 1;
-        for tail in paragraph_tail(&source_doc, *source_paragraph) {
-            candidate.node_mut(candidate.root).children.insert(at, tail);
-            at += 1;
-        }
-    }
+    let insertion = block_splice::insertion_point(
+        &candidate,
+        &target_paragraphs,
+        request.destination_paragraph,
+    )?;
+    block_splice::insert_block(&mut candidate, &source_doc, block, clones, insertion)?;
     let bytes = serialize_modified_section(&mut candidate)
         .map_err(|error| fail("write", error.to_string()))?;
-    let slot = target
-        .entries
-        .iter_mut()
-        .find(|item| item.name == request.target_entry)
-        .ok_or_else(|| fail("missing-entry", "target entry disappeared"))?;
-    let previous = std::mem::replace(&mut slot.data, bytes);
-    if let Err(error) = resolve_bookmark_topology(target) {
-        target
-            .entries
-            .iter_mut()
-            .find(|item| item.name == request.target_entry)
-            .unwrap()
-            .data = previous;
-        return Err(fail("target-topology", error.to_string()));
-    }
+    block_splice::commit_with_rollback(target, request.target_entry, bytes)?;
     Ok(plain)
 }
 

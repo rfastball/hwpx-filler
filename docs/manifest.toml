@@ -153,7 +153,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
-source_sha256 = "64cdadbc3aceca2de643bd855a6ae0aa727a625b850583e765d1b94084d8e617"
+source_sha256 = "7f644f46e79ea1347c0681dcfdd6a82e12e2ad24ab6759fdc2e9f5bd85554559"
 body_sha256 = "0faeb20d797961ad20e0dce979ee7f6425ba669ac368513e5becc332df63cf9a"
 
 [[topic]]
@@ -233,7 +233,7 @@ id = "ui-copy"
 document = "docs/ui-style.md"
 sources = ["scripts/ui_copy_census.mjs", "crates/hwpx-artifact/examples/ui_copy_literals.rs", "tests/contracts/ui-copy-census.toml"]
 tests = ["tests/js/ui_copy_census.test.js"]
-source_sha256 = "42705737fd30225dfe174f9f934eec2b36287f4841661fef9971cb90efbfc7af"
+source_sha256 = "0b34f0fa2030a7f75de44c807abe6a223983f24d07544f9774ba2e79dcfaa8f7"
 body_sha256 = "fdbc4edebdd5edbdb5bd52af907a46f4adb8527f0346b3c84271fde0b0111358"
 
 [[topic]]
