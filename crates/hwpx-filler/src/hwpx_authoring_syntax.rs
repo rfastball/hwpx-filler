@@ -2,8 +2,11 @@
 
 use crate::fields::{is_fill_target_field_type, normalize_field_id};
 use crate::hwpx_authoring_reading::{element_children, is_hp};
-use crate::hwpx_product_inspection::inspect_slot_regions;
+use crate::hwpx_product_inspection::{SlotSnapshot, inspect_slot_regions};
 use crate::hwpx_structure::{begin_marker_text, end_marker_text};
+use crate::slot::Slot;
+use hwpx_core::bookmark_region::BookmarkRegion;
+use hwpx_core::native_admission::EntryFieldScan;
 use hwpx_core::package::HwpxPackage;
 use hwpx_core::xml_view::{Content, NodeId, XmlView};
 use serde_json::{Value, json};
@@ -39,49 +42,138 @@ fn first_text(view: &XmlView, id: NodeId) -> String {
     text
 }
 
-pub fn syntax_view_hwpx(package: &HwpxPackage) -> Result<Value, SyntaxViewError> {
-    let snapshot = inspect_slot_regions(package).map_err(err)?;
-    let mut begins: HashMap<(String, usize), Vec<String>> = HashMap::new();
-    let mut ends: HashMap<(String, usize), Vec<String>> = HashMap::new();
-    let mut notes = Vec::new();
-    if !snapshot.diagnostics.is_empty() {
-        notes.push(NOTE_BROKEN.to_owned());
-    } else {
-        for slot in &snapshot.slots {
-            let mut members = Vec::new();
-            if let Some(region) = snapshot.slot_regions.get(&slot.id) {
-                members.push(("slot", slot.id.as_str(), slot.label.as_deref(), region));
-            }
-            for option in &slot.options {
-                if let Some(region) = snapshot
-                    .option_regions
-                    .get(&(slot.id.clone(), option.id.clone()))
-                {
-                    members.push((
-                        "option",
-                        option.id.as_str(),
-                        option.label.as_deref(),
-                        region,
-                    ));
-                }
-            }
-            for (kind, id, label, region) in members {
-                let Ok(opening) = begin_marker_text(kind, id, label) else {
-                    if !notes.iter().any(|note| note == NOTE_UNWRITABLE_ID) {
-                        notes.push(NOTE_UNWRITABLE_ID.into());
-                    }
-                    continue;
-                };
-                begins
-                    .entry((region.section.clone(), region.start_paragraph))
-                    .or_default()
-                    .push(opening);
-                ends.entry((region.section.clone(), region.end_paragraph))
-                    .or_default()
-                    .insert(0, end_marker_text(kind).map_err(err)?);
-            }
+fn note_once(notes: &mut Vec<String>, note: &str) {
+    if !notes.iter().any(|known| known == note) {
+        notes.push(note.into());
+    }
+}
+
+/// Marker lines keyed by (entry, top-level paragraph index).
+type Markers = HashMap<(String, usize), Vec<String>>;
+
+type Member<'a> = (&'static str, &'a str, Option<&'a str>, &'a BookmarkRegion);
+
+/// A slot and its options that have bookmark regions, slot first.
+fn slot_members<'a>(snapshot: &'a SlotSnapshot, slot: &'a Slot) -> Vec<Member<'a>> {
+    let mut members = Vec::new();
+    if let Some(region) = snapshot.slot_regions.get(&slot.id) {
+        members.push(("slot", slot.id.as_str(), slot.label.as_deref(), region));
+    }
+    for option in &slot.options {
+        if let Some(region) = snapshot
+            .option_regions
+            .get(&(slot.id.clone(), option.id.clone()))
+        {
+            members.push((
+                "option",
+                option.id.as_str(),
+                option.label.as_deref(),
+                region,
+            ));
         }
     }
+    members
+}
+
+/// Opening and closing marker lines per paragraph; unwritable ids are noted and skipped.
+fn region_markers(
+    snapshot: &SlotSnapshot,
+    notes: &mut Vec<String>,
+) -> Result<(Markers, Markers), SyntaxViewError> {
+    let mut begins = Markers::new();
+    let mut ends = Markers::new();
+    for slot in &snapshot.slots {
+        for (kind, id, label, region) in slot_members(snapshot, slot) {
+            let Ok(opening) = begin_marker_text(kind, id, label) else {
+                note_once(notes, NOTE_UNWRITABLE_ID);
+                continue;
+            };
+            begins
+                .entry((region.section.clone(), region.start_paragraph))
+                .or_default()
+                .push(opening);
+            ends.entry((region.section.clone(), region.end_paragraph))
+                .or_default()
+                .insert(0, end_marker_text(kind).map_err(err)?);
+        }
+    }
+    Ok((begins, ends))
+}
+
+/// Fillable fields by begin node, and the text nodes their tokens replace.
+fn fill_fields(scan: &EntryFieldScan) -> (HashMap<NodeId, String>, HashSet<NodeId>) {
+    let mut named = HashMap::new();
+    let mut hidden = HashSet::new();
+    for field in &scan.fields {
+        if !is_fill_target_field_type(field.field_type.as_deref()) {
+            continue;
+        }
+        if let Some(name) = field.raw_name.as_deref().and_then(normalize_field_id) {
+            named.insert(field.begin, name);
+            hidden.extend(field.texts.iter().copied());
+        }
+    }
+    (named, hidden)
+}
+
+fn body_line(
+    view: &XmlView,
+    paragraph: NodeId,
+    named: &HashMap<NodeId, String>,
+    hidden: &HashSet<NodeId>,
+) -> String {
+    let mut body = String::new();
+    for id in view.descendants(paragraph).unwrap_or_default() {
+        if let Some(name) = named.get(&id) {
+            body.push_str(&format!("{{{{{name}}}}}"));
+        } else if is_hp(view, id, "t") && !hidden.contains(&id) {
+            body.push_str(&first_text(view, id));
+        }
+    }
+    body
+}
+
+fn section_text(
+    view: &XmlView,
+    entry: &str,
+    markers: &mut (Markers, Markers),
+    notes: &mut Vec<String>,
+) -> String {
+    let (begins, ends) = markers;
+    let (named, hidden) = fill_fields(&view.field_occurrences(entry));
+    let mut lines = Vec::new();
+    for (index, paragraph) in element_children(view, view.root())
+        .filter(|id| is_hp(view, *id, "p"))
+        .enumerate()
+    {
+        if view
+            .descendants(paragraph)
+            .unwrap_or_default()
+            .into_iter()
+            .any(|id| is_hp(view, id, "tbl"))
+        {
+            note_once(notes, NOTE_TABLE);
+        }
+        lines.extend(
+            begins
+                .remove(&(entry.to_owned(), index))
+                .unwrap_or_default(),
+        );
+        lines.push(body_line(view, paragraph, &named, &hidden));
+        lines.extend(ends.remove(&(entry.to_owned(), index)).unwrap_or_default());
+    }
+    lines.join("\n")
+}
+
+pub fn syntax_view_hwpx(package: &HwpxPackage) -> Result<Value, SyntaxViewError> {
+    let snapshot = inspect_slot_regions(package).map_err(err)?;
+    let mut notes = Vec::new();
+    let mut markers = if snapshot.diagnostics.is_empty() {
+        region_markers(&snapshot, &mut notes)?
+    } else {
+        notes.push(NOTE_BROKEN.to_owned());
+        (Markers::new(), Markers::new())
+    };
     let mut sections = Vec::new();
     for entry in package.content_xml_names() {
         let source = package
@@ -90,49 +182,8 @@ pub fn syntax_view_hwpx(package: &HwpxPackage) -> Result<Value, SyntaxViewError>
             .find(|item| item.name == entry)
             .ok_or_else(|| SyntaxViewError(format!("missing content entry: {entry}")))?;
         let view = XmlView::parse(&source.data).map_err(err)?;
-        let scan = view.field_occurrences(entry);
-        let mut named = HashMap::new();
-        let mut hidden = HashSet::new();
-        for field in &scan.fields {
-            if !is_fill_target_field_type(field.field_type.as_deref()) {
-                continue;
-            }
-            if let Some(name) = field.raw_name.as_deref().and_then(normalize_field_id) {
-                named.insert(field.begin, name);
-                hidden.extend(field.texts.iter().copied());
-            }
-        }
-        let mut lines = Vec::new();
-        for (index, paragraph) in element_children(&view, view.root())
-            .filter(|id| is_hp(&view, *id, "p"))
-            .enumerate()
-        {
-            if view
-                .descendants(paragraph)
-                .unwrap_or_default()
-                .into_iter()
-                .any(|id| is_hp(&view, id, "tbl"))
-                && !notes.iter().any(|note| note == NOTE_TABLE)
-            {
-                notes.push(NOTE_TABLE.into());
-            }
-            lines.extend(
-                begins
-                    .remove(&(entry.to_owned(), index))
-                    .unwrap_or_default(),
-            );
-            let mut body = String::new();
-            for id in view.descendants(paragraph).unwrap_or_default() {
-                if let Some(name) = named.get(&id) {
-                    body.push_str(&format!("{{{{{name}}}}}"));
-                } else if is_hp(&view, id, "t") && !hidden.contains(&id) {
-                    body.push_str(&first_text(&view, id));
-                }
-            }
-            lines.push(body);
-            lines.extend(ends.remove(&(entry.to_owned(), index)).unwrap_or_default());
-        }
-        sections.push(json!({"entry":entry,"text":lines.join("\n")}));
+        let text = section_text(&view, entry, &mut markers, &mut notes);
+        sections.push(json!({"entry":entry,"text":text}));
     }
     Ok(json!({"sections":sections,"note":if notes.is_empty(){None}else{Some(notes.join(" "))}}))
 }
