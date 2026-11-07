@@ -7,10 +7,11 @@ use crate::hwpx_structure_ops::{product_metatag_index, structure_region_name};
 use crate::slot::{Slot, SlotOption};
 use crate::structure_scan::python_trim;
 use hwpx_core::bookmark_region::{
-    BookmarkRename, adjust_bookmark_region, append_bookmark_metatag, create_bookmark_region,
+    BookmarkRegion, BookmarkRename, adjust_bookmark_region, append_bookmark_metatag, create_bookmark_region,
     rename_bookmark_regions,
 };
 use hwpx_core::package::HwpxPackage;
+use hwpx_core::xml_view::Content;
 use serde_json::{Value, json};
 use std::fmt;
 
@@ -69,6 +70,168 @@ fn clean_snapshot(
     Ok(snapshot)
 }
 
+fn plain(message: &str) -> AuthoringRegionError {
+    AuthoringRegionError::plain(message.into())
+}
+
+fn native(error: impl fmt::Display) -> AuthoringRegionError {
+    AuthoringRegionError::plain(error.to_string())
+}
+
+const REGION_MISSING: &str = "항목이나 선택 영역을 찾을 수 없습니다.";
+const LABEL_NOT_TEXT: &str = "표시 이름은 텍스트여야 합니다.";
+const PARAGRAPH_RANGE: &str = "문단 범위를 정확히 고르세요.";
+const CHILD_UNRESOLVED: &str = "하위 선택 책갈피를 하나로 확정할 수 없습니다.";
+
+/// Runs a native edit of one entry; if it fails, that entry gets its prior bytes back.
+fn restoring_entry(
+    package: &mut HwpxPackage,
+    entry: &str,
+    action: impl FnOnce(&mut HwpxPackage) -> Result<(), AuthoringRegionError>,
+) -> Result<(), AuthoringRegionError> {
+    let original = package
+        .entries
+        .iter()
+        .find(|item| item.name == entry)
+        .map(|item| item.data.clone());
+    let result = action(package);
+    if result.is_err()
+        && let Some(original) = original
+    {
+        package
+            .entries
+            .iter_mut()
+            .find(|item| item.name == entry)
+            .unwrap()
+            .data = original;
+    }
+    result
+}
+
+/// The slot id and, for an option command, the option id the command names.
+fn region_ids<'a>(
+    command: &'a Value,
+    option: bool,
+    missing_slot: &str,
+    missing_option: &str,
+) -> Result<(&'a str, Option<&'a str>), AuthoringRegionError> {
+    let text = |key: &str, missing: &str| {
+        command
+            .get(key)
+            .and_then(Value::as_str)
+            .ok_or_else(|| plain(missing))
+    };
+    let slot_id = text("slot_id", missing_slot)?;
+    let option_id = if option {
+        Some(text("option_id", missing_option)?)
+    } else {
+        None
+    };
+    Ok((slot_id, option_id))
+}
+
+fn find_region<'a>(
+    snapshot: &'a crate::hwpx_product_inspection::SlotSnapshot,
+    slot_id: &str,
+    option_id: Option<&str>,
+) -> Result<&'a BookmarkRegion, AuthoringRegionError> {
+    if let Some(option_id) = option_id {
+        snapshot
+            .option_regions
+            .get(&(slot_id.to_owned(), option_id.to_owned()))
+    } else {
+        snapshot.slot_regions.get(slot_id)
+    }
+    .ok_or_else(|| plain(REGION_MISSING))
+}
+
+fn new_region_label(command: &Value) -> Result<Option<&str>, AuthoringRegionError> {
+    match command.get("label") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => Ok(Some(text.as_str())),
+        _ => Err(plain(LABEL_NOT_TEXT)),
+    }
+}
+
+/// The entry and paragraph range a new region spans; table cells are refused.
+fn new_region_span(command: &Value) -> Result<(&str, usize, usize), AuthoringRegionError> {
+    let entry = command.get("entry").and_then(Value::as_str);
+    let start = integer(command.get("start_paragraph"));
+    let end = integer(command.get("end_paragraph"));
+    if command
+        .get("cell_path")
+        .is_some_and(|value| !value.is_null())
+    {
+        return Err(plain(
+            "표 셀 안에서는 항목·선택을 만들 수 없습니다. 표 밖 문단까지 이어서 고르세요.",
+        ));
+    }
+    let (Some(entry), Some(start), Some(end)) = (entry, start, end) else {
+        return Err(plain(PARAGRAPH_RANGE));
+    };
+    Ok((entry, start, end))
+}
+
+/// The new region's parent bookmark, metatag payload, and bookmark name.
+type NewRegion = (Option<BookmarkRegion>, String, String);
+
+fn new_option_region(
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
+    command: &Value,
+    identifier: &str,
+    label: Option<&str>,
+) -> Result<NewRegion, AuthoringRegionError> {
+    let owner = command
+        .get("slot_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| plain("선택을 만들 상위 항목이 필요합니다."))?;
+    let parent = snapshot
+        .slot_regions
+        .get(owner)
+        .ok_or_else(|| plain("선택을 만들 상위 항목이 필요합니다."))?;
+    if snapshot
+        .option_regions
+        .contains_key(&(owner.to_owned(), identifier.to_owned()))
+    {
+        return Err(plain("같은 항목에 해당 선택 식별자가 이미 있습니다."));
+    }
+    let order = snapshot
+        .slots
+        .iter()
+        .find(|slot| slot.id == owner)
+        .unwrap()
+        .options
+        .len();
+    let payload = serialize_slot_option_metatag(&SlotOption {
+        id: identifier.into(),
+        order,
+        label: label.map(str::to_owned),
+    })
+    .map_err(native)?;
+    Ok((
+        Some(parent.clone()),
+        payload,
+        structure_region_name(owner, Some(identifier)),
+    ))
+}
+
+fn new_slot_region(
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
+    identifier: &str,
+    label: Option<&str>,
+) -> Result<NewRegion, AuthoringRegionError> {
+    if snapshot.slot_regions.contains_key(identifier) {
+        return Err(plain("항목 식별자가 이미 있습니다."));
+    }
+    let payload = serialize_slot_metatag(&Slot {
+        id: identifier.into(),
+        options: Vec::new(),
+        label: label.map(str::to_owned),
+    })
+    .map_err(native)?;
+    Ok((None, payload, structure_region_name(identifier, None)))
+}
+
 pub fn create_region(
     package: &mut HwpxPackage,
     command: &Value,
@@ -82,112 +245,131 @@ pub fn create_region(
         .ok_or_else(|| {
             AuthoringRegionError::invalid_identifier("항목이나 선택의 식별자를 입력하세요.")
         })?;
-    let label = match command.get("label") {
-        None | Some(Value::Null) => None,
-        Some(Value::String(text)) => Some(text.as_str()),
-        _ => {
-            return Err(AuthoringRegionError::plain(
-                "표시 이름은 텍스트여야 합니다.".into(),
-            ));
-        }
-    };
-    let entry = command.get("entry").and_then(Value::as_str);
-    let start = integer(command.get("start_paragraph"));
-    let end = integer(command.get("end_paragraph"));
-    if command
-        .get("cell_path")
-        .is_some_and(|value| !value.is_null())
-    {
-        return Err(AuthoringRegionError::plain(
-            "표 셀 안에서는 항목·선택을 만들 수 없습니다. 표 밖 문단까지 이어서 고르세요.".into(),
-        ));
-    }
-    let (Some(entry), Some(start), Some(end)) = (entry, start, end) else {
-        return Err(AuthoringRegionError::plain(
-            "문단 범위를 정확히 고르세요.".into(),
-        ));
-    };
+    let label = new_region_label(command)?;
+    let (entry, start, end) = new_region_span(command)?;
     let (parent, payload, name) = if option {
-        let owner = command
-            .get("slot_id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                AuthoringRegionError::plain("선택을 만들 상위 항목이 필요합니다.".into())
-            })?;
-        let parent = snapshot.slot_regions.get(owner).ok_or_else(|| {
-            AuthoringRegionError::plain("선택을 만들 상위 항목이 필요합니다.".into())
-        })?;
-        if snapshot
-            .option_regions
-            .contains_key(&(owner.to_owned(), identifier.to_owned()))
-        {
-            return Err(AuthoringRegionError::plain(
-                "같은 항목에 해당 선택 식별자가 이미 있습니다.".into(),
-            ));
-        }
-        let order = snapshot
-            .slots
-            .iter()
-            .find(|slot| slot.id == owner)
-            .unwrap()
-            .options
-            .len();
-        let payload = serialize_slot_option_metatag(&SlotOption {
-            id: identifier.into(),
-            order,
-            label: label.map(str::to_owned),
-        })
-        .map_err(|error| AuthoringRegionError::plain(error.to_string()))?;
-        (
-            Some(parent.clone()),
-            payload,
-            structure_region_name(owner, Some(identifier)),
-        )
+        new_option_region(&snapshot, command, identifier, label)?
     } else {
-        if snapshot.slot_regions.contains_key(identifier) {
-            return Err(AuthoringRegionError::plain(
-                "항목 식별자가 이미 있습니다.".into(),
-            ));
-        }
-        let payload = serialize_slot_metatag(&Slot {
-            id: identifier.into(),
-            options: Vec::new(),
-            label: label.map(str::to_owned),
-        })
-        .map_err(|error| AuthoringRegionError::plain(error.to_string()))?;
-        (None, payload, structure_region_name(identifier, None))
+        new_slot_region(&snapshot, identifier, label)?
     };
-    let original = package
+    restoring_entry(package, entry, |package| {
+        let created = create_bookmark_region(package, entry, start, end, &name, parent.as_ref())
+            .map_err(native)?;
+        append_bookmark_metatag(package, &created, &payload).map_err(native)
+    })
+}
+
+/// The rename's label: `None` keeps the current one, `Some(None)` clears it.
+fn rename_label(command: &Value) -> Result<Option<Option<&str>>, AuthoringRegionError> {
+    match command.get("label") {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(Value::String(text)) => Ok(Some(Some(text.as_str()))),
+        _ => Err(plain(LABEL_NOT_TEXT)),
+    }
+}
+
+fn renamed_label(label: Option<Option<&str>>, previous: &Option<String>) -> Option<String> {
+    label.map_or_else(|| previous.clone(), |value| value.map(str::to_owned))
+}
+
+fn renamed_option_payload(
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
+    ids: (&str, &str),
+    identifier: &str,
+    label: Option<Option<&str>>,
+) -> Result<String, AuthoringRegionError> {
+    let (slot_id, option_id) = ids;
+    if identifier != option_id
+        && snapshot
+            .option_regions
+            .contains_key(&(slot_id.to_owned(), identifier.to_owned()))
+    {
+        return Err(plain("같은 항목에 해당 선택 식별자가 이미 있습니다."));
+    }
+    let previous = snapshot
+        .slots
+        .iter()
+        .find(|slot| slot.id == slot_id)
+        .and_then(|slot| slot.options.iter().find(|option| option.id == option_id))
+        .ok_or_else(|| plain(REGION_MISSING))?;
+    serialize_slot_option_metatag(&SlotOption {
+        id: identifier.into(),
+        order: previous.order,
+        label: renamed_label(label, &previous.label),
+    })
+    .map_err(native)
+}
+
+fn renamed_slot_payload(
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
+    slot_id: &str,
+    identifier: &str,
+    label: Option<Option<&str>>,
+) -> Result<String, AuthoringRegionError> {
+    if identifier != slot_id && snapshot.slot_regions.contains_key(identifier) {
+        return Err(plain("항목 식별자가 이미 있습니다."));
+    }
+    let previous = snapshot
+        .slots
+        .iter()
+        .find(|slot| slot.id == slot_id)
+        .ok_or_else(|| plain(REGION_MISSING))?;
+    serialize_slot_metatag(&Slot {
+        id: identifier.into(),
+        options: previous.options.clone(),
+        label: renamed_label(label, &previous.label),
+    })
+    .map_err(native)
+}
+
+fn bookmark_begin_count(view: &hwpx_core::xml_view::XmlView, name: &str) -> usize {
+    view.descendants(view.root())
+        .unwrap()
+        .into_iter()
+        .filter(|id| {
+            view.node(*id)
+                .is_some_and(|node| node.name.is(hwpx_core::text_model::HP_NS, "fieldBegin"))
+                && view.attr(*id, "type") == Some("BOOKMARK")
+                && view.attr(*id, "name") == Some(name)
+        })
+        .count()
+}
+
+/// Bookmark renames that carry a renamed slot's options to the new slot id.
+fn child_option_renames<'a>(
+    package: &HwpxPackage,
+    snapshot: &'a crate::hwpx_product_inspection::SlotSnapshot,
+    region: &BookmarkRegion,
+    slot_id: &str,
+    identifier: &str,
+) -> Result<Vec<(&'a BookmarkRegion, String)>, AuthoringRegionError> {
+    let Some(previous) = snapshot.slots.iter().find(|slot| slot.id == slot_id) else {
+        return Ok(Vec::new());
+    };
+    let source = package
         .entries
         .iter()
-        .find(|item| item.name == entry)
-        .map(|item| item.data.clone());
-    let created = match create_bookmark_region(package, entry, start, end, &name, parent.as_ref()) {
-        Ok(created) => created,
-        Err(error) => {
-            if let Some(original) = original {
-                package
-                    .entries
-                    .iter_mut()
-                    .find(|item| item.name == entry)
-                    .unwrap()
-                    .data = original;
-            }
-            return Err(AuthoringRegionError::plain(error.to_string()));
+        .find(|entry| entry.name == region.section)
+        .ok_or_else(|| plain(CHILD_UNRESOLVED))?;
+    let view = hwpx_core::xml_view::XmlView::parse(&source.data).map_err(native)?;
+    let mut names = Vec::new();
+    for child in &previous.options {
+        let old_name = structure_region_name(slot_id, Some(&child.id));
+        if bookmark_begin_count(&view, &old_name) != 1 {
+            return Err(plain(CHILD_UNRESOLVED));
         }
-    };
-    if let Err(error) = append_bookmark_metatag(package, &created, &payload) {
-        if let Some(original) = original {
-            package
-                .entries
-                .iter_mut()
-                .find(|item| item.name == entry)
-                .unwrap()
-                .data = original;
-        }
-        return Err(AuthoringRegionError::plain(error.to_string()));
+        let child_region = snapshot
+            .option_regions
+            .get(&(slot_id.to_owned(), child.id.clone()))
+            .filter(|child_region| child_region.section == region.section)
+            .ok_or_else(|| plain(CHILD_UNRESOLVED))?;
+        names.push((
+            child_region,
+            structure_region_name(identifier, Some(&child.id)),
+        ));
     }
-    Ok(())
+    Ok(names)
 }
 
 pub fn rename_region(
@@ -196,32 +378,9 @@ pub fn rename_region(
 ) -> Result<(), AuthoringRegionError> {
     let snapshot = clean_snapshot(package)?;
     let option = command.get("type").and_then(Value::as_str) == Some("rename_option");
-    let slot_id = command
-        .get("slot_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            AuthoringRegionError::plain("항목이나 선택의 식별자가 필요합니다.".into())
-        })?;
-    let option_id = if option {
-        Some(
-            command
-                .get("option_id")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    AuthoringRegionError::plain("항목이나 선택의 식별자가 필요합니다.".into())
-                })?,
-        )
-    } else {
-        None
-    };
-    let region = if let Some(option_id) = option_id {
-        snapshot
-            .option_regions
-            .get(&(slot_id.to_owned(), option_id.to_owned()))
-    } else {
-        snapshot.slot_regions.get(slot_id)
-    }
-    .ok_or_else(|| AuthoringRegionError::plain("항목이나 선택 영역을 찾을 수 없습니다.".into()))?;
+    let missing = "항목이나 선택의 식별자가 필요합니다.";
+    let (slot_id, option_id) = region_ids(command, option, missing, missing)?;
+    let region = find_region(&snapshot, slot_id, option_id)?;
     let identifier = match command.get("id") {
         None => option_id.unwrap_or(slot_id),
         Some(value) => value.as_str().unwrap_or(""),
@@ -231,116 +390,23 @@ pub fn rename_region(
             "항목이나 선택의 새 식별자를 입력하세요.",
         ));
     }
-    let label = match command.get("label") {
-        None => None,
-        Some(Value::Null) => Some(None),
-        Some(Value::String(text)) => Some(Some(text.as_str())),
-        _ => {
-            return Err(AuthoringRegionError::plain(
-                "표시 이름은 텍스트여야 합니다.".into(),
-            ));
+    let label = rename_label(command)?;
+    let payload = match option_id {
+        Some(option_id) => {
+            renamed_option_payload(&snapshot, (slot_id, option_id), identifier, label)?
         }
+        None => renamed_slot_payload(&snapshot, slot_id, identifier, label)?,
     };
-    let payload = if let Some(option_id) = option_id {
-        if identifier != option_id
-            && snapshot
-                .option_regions
-                .contains_key(&(slot_id.to_owned(), identifier.to_owned()))
-        {
-            return Err(AuthoringRegionError::plain(
-                "같은 항목에 해당 선택 식별자가 이미 있습니다.".into(),
-            ));
-        }
-        let previous = snapshot
-            .slots
-            .iter()
-            .find(|slot| slot.id == slot_id)
-            .and_then(|slot| slot.options.iter().find(|option| option.id == option_id))
-            .ok_or_else(|| {
-                AuthoringRegionError::plain("항목이나 선택 영역을 찾을 수 없습니다.".into())
-            })?;
-        serialize_slot_option_metatag(&SlotOption {
-            id: identifier.into(),
-            order: previous.order,
-            label: label.map_or_else(|| previous.label.clone(), |value| value.map(str::to_owned)),
-        })
-    } else {
-        if identifier != slot_id && snapshot.slot_regions.contains_key(identifier) {
-            return Err(AuthoringRegionError::plain(
-                "항목 식별자가 이미 있습니다.".into(),
-            ));
-        }
-        let previous = snapshot
-            .slots
-            .iter()
-            .find(|slot| slot.id == slot_id)
-            .ok_or_else(|| {
-                AuthoringRegionError::plain("항목이나 선택 영역을 찾을 수 없습니다.".into())
-            })?;
-        serialize_slot_metatag(&Slot {
-            id: identifier.into(),
-            options: previous.options.clone(),
-            label: label.map_or_else(|| previous.label.clone(), |value| value.map(str::to_owned)),
-        })
-    }
-    .map_err(|error| AuthoringRegionError::plain(error.to_string()))?;
-    let index = product_metatag_index(region)
-        .map_err(|error| AuthoringRegionError::plain(error.to_string()))?;
+    let index = product_metatag_index(region).map_err(native)?;
     let new_name = structure_region_name(
         if option { slot_id } else { identifier },
         option.then_some(identifier),
     );
-    let mut names = Vec::new();
-    if !option
-        && identifier != slot_id
-        && let Some(previous) = snapshot.slots.iter().find(|slot| slot.id == slot_id)
-    {
-        let source = package
-            .entries
-            .iter()
-            .find(|entry| entry.name == region.section)
-            .ok_or_else(|| {
-                AuthoringRegionError::plain("하위 선택 책갈피를 하나로 확정할 수 없습니다.".into())
-            })?;
-        let view = hwpx_core::xml_view::XmlView::parse(&source.data)
-            .map_err(|error| AuthoringRegionError::plain(error.to_string()))?;
-        for child in &previous.options {
-            let old_name = structure_region_name(slot_id, Some(&child.id));
-            let matches = view
-                .descendants(view.root())
-                .unwrap()
-                .into_iter()
-                .filter(|id| {
-                    view.node(*id).is_some_and(|node| {
-                        node.name.is(hwpx_core::text_model::HP_NS, "fieldBegin")
-                    }) && view.attr(*id, "type") == Some("BOOKMARK")
-                        && view.attr(*id, "name") == Some(old_name.as_str())
-                })
-                .count();
-            if matches != 1 {
-                return Err(AuthoringRegionError::plain(
-                    "하위 선택 책갈피를 하나로 확정할 수 없습니다.".into(),
-                ));
-            }
-            let child_region = snapshot
-                .option_regions
-                .get(&(slot_id.to_owned(), child.id.clone()))
-                .ok_or_else(|| {
-                    AuthoringRegionError::plain(
-                        "하위 선택 책갈피를 하나로 확정할 수 없습니다.".into(),
-                    )
-                })?;
-            if child_region.section != region.section {
-                return Err(AuthoringRegionError::plain(
-                    "하위 선택 책갈피를 하나로 확정할 수 없습니다.".into(),
-                ));
-            }
-            names.push((
-                child_region,
-                structure_region_name(identifier, Some(&child.id)),
-            ));
-        }
-    }
+    let names = if !option && identifier != slot_id {
+        child_option_renames(package, &snapshot, region, slot_id, identifier)?
+    } else {
+        Vec::new()
+    };
     let mut edits = vec![BookmarkRename {
         region,
         name: &new_name,
@@ -351,8 +417,58 @@ pub fn rename_region(
         name,
         metatag: None,
     }));
-    rename_bookmark_regions(package, &edits)
-        .map_err(|error| AuthoringRegionError::plain(error.to_string()))
+    rename_bookmark_regions(package, &edits).map_err(native)
+}
+
+/// The requested inclusive paragraph range, possibly negative until bounds are known.
+fn adjusted_range(command: &Value) -> Result<(i128, i128), AuthoringRegionError> {
+    let start = signed_integer(command.get("start_paragraph"));
+    let end = signed_integer(command.get("end_paragraph"));
+    match (start, end) {
+        (Some(start), Some(end)) if start <= end => Ok((start, end)),
+        _ => Err(plain(PARAGRAPH_RANGE)),
+    }
+}
+
+fn is_hp_element(view: &hwpx_core::xml_view::XmlView, part: &Content, name: &str) -> bool {
+    matches!(part, Content::Element(id)
+        if view.node(*id).is_some_and(|node| node.name.is(hwpx_core::text_model::HP_NS, name)))
+}
+
+fn section_paragraphs(view: &hwpx_core::xml_view::XmlView) -> Vec<hwpx_core::xml_view::NodeId> {
+    view.node(view.root())
+        .unwrap()
+        .children
+        .iter()
+        .filter_map(|part| match part {
+            Content::Element(id) if is_hp_element(view, part, "p") => Some(*id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Refuses a range that leaves the owner slot, or a slot range that drops its options.
+fn containment_refusal(
+    snapshot: &crate::hwpx_product_inspection::SlotSnapshot,
+    ids: (&str, Option<&str>),
+    start: usize,
+    end: usize,
+) -> Result<(), AuthoringRegionError> {
+    let (slot_id, option_id) = ids;
+    if option_id.is_some() {
+        let owner = snapshot
+            .slot_regions
+            .get(slot_id)
+            .ok_or_else(|| plain(REGION_MISSING))?;
+        if start < owner.start_paragraph || end > owner.end_paragraph {
+            return Err(plain("고른 범위는 상위 항목 안에 있어야 합니다."));
+        }
+    } else if snapshot.option_regions.iter().any(|((owner, _), child)| {
+        owner == slot_id && (start > child.start_paragraph || end < child.end_paragraph)
+    }) {
+        return Err(plain("조정한 항목 범위에서 하위 선택이 벗어납니다."));
+    }
+    Ok(())
 }
 
 pub fn adjust_region(
@@ -361,96 +477,37 @@ pub fn adjust_region(
 ) -> Result<(), AuthoringRegionError> {
     let snapshot = clean_snapshot(package)?;
     let option = command.get("kind").and_then(Value::as_str) == Some("option");
-    let slot_id = command
-        .get("slot_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AuthoringRegionError::plain("항목 식별자가 필요합니다.".into()))?;
-    let option_id = if option {
-        Some(
-            command
-                .get("option_id")
-                .and_then(Value::as_str)
-                .ok_or_else(|| AuthoringRegionError::plain("선택 식별자가 필요합니다.".into()))?,
-        )
-    } else {
-        None
-    };
-    let region = if let Some(option_id) = option_id {
-        snapshot
-            .option_regions
-            .get(&(slot_id.to_owned(), option_id.to_owned()))
-    } else {
-        snapshot.slot_regions.get(slot_id)
-    }
-    .ok_or_else(|| AuthoringRegionError::plain("항목이나 선택 영역을 찾을 수 없습니다.".into()))?;
-    let start = signed_integer(command.get("start_paragraph"));
-    let end = signed_integer(command.get("end_paragraph"));
-    let (Some(start), Some(end)) = (start, end) else {
-        return Err(AuthoringRegionError::plain(
-            "문단 범위를 정확히 고르세요.".into(),
-        ));
-    };
-    if start > end {
-        return Err(AuthoringRegionError::plain(
-            "문단 범위를 정확히 고르세요.".into(),
-        ));
-    }
+    let ids = region_ids(
+        command,
+        option,
+        "항목 식별자가 필요합니다.",
+        "선택 식별자가 필요합니다.",
+    )?;
+    let region = find_region(&snapshot, ids.0, ids.1)?;
+    let (start, end) = adjusted_range(command)?;
     let len = package
         .entries
         .iter()
         .find(|entry| entry.name == region.section)
-        .ok_or_else(|| {
-            AuthoringRegionError::plain("항목이나 선택 영역을 찾을 수 없습니다.".into())
-        })?;
-    let view = hwpx_core::xml_view::XmlView::parse(&len.data)
-        .map_err(|error| AuthoringRegionError::plain(error.to_string()))?;
-    let paragraphs: Vec<_> = view
-        .node(view.root())
-        .unwrap()
-        .children
-        .iter()
-        .filter_map(|part| match part {
-            hwpx_core::xml_view::Content::Element(id)
-                if view
-                    .node(*id)
-                    .is_some_and(|node| node.name.is(hwpx_core::text_model::HP_NS, "p")) =>
-            {
-                Some(*id)
-            }
-            _ => None,
-        })
-        .collect();
+        .ok_or_else(|| plain(REGION_MISSING))?;
+    let view = hwpx_core::xml_view::XmlView::parse(&len.data).map_err(native)?;
+    let paragraphs = section_paragraphs(&view);
     if start < 0 || end >= paragraphs.len() as i128 {
-        return Err(AuthoringRegionError::plain(
-            "고른 문단 범위가 문서 영역 밖에 있습니다.".into(),
-        ));
+        return Err(plain("고른 문단 범위가 문서 영역 밖에 있습니다."));
     }
     let (start, end) = (start as usize, end as usize);
     if [paragraphs[start], paragraphs[end]].iter().any(|paragraph| {
-        !view.node(*paragraph).unwrap().children.iter().any(|part| {
-            matches!(part, hwpx_core::xml_view::Content::Element(id) if view.node(*id).is_some_and(|node| node.name.is(hwpx_core::text_model::HP_NS, "run")))
-        })
+        !view
+            .node(*paragraph)
+            .unwrap()
+            .children
+            .iter()
+            .any(|part| is_hp_element(&view, part, "run"))
     }) {
-        return Err(AuthoringRegionError::plain("경계 문단에 편집 가능한 텍스트 런이 없습니다.".into()));
+        return Err(plain("경계 문단에 편집 가능한 텍스트 런이 없습니다."));
     }
-    if option {
-        let owner = snapshot.slot_regions.get(slot_id).ok_or_else(|| {
-            AuthoringRegionError::plain("항목이나 선택 영역을 찾을 수 없습니다.".into())
-        })?;
-        if start < owner.start_paragraph || end > owner.end_paragraph {
-            return Err(AuthoringRegionError::plain(
-                "고른 범위는 상위 항목 안에 있어야 합니다.".into(),
-            ));
-        }
-    } else if snapshot.option_regions.iter().any(|((owner, _), child)| {
-        owner == slot_id && (start > child.start_paragraph || end < child.end_paragraph)
-    }) {
-        return Err(AuthoringRegionError::plain(
-            "조정한 항목 범위에서 하위 선택이 벗어납니다.".into(),
-        ));
-    }
-    adjust_bookmark_region(package, region, start, end)
-        .map_err(|error| AuthoringRegionError::plain(error.to_string()))
+    containment_refusal(&snapshot, ids, start, end)?;
+    adjust_bookmark_region(package, region, start, end).map_err(native)
 }
 
 #[cfg(test)]
