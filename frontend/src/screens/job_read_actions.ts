@@ -1,8 +1,7 @@
-/* R4-01 job 읽기 표면의 컨트롤러 헬퍼 — job_read.ts의 module_statements 상한 분리.
+/* R4-01 job 읽기 표면의 컨트롤러 헬퍼 — 선택·즐겨찾기·새 작업·재연결·데이터 연결.
    `zone(...)` 존 변이 호출은 job_read.ts가 단독 소유하므로(bridge_contract 계약), 여기
-   옮긴 함수는 전부 그 호출을 쓰지 않는 쪽(선택·즐겨찾기·새 작업·재연결·데이터 연결)만이다.
-   `switching` 가드는 selectJob과 함께 여기로 옮겨 `isSwitchingJob()` 접근자로 내보낸다
-   (job_read.ts의 switchData가 그 값만 읽는다). 순수 이동, 로직 불변. */
+   함수는 전부 그 호출을 쓰지 않는다. `switching` 가드는 selectJob과 함께 여기 두고
+   `isSwitchingJob()` 접근자로 내보낸다(job_read.ts의 switchData가 그 값만 읽는다). */
 import type { PickerSessionRead } from "./data_picker.ts";
 import type { JobReadControllerDeps, Obj, UiState } from "./job_read.ts";
 

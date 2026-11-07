@@ -185,9 +185,8 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   /* draft(이름·패턴·행 값) 발신·커밋과 데이터 열/표시형 select 발행(U6-C #977)은
-     `editor_controller_draft.ts` 로 분리했다(복잡도 예산 — 「저장/더티 처리」). `draft` 그
-     자체는 흡수(`absorb`)도 쓰는 공유 가변 상태라 여기(main)가 계속 소유하고, get/set 만
-     넘긴다. */
+     `editor_controller_draft.ts` 가 진다(저장/더티 처리). `draft` 그 자체는 흡수(`absorb`)
+     도 쓰는 공유 가변 상태라 여기(main)가 계속 소유하고, get/set 만 넘긴다. */
   const draftOps = createDraftOps({
     getDraft: () => draft,
     setDraft: (next: DraftState) => { draft = next; },
@@ -341,10 +340,10 @@ export function createEditorController(deps: EditorControllerDeps) {
     if (aimAtTarget(target)) patchView({ aim: "", aimed: target });
   }
 
-  /* 라이브러리 좌·우 열 ⋮ 메뉴·항목 상세 시트·Slot(컴파일된 구간) 동사(F8·S8-03·U6-E #979)와
-     템플릿·데이터 채택·등록 데이터(pool) 관리 동사·매핑 재판정 관문은 각각
-     `editor_controller_slots.ts`·`editor_controller_selection.ts` 로 분리했다(복잡도 예산 —
-     module_statements 상한). 공유 상태(뷰·스냅샷·발신·알림)는 deps 로 넘긴다. */
+  /* 라이브러리 좌·우 열 ⋮ 메뉴·항목 상세 시트·Slot(컴파일된 구간) 동사(F8·S8-03·U6-E #979)는
+     `editor_controller_slots.ts` 가, 템플릿·데이터 채택·등록 데이터(pool) 관리 동사·매핑
+     재판정 관문은 `editor_controller_selection.ts` 가 각각 진다. 공유 상태(뷰·스냅샷·발신·
+     알림)는 deps 로 넘긴다. */
   const selectionCtl = createSelectionController({
     modal: deps.modal,
     client: deps.client,
@@ -434,8 +433,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   /** 저장 성공의 정산 — 사유가 해소된 표지·알림을 걷고, 저장은 제자리이므로(결정 40)
-   *  후보·문서 탐색 스냅샷만 호출자 선택에 따라 갱신한다. `doSave` 분기 하나를 여기로
-   *  옮겨 그 함수의 복잡도를 낮춘다(복잡도 예산). */
+   *  후보·문서 탐색 스냅샷만 호출자 선택에 따라 갱신한다. */
   function settleSaveSuccess(options: { listRefresh?: "background" | "caller" }): void {
     clearSaveMessage();   // 막았던 사유가 해소됐다 — 차단 문안을 남겨 두지 않는다(#874)
     /* 겨눔 표지도 같은 전이에서 걷는다: 사유가 사라졌는데 칸만 빨갛게 남으면 화면이
@@ -446,7 +444,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   /** 덮어쓰기 확인 — 동의하면 그 표지를 실어 저장을 재시도한다(#149). 판정은 Python 이
-   *  쓰기 잠금 안에서 다시 한다. `doSave` 의 중첩 분기를 여기로 옮긴다(복잡도 예산). */
+   *  쓰기 잠금 안에서 다시 한다. */
   async function confirmOverwriteThenRetry(
     result: Obj, flags: Obj, options: { listRefresh?: "background" | "caller" },
   ): Promise<boolean> {

@@ -82,7 +82,7 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
   }
 
   /** `load_data_sheet` 호출 — 지연 확인(`basis`)이 있으면 그 재호출도 같은 자리에서
-   *  짓는다(복잡도 예산 — `pick` 분리의 추출 대상 그 자체). */
+   *  짓는다. */
   async function loadDataSheet(
     current: Session, selected: string[], confirmBasis?: unknown,
   ): Promise<unknown> {
@@ -94,7 +94,7 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
   }
 
   /** 지연 확인 왕복 — `needs_confirm` 응답이면 묻고 재호출한 결과를, 아니면 그대로
-   *  돌려준다. 거절됐으면 `null`(복잡도 예산 — `pick` 분리의 추출 대상). */
+   *  돌려준다. 거절됐으면 `null`. */
   async function resolveConfirmation(
     current: Session, selected: string[], result: unknown,
   ): Promise<unknown | null> {
@@ -106,8 +106,7 @@ export function createSheetPickerController(deps: SheetPickerDeps) {
     return loadDataSheet(current, selected, confirmation.basis);
   }
 
-  /** 응답 판정의 착지 — 묶음 결과(일부 실패 포함)와 단일 결과를 가른다(복잡도 예산 —
-   *  `pick` 분리의 추출 대상). */
+  /** 응답 판정의 착지 — 묶음 결과(일부 실패 포함)와 단일 결과를 가른다. */
   function settleSheetResult(current: Session, result: unknown): void {
     if (result && typeof result === "object" && Array.isArray((result as Obj).sheets)) {
       const batch = result as Obj;

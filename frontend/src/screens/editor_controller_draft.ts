@@ -1,6 +1,6 @@
-/* 편집기 draft(이름·패턴·행 값) 발신·커밋과 데이터 열/표시형 select 발행 — `editor_controller.ts`
- * 책임 분리(복잡도 예산 — 「저장/더티 처리」). `draft` 그 자체는 흡수(`absorb`)도 써야 하는
- * 공유 가변 상태라 main 파일이 계속 소유하고, 여기는 get/set 으로만 건드린다. */
+/* 편집기 draft(이름·패턴·행 값) 발신·커밋과 데이터 열/표시형 select 발행(「저장/더티 처리」).
+ * `draft` 그 자체는 흡수(`absorb`)도 써야 하는 공유 가변 상태라 main 파일이 계속 소유하고,
+ * 여기는 get/set 으로만 건드린다. */
 import {
   NAME_FIELD, PATTERN_FIELD, issueToken, markField, rowField, settle, typeInto,
 } from "./editor_state.ts";

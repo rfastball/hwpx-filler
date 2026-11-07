@@ -80,8 +80,7 @@ function isUsableFocusTarget(target: HTMLElement, root: HTMLElement): boolean {
 }
 
 /** 되돌릴 초점이 없는 자리인가 — 「숨은 화면에 갇힌 초점이 아니다」와 「목적 화면이
- *  이미 자기 안에 초점을 세웠다」 두 가드를 한 판정으로 모은다(복잡도 예산 —
- *  `restoreFocus` 분리의 추출 대상).
+ *  이미 자기 안에 초점을 세웠다」 두 가드를 한 판정으로 모은다.
  *
  *  둘째 가드의 근거: 이 복원은 「나가는 화면이 초점을 들고 있었으니 들어오는 화면에
  *  시작점을 준다」다. 들어오는 화면이 스스로 자리를 잡았다면 초점은 고아가 아니고,
@@ -95,9 +94,8 @@ function shouldSkipFocusRestore(doc: Document, root: HTMLElement, outgoingOwnedF
   return active !== null && active !== doc.body && root.contains(active);
 }
 
-/** 포커스 복원 — root 존재 판정과 「되돌릴 게 없다」 가드들을 한데 모은다(복잡도 예산 —
- *  `restoreMemory` 분리의 추출 대상). 스크롤 복원과 분리되는 이유는 전자는 항상 하고
- *  후자는 여러 가드를 지나야 하기 때문이다. */
+/** 포커스 복원 — root 존재 판정과 「되돌릴 게 없다」 가드들을 한데 모은다. 스크롤 복원과
+ *  분리되는 이유는 전자는 항상 하고 후자는 여러 가드를 지나야 하기 때문이다. */
 function restoreFocus(
   doc: Document,
   id: ProductScreenId,

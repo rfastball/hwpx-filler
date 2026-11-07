@@ -1,6 +1,5 @@
-/* 문서 열기·활성화·저장·닫기·복원 수명주기 — `authoring_controller.ts` 책임 분리(복잡도
- * 예산 — module_statements/function_statements 상한). 공유 가변 상태(뷰·viewId·호버·
- * 각종 Map)는 get/set 또는 Map 참조 그대로 deps 로 받는다. 이 모듈은 선택(select/adopt/
+/* 문서 열기·활성화·저장·닫기·복원 수명주기. 공유 가변 상태(뷰·viewId·호버·각종 Map)는
+ * get/set 또는 Map 참조 그대로 deps 로 받는다. 이 모듈은 선택(select/adopt/
  * caretSelection) 쪽 상태를 몰라도 된다 — `select` 가 `activate` 를 부르는 한 방향뿐이다. */
 import type { AuthoringEditor } from "./authoring_controller.ts";
 
@@ -102,9 +101,8 @@ export function createLifecycleController(deps: LifecycleDeps) {
     if (pending.selection) await editor.focus(pending.selection).catch((error) => deps.fail(error, "restore"));
   }
 
-  /** 활성화 전 범위 고르기 종료 — 떠나는 편집면의 고르기를 끈다(복잡도 예산 — `activate`
-   *  분리의 추출 대상). 이 자리는 **`viewId` 를 새 문서로 옮긴 뒤, `view` 는 아직 옛 탭일 때**다
-   *  — 끄는 대상은 방금 떠난 편집면이다. */
+  /** 활성화 전 범위 고르기 종료 — 떠나는 편집면의 고르기를 끈다. 이 자리는 **`viewId` 를
+   *  새 문서로 옮긴 뒤, `view` 는 아직 옛 탭일 때**다 — 끄는 대상은 방금 떠난 편집면이다. */
   function endOutgoingRangePick(): void {
     const viewId = deps.getViewId();
     if (viewId && deps.getView().rangePick) {
@@ -112,8 +110,8 @@ export function createLifecycleController(deps: LifecycleDeps) {
     }
   }
 
-  /** 활성화할 뷰 계산 — 알던 뷰가 있으면 그것, 없으면 복원 대상으로 지은 새 뷰(복잡도 예산 —
-   *  `activate` 분리의 추출 대상). 좌표 있는 복원은 **새 뷰에 한 번** 소비하도록 표지를 남긴다. */
+  /** 활성화할 뷰 계산 — 알던 뷰가 있으면 그것, 없으면 복원 대상으로 지은 새 뷰. 좌표 있는
+   *  복원은 **새 뷰에 한 번** 소비하도록 표지를 남긴다. */
   function activatedView(id: string, activated: Obj, current: Obj): Obj {
     const known = deps.views.get(id);
     const restore = activated.restore ?? current.restore;
@@ -161,7 +159,7 @@ export function createLifecycleController(deps: LifecycleDeps) {
   }
 
   /** `save` 발신 — 다른 이름·첫 저장·필요 저장은 피커 왕복(`invoke`), 그 외는 제자리 저장
-   *  (`dispatch`)이다(복잡도 예산 — `save` 분리의 추출 대상). */
+   *  (`dispatch`)이다. */
   function saveRequest(id: string, saveAs: boolean): Promise<Obj | null> {
     return saveAs || !deps.tab(id).path || deps.tab(id).save_as_required
       ? deps.invoke("save_authoring_document", id, deps.revision(id))
@@ -169,7 +167,7 @@ export function createLifecycleController(deps: LifecycleDeps) {
   }
 
   /** 저장 응답의 충돌·외부 변경 판정 — 복구 동사(비교·다른 이름·다시 열기·다시 저장, §9.2)를
-   *  남기고 거절한다(복잡도 예산 — `save` 분리의 추출 대상). */
+   *  남기고 거절한다. */
   function settleSaveConflict(result: Obj | null): boolean {
     if (!(result?.external_changed || result?.conflict)) return false;
     deps.update({ panel: "external", saveFailed: true });
@@ -195,8 +193,7 @@ export function createLifecycleController(deps: LifecycleDeps) {
     return true;
   }
 
-  /** 「저장하고 닫기」 전 저장 — 템플릿·시험 자료 중 손댄 것만 저장한다(복잡도 예산 —
-   *  `close` 분리의 추출 대상). */
+  /** 「저장하고 닫기」 전 저장 — 템플릿·시험 자료 중 손댄 것만 저장한다. */
   async function saveBeforeClose(id: string, result: Obj): Promise<boolean> {
     if (result.dirty && !(await save(id))) return false;
     if (result.cases_dirty && !(await deps.persistCases(id))) return false;
@@ -204,8 +201,7 @@ export function createLifecycleController(deps: LifecycleDeps) {
   }
 
   /** 닫기 전 확인 왕복 — 「계속 편집」·「저장하지 않고 닫기」·「저장하고 닫기」 선택을 받는다.
-   *  거절(취소)이면 `null`, 그 외에는 다음에 보낼 force 재시도의 결과다(복잡도 예산 — `close`
-   *  분리의 추출 대상). */
+   *  거절(취소)이면 `null`, 그 외에는 다음에 보낼 force 재시도의 결과다. */
   async function confirmCloseIfDirty(id: string, result: Obj): Promise<Obj | null> {
     if (!result.needs_confirm) return result;
     const answer = await deps.modal.choose({
@@ -219,8 +215,7 @@ export function createLifecycleController(deps: LifecycleDeps) {
     return deps.dispatch("close", { session_id: id, force: true });
   }
 
-  /** 세션 정리 — 문서 하나의 흔적을 전부 걷는다(복잡도 예산 — `close` 분리의 추출 대상,
-   *  분기 없는 정리 5종을 한 자리로). */
+  /** 세션 정리 — 문서 하나의 흔적을 전부 걷는다(정리 5종을 한 자리로). */
   function clearSession(id: string): void {
     deps.revisions.delete(id);
     deps.buffers.delete(id);

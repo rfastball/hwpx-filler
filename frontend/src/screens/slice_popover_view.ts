@@ -1,9 +1,7 @@
-/* 「가공」 팝오버의 순수 렌더 — slice_popover.ts의 module_statements 상한 분리. 상태·동작
-   (`SlicePopover`)과 `composeSliceSpec`는 원래 파일에 남고, 상태를 받아 그리기만 하는
-   `SlicePopoverView`와 그 하위 조각만 여기로 옮긴다(순수 이동, 로직 불변). 방식 줄 렌더는
-   이미 `SlicePopoverView.methodRow`로 분리돼 있었는데 그 안의 파트 렌더(ordinal/text/number)
-   까지 복잡도가 쌓여 있었다 — 공통 규율대로 **새 React 컴포넌트 경계**(`MethodRow`/`SlicePart`)
-   가 아니라 일반 렌더 함수(`renderMethodRow`/`renderSlicePart`)로만 쪼갠다. */
+/* 「가공」 팝오버의 순수 렌더 — 상태를 받아 그리기만 하는 `SlicePopoverView`와 그 하위 조각(방식 줄·
+   입력 파트·머리·예시·미리보기·바닥). 상태·동작(`SlicePopover`)과 명세 조립(`composeSliceSpec`)은
+   slice_popover.ts 가 진다. 조각은 React 컴포넌트가 아니라 일반 렌더 함수(`renderMethodRow`·
+   `renderSlicePart` 등)로 부른다 — 팝오버의 자식 자리와 재마운트 동작이 그대로 남는다. */
 import type { ReactNode } from "react";
 
 import { icon } from "./icons.ts";
@@ -47,8 +45,8 @@ function renderOrdinalPart(
   }, String(option.label))));
 }
 
-/** 글자/수 칸의 type·min·inputMode·칸 폭 보조 class — "number" 분기 하나를 네 속성에 걸쳐
- *  반복하던 삼항을 한 자리로 모은다(methodRow 복잡도의 실제 무게였다). */
+/** 글자/수 칸의 type·min·inputMode·칸 폭 보조 class — 네 속성을 "number" 여부 하나로
+ *  같은 판정으로 정한다. */
 function numberPartAttrs(
   part: Obj,
 ): { type: string; min: number | undefined; inputMode: string | undefined; numClass: string } {

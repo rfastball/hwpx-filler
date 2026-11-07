@@ -1,6 +1,6 @@
-/* 데이터 선택 다이얼로그(`#dataPickerModal`)의 렌더 — `data_picker.ts` 책임 분리(복잡도
-   예산 — module_statements 상한). 컨트롤러(상태·발신)는 `data_picker.ts` 가 계속 소유하고,
-   여기는 그 스냅샷을 공용 `PoolColumn`·`ContextMenu` 로 그리는 순수 조립만 진다. */
+/* 데이터 선택 다이얼로그(`#dataPickerModal`)의 렌더. 컨트롤러(상태·발신)는 `data_picker.ts`
+   가 계속 소유하고, 여기는 그 스냅샷을 공용 `PoolColumn`·`ContextMenu` 로 그리는 순수
+   조립만 진다. */
 import { Fragment, createElement, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { ContextMenu } from "./context_menu.ts";

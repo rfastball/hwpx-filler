@@ -1,7 +1,6 @@
-/* 명령 미리보기·적용·문서 명령 — `authoring_controller.ts` 책임 분리(복잡도 예산 —
- * module_statements/function_statements 상한). 공유 가변 상태(뷰·viewId·적용 중 표지·
- * 미리보기 요청 번호)는 get/set 으로 deps 를 받는다. 이 모듈은 선택(select/adopt) 쪽
- * 상태를 몰라도 된다 — 받는 명령·미리보기는 호출자가 다 채워 넘긴다. */
+/* 명령 미리보기·적용·문서 명령. 공유 가변 상태(뷰·viewId·적용 중 표지·미리보기 요청 번호)는
+ * get/set 으로 deps 를 받는다. 이 모듈은 선택(select/adopt) 쪽 상태를 몰라도 된다 — 받는
+ * 명령·미리보기는 호출자가 다 채워 넘긴다. */
 type Obj = Record<string, any>;
 
 export type ApplyDeps = {
@@ -48,14 +47,13 @@ export function createApplyController(deps: ApplyDeps) {
     return prepared;
   }
 
-  /** 다음에 되돌릴 행동의 이름(§9.3) — backend 가 label 을 주면 그것, 아니면 명령 표시 이름
-   *  (복잡도 예산 — `applyPreview` 분리의 추출 대상). */
+  /** 다음에 되돌릴 행동의 이름(§9.3) — backend 가 label 을 주면 그것, 아니면 명령 표시 이름. */
   function resolveCommandLabel(prepared: Obj, result: Obj, command: Obj): string {
     return prepared.label || result.label || deps.commandLabel(command.type) || command.type;
   }
 
-  /** 만든/개명한 대상을 적용 뒤 revision 에서 짚는다(복잡도 예산 — `applyPreview` 분리의
-   *  추출 대상) — 호출자가 그 자리를 고를 수 있게(선택·캐럿·이름표). */
+  /** 만든/개명한 대상을 적용 뒤 revision 에서 짚는다 — 호출자가 그 자리를 고를 수 있게
+   *  (선택·캐럿·이름표). */
   function createdOrRenamedAt(id: string, result: Obj): { created: Obj | null; renamed: Obj | null } {
     const at = { session_id: id, source_revision: deps.revision(id) };
     return {
@@ -64,15 +62,13 @@ export function createApplyController(deps: ApplyDeps) {
     };
   }
 
-  /** 적용할 준비된 미리보기와 명령 — 인자가 없으면 보이는 미리보기다(복잡도 예산 —
-   *  `applyPreview` 분리의 추출 대상). */
+  /** 적용할 준비된 미리보기와 명령 — 인자가 없으면 보이는 미리보기다. */
   function resolvePreparedCommand(given: Obj | undefined, view: Obj): { prepared: Obj | undefined; command: Obj | undefined } {
     const prepared = given || view.preview;
     return { prepared, command: prepared?.command || view.command };
   }
 
-  /** 편집기에 적용하고 그 내용을 되읽어 draft 를 정산한다(복잡도 예산 — `applyPreview`
-   *  분리의 추출 대상). */
+  /** 편집기에 적용하고 그 내용을 되읽어 draft 를 정산한다. */
   async function applyToEditor(
     editor: { content(): Promise<string>; apply(content: string, edits: Obj[], label: string, expectedContent?: string): Promise<void> },
     result: Obj, command: Obj, prepared: Obj, id: string,

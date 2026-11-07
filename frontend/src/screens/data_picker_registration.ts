@@ -1,8 +1,7 @@
-/* 등록 데이터(pool) 등록 폼(`#poolRegModal`) 상태 — `data_picker.ts` 책임 분리(복잡도
-   예산 — module_statements 상한). 이 폼은 「지금 마운트된 데이터」(`data_picker.ts` 의
-   `state`)와 독립적인 가변 상태(`reg`·`regRevision`·`inspectionRevision`)라 깨끗이
-   나뉜다 — 여는 쪽(openPin·openPclm·행 ⋯ 동사)이 프리필 값을 다 채워 넘기므로 이 모듈은
-   마운트 세션을 몰라도 된다. */
+/* 등록 데이터(pool) 등록 폼(`#poolRegModal`) 상태. 이 폼은 「지금 마운트된 데이터」
+   (`data_picker.ts` 의 `state`)와 독립적인 가변 상태(`reg`·`regRevision`·
+   `inspectionRevision`)라 깨끗이 나뉜다 — 여는 쪽(openPin·openPclm·행 ⋯ 동사)이 프리필
+   값을 다 채워 넘기므로 이 모듈은 마운트 세션을 몰라도 된다. */
 import {
   inspectedRegistrationSheets, newRegistrationState, registrationSheetError,
   selectedRegistrationSheets,
@@ -18,8 +17,8 @@ type ModalPort = {
   close(id: string): void;
 };
 
-/** 등록 폼 상태 → 발행할 액션과 payload. pclm/excel 두 갈래의 조립을 한 곳에 모은다
- *  (복잡도 예산 — `submitReg` 분리). 순수 함수라 `reg` 스냅샷만 받는다. */
+/** 등록 폼 상태 → 발행할 액션과 payload. pclm/excel 두 갈래의 조립을 한 곳에 모은다.
+ *  순수 함수라 `reg` 스냅샷만 받는다. */
 function buildRegistrationPayload(reg: RegState): { action: string; payload: Obj } {
   const pclm = reg.mode === "pclm";
   const action = pclm ? "register_pclm" : reg.targetKey ? "relink" : "register_excel";
@@ -35,8 +34,8 @@ function buildRegistrationPayload(reg: RegState): { action: string; payload: Obj
 type RegistrationCheck = { ok: true } | { ok: false; error: string | null };
 
 /** 제출 전 유효성 검사 3종(이름·경로 필수, 조사 재검증, 시트 선택)을 하나의 판정으로
- *  모은다(복잡도 예산 — `submitReg` 분리). `error: null` 은 「아직 준비되지 않았다」로
- *  조용히 멈추는 자리(지문 재조사 대기 등)고, 문자열은 사용자에게 보일 사유다. */
+ *  모은다. `error: null` 은 「아직 준비되지 않았다」로 조용히 멈추는 자리(지문 재조사
+ *  대기 등)고, 문자열은 사용자에게 보일 사유다. */
 function validateRegistration(reg: RegState, payload: Obj): RegistrationCheck {
   const pclm = reg.mode === "pclm";
   if (pclm ? !payload.name : !payload.name || !payload.path) {
@@ -88,8 +87,7 @@ export function createRegistrationForm(deps: RegistrationFormDeps) {
     void inspectRegSheets();
   }
 
-  /** 조사 응답 판정 — 성공이면 지문을 되싣고, 아니면 사유를 남긴다(복잡도 예산 —
-   *  `inspectRegSheets` 분리의 추출 대상). */
+  /** 조사 응답 판정 — 성공이면 지문을 되싣고, 아니면 사유를 남긴다. */
   function settleInspection(result: Obj, path: string): void {
     if (result.ok !== true || !Array.isArray(result.sheets)) {
       patchReg({ error: result.error || "등록하지 못했습니다." });
@@ -99,8 +97,7 @@ export function createRegistrationForm(deps: RegistrationFormDeps) {
     patchReg(inspectedRegistrationSheets(reg!, availableSheets, path));
   }
 
-  /** 조사를 건너뛸 자리인가 — 가드 3종을 한 판정으로 모은다(복잡도 예산 —
-   *  `inspectRegSheets` 분리의 추출 대상). */
+  /** 조사를 건너뛸 자리인가 — 가드 3종을 한 판정으로 모은다. */
   function inspectionBlocked(path: string): boolean {
     if (reg === null) return true;
     return reg.submitting || !path || reg.inspectedPath === path || reg.inspecting;
@@ -147,8 +144,8 @@ export function createRegistrationForm(deps: RegistrationFormDeps) {
     catch (error) { deps.notify(String((error as Obj)?.message || error)); }
   }
 
-  /** 제출 응답 후속 처리 — 지연 확인 왕복·판정·시트 닫기까지(복잡도 예산 — `submitReg`
-   *  분리의 추출 대상). 도중에 폼이 바뀌었거나(revision 불일치) 거절됐으면 조용히 멈춘다. */
+  /** 제출 응답 후속 처리 — 지연 확인 왕복·판정·시트 닫기까지. 도중에 폼이 바뀌었거나
+   *  (revision 불일치) 거절됐으면 조용히 멈춘다. */
   async function settleRegistrationSubmit(
     action: string, payload: Obj, initial: Obj, revision: number, pclm: boolean,
   ): Promise<void> {

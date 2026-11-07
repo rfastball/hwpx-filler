@@ -1,10 +1,7 @@
-/* R4-03 실행 표면의 순수 렌더 조각 — job_run.ts의 module_statements 상한 분리.
-   `JobActionBar`·`JobDelivery`·`JobTemplateChange`는 상시 예외라 원래 파일에 남고,
-   그 밖의 사전검증 배너·작업대 관찰 구획·상태 pill·준비 캡션만 여기로 옮긴다(순수 이동,
-   로직 불변). `JobWorkbenchStatus`는 그대로 옮기되 안에 있던 「데이터 확인」·「입력이
-   필요한 항목」 두 지역 블록을 모듈 수준 렌더 함수로 승격해 그 함수 자신의 분기를
-   덜어낸다(복잡도 33 → 분리) — 새 React 컴포넌트 경계가 아니라 `render<X>(props)` 호출로
-   같은 자리에 반환한다(컴포넌트 경계를 새로 그으면 안 된다는 공통 규율). */
+/* R4-03 실행 표면의 순수 렌더 조각 — 사전검증 배너·작업대 관찰 구획·상태 pill·준비 캡션.
+   행동 막대·배달·템플릿 변경(`JobActionBar`·`JobDelivery`·`JobTemplateChange`)은 job_run.ts가
+   진다. `JobWorkbenchStatus`의 「데이터 확인」·「입력이 필요한 항목」 구획은 React 컴포넌트가
+   아니라 `render<X>(props)` 일반 함수로 같은 자리에 그린다(구획의 재마운트 동작이 그대로다). */
 import { Fragment, createElement } from "react";
 import type { ReactNode } from "react";
 
@@ -20,8 +17,8 @@ export function JobPreflight(props: { controller: JobRunController }): ReactNode
     String(p.text));
 }
 
-/** record validation issue 목록 — 문제마다 위치 보기 단추를 낸다(갈라낸 이유는 복잡도,
- *  각 `<li>`의 재귀적인 중첩이 소유 함수의 분기처럼 세어진다). */
+/** record validation issue 목록 — 문제마다 위치 보기 단추를 낸다. 중첩된 `<li>` 목록이라
+ *  소유 함수 안에 그대로 두면 그 중첩만큼 함수가 커지므로 별도 렌더 함수로 둔다. */
 function renderRecordIssuesList(props: { controller: JobRunController; issues: Obj[] }): ReactNode {
   const { controller, issues } = props;
   return h('ul', { className: 'plain-list', id: 'jobRecordValidationIssues' },

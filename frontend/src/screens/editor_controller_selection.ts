@@ -1,6 +1,5 @@
 /* 템플릿·데이터 채택(고르기 열 선택·끌어 놓기)과 등록 데이터(pool) 관리 동사, 매핑 재판정
- * 관문(자동 제안 다시 받기 등) — `editor_controller.ts` 책임 분리(복잡도 예산).
- * 공유 상태(스냅샷·발신·알림)는 deps로 받는다. */
+ * 관문(자동 제안 다시 받기 등). 공유 상태(스냅샷·발신·알림)는 deps로 받는다. */
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import { pickDataFile } from "./data_file_pick.ts";

@@ -1,7 +1,6 @@
-/* R4-01 job 읽기 표면의 순수 렌더 조각. job_read.ts의 module_statements 상한 분리 —
-   컨트롤러·브리지 디스패치·상시 예외 렌더(BrowseRow/CandidateCard/JobBrowseDialog/
-   JobCandidates)는 원래 파일에 남고, 그 밖의 데이터 머리·표 본문·탭·빈 데이터 안내·
-   시트 닫기 결속만 여기로 옮긴다(순수 이동, 로직 불변). */
+/* R4-01 job 읽기 표면의 순수 렌더 조각 — 데이터 머리·표 본문·탭·빈 데이터 안내·시트 닫기
+   결속. 컨트롤러·브리지 디스패치와 후보·탐색 렌더(BrowseRow/CandidateCard/JobBrowseDialog/
+   JobCandidates)는 job_read.ts가 진다. */
 import { Fragment, createElement, useEffect } from "react";
 import type { ReactNode } from "react";
 

@@ -179,9 +179,9 @@ export function createDataPickerController(args: {
     }
   }
 
-  /* 등록 폼(`#poolRegModal`) 상태는 `data_picker_registration.ts` 로 분리했다(복잡도
-     예산 — module_statements 상한). 이 폼은 「지금 마운트된 데이터」(`state`)와 독립적인
-     가변 상태라 깨끗이 나뉜다 — 여는 쪽이 프리필 값을 다 채워 넘긴다. */
+  /* 등록 폼(`#poolRegModal`) 상태는 `data_picker_registration.ts` 가 진다. 이 폼은
+     「지금 마운트된 데이터」(`state`)와 독립적인 가변 상태라 깨끗이 나뉜다 — 여는 쪽이
+     프리필 값을 다 채워 넘긴다. */
   const registrationForm = createRegistrationForm({
     doc: args.doc,
     modal,
@@ -434,8 +434,8 @@ export function createDataPickerController(args: {
 
 export type DataPickerController = ReturnType<typeof createDataPickerController>;
 
-/** 이 다이얼로그의 렌더(`dialogHost`·`DataPickerDialog`)는 `data_picker_dialog.ts` 로
- *  옮겼다(복잡도 예산 — module_statements 상한). 컨트롤러(상태·발신)는 여기 그대로 둔다 —
- *  `product_screens.ts` 가 이 이름으로 그대로 가져오므로 재-export 한다. */
+/** 이 다이얼로그의 렌더(`dialogHost`·`DataPickerDialog`)는 `data_picker_dialog.ts` 가 진다.
+ *  컨트롤러(상태·발신)는 여기 그대로 둔다 — `product_screens.ts` 가 이 이름으로 그대로
+ *  가져오므로 재-export 한다. */
 export { DataPickerDialog } from "./data_picker_dialog.ts";
 export { PoolRegistrationDialog } from "./registration_dialog.ts";

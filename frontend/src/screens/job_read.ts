@@ -212,8 +212,8 @@ export function createJobReadController(deps: JobReadControllerDeps) {
   }
 
   /* 선택·즐겨찾기·새 작업·재연결·데이터 연결 — `zone(...)` 을 쓰지 않는 컨트롤러 헬퍼
-     묶음은 job_read_actions.ts가 쥔다(module_statements 분리). `switching` 가드도 함께
-     옮겨 `actions.isSwitchingJob()` 으로 읽는다. */
+     묶음은 job_read_actions.ts가 쥔다. `switching` 가드도 그쪽이 쥐고 여기서는
+     `actions.isSwitchingJob()` 으로 읽는다. */
   const actions = createJobReadActions({
     deps, call, snapshot, patchUi, getUi: () => ui, flushPendingEdits,
   });

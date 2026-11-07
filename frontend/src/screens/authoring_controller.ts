@@ -257,12 +257,11 @@ export function createAuthoringController(deps: Deps) {
     try { await pump; } finally { pumps.delete(id); if (id === viewId) update({}); }
   }
 
-  /* 문서 열기/활성화/저장/닫기/복원(수명주기), 대상 고르기/캐럿 보고/범위 고르기(선택),
-     명령 미리보기/적용(apply)은 각각 authoring_controller_lifecycle.ts·
-     authoring_controller_selection.ts·authoring_controller_apply.ts 로 분리했다(복잡도
-     예산 — module_statements/function_statements 상한). 공유 가변 상태는 get/set 또는
-     Map 참조로 넘긴다. `echoes`·`previewHighlight`·`rangePickStep` 은 상시 예외라 이 파일에
-     남고, 필요한 모듈에는 함수 값으로 건넨다(순환 import 금지). */
+  /* 문서 열기/활성화/저장/닫기/복원은 authoring_controller_lifecycle.ts, 대상 고르기/캐럿
+     보고/범위 고르기는 authoring_controller_selection.ts, 명령 미리보기/적용은
+     authoring_controller_apply.ts 가 각각 진다. 공유 가변 상태는 get/set 또는 Map 참조로
+     넘긴다. `echoes`·`previewHighlight`·`rangePickStep` 은 이 파일(테스트가 여기서
+     가져온다)이 소유하고, 필요한 모듈에는 함수 값으로 건넨다(순환 import 금지). */
   // 수명주기(close)의 「저장하고 닫기」는 케이스도 저장하고(persistCases, 시험 클러스터),
   // 그 케이스 저장은 「문서 저장 필요」로 되물리면 수명주기의 save 를 부른다 — 두 클러스터가
   // 서로를 가리키므로 먼저 세운 쪽은 나중에 세울 참조를 전방 선언으로 받는다.

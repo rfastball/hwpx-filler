@@ -1,5 +1,5 @@
-/* 라이브러리 좌·우 열 ⋮ 메뉴와 항목 상세 시트·Slot(컴파일된 구간) 동사 — `editor_controller.ts`
- * 책임 분리(복잡도 예산). 공유 상태(뷰·스냅샷·발신)는 deps로 받는다. */
+/* 라이브러리 좌·우 열 ⋮ 메뉴와 항목 상세 시트·Slot(컴파일된 구간) 동사. 공유 상태(뷰·스냅샷·
+ * 발신)는 deps로 받는다. */
 import { createContextMenu } from "./context_menu.ts";
 import type { ContextMenuItem } from "./context_menu.ts";
 import { dataRowMenuItems, ROW_DETAIL_LABEL } from "./pool_verbs.ts";
@@ -278,8 +278,8 @@ export function createSlotMenus(deps: SlotMenusDeps) {
     }
   }
 
-  /** Slot 동사의 **단일 분기표**(복잡도 분리 — 조회 테이블은 verb 가 늘어도 분기 수가
-   *  늘지 않는다). 밴드 동사(`decompile-all`)는 `slotId` 를 쓰지 않는다 — 대상이 파일이다. */
+  /** Slot 동사의 **단일 분기표**(조회 테이블이라 verb 가 늘어도 분기표 자체는 한 줄씩만
+   *  늘어난다). 밴드 동사(`decompile-all`)는 `slotId` 를 쓰지 않는다 — 대상이 파일이다. */
   const slotVerbHandlers: Record<string, (slotId: string, trigger: HTMLElement) => Promise<void>> = {
     "decompile-all": (_slotId, trigger) => decompileAllSlots(trigger),
     rename: async (slotId, trigger) => {

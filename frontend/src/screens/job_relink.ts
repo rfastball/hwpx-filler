@@ -44,8 +44,7 @@ function relinkScreen(screen: string): RelinkScreen {
 }
 
 export function createJobRelink(deps: JobRelinkDeps): RelinkPort {
-  /** `relink_template` 발신 — 최초 호출과 지연 확인 재호출이 같은 자리를 쓴다(복잡도
-   *  예산 — `relinkTemplate` 분리의 추출 대상). */
+  /** `relink_template` 발신 — 최초 호출과 지연 확인 재호출이 같은 자리를 쓴다. */
   async function dispatchRelink(
     target: RelinkScreen, payload: { name: string; path: string; confirm?: boolean },
   ): Promise<Obj> {
@@ -55,7 +54,7 @@ export function createJobRelink(deps: JobRelinkDeps): RelinkPort {
   }
 
   /** 지연 확인 왕복 — `needs_confirm` 응답이면 재진술을 보이고 확정 뒤 재호출한다.
-   *  거절되면 `null`(복잡도 예산 — `relinkTemplate` 분리의 추출 대상). */
+   *  거절되면 `null`. */
   async function confirmRelink(
     target: RelinkScreen, name: string, path: string, res: Obj, say: RelinkNotify,
   ): Promise<Obj | null> {
@@ -72,8 +71,7 @@ export function createJobRelink(deps: JobRelinkDeps): RelinkPort {
     return dispatchRelink(target, { name, path, confirm: true });
   }
 
-  /** 커밋 응답 판정 — 실패는 loud 로 알리고, 재진술은 호출자 채널로(복잡도 예산 —
-   *  `relinkTemplate` 분리의 추출 대상). */
+  /** 커밋 응답 판정 — 실패는 loud 로 알리고, 재진술은 호출자 채널로. */
   function settleRelinkResult(res: Obj, say: RelinkNotify): boolean {
     if (res.ok === false) {
       const error = String(res.error ?? "다시 연결하지 못했습니다.");

@@ -400,8 +400,8 @@ function SlicePopover(props: {
   }
 
   /** 끌어 고른 범위의 후보 응답을 반영한다 — 늦게 온 옛 응답(다른 범위를 고른 뒤 도착)은
-   *  `lastSelection` 대조로 버린다. `propose`의 `.then` 콜백을 이름째 뽑아 그 복잡도를
-   *  옮겼을 뿐 순서·판정은 그대로다. */
+   *  `lastSelection` 대조로 버린다. `propose`의 `.then` 콜백을 이름째 뽑았을 뿐 순서·판정은
+   *  그대로다. */
   function applyProposeResult(result: Obj, key: string): void {
     if (!alive.current || lastSelection.current !== key) return;
     const candidates = (result.candidates || []) as Obj[];

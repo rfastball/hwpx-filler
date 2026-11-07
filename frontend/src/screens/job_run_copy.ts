@@ -1,7 +1,6 @@
-/* R4-03 실행 표면의 순수 합성기·문안 표 — job_run.ts의 module_statements 상한 분리.
-   전부 인자만 읽는 순수 함수·상수다(브리지 호출·상태 없음). `JobActionBar`·`JobDelivery`·
-   `JobTemplateChange`는 상시 예외라 원래 파일에 남지만, 그 세 컴포넌트가 읽는 문안 표·
-   순수 합성기는 여기로 옮기고 job_run.ts가 다시 가져와 쓴다(순수 이동, 로직 불변). */
+/* R4-03 실행 표면의 순수 합성기·문안 표 — 전부 인자만 읽는 순수 함수·상수다(브리지 호출·
+   상태 없음). job_run.ts의 `JobActionBar`·`JobDelivery`·`JobTemplateChange`와 컨트롤러가
+   가져와 쓴다. */
 import type { JobRunControllerDeps } from "./job_run.ts";
 
 type Obj = Record<string, any>;

@@ -1,7 +1,6 @@
-/* 대상 고르기(select/adopt/back)·캐럿 보고(caretSelection)·범위 고르기(두 번 누름) —
- * `authoring_controller.ts` 책임 분리(복잡도 예산 — module_statements/function_statements
- * 상한). 공유 가변 상태(뷰·viewId·명시 선택 홀드)는 get/set 또는 Map 참조로 deps 를 받는다.
- * `activate`(수명주기 클러스터) 방향으로만 의존한다 — 반대 방향 의존은 없다. */
+/* 대상 고르기(select/adopt/back)·캐럿 보고(caretSelection)·범위 고르기(두 번 누름). 공유
+ * 가변 상태(뷰·viewId·명시 선택 홀드)는 get/set 또는 Map 참조로 deps 를 받는다. `activate`
+ * (수명주기 클러스터) 방향으로만 의존한다 — 반대 방향 의존은 없다. */
 import type { AuthoringEditor, PickPoint, RangePick } from "./authoring_controller.ts";
 
 type Obj = Record<string, any>;
@@ -30,10 +29,9 @@ export type SelectionDeps = {
   setExplicit(value: { id: string; place: Obj; focusing: boolean } | null): void;
   /** 선택 대상의 정체(§3.3·§6.2) — authoring_controller.ts 소유 순수 함수. */
   semanticTarget(target: Obj): Obj | undefined;
-  /** 명시 선택이 편집기를 옮긴 자리의 되울림인가 — authoring_controller.ts 소유 순수 함수
-   *  (상시 예외, 같은 파일·같은 이름으로 남는다). */
+  /** 명시 선택이 편집기를 옮긴 자리의 되울림인가 — authoring_controller.ts 소유 순수 함수. */
   echoes(place: Obj, selection: Obj): boolean;
-  /** 범위 고르기의 한 걸음(순수) — authoring_controller.ts 소유(상시 예외). */
+  /** 범위 고르기의 한 걸음(순수) — authoring_controller.ts 소유. */
   rangePickStep(pick: RangePick | null, point: PickPoint): { pick: RangePick | null; commit?: Obj };
   copy: { rangePickStart: string; rangePickEnd: string; rangePickCancel: string };
 };
@@ -46,35 +44,30 @@ export function createSelectionController(deps: SelectionDeps) {
     return result.commands || [];
   }
 
-  /** 명시 선택 → 편집기 좌표(복잡도 예산 — `select` 분리의 추출 대상). 값을 파싱하지 않는다 —
-   *  투영이 준 자리를 그대로 좁힌다. */
+  /** 명시 선택 → 편집기 좌표. 값을 파싱하지 않는다 — 투영이 준 자리를 그대로 좁힌다. */
   function selectPlace(target: Obj): { location: Obj; place: Obj } {
     const location = target.location || target.occurrences?.[0] || target.source || target;
     const place = { ...location, start: location.source_start ?? location.start, end: location.source_end ?? location.end };
     return { location, place };
   }
 
-  /** 명시 선택의 명령 유형 표지 — 속성 패널의 기본 입력칸을 가른다(복잡도 예산 — `select`
-   *  분리의 추출 대상). */
+  /** 명시 선택의 명령 유형 표지 — 속성 패널의 기본 입력칸을 가른다. */
   function commandTypeForTarget(target: Obj): string | undefined {
     return target.kind === "field" ? "rename_field" : target.kind === "option" ? "rename_option" : target.kind === "slot" ? "rename_slot" : undefined;
   }
 
-  /** 식별자 있는 locate 발신 — identity 스프레드를 한 자리로(복잡도 예산 — `select`·`adopt`
-   *  공용 추출 대상). */
+  /** 식별자 있는 locate 발신 — identity 스프레드를 한 자리로(`select`·`adopt` 공용). */
   function locateWithIdentity(id: string, target: Obj, location: Obj): Promise<Obj> {
     const identity = deps.semanticTarget(target);
     return deps.dispatch("locate", { session_id: id, revision: target.source_revision, selection: location, ...(identity ? { target: identity } : {}) });
   }
 
-  /** 좁힐 좌표가 있는가 — 초점을 줄 자리가 실재하는지(복잡도 예산 — `select` 분리의
-   *  추출 대상). */
+  /** 좁힐 좌표가 있는가 — 초점을 줄 자리가 실재하는지. */
   function hasFocusableLocation(location: Obj): boolean {
     return location.start != null || location.source_start != null || location.paragraph != null || location.start_paragraph != null;
   }
 
-  /** 명시 선택 결과의 patch — 속성 카드·위치 줄·명령 판정을 한 자리에 모은다(복잡도 예산 —
-   *  `select` 분리의 추출 대상). */
+  /** 명시 선택 결과의 patch — 속성 카드·위치 줄·명령 판정을 한 자리에 모은다. */
   function selectUpdatePayload(
     location: Obj, located: Obj | null, target: Obj, options: { keepDock?: boolean }, prior: Obj | null,
     commands: Obj[], viewContext: Obj,
@@ -119,8 +112,7 @@ export function createSelectionController(deps: SelectionDeps) {
     } finally { hold.focusing = false; }
   }
 
-  /** 적용 결과의 patch — 속성 카드·명령 판정만 바꾼다(복잡도 예산 — `adopt` 분리의 추출
-   *  대상). */
+  /** 적용 결과의 patch — 속성 카드·명령 판정만 바꾼다. */
   function adoptUpdatePayload(location: Obj, located: Obj, target: Obj, commands: Obj[], viewContext: Obj): Obj {
     return {
       selected: { ...location, ...(located.selected || target) }, matches: located.matches || [],
@@ -150,27 +142,24 @@ export function createSelectionController(deps: SelectionDeps) {
     await deps.editors.get(previous.id)?.focus(previous.target);
   }
 
-  /** 이 보고가 명시 선택의 되울림인가(복잡도 예산 — `caretSelection` 분리의 추출 대상). */
+  /** 이 보고가 명시 선택의 되울림인가. */
   function isEchoReport(hold: { focusing: boolean; place: Obj }, selection: Obj): boolean {
     return hold.focusing || !Object.keys(selection).length || deps.echoes(hold.place, selection);
   }
 
-  /** 같은 축(좌표)인가 — 선택이 지금 뷰 선택과 같은 자리인가(복잡도 예산 — `caretSelection`
-   *  분리의 추출 대상). */
+  /** 같은 축(좌표)인가 — 선택이 지금 뷰 선택과 같은 자리인가. */
   const SELECTION_SAME_KEYS = ["entry", "start", "end", "paragraph", "start_paragraph", "end_paragraph"];
   function sameSelection(selection: Obj, viewSelection: Obj): boolean {
     return SELECTION_SAME_KEYS.every((key) => selection[key] === viewSelection[key]);
   }
 
-  /** 캐럿 이동 때 위치 줄 메모를 남길지(복잡도 예산 — `caretSelection` 분리의 추출 대상) —
-   *  같은 자리의 재보고·고르기 중·문제 메모 유지 조건. */
+  /** 캐럿 이동 때 위치 줄 메모를 남길지 — 같은 자리의 재보고·고르기 중·문제 메모 유지 조건. */
   function keepsSelectionNote(same: boolean, selectionNote: Obj | null | undefined, hasSelection: boolean): boolean {
     if (same || selectionNote?.source === "rangePick") return true;
     return selectionNote?.source === "problem" && hasSelection;
   }
 
-  /** 되울림 정산 — 편집기 좌표만 받아 두고(위치 기억) 명시 대상·명령 판정은 그대로 둔다
-   *  (복잡도 예산 — `caretSelection` 분리의 추출 대상). */
+  /** 되울림 정산 — 편집기 좌표만 받아 두고(위치 기억) 명시 대상·명령 판정은 그대로 둔다. */
   function settleEchoReport(id: string, hold: { focusing: boolean }, selection: Obj): void {
     if (!hold.focusing) deps.setExplicit(null);
     deps.selectionRequests.set(id, (deps.selectionRequests.get(id) || 0) + 1);
@@ -178,8 +167,7 @@ export function createSelectionController(deps: SelectionDeps) {
     deps.scheduleRemember(id);
   }
 
-  /** 캐럿 이동 정산(첫 단계) — 위치 줄 메모·선택 patch·원격 기억을 건다. 빈 선택이면
-   *  `null`(복잡도 예산 — `caretSelection` 분리의 추출 대상). */
+  /** 캐럿 이동 정산(첫 단계) — 위치 줄 메모·선택 patch·원격 기억을 건다. 빈 선택이면 `null`. */
   function settleCaretMove(id: string, selection: Obj): { same: boolean; request: number } | null {
     const view = deps.getView();
     const same = sameSelection(selection, view.selection);
@@ -193,20 +181,18 @@ export function createSelectionController(deps: SelectionDeps) {
     return Object.keys(selection).length ? { same, request } : null;
   }
 
-  /** locate 응답이 늦었거나 그사이 자리를 떠났는가(복잡도 예산 — `caretSelection` 분리의
-   *  추출 대상 — 같은 세 겹 검사가 두 번 반복된다). */
+  /** locate 응답이 늦었거나 그사이 자리를 떠났는가(같은 세 겹 검사가 두 번 반복된다). */
   function isStaleLocateResponse(id: string, request: number, atRevision: number): boolean {
     return id !== deps.getViewId() || deps.selectionRequests.get(id) !== request || deps.revision(id) !== atRevision;
   }
 
-  /** 단일 적중만 있으면 그 대상을 고른다 — 그 밖(0·다건·근사)은 고르지 않는다(복잡도 예산 —
-   *  `caretSelection` 분리의 추출 대상). */
+  /** 단일 적중만 있으면 그 대상을 고른다 — 그 밖(0·다건·근사)은 고르지 않는다. */
   function soleMatchSelection(matches: Obj[]): Obj | null {
     return matches.length === 1 && !matches[0].approximate ? { ...matches[0].location, ...matches[0] } : null;
   }
 
-  /** locate 응답의 patch — 선택 옆 막대·속성 카드가 읽는 자리(복잡도 예산 — `caretSelection`
-   *  분리의 추출 대상). `retain` 이면(이동·복제·범위 조정의 목적지) 고른 대상을 바꾸지 않는다. */
+  /** locate 응답의 patch — 선택 옆 막대·속성 카드가 읽는 자리. `retain` 이면(이동·복제·범위
+   *  조정의 목적지) 고른 대상을 바꾸지 않는다. */
   function locateUpdatePayload(result: Obj, commands: Obj[], selection: Obj, retain: boolean): Obj {
     const matches = result.matches || [];
     // commandsSelection: 이 판정이 선 편집기 선택(같은 객체) — 선택 옆 막대(IDE-08)는 지금 선택의 판정이 도착했을 때만 선다.
@@ -216,8 +202,7 @@ export function createSelectionController(deps: SelectionDeps) {
     };
   }
 
-  /** 지금 자리가 든 명시 선택 홀드(없으면 `null`, 복잡도 예산 — `caretSelection` 분리의
-   *  추출 대상). */
+  /** 지금 자리가 든 명시 선택 홀드(없으면 `null`). */
   function currentHold(id: string): { id: string; place: Obj; focusing: boolean } | null {
     const explicit = deps.getExplicit();
     return explicit?.id === id ? explicit : null;

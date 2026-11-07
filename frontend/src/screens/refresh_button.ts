@@ -16,8 +16,7 @@ export function RefreshButton(props: {
   const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(completionTimer.current), []);
   /** 거절된 새로고침인가 — 「선택 초기화 확인 취소」(`false`)와 서버 `ok:false` 거절을 한
-   *  판정으로 모은다(복잡도 예산 — `refresh` 분리의 추출 대상). `ok:false` 는 그 사유를
-   *  실어 던진다. */
+   *  판정으로 모은다. `ok:false` 는 그 사유를 실어 던진다. */
   function rejectedRefresh(result: unknown, label: string): boolean {
     if (result === false) return true; // 선택 초기화 확인 취소
     if (result && typeof result === "object" && "ok" in result && result.ok === false) {

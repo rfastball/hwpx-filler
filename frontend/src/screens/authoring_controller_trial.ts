@@ -1,7 +1,5 @@
-/* 시험 입력·케이스 저장/복원·같은 문구 찾기·검색 — `authoring_controller.ts` 책임 분리
- * (복잡도 예산 — module_statements/function_statements 상한). 공유 가변 상태(뷰·viewId·
- * 타이머·검색 요청 번호)는 get/set 으로 deps 를 받는다. `save`(수명주기 클러스터) 방향으로만
- * 의존한다. */
+/* 시험 입력·케이스 저장/복원·같은 문구 찾기·검색. 공유 가변 상태(뷰·viewId·타이머·검색
+ * 요청 번호)는 get/set 으로 deps 를 받는다. `save`(수명주기 클러스터) 방향으로만 의존한다. */
 type Obj = Record<string, any>;
 
 export type TrialDeps = {

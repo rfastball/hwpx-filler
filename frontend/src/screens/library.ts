@@ -495,8 +495,8 @@ function LibraryDetail(props: { detail: Obj | null; controller: LibraryControlle
   return h(LibraryDetailRoot as any, null, scroll, actions);
 }
 
-/** 「보기」 탭 4개의 정체 — 키·라벨만 다르고 마크업은 완전히 같다(같은 분기 중복). 하나의
- *  버튼 템플릿으로 .map() 렌더해 복잡도 예산의 같은 분기 반복을 없앤다. */
+/** 「보기」 탭 4개의 정체 — 키·라벨만 다르고 마크업은 완전히 같다. 하나의 버튼 템플릿으로
+ *  .map() 렌더해 같은 마크업 반복을 한 곳에 모은다. */
 const LIBRARY_VIEW_TABS: readonly { key: string; label: string }[] = [
   { key: "all", label: "모든 작업" },
   { key: "recent", label: "최근 사용" },
