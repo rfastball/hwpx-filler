@@ -357,13 +357,6 @@ function_complexity = { value = 13, reason = "상시 예외: 순차 배선 — p
 [budget."frontend/src/runtime/adapter.ts::classify"]
 function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 표 — 실행결과→표시모드 분류 규칙" }
 
-[budget."frontend/src/screens/authoring.ts::AuthoringScreen"]
-function_complexity = 92
-function_statements = 155
-
-[budget."frontend/src/screens/authoring.ts::AuthoringScreen.shellInput.current.key"]
-function_complexity = 22
-
 [budget."frontend/src/screens/authoring_a11y.ts::isCurrentTarget"]
 function_complexity = { value = 12, reason = "상시 예외: 평평한 분배 표 — kind 판별 평평한 조기 반환" }
 
@@ -372,33 +365,6 @@ function_complexity = { value = 26, reason = "상시 예외: 선언적 규칙 �
 
 [budget."frontend/src/screens/authoring_a11y.ts::treeKey"]
 function_complexity = { value = 23, reason = "상시 예외: 값 매핑 표 — 키 이름→TreeAction 매핑표" }
-
-[budget."frontend/src/screens/authoring_controller.ts"]
-module_statements = 649
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController"]
-function_statements = 78
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.activate"]
-function_complexity = 12
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.adopt"]
-function_complexity = 12
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.applyPreview"]
-function_complexity = 18
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.caretSelection"]
-function_complexity = 29
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.close"]
-function_complexity = 13
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.save"]
-function_complexity = 14
-
-[budget."frontend/src/screens/authoring_controller.ts::createAuthoringController.select"]
-function_complexity = 26
 
 [budget."frontend/src/screens/authoring_controller.ts::echoes"]
 function_complexity = { value = 16, reason = "상시 예외: 단일 책임 가드 나열 — place/selection 비교 가드 나열" }
@@ -412,40 +378,8 @@ function_complexity = { value = 13, reason = "상시 예외: 선언적 규칙 �
 [budget."frontend/src/screens/command_palette.ts::paletteModel"]
 function_complexity = { value = 12, reason = "상시 예외: 평평한 투영 렌더 — entries→palette option 평평한 투영" }
 
-[budget."frontend/src/screens/data_picker.ts"]
-module_statements = 323
-
-[budget."frontend/src/screens/data_picker.ts::createDataPickerController.inspectRegSheets"]
-function_complexity = 16
-
-[budget."frontend/src/screens/data_picker.ts::createDataPickerController.submitReg"]
-function_complexity = 29
-
-[budget."frontend/src/screens/data_zone.ts"]
-module_statements = 696
-
-[budget."frontend/src/screens/data_zone.ts::CardEditor"]
-function_complexity = 22
-
 [budget."frontend/src/screens/data_zone.ts::ColumnPanel"]
 function_complexity = { value = 14, reason = "상시 예외: 평평한 투영 렌더 — 범위/텍스트 두 갈래 평평한 렌더" }
-
-[budget."frontend/src/screens/data_zone.ts::ColumnPicker"]
-function_complexity = 18
-
-[budget."frontend/src/screens/data_zone.ts::FilterBuilder"]
-function_complexity = 42
-function_statements = 86
-
-[budget."frontend/src/screens/data_zone.ts::FilterBuilder.submit"]
-function_complexity = 11
-
-[budget."frontend/src/screens/data_zone.ts::FilterChipRow"]
-function_complexity = 25
-
-[budget."frontend/src/screens/data_zone.ts::JobDataZone"]
-function_complexity = 68
-function_statements = 73
 
 [budget."frontend/src/screens/data_zone.ts::PresetChip"]
 function_complexity = { value = 11, reason = "상시 예외: 평평한 투영 렌더 — 토글+메뉴 단일 책임 렌더" }
@@ -480,26 +414,8 @@ function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 �
 [budget."frontend/src/screens/editor.ts::TplDetailSheet"]
 function_complexity = { value = 17, reason = "상시 예외: 평평한 투영 렌더 — 상세 유무 분기, backend 값 투영" }
 
-[budget."frontend/src/screens/editor_controller.ts"]
-module_statements = 562
-
-[budget."frontend/src/screens/editor_controller.ts::createEditorController"]
-function_statements = 94
-
-[budget."frontend/src/screens/editor_controller.ts::createEditorController.doSave"]
-function_complexity = 11
-
-[budget."frontend/src/screens/editor_controller.ts::createEditorController.handleSlotVerb"]
-function_complexity = 11
-
-[budget."frontend/src/screens/job_content_selection.ts::JobContentSelection"]
-function_complexity = 32
-
 [budget."frontend/src/screens/job_content_selection.ts::presetNoticeText"]
 function_complexity = { value = 14, reason = "상시 예외: 값 매핑 표 — notice.kind→메시지 switch 매핑" }
-
-[budget."frontend/src/screens/job_read.ts"]
-module_statements = 423
 
 [budget."frontend/src/screens/job_read.ts::BrowseRow"]
 function_complexity = { value = 12, reason = "상시 예외: 평평한 투영 렌더 — needs/일반 두 갈래 평평한 렌더" }
@@ -513,20 +429,11 @@ function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 �
 [budget."frontend/src/screens/job_read.ts::JobCandidates"]
 function_complexity = { value = 15, reason = "상시 예외: 평평한 투영 렌더 — 섹션·카드·문구 평평한 조립" }
 
-[budget."frontend/src/screens/job_read.ts::createJobReadController.switchData"]
-function_complexity = 13
-
-[budget."frontend/src/screens/job_relink.ts::createJobRelink.relinkTemplate"]
-function_complexity = 15
-
 [budget."frontend/src/screens/job_result.ts::Evidence"]
 function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 독립 항목 평평한 목록 조립" }
 
 [budget."frontend/src/screens/job_result.ts::JobResultZone"]
 function_complexity = { value = 36, reason = "상시 예외: 평평한 투영 렌더 — head/summary 등 독립 블록 나열" }
-
-[budget."frontend/src/screens/job_run.ts"]
-module_statements = 407
 
 [budget."frontend/src/screens/job_run.ts::JobActionBar"]
 function_complexity = { value = 23, reason = "상시 예외: 평평한 투영 렌더 — 버튼·상태 backend 투영 렌더" }
@@ -537,12 +444,6 @@ function_complexity = { value = 25, reason = "상시 예외: 평평한 투영 �
 [budget."frontend/src/screens/job_run.ts::JobTemplateChange"]
 function_complexity = { value = 27, reason = "상시 예외: 평평한 투영 렌더 — 노출 술어 backend 제공 평평한 렌더" }
 
-[budget."frontend/src/screens/job_run.ts::JobWorkbenchStatus"]
-function_complexity = 33
-
-[budget."frontend/src/screens/job_run.ts::createJobRunController.controller.templateCheck"]
-function_complexity = 11
-
 [budget."frontend/src/screens/job_run_state.ts::disposeBySession"]
 function_complexity = { value = 12, reason = "상시 예외: 선언적 규칙 표 — 세션 종료 조건 평평한 규칙표" }
 
@@ -551,9 +452,6 @@ function_complexity = { value = 11, reason = "상시 예외: 선언적 규칙 �
 
 [budget."frontend/src/screens/library.ts::LibraryDetail"]
 function_complexity = { value = 11, reason = "상시 예외: 평평한 투영 렌더 — 상세 유무 두 갈래 평평한 렌더" }
-
-[budget."frontend/src/screens/library.ts::LibraryToolbar"]
-function_complexity = 18
 
 [budget."frontend/src/screens/library.ts::PairCard"]
 function_complexity = { value = 14, reason = "상시 예외: 평평한 투영 렌더 — 템플릿·연결·데이터 세 블록 렌더" }
@@ -567,39 +465,11 @@ function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 �
 [budget."frontend/src/screens/pool_detail.ts::PoolDetailSheet"]
 function_complexity = { value = 13, reason = "상시 예외: 평평한 투영 렌더 — 상세 유무 분기, 얇은 투영 위임" }
 
-[budget."frontend/src/screens/product_screen_executor.ts::restoreMemory"]
-function_complexity = 16
-
-[budget."frontend/src/screens/refresh_button.ts::RefreshButton.refresh"]
-function_complexity = 11
-
 [budget."frontend/src/screens/sheet_picker.ts::SheetPickerDialog"]
 function_complexity = { value = 16, reason = "상시 예외: 평평한 투영 렌더 — 시트 체크박스 목록 평평한 렌더" }
 
-[budget."frontend/src/screens/sheet_picker.ts::createSheetPickerController.pick"]
-function_complexity = 16
-
-[budget."frontend/src/screens/slice_popover.ts"]
-module_statements = 321
-
-[budget."frontend/src/screens/slice_popover.ts::SlicePopover"]
-function_complexity = 14
-function_statements = 81
-
-[budget."frontend/src/screens/slice_popover.ts::SlicePopover.propose"]
-function_complexity = 13
-
-[budget."frontend/src/screens/slice_popover.ts::SlicePopoverView"]
-function_complexity = 35
-
-[budget."frontend/src/screens/slice_popover.ts::SlicePopoverView.methodRow"]
-function_complexity = 24
-
 [budget."frontend/src/screens/slice_popover.ts::composeSliceSpec"]
 function_complexity = { value = 15, reason = "상시 예외: 선언적 규칙 표 — part 목록 순회 선언적 변환" }
-
-[budget."frontend/src/screens/workbench.ts::WorkbenchScreen"]
-function_complexity = 46
 
 [budget."frontend/src/selftest/probes/boot_routing_overlay.js::createBootRoutingOverlayProbes.setup"]
 function_complexity = 23

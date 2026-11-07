@@ -79,6 +79,46 @@ function isUsableFocusTarget(target: HTMLElement, root: HTMLElement): boolean {
   return target.closest('[hidden],[inert],[aria-hidden="true"]') === null;
 }
 
+/** 되돌릴 초점이 없는 자리인가 — 「숨은 화면에 갇힌 초점이 아니다」와 「목적 화면이
+ *  이미 자기 안에 초점을 세웠다」 두 가드를 한 판정으로 모은다.
+ *
+ *  둘째 가드의 근거: 이 복원은 「나가는 화면이 초점을 들고 있었으니 들어오는 화면에
+ *  시작점을 준다」다. 들어오는 화면이 스스로 자리를 잡았다면 초점은 고아가 아니고,
+ *  여기서 덮으면 그 화면이 방금 지목한 자리를 빼앗는다 — deep-link 조준이 정확히 그
+ *  형상이다(#795). */
+function shouldSkipFocusRestore(doc: Document, root: HTMLElement, outgoingOwnedFocus: boolean): boolean {
+  const active = doc.activeElement as HTMLElement | null;
+  const focusInHiddenScreen = active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== null
+    && active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== undefined;
+  if (!outgoingOwnedFocus && !focusInHiddenScreen) return true;
+  return active !== null && active !== doc.body && root.contains(active);
+}
+
+/** 포커스 복원 — root 존재 판정과 「되돌릴 게 없다」 가드들을 한데 모은다. 스크롤 복원과
+ *  분리되는 이유는 전자는 항상 하고 후자는 여러 가드를 지나야 하기 때문이다. */
+function restoreFocus(
+  doc: Document,
+  id: ProductScreenId,
+  memory: ScreenMemory | undefined,
+  outgoingOwnedFocus: boolean,
+): void {
+  const root = screenRoot(doc, id);
+  if (root === null) {
+    /* app shell은 React root에 ShellHost를 넘기기 위해 먼저 구성되고, 그 구성 중 기본 화면을
+       한 번 적용한다. 이때 stage는 아직 첫 commit 전이라 네 root가 모두 없는 것이 정상이다.
+       visibility/셸 marker는 위에서 기록해 첫 render가 같은 판정을 읽게 하고 focus만 미룬다.
+       하나라도 mounted된 뒤 목적 root만 없으면 부분 트리이므로 계속 fail-closed한다. */
+    const beforeFirstCommit = PRODUCT_SCREEN_IDS.every((screen) => screenRoot(doc, screen) === null);
+    if (beforeFirstCommit) return;
+    throw new Error(`활성 제품 화면 root가 없습니다: ${id}`);
+  }
+  if (shouldSkipFocusRestore(doc, root, outgoingOwnedFocus)) return;
+
+  const remembered = rememberedFocus(root, doc, memory?.focus ?? null);
+  const target = remembered !== null && isUsableFocusTarget(remembered, root) ? remembered : root;
+  target.focus({ preventScroll: true });
+}
+
 function restoreMemory(
   doc: Document,
   id: ProductScreenId,
@@ -96,31 +136,7 @@ function restoreMemory(
       element.scrollLeft = scroll.left;
     }
   }
-
-  const root = screenRoot(doc, id);
-  if (root === null) {
-    /* app shell은 React root에 ShellHost를 넘기기 위해 먼저 구성되고, 그 구성 중 기본 화면을
-       한 번 적용한다. 이때 stage는 아직 첫 commit 전이라 네 root가 모두 없는 것이 정상이다.
-       visibility/셸 marker는 위에서 기록해 첫 render가 같은 판정을 읽게 하고 focus만 미룬다.
-       하나라도 mounted된 뒤 목적 root만 없으면 부분 트리이므로 계속 fail-closed한다. */
-    const beforeFirstCommit = PRODUCT_SCREEN_IDS.every((screen) => screenRoot(doc, screen) === null);
-    if (beforeFirstCommit) return;
-    throw new Error(`활성 제품 화면 root가 없습니다: ${id}`);
-  }
-  const active = doc.activeElement as HTMLElement | null;
-  const focusInHiddenScreen = active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== null
-    && active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== undefined;
-  if (!outgoingOwnedFocus && !focusInHiddenScreen) return;
-  /* 목적 화면이 **이미 자기 안에** 초점을 세웠으면 되돌릴 것이 없다.
-
-     이 복원의 근거는 「나가는 화면이 초점을 들고 있었으니 들어오는 화면에 시작점을 준다」다.
-     그런데 들어오는 화면이 스스로 자리를 잡았다면 초점은 고아가 아니고, 여기서 덮으면 그
-     화면이 방금 지목한 자리를 빼앗는다 — deep-link 조준이 정확히 그 형상이다(#795). */
-  if (active !== null && active !== doc.body && root.contains(active)) return;
-
-  const remembered = rememberedFocus(root, doc, memory?.focus ?? null);
-  const target = remembered !== null && isUsableFocusTarget(remembered, root) ? remembered : root;
-  target.focus({ preventScroll: true });
+  restoreFocus(doc, id, memory, outgoingOwnedFocus);
 }
 
 function applyShellMarkers(doc: Document, id: ProductScreenId): void {

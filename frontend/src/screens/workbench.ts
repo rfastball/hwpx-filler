@@ -433,12 +433,119 @@ function QueueDots(props: { controller: WorkbenchController; card: Obj; degenera
   })));
 }
 
-export function WorkbenchScreen(props: { controller: WorkbenchController }): ReactNode {
-  const { controller } = props;
-  const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
-  const draft = useSyncExternalStore(controller.draftModel.subscribe, controller.draftModel.getSnapshot);
-  const cardOpen = snapshot !== null && !!snapshot.open;
-  const currentIndex = snapshot?.card?.index;
+/** 화면 머리 — 돌아가기·제목·화면 밖으로 나가는 문 둘(연결 편집·템플릿 편집)과 그 판본. */
+function renderWbHeader(
+  props: { controller: WorkbenchController; snapshot: Obj; revision: Obj },
+): ReactNode {
+  const { controller, snapshot, revision } = props;
+  return h("header", { className: "scr-head wb-head" },
+    h("button", {
+      className: "btn sm quiet back", id: "wbBack", type: "button",
+      onClick: () => controller.guarded(() => controller.leaveTo("job")),
+    }, "← 문서 만들기로 돌아가기"),
+    h("div", { className: "wb-title" },
+      h("p", { className: "eyebrow", id: "wbMode" }, snapshot.mode_label || ""),
+      h("h1", { id: "wbTitle" }, snapshot.job_name || "검토·복사"),
+      h("p", { className: "sub" }, "선택 당시 표시순서로 고정된 항목만 검토합니다.")),
+    /* 화면 밖으로 나가는 문 둘 — 이 화면은 연결을 읽기만 한다(#1148). 템플릿 문은 스냅샷이
+       여는 파일을 낼 때만 선다(경로를 웹이 짓지 않는다). 판본은 두 문이 여는 것의 판이라
+       문 곁에 선다 — 진행 수치는 본문 위 큐 줄이 따로 든다. */
+    h("div", { className: "wb-links" },
+      h("span", { className: "status", id: "wbRevision", "data-level": "idle" },
+        `템플릿 r${revision.template || 0} · 연결 r${revision.binding || 0}`),
+      h("button", {
+        className: "btn sm quiet", id: "wbEditBinding", type: "button",
+        onClick: () => controller.guarded(() => controller.editBinding()),
+      }, "연결 편집"),
+      snapshot.template_path ? h("button", {
+        className: "btn sm quiet", id: "wbEditTemplate", type: "button",
+        onClick: () => controller.guarded(() => controller.editTemplate()),
+      }, "템플릿 편집") : null));
+}
+
+/** 본문 도구 막대 — 보기 전환·대상 글꼴·복사 상태·수정 표지가 카드의 머리 띠로 한 줄에 선다. */
+function renderWbToolbar(
+  props: {
+    controller: WorkbenchController; snapshot: Obj; draft: DraftState; card: Obj; review: [string, string];
+  },
+): ReactNode {
+  const { controller, snapshot, draft, card, review } = props;
+  return h("div", { className: "wb-toolbar", role: "group", "aria-label": "본문 보기" },
+    ...[["filled", "채운 모습"], ["raw", "원문"]].map(([view, label]) => h("button", {
+      className: "btn sm", type: "button", "data-wb-view": view, key: view,
+      "aria-pressed": snapshot.view === view ? "true" : "false",
+      onClick: () => controller.guarded(() => controller.setView(view)),
+    }, label)),
+    h("label", { className: "lbl", htmlFor: "wbTargetFont" }, "대상 글꼴"),
+    h("select", {
+      className: "field sm", id: "wbTargetFont",
+      title: "붙여넣는 곳(기안작성기)의 표준 글꼴입니다(전역 설정으로 저장).",
+      value: valueOf(draft, TARGET_FONT_FIELD),
+      onChange: (event: Obj) => controller.guarded(
+        () => controller.setTargetFont(String(event.currentTarget.value))),
+    },
+    h("option", { value: "gulimche" }, "굴림체"),
+    h("option", { value: "dotumche" }, "돋움체"),
+    h("option", { value: "malgun" }, "맑은고딕")),
+    h("span", { className: "status", id: "wbReview", "data-level": review[1] }, review[0]),
+    h(EditedMark as any, { controller, card }));
+}
+
+/** 린트 줄 — **표지 + 행동**이 한 벌이다. 경고만 두면 문제를 통보받고 손잡이는 없다. */
+function renderWbLintNote(props: { controller: WorkbenchController; lint: Obj }): ReactNode {
+  const { controller, lint } = props;
+  return h("p", { className: "muted", id: "wbLint", style: { display: lint.active ? "" : "none" } },
+    lint.applied
+      ? h("span", null, "연속 공백을 전각으로 바꿔 복사합니다. ",
+        h("button", {
+          className: "btn sm", type: "button", id: "wbLintAction", "data-fullwidth": "off",
+          onClick: () => controller.guarded(() => controller.setFullwidth(false)),
+        }, "되돌리기"))
+      : h("span", null, "이 글꼴에서는 연속 공백이 밀릴 수 있습니다. ",
+        h("button", {
+          className: "btn sm", type: "button", id: "wbLintAction", "data-fullwidth": "on",
+          onClick: () => controller.guarded(() => controller.setFullwidth(true)),
+        }, "전각으로 바꾸기")));
+}
+
+/** 발 — 복사 후 이동 체크박스 · 최근 복사/원본 한 줄 · 이전/다음/복사 세 동사. */
+function renderWbFooter(
+  props: { controller: WorkbenchController; card: Obj; degenerate: boolean; noteText: string },
+): ReactNode {
+  const { controller, card, degenerate, noteText } = props;
+  return h("footer", { className: "wb-foot" },
+    h("label", { className: "wb-adv", style: { display: degenerate ? "none" : "" } },
+      h("input", {
+        type: "checkbox", id: "wbAdvance", checked: !!card.advance_after,
+        onChange: (event: Obj) => controller.guarded(
+          () => controller.toggleAdvance(!!event.currentTarget.checked)),
+      }), " 복사 후 다음 항목으로 이동"),
+    h("span", { className: "muted", id: "wbNote" }, noteText),
+    h("div", { className: "wb-foot-nav" },
+      h("button", {
+        className: "btn", id: "wbPrev", type: "button",
+        style: { display: degenerate ? "none" : "" },
+        disabled: degenerate || !card.can_prev,
+        onClick: () => controller.guarded(() => controller.step(-1)),
+      }, "이전"),
+      h("button", {
+        className: "btn", id: "wbNext", type: "button",
+        style: { display: degenerate ? "none" : "" },
+        disabled: degenerate || !card.can_next,
+        onClick: () => controller.guarded(() => controller.step(1)),
+      }, "다음"),
+      /* 복사 차단은 **Python 이 낸 사유**로 닫는다 — 「보이는 것 = 복사되는 것」. */
+      h("button", {
+        className: "btn primary", id: "wbCopy", type: "button",
+        disabled: !card.has_current || !!card.copy_block, title: card.copy_block || "",
+        onClick: () => controller.guarded(() => controller.copyCard()),
+      }, "복사")));
+}
+
+/** 작업점이 옮기면 큐 점의 tab stop과 스크롤 위치를 그 점으로 맞춘다. */
+function useQueueDotFocusSync(
+  controller: WorkbenchController, cardOpen: boolean, currentIndex: unknown,
+): void {
   useEffect(() => {
     if (!cardOpen) return;
     const dots = controller.doc.getElementById("wbDots");
@@ -452,6 +559,52 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
     if (item.top < box.top) dots.scrollTop -= box.top - item.top;
     else if (item.bottom > box.bottom) dots.scrollTop += item.bottom - box.bottom;
   }, [controller, cardOpen, currentIndex]);
+}
+
+/** 발의 안내 한 줄 — 방금 복사 결과(빈 값·기록 실패까지)거나, 없으면 원본 행. 수치·문안은
+ *  전부 Python 값을 그대로 옮긴다. */
+function deriveNoteText(card: Obj): string {
+  const lastCopy = card.last_copy as Obj | undefined;
+  if (!lastCopy) return card.source_row ? `원본 ${card.source_row}행` : "";
+  const emptyNote = lastCopy.empty_fields && lastCopy.empty_fields.length
+    ? ` (빈 값: ${lastCopy.empty_fields.join(", ")})` : "";
+  const stampNote = lastCopy.stamp_error ? ` — 최근 사용 기록은 실패했습니다: ${lastCopy.stamp_error}` : "";
+  return `${lastCopy.row}행을 복사했습니다.` + emptyNote + stampNote;
+}
+
+/** 지금 카드의 파생값 묶음 — 작업점 표시(1-기반)·린트·판본·큐 퇴화 여부. 판정은 전부
+ *  Python 값이고 여기는 안전한 기본값으로 읽기만 한다(재판정 0). */
+function deriveCardView(snapshot: Obj): {
+  card: Obj; total: number; position: number; review: [string, string];
+  degenerate: boolean; lint: Obj; revision: Obj;
+} {
+  const card = (snapshot.card || {}) as Obj;
+  return {
+    card,
+    total: Number(snapshot.total || 0),
+    position: card.position === null || card.position === undefined ? 0 : card.position + 1,
+    review: REVIEW_TEXT[card.review_state] || REVIEW_TEXT.todo,
+    degenerate: !!card.queue_degenerate,
+    lint: (card.lint || {}) as Obj,
+    revision: snapshot.revision || {},
+  };
+}
+
+/** 통지 한 줄 — 비어 있으면 숨은 채로 선다(자리는 지키고 글은 없다). */
+function renderWbNotice(notice: Obj | undefined): ReactNode {
+  const text = notice && notice.text ? String(notice.text) : "";
+  return h("div", {
+    className: `note ${text ? (notice?.level || "muted") : ""}`, id: "wbNotice",
+    role: "status", style: { display: text ? "" : "none" },
+  }, text);
+}
+
+export function WorkbenchScreen(props: { controller: WorkbenchController }): ReactNode {
+  const { controller } = props;
+  const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
+  const draft = useSyncExternalStore(controller.draftModel.subscribe, controller.draftModel.getSnapshot);
+  const cardOpen = snapshot !== null && !!snapshot.open;
+  useQueueDotFocusSync(controller, cardOpen, snapshot?.card?.index);
 
   if (snapshot === null || !snapshot.open) {
     /* 세션 없음 — 화면은 라우팅 가드가 막는다. 골격은 그대로 두고 값만 비운다. */
@@ -461,51 +614,13 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
         onClick: () => controller.guarded(() => controller.leaveTo("job")),
       }, "← 문서 만들기로 돌아가기"));
   }
-  const card = (snapshot.card || {}) as Obj;
-  const total = Number(snapshot.total || 0);
-  const position = card.position === null || card.position === undefined ? 0 : card.position + 1;
-  const review = REVIEW_TEXT[card.review_state] || REVIEW_TEXT.todo;
-  const degenerate = !!card.queue_degenerate;
-  const lint = (card.lint || {}) as Obj;
-  const lastCopy = card.last_copy as Obj | undefined;
-  const revision = snapshot.revision || {};
-  const notice = snapshot.notice;
-  const noteText = lastCopy
-    ? `${lastCopy.row}행을 복사했습니다.`
-      + (lastCopy.empty_fields && lastCopy.empty_fields.length
-        ? ` (빈 값: ${lastCopy.empty_fields.join(", ")})` : "")
-      + (lastCopy.stamp_error ? ` — 최근 사용 기록은 실패했습니다: ${lastCopy.stamp_error}` : "")
-    : (card.source_row ? `원본 ${card.source_row}행` : "");
+  const { card, total, position, review, degenerate, lint, revision } = deriveCardView(snapshot);
+  const noteText = deriveNoteText(card);
   /* 한 읽기 열(.wb-shell)에 머리 → 큐 줄 → 본문 판(도구 막대 + 카드) → 린트 → 발이 선다 —
      DOM 순서가 곧 보이는 순서(초점 순서)다. 판정·문구는 그대로이고 자리만 정한다. */
   return h("div", { className: "wb-shell" },
-    h("header", { className: "scr-head wb-head" },
-      h("button", {
-        className: "btn sm quiet back", id: "wbBack", type: "button",
-        onClick: () => controller.guarded(() => controller.leaveTo("job")),
-      }, "← 문서 만들기로 돌아가기"),
-      h("div", { className: "wb-title" },
-        h("p", { className: "eyebrow", id: "wbMode" }, snapshot.mode_label || ""),
-        h("h1", { id: "wbTitle" }, snapshot.job_name || "검토·복사"),
-        h("p", { className: "sub" }, "선택 당시 표시순서로 고정된 항목만 검토합니다.")),
-      /* 화면 밖으로 나가는 문 둘 — 이 화면은 연결을 읽기만 한다(#1148). 템플릿 문은 스냅샷이
-         여는 파일을 낼 때만 선다(경로를 웹이 짓지 않는다). 판본은 두 문이 여는 것의 판이라
-         문 곁에 선다 — 진행 수치는 본문 위 큐 줄이 따로 든다. */
-      h("div", { className: "wb-links" },
-        h("span", { className: "status", id: "wbRevision", "data-level": "idle" },
-          `템플릿 r${revision.template || 0} · 연결 r${revision.binding || 0}`),
-        h("button", {
-          className: "btn sm quiet", id: "wbEditBinding", type: "button",
-          onClick: () => controller.guarded(() => controller.editBinding()),
-        }, "연결 편집"),
-        snapshot.template_path ? h("button", {
-          className: "btn sm quiet", id: "wbEditTemplate", type: "button",
-          onClick: () => controller.guarded(() => controller.editTemplate()),
-        }, "템플릿 편집") : null)),
-    h("div", {
-      className: `note ${notice && notice.text ? (notice.level || "muted") : ""}`, id: "wbNotice",
-      role: "status", style: { display: notice && notice.text ? "" : "none" },
-    }, notice && notice.text ? notice.text : ""),
+    renderWbHeader({ controller, snapshot, revision }),
+    renderWbNotice(snapshot.notice),
     h("section", { className: "wb-body" },
       /* 큐 줄 — 작업점 · 점 색인 · 복사 완료가 한 줄에 모여 본문 바로 위에 선다. */
       h("div", { className: "wb-queue" },
@@ -515,25 +630,7 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
           "복사 완료 ", h("strong", { id: "wbCopied" }, `${snapshot.copied_count || 0} / ${total}`))),
       /* 도구 막대는 카드의 머리 띠로 붙는다 — 그래도 카드의 **형제**다(카드 글자 되읽기에 섞이지
          않게, 카드가 본체의 남는 높이를 직접 받게). */
-      h("div", { className: "wb-toolbar", role: "group", "aria-label": "본문 보기" },
-        ...[["filled", "채운 모습"], ["raw", "원문"]].map(([view, label]) => h("button", {
-          className: "btn sm", type: "button", "data-wb-view": view, key: view,
-          "aria-pressed": snapshot.view === view ? "true" : "false",
-          onClick: () => controller.guarded(() => controller.setView(view)),
-        }, label)),
-        h("label", { className: "lbl", htmlFor: "wbTargetFont" }, "대상 글꼴"),
-        h("select", {
-          className: "field sm", id: "wbTargetFont",
-          title: "붙여넣는 곳(기안작성기)의 표준 글꼴입니다(전역 설정으로 저장).",
-          value: valueOf(draft, TARGET_FONT_FIELD),
-          onChange: (event: Obj) => controller.guarded(
-            () => controller.setTargetFont(String(event.currentTarget.value))),
-        },
-        h("option", { value: "gulimche" }, "굴림체"),
-        h("option", { value: "dotumche" }, "돋움체"),
-        h("option", { value: "malgun" }, "맑은고딕")),
-        h("span", { className: "status", id: "wbReview", "data-level": review[1] }, review[0]),
-        h(EditedMark as any, { controller, card })),
+      renderWbToolbar({ controller, snapshot, draft, card, review }),
       h("article", {
         className: `wb-preview wc-render f-${snapshot.target_font || "gulimche"}`,
         id: "wbCard", "data-preserve-scroll": true,
@@ -541,43 +638,6 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
         key: String(snapshot.view), controller, card, readOnly: snapshot.view !== "filled",
       })),
       /* 린트는 **표지 + 행동**이 한 벌이다 — 경고만 두면 문제를 통보받고 손잡이는 없다. */
-      h("p", { className: "muted", id: "wbLint", style: { display: lint.active ? "" : "none" } },
-        lint.applied
-          ? h("span", null, "연속 공백을 전각으로 바꿔 복사합니다. ",
-            h("button", {
-              className: "btn sm", type: "button", id: "wbLintAction", "data-fullwidth": "off",
-              onClick: () => controller.guarded(() => controller.setFullwidth(false)),
-            }, "되돌리기"))
-          : h("span", null, "이 글꼴에서는 연속 공백이 밀릴 수 있습니다. ",
-            h("button", {
-              className: "btn sm", type: "button", id: "wbLintAction", "data-fullwidth": "on",
-              onClick: () => controller.guarded(() => controller.setFullwidth(true)),
-            }, "전각으로 바꾸기")))),
-    h("footer", { className: "wb-foot" },
-      h("label", { className: "wb-adv", style: { display: degenerate ? "none" : "" } },
-        h("input", {
-          type: "checkbox", id: "wbAdvance", checked: !!card.advance_after,
-          onChange: (event: Obj) => controller.guarded(
-            () => controller.toggleAdvance(!!event.currentTarget.checked)),
-        }), " 복사 후 다음 항목으로 이동"),
-      h("span", { className: "muted", id: "wbNote" }, noteText),
-      h("div", { className: "wb-foot-nav" },
-        h("button", {
-          className: "btn", id: "wbPrev", type: "button",
-          style: { display: degenerate ? "none" : "" },
-          disabled: degenerate || !card.can_prev,
-          onClick: () => controller.guarded(() => controller.step(-1)),
-        }, "이전"),
-        h("button", {
-          className: "btn", id: "wbNext", type: "button",
-          style: { display: degenerate ? "none" : "" },
-          disabled: degenerate || !card.can_next,
-          onClick: () => controller.guarded(() => controller.step(1)),
-        }, "다음"),
-        /* 복사 차단은 **Python 이 낸 사유**로 닫는다 — 「보이는 것 = 복사되는 것」. */
-        h("button", {
-          className: "btn primary", id: "wbCopy", type: "button",
-          disabled: !card.has_current || !!card.copy_block, title: card.copy_block || "",
-          onClick: () => controller.guarded(() => controller.copyCard()),
-        }, "복사"))));
+      renderWbLintNote({ controller, lint })),
+    renderWbFooter({ controller, card, degenerate, noteText }));
 }
