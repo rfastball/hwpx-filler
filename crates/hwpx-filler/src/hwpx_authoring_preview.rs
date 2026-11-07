@@ -332,10 +332,21 @@ pub fn preview_content_context(
     let included = paragraphs_text(&view, &paragraphs[start..=end]);
     let previous = span.prior.map_or_else(
         || included.clone(),
-        |region| paragraphs_text(&view, &paragraphs[region.start_paragraph..=region.end_paragraph]),
+        |region| {
+            paragraphs_text(
+                &view,
+                &paragraphs[region.start_paragraph..=region.end_paragraph],
+            )
+        },
     );
     let last_line = paragraph_text(&view, paragraphs[end]);
-    let mut children = option_children(&snapshot, entry, start, end, excluded_option(command, action));
+    let mut children = option_children(
+        &snapshot,
+        entry,
+        start,
+        end,
+        excluded_option(command, action),
+    );
     let options = children.len();
     let fields = field_children(package, entry, start, end)?;
     let field_count: usize = fields

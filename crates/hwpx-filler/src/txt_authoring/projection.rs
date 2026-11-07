@@ -192,7 +192,11 @@ fn create_field_view(at: &Projecting, view: &mut View) -> Result<(), TxtAuthorin
         "candidates".into(),
         json!(field_candidates(&all).map_err(|error| fail(error.to_string()))?),
     );
-    if at.command.get("ranges").is_some_and(|value| !value.is_null()) {
+    if at
+        .command
+        .get("ranges")
+        .is_some_and(|value| !value.is_null())
+    {
         let mut edits = at.plan.edits.clone();
         edits.sort_by_key(|item| (item.start, item.end));
         view.included = json!(

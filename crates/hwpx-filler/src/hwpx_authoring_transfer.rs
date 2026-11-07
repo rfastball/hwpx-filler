@@ -300,7 +300,9 @@ fn slot_bookmark_name(
     if resolve_bookmark_topology(target)
         .map_err(|item| error(item.to_string()))?
         .iter()
-        .any(|row| row.section == entry && row.start_paragraph < index && index <= row.end_paragraph)
+        .any(|row| {
+            row.section == entry && row.start_paragraph < index && index <= row.end_paragraph
+        })
     {
         return Err(error("항목을 다른 의미 영역 안에 넣을 수 없습니다."));
     }

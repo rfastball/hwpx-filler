@@ -381,7 +381,12 @@ pub fn available_commands_hwpx(
         .unwrap_or(&Value::Null);
     let (slot, option) = selection_target(context, &containing, &snapshot);
     let broken = !snapshot.diagnostics.is_empty();
-    let mut reasons = shared_reasons(&field_hits, target_kind(&slot, &option), slot.is_some(), broken);
+    let mut reasons = shared_reasons(
+        &field_hits,
+        target_kind(&slot, &option),
+        slot.is_some(),
+        broken,
+    );
     reasons[0] = if crossing {
         Some(MULTI_REGION)
     } else if frame.first != frame.last {

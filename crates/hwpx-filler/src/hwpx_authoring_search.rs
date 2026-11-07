@@ -4,8 +4,8 @@ use crate::authoring::paragraph_model_text;
 use crate::fields::normalize_field_id;
 use crate::hwpx_authoring_analysis::analyze_hwpx;
 use crate::hwpx_authoring_reading::{
-    CellStep, PARAGRAPH_UNRESOLVED, ParagraphPosition, body_hit_context, body_hit_parts, field_marks,
-    field_range_refusal, is_hp, paragraph_body, paragraph_pieces, paragraph_position,
+    CellStep, PARAGRAPH_UNRESOLVED, ParagraphPosition, body_hit_context, body_hit_parts,
+    field_marks, field_range_refusal, is_hp, paragraph_body, paragraph_pieces, paragraph_position,
     paragraph_sites, root_anchor, selected_paragraph, top_paragraphs,
 };
 use crate::hwpx_product_inspection::inspect_slot_regions;
@@ -334,7 +334,11 @@ pub fn same_text_hwpx(
                 let location = with_cell_path(
                     json!({"entry": entry, "paragraph": position.paragraph,
                         "paragraph_path": path, "start": start, "end": end}),
-                    position.cell_path.as_ref().map(|cell_path| json!(cell_path)).as_ref(),
+                    position
+                        .cell_path
+                        .as_ref()
+                        .map(|cell_path| json!(cell_path))
+                        .as_ref(),
                 );
                 hits.push(
                     json!({"location": location, "anchor": anchor, "context": context,
@@ -348,7 +352,12 @@ pub fn same_text_hwpx(
 }
 
 /// Where a stray token's problem points: its top paragraph or root anchor, if any.
-fn token_location(view: &XmlView, entry: &str, paragraph: NodeId, position: &ParagraphPosition) -> Value {
+fn token_location(
+    view: &XmlView,
+    entry: &str,
+    paragraph: NodeId,
+    position: &ParagraphPosition,
+) -> Value {
     let location = if let Some(index) = position.paragraph {
         json!({"entry": entry, "paragraph": index})
     } else if let Some(anchor) = root_anchor(view, paragraph) {
@@ -356,7 +365,10 @@ fn token_location(view: &XmlView, entry: &str, paragraph: NodeId, position: &Par
     } else {
         return Value::Null;
     };
-    let cell_path = position.cell_path.is_some().then(|| json!(position.cell_path));
+    let cell_path = position
+        .cell_path
+        .is_some()
+        .then(|| json!(position.cell_path));
     with_cell_path(location, cell_path.as_ref())
 }
 

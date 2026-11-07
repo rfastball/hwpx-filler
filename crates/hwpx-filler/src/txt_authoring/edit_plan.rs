@@ -269,7 +269,9 @@ fn region_identity_refusal(
     }
     scan.slots
         .iter()
-        .any(|slot| slot.id == owners[0].slot_id && slot.options.iter().any(|option| option.id == id))
+        .any(|slot| {
+            slot.id == owners[0].slot_id && slot.options.iter().any(|option| option.id == id)
+        })
         .then_some("같은 항목에 해당 선택 식별자가 이미 있습니다.")
 }
 fn region_closing(text: &str, kind: &str, hi: usize) -> Result<String, TxtAuthoringError> {
@@ -511,7 +513,11 @@ fn move_or_duplicate_plan(block: &Block) -> Result<EditPlan, TxtAuthoringError> 
         false,
     ))
 }
-fn adjust_range_plan(block: &Block, start: usize, end: usize) -> Result<EditPlan, TxtAuthoringError> {
+fn adjust_range_plan(
+    block: &Block,
+    start: usize,
+    end: usize,
+) -> Result<EditPlan, TxtAuthoringError> {
     let Block {
         text,
         target,

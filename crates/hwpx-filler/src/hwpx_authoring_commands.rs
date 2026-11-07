@@ -199,9 +199,10 @@ fn unwrap_region(
     }
     unwrap_options(package, slot_id)?;
     let fresh = inspect_slot_regions(package).map_err(error)?;
-    let region = fresh.slot_regions.get(slot_id).ok_or_else(|| {
-        AuthoringCommandError::plain("항목이나 선택 영역을 찾을 수 없습니다.")
-    })?;
+    let region = fresh
+        .slot_regions
+        .get(slot_id)
+        .ok_or_else(|| AuthoringCommandError::plain("항목이나 선택 영역을 찾을 수 없습니다."))?;
     unwrap_bookmark_region(package, region).map_err(error)
 }
 fn remove_region(

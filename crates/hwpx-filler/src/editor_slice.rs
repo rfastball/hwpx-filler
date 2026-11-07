@@ -152,7 +152,9 @@ fn split_specs(value: &str, want: &str) -> Vec<Value> {
             } else {
                 at as i64 + 1
             };
-            out.push(json!({"mode":"split","delimiter":delimiter,"index":index,"on_missing":"keep"}));
+            out.push(
+                json!({"mode":"split","delimiter":delimiter,"index":index,"on_missing":"keep"}),
+            );
         }
     }
     out

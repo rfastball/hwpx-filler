@@ -36,11 +36,19 @@ impl Placement<'_> {
 fn option_usable(at: &Placement, diagnostics: &mut Vec<TemplateDiagnostic>) -> bool {
     let mut usable = true;
     if !at.option_ancestors.is_empty() {
-        at.report(diagnostics, "nested-option", "Option is inside another Option");
+        at.report(
+            diagnostics,
+            "nested-option",
+            "Option is inside another Option",
+        );
         usable = false;
     }
     if at.slot_ancestors.is_empty() {
-        at.report(diagnostics, "orphan-option", "Option has no product Slot ancestor");
+        at.report(
+            diagnostics,
+            "orphan-option",
+            "Option has no product Slot ancestor",
+        );
         usable = false;
     } else if at.slot_ancestors.len() > 1 {
         at.report(
@@ -130,7 +138,10 @@ pub(super) struct BookmarkWalk<'s> {
 }
 
 impl BookmarkWalk<'_> {
-    pub(super) fn entry(&mut self, entry: &StructuralEntryScan) -> Result<(), ProductInspectionError> {
+    pub(super) fn entry(
+        &mut self,
+        entry: &StructuralEntryScan,
+    ) -> Result<(), ProductInspectionError> {
         let mut open = Vec::new();
         for event in &entry.events {
             match event {
@@ -152,7 +163,10 @@ impl BookmarkWalk<'_> {
                     self.begin(entry, &mut open, pair, bookmark_name.as_deref(), product);
                 }
                 BoundaryEvent::BookmarkEnd { pair, .. } if entry.bookmark_topology_usable => {
-                    if open.last().is_none_or(|item: &OpenBookmark| item.pair != *pair) {
+                    if open
+                        .last()
+                        .is_none_or(|item: &OpenBookmark| item.pair != *pair)
+                    {
                         return Err(ProductInspectionError(format!(
                             "{}: BOOKMARK end contradicts usable topology",
                             entry.entry

@@ -473,9 +473,10 @@ fn chosen_occurrence(
 ) -> Result<usize, AuthoringFieldError> {
     let at = ordinal(command.get("occurrence"))
         .ok_or_else(|| AuthoringFieldError::plain("필드 사용 위치가 올바르지 않습니다.".into()))?;
-    let field = scan.fields.get(at).ok_or_else(|| {
-        AuthoringFieldError::plain("필드 사용 위치를 찾을 수 없습니다.".into())
-    })?;
+    let field = scan
+        .fields
+        .get(at)
+        .ok_or_else(|| AuthoringFieldError::plain("필드 사용 위치를 찾을 수 없습니다.".into()))?;
     if let Some(expected) = command.get("pairing_id").filter(|value| !value.is_null())
         && expected.as_str() != view.attr(field.begin, "id")
     {

@@ -233,7 +233,9 @@ fn near_duplicate_problem(media: &str, left: &Value, right: &Value) -> Value {
     };
     let name = target["name"].as_str().unwrap_or("");
     let other_name = other["name"].as_str().unwrap_or("");
-    let occurrence = target["occurrences"].as_array().and_then(|rows| rows.first());
+    let occurrence = target["occurrences"]
+        .as_array()
+        .and_then(|rows| rows.first());
     let location = lint_location(media, occurrence);
     let mut actions = vec![json!({"label":"원문으로 이동","kind":"navigate","location":location})];
     if occurrence_total(target) == 1

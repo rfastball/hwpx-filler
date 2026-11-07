@@ -7,8 +7,8 @@ use crate::hwpx_structure_ops::{product_metatag_index, structure_region_name};
 use crate::slot::{Slot, SlotOption};
 use crate::structure_scan::python_trim;
 use hwpx_core::bookmark_region::{
-    BookmarkRegion, BookmarkRename, adjust_bookmark_region, append_bookmark_metatag, create_bookmark_region,
-    rename_bookmark_regions,
+    BookmarkRegion, BookmarkRename, adjust_bookmark_region, append_bookmark_metatag,
+    create_bookmark_region, rename_bookmark_regions,
 };
 use hwpx_core::package::HwpxPackage;
 use hwpx_core::xml_view::Content;
@@ -496,14 +496,17 @@ pub fn adjust_region(
         return Err(plain("고른 문단 범위가 문서 영역 밖에 있습니다."));
     }
     let (start, end) = (start as usize, end as usize);
-    if [paragraphs[start], paragraphs[end]].iter().any(|paragraph| {
-        !view
-            .node(*paragraph)
-            .unwrap()
-            .children
-            .iter()
-            .any(|part| is_hp_element(&view, part, "run"))
-    }) {
+    if [paragraphs[start], paragraphs[end]]
+        .iter()
+        .any(|paragraph| {
+            !view
+                .node(*paragraph)
+                .unwrap()
+                .children
+                .iter()
+                .any(|part| is_hp_element(&view, part, "run"))
+        })
+    {
         return Err(plain("경계 문단에 편집 가능한 텍스트 런이 없습니다."));
     }
     containment_refusal(&snapshot, ids, start, end)?;

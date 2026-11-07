@@ -288,8 +288,13 @@ pub fn paste_txt(
     }
     let region = with_meaning && matches!(kind, "slot" | "option");
     if region {
-        snippet =
-            region_paste_snippet(text, captured, destination, (kind, &before, start, end), &snippet)?;
+        snippet = region_paste_snippet(
+            text,
+            captured,
+            destination,
+            (kind, &before, start, end),
+            &snippet,
+        )?;
     }
     let result = format!(
         "{}{}{}",

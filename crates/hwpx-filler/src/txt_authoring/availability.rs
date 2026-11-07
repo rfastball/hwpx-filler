@@ -1,12 +1,12 @@
 //! Which authoring commands a selection or target allows, and why not.
 
+use super::edit_plan::selected_offsets;
 use super::projection::text_hit_parts;
 use super::{
-    FIELD_OVERLAP, FieldSite, INVALID_SELECTION, NO_CONTENT_LINE, REGION_OVERLAP,
-    STRUCTURE_FIRST, TxtAuthoringError, chars, fail, field_sites, from_utf16, line_at, line_range,
-    line_starts, part, utf16,
+    FIELD_OVERLAP, FieldSite, INVALID_SELECTION, NO_CONTENT_LINE, REGION_OVERLAP, STRUCTURE_FIRST,
+    TxtAuthoringError, chars, fail, field_sites, from_utf16, line_at, line_range, line_starts,
+    part, utf16,
 };
-use super::edit_plan::selected_offsets;
 use crate::structure_scan::{PLACEMENT_OPTION, PLACEMENT_SLOT, python_trim};
 use crate::text_structure::{
     TextStructurePlacement, TextStructureScan, scan_text_structure, scan_text_token_spans,
@@ -39,7 +39,10 @@ const MULTI_REGION: &str = "고른 범위가 여러 독립 영역에 걸쳐 있�
 
 type Reasons = HashMap<&'static str, Option<&'static str>>;
 
-fn availability_entries(reasons: &Reasons, alternatives: &HashMap<&'static str, Value>) -> Vec<Value> {
+fn availability_entries(
+    reasons: &Reasons,
+    alternatives: &HashMap<&'static str, Value>,
+) -> Vec<Value> {
     COMMAND_TYPES
         .iter()
         .map(|kind| {
@@ -234,8 +237,7 @@ pub fn available_commands(text: &str, selection: &Value, context: Option<&Value>
         .map(|site| site.name.clone())
         .collect::<Vec<_>>();
     let (containing, _) = placement_hits(&scan, &starts, start, end);
-    let (slot_id, option_id) =
-        region_context(&scan, &containing, context.unwrap_or(&Value::Null));
+    let (slot_id, option_id) = region_context(&scan, &containing, context.unwrap_or(&Value::Null));
     let broken = !scan.diagnostics.is_empty();
     let mut reasons = shared_reasons(
         &hits,

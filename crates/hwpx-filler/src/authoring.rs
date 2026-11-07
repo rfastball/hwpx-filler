@@ -295,7 +295,9 @@ impl ModelBuilder<'_> {
             "lineBreak"
         };
         self.model.events.push((at, kind));
-        self.model.text.push(if kind == "tab" { '\t' } else { '\n' });
+        self.model
+            .text
+            .push(if kind == "tab" { '\t' } else { '\n' });
         self.length += 1;
     }
 }
@@ -367,8 +369,8 @@ struct Coverage<'v> {
 impl Coverage<'_> {
     /// One run format, adjacent runs, no inner events, and no field in the runs.
     fn clean(&self, view: &XmlView) -> bool {
-        let same_format = self.runs.len() == 1
-            || (self.char_prs.len() == 1 && !self.char_prs.contains(&None));
+        let same_format =
+            self.runs.len() == 1 || (self.char_prs.len() == 1 && !self.char_prs.contains(&None));
         self.inside.is_empty()
             && same_format
             && self.contiguous
