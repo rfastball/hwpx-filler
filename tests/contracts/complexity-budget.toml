@@ -774,12 +774,6 @@ function_complexity = 46
 [budget."frontend/src/tutorial/session.ts::createTutorialSession"]
 function_complexity = 29
 
-[budget."scripts/extract_js_ast_axes.mjs"]
-module_statements = 463
-
-[budget."scripts/extract_js_ast_axes.mjs::collectDomFactoryAliases"]
-function_complexity = 18
-
 [budget."scripts/extract_js_ast_axes.mjs::domFactoryOrigin"]
 function_complexity = { value = 12, reason = "상시 예외: 평평한 분배 표 — AST 노드 종류별 평평한 분기" }
 
@@ -788,13 +782,6 @@ function_complexity = { value = 17, reason = "상시 예외: 평평한 분배 �
 
 [budget."scripts/extract_js_ast_axes.mjs::jsTemplateIds"]
 function_complexity = { value = 13, reason = "상시 예외: 평평한 분배 표 — 2개 노드 종류 독립 추출" }
-
-[budget."scripts/extract_js_ast_axes.mjs::sources"]
-function_complexity = 11
-
-[budget."scripts/extract_js_ast_axes.mjs::typescriptAxes.visit"]
-function_complexity = 60
-function_statements = 66
 
 [budget."scripts/live101_native/journey.mjs::runJourney"]
 function_statements = { value = 55, reason = "상시 예외: 독립 사례 나열 테스트 — H1~H7 가설별 독립 시나리오" }
