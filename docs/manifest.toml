@@ -153,7 +153,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
-source_sha256 = "14fddfe97427eb4b617d8c13bafd4df4eb2936bf76e3766270da5c5d133cb1bc"
+source_sha256 = "2891383298b19e60f575688b81f2cf35358c16d226e2580eef76271054f157f6"
 body_sha256 = "0faeb20d797961ad20e0dce979ee7f6425ba669ac368513e5becc332df63cf9a"
 
 [[topic]]
@@ -169,7 +169,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/slot_configuration_*.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-desktop/src/slot_token.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-desktop/src/action_registry.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-filler/src/canonical_execution_encoding.rs", "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-filler/src/execution_composition.rs", "crates/hwpx-filler/src/execution_contract_set.rs"]
-source_sha256 = "38b697b0836d22ff3cebc06441c76db50c15ac53a33950180c999fb4e89ed58b"
+source_sha256 = "cf02b77bb6e4a6e9915699b1dd3193adda04b88380bee1efd89ef991503e89a4"
 body_sha256 = "15274c7d47244e6e0538b3f66c15f6df2fa241c3a003b2208094f82c94449056"
 
 [[topic]]
@@ -177,7 +177,7 @@ id = "workflow-definition"
 document = "docs/workflow.md"
 sources = ["crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/editor_*.rs", "crates/hwpx-desktop/src/editor_controller/*.rs", "frontend/src/screens/editor*.ts", "crates/hwpx-filler/src/editor_*.rs", "crates/hwpx-filler/src/mapping_state.rs", "crates/hwpx-filler/src/job.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-filler/src/field_binding*.rs", "crates/hwpx-filler/src/field_binding/*.rs", "crates/hwpx-filler/src/job_binding_projection.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-filler/src/execution_capture.rs", "crates/hwpx-filler/src/format_engine.rs", "crates/hwpx-filler/src/field_induction.rs", "crates/hwpx-filler/src/data_contract*.rs"]
 tests = ["crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-filler/src/editor_save_policy.rs","crates/hwpx-desktop/src/job_registry.rs","crates/hwpx-desktop/src/job_management.rs","crates/hwpx-desktop/src/seal_execution_service.rs","crates/hwpx-filler/src/format_engine.rs","crates/hwpx-desktop/src/editor_controller.rs","crates/hwpx-filler/src/mapping_state.rs","crates/hwpx-desktop/src/workbench_controller.rs","crates/hwpx-desktop/src/bin/hwpxfiller.rs","crates/hwpx-filler/src/data_contract.rs","tests/js/editor_contract_reason.test.js"]
-source_sha256 = "0ded3df401c08796f350deaee3a23bdd55dd3e3942d20810ebd5c0ad1aa09a1d"
+source_sha256 = "021b5cb7a7aea43e68c43251fccef7e7db531c8549f7f3f170214e6376a790db"
 body_sha256 = "6b4f28aa40e3067bd9f5be2f544e2ba4310c2990859bb17533dc81c6ad1c0267"
 
 [[topic]]
@@ -185,15 +185,15 @@ id = "workflow-template"
 document = "docs/workflow.md"
 sources = ["crates/hwpx-desktop/src/template_change_coordinator.rs", "crates/hwpx-desktop/src/applied_template_asset.rs", "crates/hwpx-desktop/src/slot_configuration_*.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-filler/src/*configuration*.rs", "crates/hwpx-filler/src/*template*.rs", "crates/hwpx-desktop/src/preset_registry.rs", "crates/hwpx-filler/src/preset*.rs", "crates/hwpx-desktop/src/authoring_*.rs", "crates/hwpx-filler/src/*authoring*.rs", "frontend/src/screens/authoring*.ts", "frontend/src/screens/command_palette.ts", "frontend/src/editorview/*.ts"]
 tests = ["crates/hwpx-filler/src/work_slot_configuration.rs", "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/job_hwpx_panel.rs", "crates/hwpx-desktop/src/current_execution_preparation.rs", "crates/hwpx-filler/src/txt_authoring.rs", "crates/hwpx-desktop/src/authoring_controller.rs", "tests/js/authoring.test.js", "tests/js/txt_name_tags.test.js", "crates/hwpx-filler/src/authoring.rs", "crates/hwpx-filler/src/rhwp_preflight.rs", "crates/hwpx-desktop/src/template_change_coordinator.rs"]
-source_sha256 = "8cee49e8b1a7db1d61815c8d8d7a3f500c818b2524dff271b20af4e25ef0a356"
+source_sha256 = "48c4105aa515767aad94556a1a637b2be031516a5821819bdb9978d596614f86"
 body_sha256 = "fe2bc41c19c53e324b1371f389a4cfe9032e4f78a41086b2540083feca37e30c"
 
 [[topic]]
 id = "workflow-data"
 document = "docs/workflow.md"
-sources = ["crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/pool_controller/*.rs", "crates/hwpx-desktop/src/registered_contract_data.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-filler/src/data_pclm.rs", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-filler/src/active_work_state.rs", "crates/hwpx-filler/src/work_candidates.rs", "crates/hwpx-desktop/src/job_data_*.rs", "crates/hwpx-desktop/src/job_session_gate.rs", "crates/hwpx-desktop/src/generation_gate.rs", "crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/job_screen.rs", "crates/hwpx-desktop/src/job_actions.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/native_data_sheets.rs", "crates/hwpx-desktop/src/native_authoring_files.rs", "crates/hwpx-filler/src/job_presentation.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-filler/src/selection_state.rs", "crates/hwpx-filler/src/filter_state.rs", "crates/hwpx-filler/src/filter_primitives.rs", "crates/hwpx-desktop/src/dataset_registry.rs", "crates/hwpx-desktop/src/dataset_registry/*.rs", "crates/hwpx-filler/src/dataset_pool.rs", "frontend/src/screens/sheet_tabs.ts", "frontend/src/screens/registration_sheets.ts", "frontend/src/screens/registration_dialog.ts", "crates/hwpx-desktop/src/contract_data_binding.rs", "crates/hwpx-desktop/src/work_package_autobind.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/data_contract_check.rs"]
+sources = ["crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/pool_controller/*.rs", "crates/hwpx-desktop/src/registered_contract_data.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-filler/src/data_pclm.rs", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-filler/src/active_work_state.rs", "crates/hwpx-filler/src/work_candidates.rs", "crates/hwpx-desktop/src/job_data_*.rs", "crates/hwpx-desktop/src/job_session_gate.rs", "crates/hwpx-desktop/src/generation_gate.rs", "crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/job_screen.rs", "crates/hwpx-desktop/src/job_actions.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/native_data_sheets.rs", "crates/hwpx-desktop/src/native_authoring_files.rs", "crates/hwpx-filler/src/job_presentation.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-filler/src/selection_state.rs", "crates/hwpx-filler/src/filter_state.rs", "crates/hwpx-filler/src/filter_state/*.rs", "crates/hwpx-filler/src/filter_primitives.rs", "crates/hwpx-desktop/src/dataset_registry.rs", "crates/hwpx-desktop/src/dataset_registry/*.rs", "crates/hwpx-filler/src/dataset_pool.rs", "frontend/src/screens/sheet_tabs.ts", "frontend/src/screens/registration_sheets.ts", "frontend/src/screens/registration_dialog.ts", "crates/hwpx-desktop/src/contract_data_binding.rs", "crates/hwpx-desktop/src/work_package_autobind.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/data_contract_check.rs"]
 tests = ["crates/hwpx-filler/src/filter_state.rs", "crates/hwpx-filler/src/data_pclm.rs", "crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/pool_controller.rs", "crates/hwpx-desktop/src/editor_controller.rs", "tests/js/editor_sheet_tabs.test.js", "crates/hwpx-desktop/src/library_controller.rs", "crates/hwpx-desktop/src/contract_data_binding.rs", "crates/hwpx-desktop/src/work_package_autobind.rs", "crates/hwpx-filler/src/work_package_plan.rs", "crates/hwpx-filler/src/data_contract_check.rs"]
-source_sha256 = "2c2186ec997252f4a7cfcde8e018b06129bfe11c45d468339214d9f2f23f1340"
+source_sha256 = "92e852bf55a8d06acfd36bde1efeeaf29208190d5cf7abf39e84f9ad97fd8125"
 body_sha256 = "ca53d8900c02ee88db02d7311bd0cace8fb08d5f41d8b6f001a95e8eb4b47abe"
 
 [[topic]]
@@ -201,7 +201,7 @@ id = "workflow-generation"
 document = "docs/workflow.md"
 sources = ["crates/hwpx-desktop/src/job_controller.rs", "crates/hwpx-desktop/src/job_execution.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/current_execution_preparation.rs", "frontend/src/screens/job*.ts", "crates/hwpx-desktop/src/job_screen.rs", "crates/hwpx-desktop/src/job_actions.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/job_management.rs", "crates/hwpx-desktop/src/job_panel.rs", "crates/hwpx-filler/src/*execution*.rs", "crates/hwpx-filler/src/generation*.rs", "crates/hwpx-filler/src/run_request.rs", "crates/hwpx-filler/src/run_delivery_intent.rs", "crates/hwpx-filler/src/*seal*.rs", "crates/hwpx-filler/src/prepare_*.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-filler/src/materialization_*.rs", "crates/hwpx-filler/src/output_name*.rs", "crates/hwpx-core/src/structural_boundary.rs", "crates/hwpx-core/src/bookmark_region.rs", "crates/hwpx-core/src/bookmark_region/*.rs"]
 tests = ["crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-desktop/src/job_run_result.rs","crates/hwpx-desktop/src/current_execution_preparation.rs","crates/hwpx-desktop/src/job_registry.rs","crates/hwpx-filler/src/work_slot_configuration.rs","crates/hwpx-filler/src/generation_delivery.rs","crates/hwpx-filler/src/materialization_runner.rs","crates/hwpx-desktop/src/managed_generation_service.rs"]
-source_sha256 = "6f374ebe637363de511367dbabc124f9a95668fb1d4f0621c567188b06f9d6df"
+source_sha256 = "bfc3115159967aa622c6bbf5bd63fecff068c87f8706f75e6c299a818ac4ca1f"
 body_sha256 = "3cbf1e371c919a70d620434c53b0ae0a6474f3c5b4282f97b5604e9267c6ca2e"
 
 [[topic]]
@@ -209,7 +209,7 @@ id = "workflow-results"
 document = "docs/workflow.md"
 sources = ["crates/hwpx-desktop/src/artifact_observation.rs", "crates/hwpx-desktop/src/job_artifact.rs", "crates/hwpx-desktop/src/job_run_result.rs", "crates/hwpx-desktop/src/job_generation.rs", "crates/hwpx-desktop/src/managed_generation_service.rs", "crates/hwpx-desktop/src/native_methods.rs", "crates/hwpx-desktop/src/native_data_sheets.rs", "crates/hwpx-desktop/src/native_authoring_files.rs", "crates/hwpx-desktop/src/workbench_controller.rs", "crates/hwpx-desktop/src/workbench_materialization.rs", "frontend/src/screens/job_artifact.ts", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "crates/hwpx-desktop/src/job_execution.rs", "frontend/src/screens/workbench*.ts", "crates/hwpx-filler/src/document_creation_workbench.rs", "crates/hwpx-filler/src/fresh_execution_observation.rs", "frontend/src/selftest/probes/job.js", "frontend/src/selftest/probes/job_artifact_snapshot.js"]
 tests = ["crates/hwpx-desktop/src/managed_generation_service.rs","crates/hwpx-desktop/src/workbench_controller.rs","crates/hwpx-desktop/src/job_controller.rs","crates/hwpx-desktop/src/job_run_result.rs"]
-source_sha256 = "834a2018e61c57ed21be0c34aef3a790b9e55d7cf2f795b34394dec8b1bb0345"
+source_sha256 = "4823fbd2903ceba554537faa0f3b3cef18c760f75e458b5ed70a8ec10ec36f75"
 body_sha256 = "74338865f1b57ecb80c0d0210e73c4a585b368a7ceeefc0bc217b0f336a92e5c"
 
 [[topic]]
@@ -225,7 +225,7 @@ id = "ui-terms"
 document = "docs/ui-style.md"
 sources = ["crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-filler/src/data_source.rs", "crates/hwpx-filler/src/home_state.rs", "crates/hwpx-filler/src/identity_summary.rs", "crates/hwpx-filler/src/job.rs", "frontend/src/screens/sheet_picker.ts", "frontend/src/screens/preview_cell.ts", "tests/fixtures/identity_summary_nara.json"]
 tests = ["tests/js/ui_copy_census.test.js", "crates/hwpx-filler/src/identity_summary.rs"]
-source_sha256 = "c134d1c66d6a49d78000f6fa31571400e60e1c493fe6eeb824ccedd701c6e642"
+source_sha256 = "b01f7dfdebe365ec2eab41e534a4e2262ca2accc89b7ce35cd521d9f648dc713"
 body_sha256 = "8708810ab933e7f6f64d9b419dcba937c0b2727305982db8e5533780fe33cd55"
 
 [[topic]]
@@ -233,7 +233,7 @@ id = "ui-copy"
 document = "docs/ui-style.md"
 sources = ["scripts/ui_copy_census.mjs", "crates/hwpx-artifact/examples/ui_copy_literals.rs", "tests/contracts/ui-copy-census.toml"]
 tests = ["tests/js/ui_copy_census.test.js"]
-source_sha256 = "1b4c3a28a76d4b6dc3bb8c07e04ab2f77a79614c328738de82fdf8ddcfb729b9"
+source_sha256 = "0ada608f8151091d442a3a43fbb2825bc132f29196dd26d559016c1329142697"
 body_sha256 = "fdbc4edebdd5edbdb5bd52af907a46f4adb8527f0346b3c84271fde0b0111358"
 
 [[topic]]

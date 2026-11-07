@@ -279,6 +279,32 @@ fn render_transform(spec: Transform, value: &str) -> Option<String> {
     })
 }
 
+/// An identity rendering and a date/datetime rendering agree on the same input
+/// unchanged: keep only one of the pair to avoid reporting a duplicate reading.
+fn identity_date_duplicate(result: &[(Transform, String)], spec: &Transform, value: &str) -> bool {
+    result.iter().any(|(prior, _)| {
+        (prior.id == "identity" || spec.id == "identity")
+            && matches!(
+                if prior.id == "identity" {
+                    spec.family
+                } else {
+                    prior.family
+                },
+                "date" | "datetime"
+            )
+            && render_transform(
+                if prior.id == "identity" {
+                    *spec
+                } else {
+                    *prior
+                },
+                value,
+            )
+            .as_deref()
+                == Some(value)
+    })
+}
+
 pub fn renderings(value: &str) -> Vec<(Transform, String)> {
     let mut specs = TRANSFORMS;
     specs.sort_by(|left, right| left.complexity.total_cmp(&right.complexity));
@@ -290,20 +316,7 @@ pub fn renderings(value: &str) -> Vec<(Transform, String)> {
         if python_trim(&rendered).is_empty() {
             continue;
         }
-        if result.iter().any(|(prior, _)| {
-            (prior.id == "identity" || spec.id == "identity")
-                && matches!(
-                    if prior.id == "identity" {
-                        spec.family
-                    } else {
-                        prior.family
-                    },
-                    "date" | "datetime"
-                )
-                && render_transform(if prior.id == "identity" { spec } else { *prior }, value)
-                    .as_deref()
-                    == Some(value)
-        }) {
+        if identity_date_duplicate(&result, &spec, value) {
             continue;
         }
         if product_render(spec.kind, spec.fmt, value) != rendered {
@@ -380,6 +393,26 @@ fn inside_dot_date(text: &str, start: usize, end: usize) -> bool {
     (char_at(text, end - 1) == Some('.') && date_continues().is_match(&after))
         || char_at(text, start).is_some_and(|ch| ch.is_numeric()) && date_before().is_match(&before)
 }
+fn digit_boundary_violation(
+    chars: &[char],
+    start: usize,
+    end: usize,
+    first: char,
+    last: char,
+) -> bool {
+    (first.is_numeric() && digit_glued(chars, start as isize - 1, -1))
+        || (last.is_numeric() && digit_glued(chars, end as isize, 1))
+}
+fn latin_boundary_violation(
+    chars: &[char],
+    start: usize,
+    end: usize,
+    first: char,
+    last: char,
+) -> bool {
+    (is_latin(first) && latin_glued(chars, start as isize - 1))
+        || (is_latin(last) && latin_glued(chars, end as isize))
+}
 pub fn boundary_ok(text: &str, start: usize, end: usize) -> bool {
     let chars: Vec<char> = text.chars().collect();
     if start >= end || end > chars.len() || inside_dot_date(text, start, end) {
@@ -387,16 +420,10 @@ pub fn boundary_ok(text: &str, start: usize, end: usize) -> bool {
     }
     let first = chars[start];
     let last = chars[end - 1];
-    if first.is_numeric() && digit_glued(&chars, start as isize - 1, -1) {
+    if digit_boundary_violation(&chars, start, end, first, last) {
         return false;
     }
-    if last.is_numeric() && digit_glued(&chars, end as isize, 1) {
-        return false;
-    }
-    if is_latin(first) && latin_glued(&chars, start as isize - 1) {
-        return false;
-    }
-    !(is_latin(last) && latin_glued(&chars, end as isize))
+    !latin_boundary_violation(&chars, start, end, first, last)
 }
 pub fn hangul_bounded(text: &str, start: usize, end: usize) -> bool {
     !(start > 0 && char_at(text, start - 1).is_some_and(|ch| ('가'..='힣').contains(&ch))

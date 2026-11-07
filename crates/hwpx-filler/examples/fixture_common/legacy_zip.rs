@@ -67,74 +67,113 @@ fn raw_deflate(data: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(output)
 }
 
+/// One entry's precomputed fixed-layout fields, shared by its local header and its
+/// central-directory record.
+struct EntryLayout<'a> {
+    name: &'a [u8],
+    name_len: u16,
+    plain_len: u32,
+    compressed: Vec<u8>,
+    compressed_len: u32,
+    crc: u32,
+    method: u16,
+    offset: u32,
+}
+fn entry_layout<'a>(
+    entry: &'a PackageEntry,
+    offset: u32,
+) -> Result<EntryLayout<'a>, Box<dyn Error>> {
+    if !entry.name.is_ascii() || entry.name.is_empty() || entry.name.contains('\\') {
+        return Err(format!("unsupported fixture ZIP name: {}", entry.name).into());
+    }
+    let name = entry.name.as_bytes();
+    let name_len = u16::try_from(name.len())?;
+    let plain_len = u32::try_from(entry.data.len())?;
+    let compressed = if entry.stored {
+        entry.data.clone()
+    } else {
+        raw_deflate(&entry.data)?
+    };
+    let compressed_len = u32::try_from(compressed.len())?;
+    let crc =
+        unsafe { libz_sys::crc32(0, entry.data.as_ptr(), u32::try_from(entry.data.len())?) } as u32;
+    let method = if entry.stored { 0 } else { 8 };
+    Ok(EntryLayout {
+        name,
+        name_len,
+        plain_len,
+        compressed,
+        compressed_len,
+        crc,
+        method,
+        offset,
+    })
+}
+/// Python ZipInfo defaults: made/needed 20, DOS epoch, no extra/comment,
+/// mode 0600 in external attributes, seekable local header without descriptor.
+fn write_local_header(archive: &mut Vec<u8>, entry: &EntryLayout<'_>) {
+    little32(archive, 0x0403_4b50);
+    little16(archive, 20);
+    little16(archive, 0);
+    little16(archive, entry.method);
+    little16(archive, 0);
+    little16(archive, 0x21);
+    little32(archive, entry.crc);
+    little32(archive, entry.compressed_len);
+    little32(archive, entry.plain_len);
+    little16(archive, entry.name_len);
+    little16(archive, 0);
+    archive.extend_from_slice(entry.name);
+    archive.extend_from_slice(&entry.compressed);
+}
+fn write_central_directory_record(directory: &mut Vec<u8>, entry: &EntryLayout<'_>) {
+    little32(directory, 0x0201_4b50);
+    little16(directory, 20);
+    little16(directory, 20);
+    little16(directory, 0);
+    little16(directory, entry.method);
+    little16(directory, 0);
+    little16(directory, 0x21);
+    little32(directory, entry.crc);
+    little32(directory, entry.compressed_len);
+    little32(directory, entry.plain_len);
+    little16(directory, entry.name_len);
+    little16(directory, 0);
+    little16(directory, 0);
+    little16(directory, 0);
+    little16(directory, 0);
+    little32(directory, 0o600 << 16);
+    little32(directory, entry.offset);
+    directory.extend_from_slice(entry.name);
+}
+fn write_end_of_central_directory(
+    archive: &mut Vec<u8>,
+    count: u16,
+    directory_size: u32,
+    directory_offset: u32,
+) {
+    little32(archive, 0x0605_4b50);
+    little16(archive, 0);
+    little16(archive, 0);
+    little16(archive, count);
+    little16(archive, count);
+    little32(archive, directory_size);
+    little32(archive, directory_offset);
+    little16(archive, 0);
+}
+
 pub fn write(entries: &[PackageEntry]) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut archive = Vec::new();
     let mut directory = Vec::new();
     for entry in entries {
-        if !entry.name.is_ascii() || entry.name.is_empty() || entry.name.contains('\\') {
-            return Err(format!("unsupported fixture ZIP name: {}", entry.name).into());
-        }
-        let name = entry.name.as_bytes();
-        let name_len = u16::try_from(name.len())?;
-        let plain_len = u32::try_from(entry.data.len())?;
-        let compressed = if entry.stored {
-            entry.data.clone()
-        } else {
-            raw_deflate(&entry.data)?
-        };
-        let compressed_len = u32::try_from(compressed.len())?;
-        let offset = u32::try_from(archive.len())?;
-        let crc =
-            unsafe { libz_sys::crc32(0, entry.data.as_ptr(), u32::try_from(entry.data.len())?) }
-                as u32;
-        let method = if entry.stored { 0 } else { 8 };
-
-        // Python ZipInfo defaults: made/needed 20, DOS epoch, no extra/comment,
-        // mode 0600 in external attributes, seekable local header without descriptor.
-        little32(&mut archive, 0x0403_4b50);
-        little16(&mut archive, 20);
-        little16(&mut archive, 0);
-        little16(&mut archive, method);
-        little16(&mut archive, 0);
-        little16(&mut archive, 0x21);
-        little32(&mut archive, crc);
-        little32(&mut archive, compressed_len);
-        little32(&mut archive, plain_len);
-        little16(&mut archive, name_len);
-        little16(&mut archive, 0);
-        archive.extend_from_slice(name);
-        archive.extend_from_slice(&compressed);
-
-        little32(&mut directory, 0x0201_4b50);
-        little16(&mut directory, 20);
-        little16(&mut directory, 20);
-        little16(&mut directory, 0);
-        little16(&mut directory, method);
-        little16(&mut directory, 0);
-        little16(&mut directory, 0x21);
-        little32(&mut directory, crc);
-        little32(&mut directory, compressed_len);
-        little32(&mut directory, plain_len);
-        little16(&mut directory, name_len);
-        little16(&mut directory, 0);
-        little16(&mut directory, 0);
-        little16(&mut directory, 0);
-        little16(&mut directory, 0);
-        little32(&mut directory, 0o600 << 16);
-        little32(&mut directory, offset);
-        directory.extend_from_slice(name);
+        let layout = entry_layout(entry, u32::try_from(archive.len())?)?;
+        write_local_header(&mut archive, &layout);
+        write_central_directory_record(&mut directory, &layout);
     }
     let directory_offset = u32::try_from(archive.len())?;
     let directory_size = u32::try_from(directory.len())?;
     let count = u16::try_from(entries.len())?;
     archive.extend_from_slice(&directory);
-    little32(&mut archive, 0x0605_4b50);
-    little16(&mut archive, 0);
-    little16(&mut archive, 0);
-    little16(&mut archive, count);
-    little16(&mut archive, count);
-    little32(&mut archive, directory_size);
-    little32(&mut archive, directory_offset);
-    little16(&mut archive, 0);
+    write_end_of_central_directory(&mut archive, count, directory_size, directory_offset);
     Ok(archive)
 }

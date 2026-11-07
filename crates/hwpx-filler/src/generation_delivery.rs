@@ -187,51 +187,27 @@ pub fn verify_delivery_binding_basis_integrity(
     }
     Ok(())
 }
-pub fn build_delivery_binding_basis(
-    base_template_application_id: &str,
-    field_binding_authority_revision: &str,
-    filename_pattern_contract_id: &str,
-    exact_pattern: &str,
-    active_field_ids: &[String],
-    binding_rules: &[FieldBindingRule],
-    document_value_resolution_contract_id: &str,
-) -> DeliveryPlanResult<GenerationDeliveryBindingBasis> {
-    if document_value_resolution_contract_id != DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID {
-        return DeliveryPlanResult::ContextError(context(
-            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-            format!(
-                "미지원 document value resolution contract: {}",
-                repr_text(document_value_resolution_contract_id)
-            ),
-        ));
-    }
-    let tokens = match parse_pattern(exact_pattern, filename_pattern_contract_id) {
-        Ok(tokens) => tokens,
-        Err(DeliveryPlanResult::Blocked(blockers)) => return DeliveryPlanResult::Blocked(blockers),
-        Err(DeliveryPlanResult::ContextError(error)) => {
-            return DeliveryPlanResult::ContextError(error);
-        }
-        Err(DeliveryPlanResult::Ready(())) => unreachable!(),
-    };
-    let ordered = match require_single_rule_per_field(binding_rules) {
-        Ok(rules) => rules,
-        Err(error) => {
-            return DeliveryPlanResult::Blocked(vec![blocker(
-                OUTPUT_NAME_BINDING_AMBIGUOUS,
-                None,
-                None,
-                error.message,
-            )]);
-        }
-    };
-    let by_field: HashMap<_, _> = ordered
-        .iter()
-        .map(|rule| (rule.field_id.as_str(), rule))
-        .collect();
-    let active: HashSet<_> = active_field_ids.iter().map(String::as_str).collect();
+/// Carry `parse_pattern`'s `Blocked`/`ContextError` outcomes to a different result type;
+/// it never returns its placeholder `Ready(())`.
+fn convert_pattern_result<T>(
+    tokens: Result<Vec<PatternToken>, DeliveryPlanResult<()>>,
+) -> Result<Vec<PatternToken>, DeliveryPlanResult<T>> {
+    tokens.map_err(|err| match err {
+        DeliveryPlanResult::Blocked(blockers) => DeliveryPlanResult::Blocked(blockers),
+        DeliveryPlanResult::ContextError(error) => DeliveryPlanResult::ContextError(error),
+        DeliveryPlanResult::Ready(()) => unreachable!(),
+    })
+}
+/// Every filename-pattern token not already Active, either bound to a FieldBindingRule
+/// (becomes an output-name requirement) or left as an unresolved-token blocker.
+fn collect_output_name_requirements(
+    tokens: &[PatternToken],
+    active: &HashSet<&str>,
+    by_field: &HashMap<&str, &FieldBindingRule>,
+) -> (Vec<DeliveryOutputNameRequirement>, Vec<DeliveryPlanBlocker>) {
     let mut requirements = Vec::new();
     let mut blockers = Vec::new();
-    for field in pattern_field_token_ids(&tokens) {
+    for field in pattern_field_token_ids(tokens) {
         if active.contains(field.as_str()) {
             continue;
         }
@@ -252,6 +228,48 @@ pub fn build_delivery_binding_basis(
             ));
         }
     }
+    (requirements, blockers)
+}
+pub fn build_delivery_binding_basis(
+    base_template_application_id: &str,
+    field_binding_authority_revision: &str,
+    filename_pattern_contract_id: &str,
+    exact_pattern: &str,
+    active_field_ids: &[String],
+    binding_rules: &[FieldBindingRule],
+    document_value_resolution_contract_id: &str,
+) -> DeliveryPlanResult<GenerationDeliveryBindingBasis> {
+    if document_value_resolution_contract_id != DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID {
+        return DeliveryPlanResult::ContextError(context(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            format!(
+                "미지원 document value resolution contract: {}",
+                repr_text(document_value_resolution_contract_id)
+            ),
+        ));
+    }
+    let tokens =
+        match convert_pattern_result(parse_pattern(exact_pattern, filename_pattern_contract_id)) {
+            Ok(tokens) => tokens,
+            Err(result) => return result,
+        };
+    let ordered = match require_single_rule_per_field(binding_rules) {
+        Ok(rules) => rules,
+        Err(error) => {
+            return DeliveryPlanResult::Blocked(vec![blocker(
+                OUTPUT_NAME_BINDING_AMBIGUOUS,
+                None,
+                None,
+                error.message,
+            )]);
+        }
+    };
+    let by_field: HashMap<_, _> = ordered
+        .iter()
+        .map(|rule| (rule.field_id.as_str(), rule))
+        .collect();
+    let active: HashSet<_> = active_field_ids.iter().map(String::as_str).collect();
+    let (requirements, blockers) = collect_output_name_requirements(&tokens, &active, &by_field);
     if !blockers.is_empty() {
         return DeliveryPlanResult::Blocked(blockers);
     }
@@ -354,6 +372,78 @@ pub enum DeliveryFieldValue {
     Text(String),
     Unresolved { code: String, detail: String },
 }
+fn resolve_constant_delivery_value(
+    expression: &Value,
+    policy: &crate::field_binding::DocumentContentValuePolicy,
+) -> Result<DeliveryFieldValue, DeliveryPlanContextError> {
+    let code = expression.get("format_code").unwrap_or(&Value::Null);
+    let kind = expression.get("format_kind").unwrap_or(&Value::Null);
+    let slice = expression.get("text_slice").unwrap_or(&Value::Null);
+    if (!code.is_null() && code != "") || !kind.is_null() || !slice.is_null() {
+        return Err(context(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            format!(
+                "고정값에는 표시형·가공을 적용하지 않는다: {}/{}/{}",
+                repr(kind),
+                repr(code),
+                repr(slice)
+            ),
+        ));
+    }
+    let canonical = expression
+        .get("canonical_value")
+        .filter(|v| v.is_object())
+        .ok_or_else(|| {
+            context(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                "CONSTANT requirement 에 canonical_value 가 없다",
+            )
+        })?;
+    let text = canonical
+        .get("text")
+        .and_then(Value::as_str)
+        .filter(|_| canonical.get("kind") == Some(&json!("TEXT")))
+        .ok_or_else(|| {
+            context(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                "CONSTANT requirement 의 canonical_value 형식 불량",
+            )
+        })?;
+    Ok(DeliveryFieldValue::Text(whitespace(
+        text,
+        &policy.whitespace_policy,
+    )?))
+}
+fn resolve_from_source_delivery_value(
+    expression: &Value,
+    snapshot: &RawDataRecordSnapshot,
+    policy: &crate::field_binding::DocumentContentValuePolicy,
+) -> Result<DeliveryFieldValue, DeliveryPlanContextError> {
+    let key = expression
+        .get("source_key")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            context(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                "FROM_SOURCE requirement 의 source_key 형식 불량",
+            )
+        })?;
+    delivery_format(expression, "")?;
+    match snapshot.value_for(key) {
+        None => Ok(DeliveryFieldValue::Unresolved {
+            code: OUTPUT_NAME_TOKEN_UNRESOLVED.into(),
+            detail: format!("source key {} 가 raw record 에 없다", repr_text(key)),
+        }),
+        Some(CanonicalSourceValue::Null) => Ok(DeliveryFieldValue::Unresolved {
+            code: OUTPUT_NAME_TOKEN_UNRESOLVED.into(),
+            detail: format!("source key {} 가 explicit null", repr_text(key)),
+        }),
+        Some(CanonicalSourceValue::Text(text)) => Ok(DeliveryFieldValue::Text(delivery_format(
+            expression,
+            &whitespace(text, &policy.whitespace_policy)?,
+        )?)),
+    }
+}
 pub fn resolve_delivery_field_value(
     expression: &Value,
     snapshot: &RawDataRecordSnapshot,
@@ -374,70 +464,8 @@ pub fn resolve_delivery_field_value(
             &delivery_date(expression, clock)?,
             &policy.whitespace_policy,
         )?)),
-        Some("CONSTANT") => {
-            let code = expression.get("format_code").unwrap_or(&Value::Null);
-            let kind = expression.get("format_kind").unwrap_or(&Value::Null);
-            let slice = expression.get("text_slice").unwrap_or(&Value::Null);
-            if (!code.is_null() && code != "") || !kind.is_null() || !slice.is_null() {
-                return Err(context(
-                    UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
-                    format!(
-                        "고정값에는 표시형·가공을 적용하지 않는다: {}/{}/{}",
-                        repr(kind),
-                        repr(code),
-                        repr(slice)
-                    ),
-                ));
-            }
-            let canonical = expression
-                .get("canonical_value")
-                .filter(|v| v.is_object())
-                .ok_or_else(|| {
-                    context(
-                        GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                        "CONSTANT requirement 에 canonical_value 가 없다",
-                    )
-                })?;
-            let text = canonical
-                .get("text")
-                .and_then(Value::as_str)
-                .filter(|_| canonical.get("kind") == Some(&json!("TEXT")))
-                .ok_or_else(|| {
-                    context(
-                        GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                        "CONSTANT requirement 의 canonical_value 형식 불량",
-                    )
-                })?;
-            Ok(DeliveryFieldValue::Text(whitespace(
-                text,
-                &policy.whitespace_policy,
-            )?))
-        }
-        Some("FROM_SOURCE") => {
-            let key = expression
-                .get("source_key")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    context(
-                        GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                        "FROM_SOURCE requirement 의 source_key 형식 불량",
-                    )
-                })?;
-            delivery_format(expression, "")?;
-            match snapshot.value_for(key) {
-                None => Ok(DeliveryFieldValue::Unresolved {
-                    code: OUTPUT_NAME_TOKEN_UNRESOLVED.into(),
-                    detail: format!("source key {} 가 raw record 에 없다", repr_text(key)),
-                }),
-                Some(CanonicalSourceValue::Null) => Ok(DeliveryFieldValue::Unresolved {
-                    code: OUTPUT_NAME_TOKEN_UNRESOLVED.into(),
-                    detail: format!("source key {} 가 explicit null", repr_text(key)),
-                }),
-                Some(CanonicalSourceValue::Text(text)) => Ok(DeliveryFieldValue::Text(
-                    delivery_format(expression, &whitespace(text, &policy.whitespace_policy)?)?,
-                )),
-            }
-        }
+        Some("CONSTANT") => resolve_constant_delivery_value(expression, &policy),
+        Some("FROM_SOURCE") => resolve_from_source_delivery_value(expression, snapshot, &policy),
         _ => Err(context(
             GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
             format!(
@@ -550,20 +578,32 @@ pub fn resolve_current_generation_delivery(
     }
 }
 
-fn resolve_current(
-    input: CurrentDeliveryInput<'_>,
-) -> Result<CurrentResolvedDelivery, DeliveryPlanResult<CurrentResolvedDelivery>> {
-    let CurrentDeliveryInput {
-        sealed_execution_plan: plan,
-        ordered_validated_records: records,
-        ordered_raw_snapshots: snapshots,
-        delivery_binding_basis: basis,
+/// Bundled arguments for `validate_delivery_inputs` (kept under clippy's argument-count limit).
+struct DeliveryInputCheck<'a> {
+    contract: &'a str,
+    intent: &'a RunDeliveryIntent,
+    occupancy: &'a PathOccupancyObservation,
+    basis: &'a GenerationDeliveryBindingBasis,
+    exact_pattern: &'a str,
+    plan: &'a SealedExecutionPlanSemanticPayload,
+    snapshots_len: usize,
+    records_len: usize,
+}
+/// Stage 1+2: filename-pattern contract, collision policy, and occupancy-observation checks,
+/// then the delivery binding basis's self-digest and its binding to this Plan/pattern/input shape.
+fn validate_delivery_inputs(
+    check: DeliveryInputCheck<'_>,
+) -> Result<(), DeliveryPlanResult<CurrentResolvedDelivery>> {
+    let DeliveryInputCheck {
+        contract,
+        intent,
+        occupancy,
+        basis,
         exact_pattern,
-        captured_delivery_clock,
-        run_delivery_intent: intent,
-        path_occupancy: occupancy,
-        filename_pattern_contract_id: contract,
-    } = input;
+        plan,
+        snapshots_len,
+        records_len,
+    } = check;
     if contract != FILENAME_PATTERN_CONTRACT_ID {
         return Err(current_context(
             UNSUPPORTED_FILENAME_PATTERN_CONTRACT,
@@ -600,12 +640,31 @@ fn resolve_current(
             "delivery binding basis 가 current Plan/pattern 과 불일치",
         ));
     }
-    if snapshots.len() != records.len() {
+    if snapshots_len != records_len {
         return Err(current_context(
             GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
             "ordered raw snapshots 와 current validated records 개수 불일치",
         ));
     }
+    Ok(())
+}
+/// Shared, borrowed-from-input context for resolving every record's filename tokens.
+struct ResolutionContext<'a> {
+    clock: NaiveDateTime,
+    tokens: Vec<PatternToken>,
+    inactive: HashMap<&'a str, &'a Value>,
+    runtime: HashMap<&'a str, &'a Value>,
+    expected_plan: String,
+    expected_basis: String,
+}
+/// Parses the runtime clock and filename pattern, and precomputes the inactive/runtime
+/// token maps plus the Plan/basis digests every record is checked against.
+fn prepare_resolution_context<'a>(
+    captured_delivery_clock: &str,
+    exact_pattern: &str,
+    basis: &'a GenerationDeliveryBindingBasis,
+    plan: &'a SealedExecutionPlanSemanticPayload,
+) -> Result<ResolutionContext<'a>, DeliveryPlanResult<CurrentResolvedDelivery>> {
     let clock = parse_runtime_clock(Some(captured_delivery_clock)).map_err(|_| {
         current_context(
             GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
@@ -644,136 +703,196 @@ fn resolve_current(
         .map_err(|e| current_context(GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR, e.to_string()))?;
     let expected_basis = execution_basis_digest(&plan.execution_basis)
         .map_err(|e| current_context(GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR, e.to_string()))?;
-    let mut blockers = Vec::new();
-    let mut base_names = Vec::new();
-    let mut token_values = Vec::new();
-    for (ordinal, (snapshot, record)) in snapshots.iter().zip(records).enumerate() {
-        verify_raw_record_snapshot(snapshot).map_err(|e| {
-            current_context(
-                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                format!("item {ordinal} raw snapshot 무결성 실패: {e}"),
-            )
-        })?;
-        let mismatch = check_validated_record_for_delivery(
-            record,
-            plan,
-            snapshot,
-            &expected_plan,
-            &expected_basis,
+    Ok(ResolutionContext {
+        clock,
+        tokens,
+        inactive,
+        runtime,
+        expected_plan,
+        expected_basis,
+    })
+}
+/// One filename token's value for one record: a blocker when it is Unresolved or
+/// resolves to empty text, otherwise it is inserted into `values` and `None` is returned.
+fn resolve_token_field(
+    field: &str,
+    ordinal: usize,
+    snapshot: &RawDataRecordSnapshot,
+    active: &HashMap<String, String>,
+    ctx: &ResolutionContext<'_>,
+    values: &mut Map<String, Value>,
+) -> Result<Option<DeliveryPlanBlocker>, DeliveryPlanResult<CurrentResolvedDelivery>> {
+    let value = if let Some(expression) = ctx.runtime.get(field) {
+        resolve_delivery_field_value(expression, snapshot, Some(ctx.clock))
+    } else if let Some(text) = active.get(field) {
+        Ok(DeliveryFieldValue::Text(text.clone()))
+    } else if let Some(expression) = ctx.inactive.get(field) {
+        resolve_delivery_field_value(expression, snapshot, Some(ctx.clock))
+    } else {
+        Ok(DeliveryFieldValue::Unresolved {
+            code: OUTPUT_NAME_TOKEN_UNRESOLVED.into(),
+            detail: format!(
+                "filename token {} 이 Active 도 delivery basis 도 아니다",
+                repr_text(field)
+            ),
+        })
+    }
+    .map_err(DeliveryPlanResult::ContextError)?;
+    match value {
+        DeliveryFieldValue::Unresolved { code, detail } => {
+            Ok(Some(blocker(&code, Some(ordinal), Some(field), detail)))
+        }
+        DeliveryFieldValue::Text(text) if text.is_empty() => Ok(Some(token_blocker(
+            ordinal,
+            field,
+            format!(
+                "filename token {} 이 빈 logical text 로 해석됨",
+                repr_text(field)
+            ),
+        ))),
+        DeliveryFieldValue::Text(text) => {
+            values.insert(field.to_owned(), Value::String(text));
+            Ok(None)
+        }
+    }
+}
+/// Either this item's blockers (the batch keeps going), or its rendered base name and
+/// resolved token values ready for path assignment.
+enum RecordResolution {
+    Blocked(Vec<DeliveryPlanBlocker>),
+    Ready(String, Vec<ResolvedTokenValue>),
+}
+/// Verifies one record's raw-snapshot and VDR integrity, then resolves every filename
+/// token and renders its base output name.
+fn resolve_record_item(
+    ordinal: usize,
+    snapshot: &RawDataRecordSnapshot,
+    record: &ValidatedDataRecord,
+    plan: &SealedExecutionPlanSemanticPayload,
+    ctx: &ResolutionContext<'_>,
+) -> Result<RecordResolution, DeliveryPlanResult<CurrentResolvedDelivery>> {
+    verify_raw_record_snapshot(snapshot).map_err(|e| {
+        current_context(
+            GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+            format!("item {ordinal} raw snapshot 무결성 실패: {e}"),
         )
+    })?;
+    if let Some(mismatch) = check_validated_record_for_delivery(
+        record,
+        plan,
+        snapshot,
+        &ctx.expected_plan,
+        &ctx.expected_basis,
+    )
+    .map_err(|e| {
+        current_context(
+            GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+            format!("item {ordinal} VDR 완결성 실패: {e}"),
+        )
+    })? {
+        return Err(current_context(
+            if mismatch == "plan" {
+                CURRENT_RECORD_VALIDATION_BASIS_MISMATCH
+            } else {
+                RAW_VALIDATED_RECORD_MISMATCH
+            },
+            format!("item {ordinal} VDR 결속 불일치: {mismatch}"),
+        ));
+    }
+    let active: HashMap<_, _> = record
+        .document_values_in_order()
         .map_err(|e| {
             current_context(
                 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
                 format!("item {ordinal} VDR 완결성 실패: {e}"),
             )
-        })?;
-        if let Some(mismatch) = mismatch {
-            return Err(current_context(
-                if mismatch == "plan" {
-                    CURRENT_RECORD_VALIDATION_BASIS_MISMATCH
-                } else {
-                    RAW_VALIDATED_RECORD_MISMATCH
-                },
-                format!("item {ordinal} VDR 결속 불일치: {mismatch}"),
-            ));
+        })?
+        .into_iter()
+        .collect();
+    let mut values = Map::new();
+    let mut item_blockers = Vec::new();
+    for field in pattern_field_token_ids(&ctx.tokens) {
+        if let Some(item) =
+            resolve_token_field(&field, ordinal, snapshot, &active, ctx, &mut values)?
+        {
+            item_blockers.push(item);
         }
-        let active: HashMap<_, _> = record
-            .document_values_in_order()
-            .map_err(|e| {
-                current_context(
-                    GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
-                    format!("item {ordinal} VDR 완결성 실패: {e}"),
-                )
-            })?
+    }
+    if !item_blockers.is_empty() {
+        return Ok(RecordResolution::Blocked(item_blockers));
+    }
+    let (name, parts) = render_output_name(
+        &ctx.tokens,
+        &values,
+        ordinal as i64 + 1,
+        Some(ctx.clock),
+        false,
+    )
+    .map_err(|e| {
+        current_context(
+            e.code.unwrap_or(GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR),
+            e.detail,
+        )
+    })?;
+    guard_output_name(&name).map_err(|e| {
+        current_context(
+            e.code.unwrap_or(GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR),
+            e.detail,
+        )
+    })?;
+    Ok(RecordResolution::Ready(
+        name,
+        parts
             .into_iter()
-            .collect();
-        let mut values = Map::new();
-        let mut item_blocked = false;
-        for field in pattern_field_token_ids(&tokens) {
-            let value = if let Some(expression) = runtime.get(field.as_str()) {
-                resolve_delivery_field_value(expression, snapshot, Some(clock))
-            } else if let Some(text) = active.get(&field) {
-                Ok(DeliveryFieldValue::Text(text.clone()))
-            } else if let Some(expression) = inactive.get(field.as_str()) {
-                resolve_delivery_field_value(expression, snapshot, Some(clock))
-            } else {
-                Ok(DeliveryFieldValue::Unresolved {
-                    code: OUTPUT_NAME_TOKEN_UNRESOLVED.into(),
-                    detail: format!(
-                        "filename token {} 이 Active 도 delivery basis 도 아니다",
-                        repr_text(&field)
-                    ),
-                })
+            .map(|p| ResolvedTokenValue {
+                kind: p.kind.into(),
+                field_id: p.field_id,
+                value: p.text,
+            })
+            .collect(),
+    ))
+}
+/// Per-batch accumulators: cross-record blockers, each item's base name, and each item's
+/// resolved token values.
+type RecordResolutionBatch = (
+    Vec<DeliveryPlanBlocker>,
+    Vec<String>,
+    Vec<Vec<ResolvedTokenValue>>,
+);
+/// Stage 3: resolves every record in order, accumulating blockers across the whole batch
+/// rather than stopping at the first blocked item.
+fn resolve_all_records(
+    plan: &SealedExecutionPlanSemanticPayload,
+    snapshots: &[RawDataRecordSnapshot],
+    records: &[ValidatedDataRecord],
+    ctx: &ResolutionContext<'_>,
+) -> Result<RecordResolutionBatch, DeliveryPlanResult<CurrentResolvedDelivery>> {
+    let mut blockers = Vec::new();
+    let mut base_names = Vec::new();
+    let mut token_values = Vec::new();
+    for (ordinal, (snapshot, record)) in snapshots.iter().zip(records).enumerate() {
+        match resolve_record_item(ordinal, snapshot, record, plan, ctx)? {
+            RecordResolution::Blocked(item_blockers) => {
+                blockers.extend(item_blockers);
+                base_names.push(String::new());
+                token_values.push(Vec::new());
             }
-            .map_err(DeliveryPlanResult::ContextError)?;
-            match value {
-                DeliveryFieldValue::Unresolved { code, detail } => {
-                    blockers.push(blocker(&code, Some(ordinal), Some(&field), detail));
-                    item_blocked = true;
-                }
-                DeliveryFieldValue::Text(text) if text.is_empty() => {
-                    blockers.push(token_blocker(
-                        ordinal,
-                        &field,
-                        format!(
-                            "filename token {} 이 빈 logical text 로 해석됨",
-                            repr_text(&field)
-                        ),
-                    ));
-                    item_blocked = true;
-                }
-                DeliveryFieldValue::Text(text) => {
-                    values.insert(field, Value::String(text));
-                }
+            RecordResolution::Ready(name, parts) => {
+                base_names.push(name);
+                token_values.push(parts);
             }
         }
-        if item_blocked {
-            base_names.push(String::new());
-            token_values.push(Vec::new());
-            continue;
-        }
-        let (name, parts) =
-            render_output_name(&tokens, &values, ordinal as i64 + 1, Some(clock), false).map_err(
-                |e| {
-                    current_context(
-                        e.code.unwrap_or(GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR),
-                        e.detail,
-                    )
-                },
-            )?;
-        guard_output_name(&name).map_err(|e| {
-            current_context(
-                e.code.unwrap_or(GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR),
-                e.detail,
-            )
-        })?;
-        base_names.push(name);
-        token_values.push(
-            parts
-                .into_iter()
-                .map(|p| ResolvedTokenValue {
-                    kind: p.kind.into(),
-                    field_id: p.field_id,
-                    value: p.text,
-                })
-                .collect(),
-        );
     }
-    if !blockers.is_empty() {
-        blockers.sort_by(|a, b| {
-            (
-                a.item_ordinal,
-                a.code.as_str(),
-                a.field_id.as_deref().unwrap_or(""),
-            )
-                .cmp(&(
-                    b.item_ordinal,
-                    b.code.as_str(),
-                    b.field_id.as_deref().unwrap_or(""),
-                ))
-        });
-        return Err(DeliveryPlanResult::Blocked(blockers));
-    }
+    Ok((blockers, base_names, token_values))
+}
+/// Stage 4: the occupied/folded/non-regular path sets, the deduped output paths
+/// (suffix-deduped against existing occupancy only under `ADD_SUFFIX`), and the
+/// collision-policy blockers for paths that land on occupied or non-regular entries.
+fn resolve_paths_and_conflicts(
+    intent: &RunDeliveryIntent,
+    occupancy: &PathOccupancyObservation,
+    base_names: &[String],
+) -> (Vec<String>, HashSet<String>, Vec<DeliveryPlanBlocker>) {
     let occupied: Vec<String> = occupancy
         .occupied_entries
         .iter()
@@ -787,11 +906,11 @@ fn resolve_current(
         .map(|e| collision_key(&e.relative_name))
         .collect();
     let paths = if intent.collision_policy == "ADD_SUFFIX" {
-        dedupe_output_names(&base_names, &occupied)
+        dedupe_output_names(base_names, &occupied)
     } else {
-        dedupe_output_names(&base_names, &[])
+        dedupe_output_names(base_names, &[])
     };
-    let conflicts: Vec<_> = paths
+    let conflicts = paths
         .iter()
         .enumerate()
         .filter_map(|(ordinal, path)| {
@@ -825,13 +944,21 @@ fn resolve_current(
             }
         })
         .collect();
-    if !conflicts.is_empty() {
-        return Err(DeliveryPlanResult::Blocked(conflicts));
-    }
+    (paths, folded, conflicts)
+}
+/// Stage 5: assembles the final ordered items, including the per-item collision disposition.
+fn assemble_items(
+    records: &[ValidatedDataRecord],
+    base_names: &[String],
+    paths: &[String],
+    token_values: Vec<Vec<ResolvedTokenValue>>,
+    intent: &RunDeliveryIntent,
+    folded: &HashSet<String>,
+) -> Result<Vec<CurrentResolvedDeliveryItem>, DeliveryPlanResult<CurrentResolvedDelivery>> {
     let mut items = Vec::with_capacity(records.len());
     for (ordinal, ((record, base_name), (path, resolved_tokens))) in records
         .iter()
-        .zip(&base_names)
+        .zip(base_names)
         .zip(paths.iter().zip(token_values))
         .enumerate()
     {
@@ -868,12 +995,60 @@ fn resolve_current(
             resolved_token_values: resolved_tokens,
         });
     }
+    Ok(items)
+}
+fn resolve_current(
+    input: CurrentDeliveryInput<'_>,
+) -> Result<CurrentResolvedDelivery, DeliveryPlanResult<CurrentResolvedDelivery>> {
+    let CurrentDeliveryInput {
+        sealed_execution_plan: plan,
+        ordered_validated_records: records,
+        ordered_raw_snapshots: snapshots,
+        delivery_binding_basis: basis,
+        exact_pattern,
+        captured_delivery_clock,
+        run_delivery_intent: intent,
+        path_occupancy: occupancy,
+        filename_pattern_contract_id: contract,
+    } = input;
+    validate_delivery_inputs(DeliveryInputCheck {
+        contract,
+        intent,
+        occupancy,
+        basis,
+        exact_pattern,
+        plan,
+        snapshots_len: snapshots.len(),
+        records_len: records.len(),
+    })?;
+    let ctx = prepare_resolution_context(captured_delivery_clock, exact_pattern, basis, plan)?;
+    let (mut blockers, base_names, token_values) =
+        resolve_all_records(plan, snapshots, records, &ctx)?;
+    if !blockers.is_empty() {
+        blockers.sort_by(|a, b| {
+            (
+                a.item_ordinal,
+                a.code.as_str(),
+                a.field_id.as_deref().unwrap_or(""),
+            )
+                .cmp(&(
+                    b.item_ordinal,
+                    b.code.as_str(),
+                    b.field_id.as_deref().unwrap_or(""),
+                ))
+        });
+        return Err(DeliveryPlanResult::Blocked(blockers));
+    }
+    let (paths, folded, conflicts) = resolve_paths_and_conflicts(intent, occupancy, &base_names);
+    if !conflicts.is_empty() {
+        return Err(DeliveryPlanResult::Blocked(conflicts));
+    }
     Ok(CurrentResolvedDelivery {
         exact_pattern: exact_pattern.into(),
         captured_delivery_clock: captured_delivery_clock.into(),
         output_directory: intent.output_directory.clone(),
         collision_policy: intent.collision_policy.clone(),
-        ordered_items: items,
+        ordered_items: assemble_items(records, &base_names, &paths, token_values, intent, &folded)?,
     })
 }
 

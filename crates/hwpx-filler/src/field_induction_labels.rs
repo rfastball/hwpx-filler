@@ -476,16 +476,8 @@ fn quoted(left: &str, right: &str) -> bool {
     }
     false
 }
-pub fn static_cue(
-    left: &str,
-    span: &str,
-    right: &str,
-    repeats: usize,
-    prefixes: &[String],
-) -> Option<&'static str> {
-    let line_left = left.rsplit('\n').next().unwrap_or("");
-    let line_right = right.split('\n').next().unwrap_or("");
-    if quoted(line_left, line_right)
+fn fixed_cue_matched(line_left: &str, line_right: &str) -> bool {
+    quoted(line_left, line_right)
         || regex(r"^\s?[가-힣]{1,6}\s*[:：]").is_match(line_right)
         || INSTRUMENTS.iter().any(|word| {
             let suffix = line_right.trim_start().strip_prefix(word);
@@ -498,7 +490,25 @@ pub fn static_cue(
             })
         })
         || regex(r"^\s*(?:\.\s+\.\s+\.|년\s+월\s+일)").is_match(line_right)
-    {
+}
+fn repeat_cue_matched(repeats: usize, prefixes: &[String], here: &str) -> bool {
+    repeats >= 5
+        && prefixes.len() >= 2
+        && !is_slot(here)
+        && prefixes
+            .iter()
+            .any(|prefix| prefix != here && is_slot(prefix))
+}
+pub fn static_cue(
+    left: &str,
+    span: &str,
+    right: &str,
+    repeats: usize,
+    prefixes: &[String],
+) -> Option<&'static str> {
+    let line_left = left.rsplit('\n').next().unwrap_or("");
+    let line_right = right.split('\n').next().unwrap_or("");
+    if fixed_cue_matched(line_left, line_right) {
         return Some(CUE_FIXED);
     }
     let before = regex(r"[.。]\s|\n").split(left).last().unwrap_or("");
@@ -513,13 +523,7 @@ pub fn static_cue(
         .into_iter()
         .rev()
         .collect();
-    if repeats >= 5
-        && prefixes.len() >= 2
-        && !is_slot(&here)
-        && prefixes
-            .iter()
-            .any(|prefix| prefix != &here && is_slot(prefix))
-    {
+    if repeat_cue_matched(repeats, prefixes, &here) {
         return Some(CUE_REPEAT);
     }
     None

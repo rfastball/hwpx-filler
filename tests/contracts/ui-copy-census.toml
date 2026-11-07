@@ -2588,7 +2588,7 @@ text = "현재 환경에서는 문서를 만들 수 없습니다"
 file = "crates/hwpx-filler/src/editor_mapping.rs"
 text = "매핑 행이 없습니다."
 [[sentence]]
-file = "crates/hwpx-filler/src/editor_mapping.rs"
+file = "crates/hwpx-filler/src/editor_mapping/suggestion.rs"
 text = "확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요."
 [[sentence]]
 file = "crates/hwpx-filler/src/editor_save_policy.rs"
@@ -2717,19 +2717,19 @@ file = "crates/hwpx-filler/src/filter_state.rs"
 text = "같은 이름의 필터가 있습니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/filter_state.rs"
-text = "범위 값 {} 을(를) 해석할 수 없습니다"
-[[sentence]]
-file = "crates/hwpx-filler/src/filter_state.rs"
-text = "범위 값 {} 을(를) 해석할 수 없습니다"
-[[sentence]]
-file = "crates/hwpx-filler/src/filter_state.rs"
-text = "범위 숫자를 비교할 수 없습니다"
-[[sentence]]
-file = "crates/hwpx-filler/src/filter_state.rs"
 text = "이름을 비울 수 없습니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/filter_state.rs"
 text = "저장할 조건이 없습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/filter_state/matching.rs"
+text = "범위 값 {} 을(를) 해석할 수 없습니다"
+[[sentence]]
+file = "crates/hwpx-filler/src/filter_state/matching.rs"
+text = "범위 값 {} 을(를) 해석할 수 없습니다"
+[[sentence]]
+file = "crates/hwpx-filler/src/filter_state/matching.rs"
+text = "범위 숫자를 비교할 수 없습니다"
 [[sentence]]
 file = "crates/hwpx-filler/src/generation_delivery.rs"
 text = "filename token {} 이 Active 도 delivery basis 도 아니다"
