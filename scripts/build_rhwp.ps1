@@ -18,14 +18,20 @@ function Get-StudioInputDigest {
         (Get-Item -LiteralPath (Join-Path $root 'scripts/build_rhwp.ps1')),
         (Get-Item -LiteralPath (Join-Path $root '.node-version'))
     ) + @(Get-ChildItem -LiteralPath (Join-Path $root 'vendor/rhwp') -Recurse -File)
-    [string[]]$lines = foreach ($file in $files) {
-        $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
-        "$relative $((Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
-    }
-    [Array]::Sort($lines, [StringComparer]::Ordinal)
-    $payload = [Text.Encoding]::UTF8.GetBytes("rhwp-studio-inputs/1`n" + ($lines -join "`n"))
+    # No Get-FileHash: npm runs this under Windows PowerShell 5.1, and when its parent is pwsh 7
+    # (every CI step) the inherited PSModulePath hides the 5.1 script functions of
+    # Microsoft.PowerShell.Utility. Hash with .NET directly.
     $sha = [Security.Cryptography.SHA256]::Create()
-    try { return (($sha.ComputeHash($payload) | ForEach-Object { $_.ToString('x2') }) -join '') }
+    try {
+        [string[]]$lines = foreach ($file in $files) {
+            $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+            $hash = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($file.FullName)))
+            "$relative $($hash.Replace('-', '').ToLowerInvariant())"
+        }
+        [Array]::Sort($lines, [StringComparer]::Ordinal)
+        $payload = [Text.Encoding]::UTF8.GetBytes("rhwp-studio-inputs/1`n" + ($lines -join "`n"))
+        return [BitConverter]::ToString($sha.ComputeHash($payload)).Replace('-', '').ToLowerInvariant()
+    }
     finally { $sha.Dispose() }
 }
 
