@@ -1,6 +1,8 @@
 //! Product source-kind routing over the existing Rust DataSource adapters.
 
+#[cfg(feature = "native-data")]
 use crate::data_excel::ExcelDataSource;
+#[cfg(feature = "native-data")]
 use crate::data_pclm::PclmDataSource;
 use crate::data_pipeline::PipelineSource;
 use crate::data_source::{
@@ -12,9 +14,37 @@ use crate::nara::{NaraFetcher, NaraStdDataSource};
 use crate::text_render::python_repr;
 use serde_json::{Map, Value};
 use std::path::Path;
+#[cfg(not(feature = "native-data"))]
+use unavailable::{ExcelDataSource, PclmDataSource};
 
 fn fail(detail: impl Into<String>) -> DataSourceError {
     DataSourceError(detail.into())
+}
+
+/// `native-data` 를 끈 빌드(wasm32)의 자리 — 같은 이름으로 불리고 언제나 오류로 답한다.
+#[cfg(not(feature = "native-data"))]
+#[allow(clippy::new_ret_no_self)] // 부르는 쪽이 진짜 어댑터와 같은 이름 · 같은 꼴로 부른다.
+mod unavailable {
+    use super::fail;
+    use crate::data_source::{DataSourceError, InlineDataSource};
+
+    pub struct ExcelDataSource;
+    impl ExcelDataSource {
+        pub fn new<P, S>(
+            _path: P,
+            _sheet: S,
+            _header_row: usize,
+        ) -> Result<InlineDataSource, DataSourceError> {
+            Err(fail("이 빌드에는 엑셀 읽기가 없습니다."))
+        }
+    }
+
+    pub struct PclmDataSource;
+    impl PclmDataSource {
+        pub fn new<P, V>(_path: P, _view: V) -> Result<InlineDataSource, DataSourceError> {
+            Err(fail("이 빌드에는 계약목록 읽기가 없습니다."))
+        }
+    }
 }
 fn text<'a>(
     opts: &'a Map<String, Value>,
@@ -312,7 +342,7 @@ pub fn fields_for_dataset_reference(
     source_from_pool_item(item)?.fields()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "native-data"))]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
