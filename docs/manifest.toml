@@ -249,7 +249,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".node-version", "package.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "test.ps1", "test-rust.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", "packaging/build_native.ps1", "packaging/assemble_native.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/run_web_artifact.ps1", "scripts/complexity_budget.mjs", "scripts/check_release_version.mjs", "scripts/selftest_http_proxy.mjs", "scripts/verify_cli_bundle.mjs", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/live_scope_native.mjs", "scripts/run_native_live_scope.ps1", "tests/contracts/live-scopes.toml", "scripts/rust_coverage.ps1", "crates/hwpx-desktop/examples/check_rust_coverage.rs", "crates/hwpx-artifact/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["tests/js/quality_workflow.test.js", "tests/js/native_packaging_contract.test.js", "tests/js/complexity_budget.test.js", "tests/js/live_scope_native.test.js"]
-source_sha256 = "a0325bd6acd5fa337c096642419f9eade2e72c28e670e0f4cdcc815930521e43"
+source_sha256 = "22c523ea12c1eb47130e9d11e96cfd77cbf280567162a4394cd287aa5544c20d"
 body_sha256 = "8e14e1b0e65dccb9bbe825b696be544f49d32c5480c45a4b3c4a027d16f354a0"
 
 [[topic]]
@@ -257,7 +257,7 @@ id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "test.ps1", "scripts/complexity_budget.mjs"]
 tests = ["tests/js/quality_workflow.test.js", "tests/js/complexity_budget.test.js"]
-source_sha256 = "f9bade88e684e2b6dba00df1c1e3dcf7ab99a87ff39746f971b46d3b3e5d7a92"
+source_sha256 = "75a41fa8602fc8f1b9595deb3db5d4079b24d8319dfca5601f2493476c722854"
 body_sha256 = "95ba4d996ed1af877ffa543cf594ff07d4e1f2d9a97fc16244cfec376f35945f"
 
 [[topic]]

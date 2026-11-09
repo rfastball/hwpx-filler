@@ -137,7 +137,7 @@ jobs:
           # 보면 "부팅은 했는데 다른 프런트가 실린" 상태가 초록으로 지나간다(#383).
           # 이 줄이 uninstall 앞에 있는 것이 계약이다.
           & .\scripts\run_web_artifact.ps1 `
-            -Verify --repo-root . --bundle-root $fillerDir `
+            --repo-root . --bundle-root $fillerDir `
             --json-out (Join-Path $env:RUNNER_TEMP 'release-evidence\installed.json')
           if ($LASTEXITCODE -ne 0) { throw 'installed web artifact identity mismatch' }
           Uninstall-Product $fillerDir 'filler'
@@ -155,7 +155,7 @@ jobs:
           $expanded = Join-Path $env:RUNNER_TEMP 'portable-expanded'
           Expand-Archive -Path $zip -DestinationPath $expanded -Force
           & .\scripts\run_web_artifact.ps1 `
-            -Verify --repo-root . --bundle-root $expanded `
+            --repo-root . --bundle-root $expanded `
             --json-out (Join-Path $env:RUNNER_TEMP 'release-evidence\portable.json')
           if ($LASTEXITCODE -ne 0) { throw 'portable web artifact identity mismatch' }
           $cliExpanded = Join-Path $env:RUNNER_TEMP 'cli-portable-expanded'
@@ -186,7 +186,7 @@ jobs:
           # 나는 길을 그 선언이 막는다.
           $ErrorActionPreference = 'Stop'
           $evidenceDir = Join-Path $env:RUNNER_TEMP 'release-evidence'
-          & .\scripts\run_web_artifact.ps1 -Verify `
+          & .\scripts\run_web_artifact.ps1 `
             --repo-root . --bundle-root dist\hwpx-filler-web `
             --json-out (Join-Path $evidenceDir 'dist.json')
           if ($LASTEXITCODE -ne 0) { throw 'dist web artifact identity mismatch' }

@@ -146,7 +146,7 @@ function Test-NativeWebView([string]$Exe, [string]$Identity, [string]$Label) {
 
 function Test-Bundle([string]$Bundle, [string]$Label) {
     $receipt = Join-Path $evidence "$Label.json"
-    & $artifact -Verify --repo-root $root --bundle-root $Bundle --json-out $receipt
+    & $artifact --repo-root $root --bundle-root $Bundle --json-out $receipt
     if ($LASTEXITCODE -ne 0) { throw "$Label 웹·고지 identity 검증 실패" }
     return $receipt
 }
