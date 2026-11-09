@@ -77,7 +77,7 @@ title = "공통 에이전트 작업 지침"
 max_lines = 90
 sources = ["CONTRIBUTING.md"]
 tests = ["tests/js/documentation_contract.test.js"]
-source_sha256 = "d5122050df214d5388f5a5ffff1a856fee22ff0e4e4b565d50376eef61c55ca2"
+source_sha256 = "2f5bc54f9f0d876251afc718e1cbebcf9640333abb046c059ec14065ba108aa1"
 body_sha256 = "4309d4dde9355230c525d1a558f0aab2e1c841d272aef715090c186087c4a6a5"
 
 [[document]]
@@ -249,15 +249,15 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".node-version", "package.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "test.ps1", "test-rust.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", "packaging/build_native.ps1", "packaging/assemble_native.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/run_web_artifact.ps1", "scripts/complexity_budget.mjs", "scripts/check_release_version.mjs", "scripts/selftest_http_proxy.mjs", "scripts/verify_cli_bundle.mjs", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/live_scope_native.mjs", "scripts/run_native_live_scope.ps1", "tests/contracts/live-scopes.toml", "scripts/rust_coverage.ps1", "crates/hwpx-desktop/examples/check_rust_coverage.rs", "crates/hwpx-artifact/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["tests/js/quality_workflow.test.js", "tests/js/native_packaging_contract.test.js", "tests/js/complexity_budget.test.js", "tests/js/live_scope_native.test.js"]
-source_sha256 = "22c523ea12c1eb47130e9d11e96cfd77cbf280567162a4394cd287aa5544c20d"
-body_sha256 = "8e14e1b0e65dccb9bbe825b696be544f49d32c5480c45a4b3c4a027d16f354a0"
+source_sha256 = "17538648734cf330fa9ec578c9b074d0e1c7076f5e14493869c9e199c739a911"
+body_sha256 = "843c952ead1d250e40b87df0675295838de81f93eca113c75bf4118e93f4915a"
 
 [[topic]]
 id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "test.ps1", "scripts/complexity_budget.mjs"]
 tests = ["tests/js/quality_workflow.test.js", "tests/js/complexity_budget.test.js"]
-source_sha256 = "75a41fa8602fc8f1b9595deb3db5d4079b24d8319dfca5601f2493476c722854"
+source_sha256 = "17d62dc02143826f88a9d5442ed5131b202395a1f3d1c2811e99cf31af2c02ca"
 body_sha256 = "95ba4d996ed1af877ffa543cf594ff07d4e1f2d9a97fc16244cfec376f35945f"
 
 [[topic]]
@@ -265,7 +265,7 @@ id = "documentation"
 document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract*.mjs", "scripts/docs_runtime.mjs", "scripts/read_toml.mjs", "crates/hwpx-artifact/examples/read_toml.rs", ".github/workflows/quality.yml"]
 tests = ["tests/js/documentation_contract.test.js"]
-source_sha256 = "1f4f8df5fa7843974dcf72d612ab165a7c81f02a84cb4b0bad698bb70a7c2161"
+source_sha256 = "22ff2e7adb534827520a5874575e087297309ee89a0fd6324bfa3d673e033f3c"
 body_sha256 = "8d0d0c03147a674b2a6cafebc529214202a7eb7d048bebe0c98ce5d6a445f70f"
 
 [[support]]

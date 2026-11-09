@@ -94,6 +94,66 @@ test('one sealed frontend producer supplies verified bytes to every consumer bef
   contains(read('scripts/run_web_artifact.ps1'), ['cargo run --quiet --locked -p hwpx-artifact', '$cargoCommand.Source -ieq $cachedCargo']);
 });
 
+test('Rust build caches save from one owner per family on master push and only restore elsewhere', () => {
+  const families = { debug: 'rust-kernel', coverage: 'rust-coverage', release: 'distribution-webview2' };
+  const restoreOnly = ['sealed-web', 'static', 'windows-native', 'browser-render'];
+  for (const [name, job] of Object.entries(jobs)) {
+    const caches = uses(job, 'Swatinem/rust-cache');
+    if (name === 'quality-gate' || name === 'live-webview2') {
+      assert.equal(caches.length, 0, name);
+      continue;
+    }
+    assert.equal(caches.length, 1, name);
+    const [cache] = caches;
+    // 첫 cargo 호출보다 앞서야 복원이 의미가 있고, 모든 job 이 같은 시점에 키를 계산한다.
+    const at = job.steps.indexOf(cache);
+    assert.ok(at === 1 && job.steps[0].uses.startsWith('actions/checkout'), name);
+    assert.equal(cache.with['cache-bin'], 'false', name);
+    const owner = Object.entries(families).find(([, saver]) => saver === name);
+    if (owner) {
+      assert.equal(cache.with['shared-key'], owner[0], name);
+      assert.equal(cache.with['save-if'], "${{ github.event_name == 'push' }}", name);
+    } else {
+      assert.ok(restoreOnly.includes(name), name);
+      assert.equal(cache.with['shared-key'], 'debug', name);
+      assert.equal(cache.with['save-if'], 'false', name);
+    }
+  }
+});
+
+test('rhwp Studio is reused only for an exact input match and still meets the seal', () => {
+  const producer = jobs['sealed-web'];
+  assert.ok('schedule' in quality.on);
+  const restore = uses(producer, 'actions/cache/restore');
+  const save = uses(producer, 'actions/cache/save');
+  assert.equal(restore.length, 1);
+  assert.equal(save.length, 1);
+  assert.equal(Object.values(jobs).flatMap(job => uses(job, 'actions/cache')).length, 2);
+  const [restoreStep] = restore;
+  const [saveStep] = save;
+  // schedule 은 복원하지 않아 콜드 빌드가 돈다. 부분 일치 fallback 은 없다.
+  assert.equal(restoreStep.if, "github.event_name != 'schedule'");
+  assert.equal(restoreStep.with['restore-keys'], undefined);
+  contains(restoreStep.with.key, ["hashFiles('scripts/build_rhwp.ps1', 'vendor/rhwp/**', '.node-version')"]);
+  assert.equal(saveStep.with.key, `\${{ steps.${restoreStep.id}.outputs.cache-primary-key }}`);
+  assert.equal(saveStep.with.path, restoreStep.with.path);
+  contains(restoreStep.with.path, ['build/rhwp/studio\n', 'build/rhwp/studio.inputs.sha256']);
+  contains(saveStep.if, [`steps.${restoreStep.id}.outputs.cache-hit != 'true'`]);
+  assert.ok(!saveStep.if.includes('merge_group') && !saveStep.if.includes('schedule'));
+  const build = producer.steps.findIndex(step => step.run?.includes('-Mode Build'));
+  assert.ok(producer.steps.indexOf(restoreStep) < build && build < producer.steps.indexOf(saveStep));
+  assert.equal(producer.steps[build].env.RHWP_REUSE_STAMPED_STUDIO, '1');
+  // 재사용 판단은 스크립트 한 곳이 같은 입력의 다이제스트 stamp 로 하고, 봉인이 파일별로 다시 대조한다.
+  const script = read('scripts/build_rhwp.ps1');
+  contains(script, ["$env:RHWP_REUSE_STAMPED_STUDIO -eq '1'", "'scripts/build_rhwp.ps1'", "'.node-version'",
+    "'vendor/rhwp'", "'build/rhwp/studio.inputs.sha256'", 'Remove-Item -LiteralPath $stamp']);
+  assert.ok(script.indexOf('Remove-Item -LiteralPath $stamp') < script.indexOf('git clone'));
+  assert.ok(script.lastIndexOf('Set-Content -LiteralPath $stamp') > script.indexOf("Copy-Item -Path (Join-Path $source 'assets/fonts')"));
+  contains(read('crates/hwpx-artifact/src/lib.rs'), ['let studio = studio_output_closure(&root, &output_files)?;']);
+  contains(read('crates/hwpx-artifact/src/studio.rs'), ['"rhwp Studio output differs from pinned runtime manifest"']);
+  contains(read('vite.config.mjs'), ['cpSync(studioRoot, join(webOutDir, "rhwp", "studio")']);
+});
+
 test('Rust and product copy gates run locally and CI resource responsibilities do not overlap', () => {
   const local = read('test.ps1');
   const runner = read('test-rust.ps1');

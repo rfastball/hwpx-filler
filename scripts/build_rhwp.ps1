@@ -9,6 +9,48 @@ $sourceMarker = Join-Path $source '.rhwp-builder-owned'
 $out = Join-Path $root 'build/rhwp/studio'
 $patch = Join-Path $root 'vendor/rhwp/patches/authoring.patch'
 $commit = '680111ec7bea2fe11110de18c3676ba5a1cf7847'
+
+# Every tracked input of this build: this script (upstream commit, Rust and wasm-pack pins,
+# copy and strip rules), vendor/rhwp (patch, font projection, source and runtime pins) and
+# the Node pin the Studio bundle is built with. Upstream pins its own rust-toolchain.toml.
+function Get-StudioInputDigest {
+    $files = @(
+        (Get-Item -LiteralPath (Join-Path $root 'scripts/build_rhwp.ps1')),
+        (Get-Item -LiteralPath (Join-Path $root '.node-version'))
+    ) + @(Get-ChildItem -LiteralPath (Join-Path $root 'vendor/rhwp') -Recurse -File)
+    # No Get-FileHash: npm runs this under Windows PowerShell 5.1, and when its parent is pwsh 7
+    # (every CI step) the inherited PSModulePath hides the 5.1 script functions of
+    # Microsoft.PowerShell.Utility. Hash with .NET directly.
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        [string[]]$lines = foreach ($file in $files) {
+            $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+            $hash = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($file.FullName)))
+            "$relative $($hash.Replace('-', '').ToLowerInvariant())"
+        }
+        [Array]::Sort($lines, [StringComparer]::Ordinal)
+        $payload = [Text.Encoding]::UTF8.GetBytes("rhwp-studio-inputs/1`n" + ($lines -join "`n"))
+        return [BitConverter]::ToString($sha.ComputeHash($payload)).Replace('-', '').ToLowerInvariant()
+    }
+    finally { $sha.Dispose() }
+}
+
+# The stamp says "a completed build of these exact inputs produced $out". Reuse is opt-in
+# (CI restores $out and the stamp from a cache keyed by the same inputs); without it local
+# builds always run. Reuse never skips verification: the web seal compares every Studio file
+# with vendor/rhwp/studio-runtime.json, so a damaged or stale tree still fails there.
+$stamp = Join-Path $root 'build/rhwp/studio.inputs.sha256'
+$inputDigest = Get-StudioInputDigest
+if ($env:RHWP_REUSE_STAMPED_STUDIO -eq '1' -and
+    (Test-Path -LiteralPath $stamp -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $out 'index.html') -PathType Leaf)) {
+    if ((Get-Content -LiteralPath $stamp -Raw).Trim() -eq $inputDigest) {
+        Write-Host "rhwp Studio runtime reused for inputs $inputDigest; the web seal verifies it"
+        exit 0
+    }
+    Write-Host 'rhwp Studio stamp does not match current inputs; rebuilding'
+}
+if (Test-Path -LiteralPath $stamp) { Remove-Item -LiteralPath $stamp -Force }
 New-Item -ItemType Directory $cache -Force | Out-Null
 
 if (-not (Test-Path (Join-Path $source '.git'))) {
@@ -137,4 +179,5 @@ foreach ($name in @('icon-128.png', 'icon-192.png', 'icon-512.png')) {
     $file = Join-Path $out "icons/$name"
     if (Test-Path $file) { Remove-Item -LiteralPath $file -Force }
 }
+Set-Content -LiteralPath $stamp -Value $inputDigest -NoNewline -Encoding ascii
 Write-Host "rhwp Studio runtime ready: $out"
