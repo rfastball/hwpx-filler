@@ -19,12 +19,23 @@ name: quality
 #
 # action 은 전부 **full commit SHA** 로 고정한다. 태그는 움직이는 이름이라 같은 워크플로가
 # 어제와 다른 코드를 돌릴 수 있고, 그때 무엇이 바뀌었는지 이 파일은 말해 주지 못한다.
+#
+# 캐시는 시간만 줄이고 판정은 바꾸지 않는다. Rust 는 의존 크레이트 빌드만 되살리고(작업공간
+# 크레이트·profraw 는 저장 전에 지워진다) cargo 지문이 무엇을 다시 지을지 정한다. Rust 캐시
+# 저장은 master push 만 하고 PR·merge queue 는 복원만 한다. 계열은 셋 — debug(rust-kernel 저장),
+# coverage(계측 RUSTFLAGS 가 스크립트 안에서 붙으므로 키를 따로), release(distribution 저장).
+# rhwp Studio 산출물은 입력 해시에 묶인 정확 일치로만 되살리고 봉인이 파일별 sha256 을 다시
+# 대조한다. 적중만 이어지면 "원천에서 다시 지어지는가"가 묻히므로 주 1회 schedule 은 rhwp
+# 캐시를 복원하지 않고 콜드 빌드한다.
 
 on:
   pull_request:
   merge_group:
   push:
     branches: [master, main]
+  schedule:
+    # 월요일 18:00 UTC(화요일 03:00 KST). 기본 브랜치 HEAD 를 콜드 rhwp 빌드로 다시 검증한다.
+    - cron: '0 18 * * 1'
 
 permissions:
   contents: read
@@ -44,9 +55,17 @@ jobs:
   sealed-web:
     name: sealed-web (producer)
     runs-on: windows-latest
-    timeout-minutes: 15
+    # rhwp 캐시를 놓친 콜드 경로는 실측 8~13.5분이었다. schedule 이 매주 그 경로를 일부러 돌리므로
+    # rust-cache 복원 시간을 더해도 시간 초과가 가짜 빨강을 만들지 않게 여유를 둔다.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore Rust dependency builds (debug)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: debug
+          cache-bin: false
+          save-if: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
@@ -56,14 +75,41 @@ jobs:
         run: |
           cargo --version
           cargo build --locked -p hwpx-artifact --example read_toml
+      - name: Restore verified rhwp Studio build
+        id: rhwp-studio
+        # 키는 build_rhwp.ps1 이 다이제스트로 묶는 입력 전부다. 부분 일치 fallback 은 두지 않는다 —
+        # 다른 입력의 산출물은 되살리지 않는다. schedule 은 복원하지 않아 콜드 빌드가 돈다.
+        if: github.event_name != 'schedule'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/rhwp/studio
+            build/rhwp/studio.inputs.sha256
+          key: rhwp-studio-${{ runner.os }}-${{ hashFiles('scripts/build_rhwp.ps1', 'vendor/rhwp/**', '.node-version') }}
       - name: Install, build, seal and verify the frontend
         shell: pwsh
         # Node/npm/Vite 핀 확인은 스크립트가 진다 — 워크플로가 같은 수치를 따로 들고 있으면
-        # 둘이 어긋나는 날이 온다(단일 출처).
+        # 둘이 어긋나는 날이 온다(단일 출처). rhwp 재사용 여부도 build_rhwp.ps1 이 입력 다이제스트
+        # stamp 로 정하고, 되살린 Studio 도 콜드 빌드와 같은 봉인 대조를 거친다.
+        env:
+          RHWP_REUSE_STAMPED_STUDIO: '1'
         run: .\build-web.ps1 -Mode Build -IdentityOut web-artifact-identity.json
+      - name: Save verified rhwp Studio build
+        # 봉인을 통과한 산출물만 남는다(앞 스텝이 실패하면 여기 오지 않는다). 약 45MB 라 PR 범위
+        # 저장도 둔다 — 패치를 바꾸는 PR 이 push 마다 8분짜리 wasm 빌드를 다시 하지 않게.
+        if: >-
+          steps.rhwp-studio.outputs.cache-hit != 'true'
+          && (github.event_name == 'push' || github.event_name == 'pull_request')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            build/rhwp/studio
+            build/rhwp/studio.inputs.sha256
+          key: ${{ steps.rhwp-studio.outputs.cache-primary-key }}
       - name: Frontend module suite
         # web build 가 깐 저장소 지역 toolchain(.cache/rhwp-cargo)을 Node 도구가 고른다 — npm test 의
         # bridge descriptor 가 --offline 으로 짓기 전에 같은 CARGO_HOME 에 잠금 의존을 받아 둔다.
+        # rhwp 를 되살려 지역 toolchain 이 없으면 분기 없이 시스템 cargo(rust-toolchain.toml)로 같은 일을 한다.
         run: |
           $localCargo = Join-Path $PWD '.cache\rhwp-cargo\bin\cargo.exe'
           if (Test-Path -LiteralPath $localCargo -PathType Leaf) {
@@ -105,6 +151,12 @@ jobs:
           # 복잡도 예산의 닫힌 원장은 `origin/master` 와의 merge-base 원장과 견준다. 얕은
           # checkout 에는 그 기준이 없고, 기준 부재는 통과가 아니라 실패다.
           fetch-depth: 0
+      - name: Restore Rust dependency builds (debug)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: debug
+          cache-bin: false
+          save-if: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
@@ -134,6 +186,15 @@ jobs:
     # llvm-tools 는 rust-toolchain.toml 의 component 로 첫 cargo 호출 때 설치된다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore Rust dependency builds (coverage)
+        # 계측 RUSTFLAGS 는 스크립트 안에서 붙어 rust-cache 의 환경 키에 잡히지 않는다 — 계열 이름으로
+        # debug 와 갈라 둔다. target 아래 target/coverage 까지 의존 산출물만 남고 profraw·profdata·
+        # export JSON·작업공간 테스트 실행 파일은 저장 전에 지워진다(스크립트도 시작 때 다시 지운다).
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: coverage
+          cache-bin: false
+          save-if: ${{ github.event_name == 'push' }}
       - name: Rust LLVM coverage floors
         shell: pwsh
         run: |
@@ -162,6 +223,12 @@ jobs:
     # (tests/js/quality_workflow.test.js 가 대조한다).
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore Rust dependency builds (debug)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: debug
+          cache-bin: false
+          save-if: false
       - name: Real Win32 dialog, clipboard, focus and credential round trips
         shell: pwsh
         # 이름이 하나라도 어긋나면 libtest 는 0개를 돌리고 성공한다 — 실행 수를 직접 확인한다.
@@ -184,6 +251,12 @@ jobs:
     # 이름으로도 산출물로도 섞지 않는다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore Rust dependency builds (debug)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: debug
+          cache-bin: false
+          save-if: false
       - name: Download the sealed web artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -261,6 +334,13 @@ jobs:
     # 실 WebView2 프로세스는 Node 없는 PATH에서 돌린다.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore Rust dependency builds (release)
+        # 배포본 release 빌드 두 벌(GUI 기본 기능·CLI 기능 끔)과 봉인 검증 도구의 의존을 한 계열로 둔다.
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: release
+          cache-bin: false
+          save-if: ${{ github.event_name == 'push' }}
       - name: Download the sealed web artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -322,6 +402,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust dependency builds (debug)
+        # debug 계열의 유일한 저장자다 — clippy·test·check 가 지은 의존이 다른 job 의 복원 대상이 된다.
+        # 작업공간 크레이트는 저장되지 않으므로 clippy -D warnings 는 매번 작업공간을 다시 린트한다.
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: debug
+          cache-bin: false
+          save-if: ${{ github.event_name == 'push' }}
       - name: Check Rust workspace
         shell: pwsh
         run: .\test-rust.ps1
