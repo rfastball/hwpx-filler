@@ -137,7 +137,7 @@ id = "product-purpose"
 document = "docs/product.md"
 sources = ["crates/hwpx-desktop/Cargo.toml", "crates/hwpx-desktop/src/bin/documentnarmi.rs", "crates/hwpx-desktop/src/bin/hwpxfiller.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/*.rs", "crates/hwpx-desktop/src/headless_generation.rs"]
 tests = ["crates/hwpx-filler/src/job.rs", "crates/hwpx-desktop/src/job_registry.rs", "crates/hwpx-desktop/src/bin/hwpxfiller.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs", "crates/hwpx-desktop/src/bin/hwpxfiller/generate_run.rs", "crates/hwpx-desktop/tests/cli.rs"]
-source_sha256 = "4bd5ce9771b965cfd718d6992c22720236dfd89a6ee50fe60417581e368361e8"
+source_sha256 = "244e2dd3730c9a36d7ac5a22e5963910eaf4fcfb117ddf512d9edb17828fc010"
 body_sha256 = "6f90a8ce9c579894f117da7939ae50a4cefd9815baa6865024f3ff5d39e2edd3"
 
 [[topic]]
@@ -153,7 +153,7 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
-source_sha256 = "be925ab3158172fa7b0e365f448756cf73dcf8de8be2a8efc065775d4f0a0f64"
+source_sha256 = "54ab43518e6890ed9343c7544551a6a7e94be2056ca5d24e7b291f70a018f511"
 body_sha256 = "22e834a31b9bcf0c719f549072dc70eccd352fdbda9c2ef3478c8d55206e932f"
 
 [[topic]]
@@ -161,7 +161,7 @@ id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
-source_sha256 = "287c29ed6c71ddd08ab3895d13f025917e264a9c713eb689b2ca1e150ce1f1da"
+source_sha256 = "359d1cd292a810dda21bb2bdb930fd004260766e6c5c58242a976fb1357ee5b2"
 body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
 [[topic]]
@@ -249,7 +249,7 @@ id = "development"
 document = "CONTRIBUTING.md"
 sources = [".node-version", "package.json", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "test.ps1", "test-rust.ps1", "build-web.ps1", "run-filler.ps1", "packaging/build.ps1", "packaging/build_native.ps1", "packaging/assemble_native.ps1", ".github/workflows/quality.yml", ".github/workflows/release.yml", "scripts/run_web_artifact.ps1", "scripts/complexity_budget.mjs", "scripts/check_release_version.mjs", "scripts/selftest_http_proxy.mjs", "scripts/verify_cli_bundle.mjs", "scripts/verify_native_selftest.mjs", "scripts/native_selftest_*.mjs", "scripts/live_scope_native.mjs", "scripts/run_native_live_scope.ps1", "tests/contracts/live-scopes.toml", "scripts/rust_coverage.ps1", "crates/hwpx-desktop/examples/check_rust_coverage.rs", "crates/hwpx-artifact/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["tests/js/quality_workflow.test.js", "tests/js/native_packaging_contract.test.js", "tests/js/complexity_budget.test.js", "tests/js/live_scope_native.test.js"]
-source_sha256 = "6a3ae2b168c7f3f128b0db2336dfdb97417b8d6fa64131eeff06ff5632030bc3"
+source_sha256 = "a0325bd6acd5fa337c096642419f9eade2e72c28e670e0f4cdcc815930521e43"
 body_sha256 = "8e14e1b0e65dccb9bbe825b696be544f49d32c5480c45a4b3c4a027d16f354a0"
 
 [[topic]]
