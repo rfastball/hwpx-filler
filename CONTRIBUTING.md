@@ -34,7 +34,9 @@ Rust GUI를 release profile로 빌드해 격리 자산 폴더에서 해당 WebVi
 [quality.yml](.github/workflows/quality.yml)이 job 구성·순서를 소유한다. `sealed-web`의 한 산출물을
 소비자가 `VerifyExisting`으로 **setup-node보다 먼저** 검증한다. `quality-gate`는 필수 job의
 success만 허용하고 문서 변경은 `static`에서 검사한다. `sealed-web`은 Node의 프런트
-계약 검사와 Rust의 봉인 검증을 사용한다.
+계약 검사와 Rust의 봉인 검증을 사용한다. CI 캐시는 Rust 의존 빌드와 rhwp Studio 산출물만 되살리며
+판정을 바꾸지 않는다. Studio는 입력 다이제스트가 같을 때만 재사용해 봉인이 다시 대조하고, 주 1회
+schedule은 캐시 없이 원천에서 다시 짓는다.
 
 coverage 하한은 [원장](tests/contracts/package-coverage-floors.toml)의 패키지별 line·branch 값이며
 `scripts/rust_coverage.ps1`이 LLVM 계측으로 재고 `rust-coverage` job이 소유한다. 하한은 올리기만 한다.
