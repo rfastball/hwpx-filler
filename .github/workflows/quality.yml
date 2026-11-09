@@ -55,7 +55,9 @@ jobs:
   sealed-web:
     name: sealed-web (producer)
     runs-on: windows-latest
-    timeout-minutes: 15
+    # rhwp 캐시를 놓친 콜드 경로는 실측 8~13.5분이었다. schedule 이 매주 그 경로를 일부러 돌리므로
+    # rust-cache 복원 시간을 더해도 시간 초과가 가짜 빨강을 만들지 않게 여유를 둔다.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Restore Rust dependency builds (debug)
