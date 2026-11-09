@@ -153,8 +153,8 @@ id = "architecture-boundaries"
 document = "docs/architecture.md"
 sources = ["tests/architecture_contract.toml", "Cargo.toml", "crates/*/Cargo.toml", "crates/hwpx-core/src/*.rs", "crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/bin/*.rs"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/frontend_build_graph.test.js"]
-source_sha256 = "e4fcb71317f654d5afc067446ad9a70e142fc83d7f2085ecbc41d88833d7ad3d"
-body_sha256 = "0faeb20d797961ad20e0dce979ee7f6425ba669ac368513e5becc332df63cf9a"
+source_sha256 = "be925ab3158172fa7b0e365f448756cf73dcf8de8be2a8efc065775d4f0a0f64"
+body_sha256 = "22e834a31b9bcf0c719f549072dc70eccd352fdbda9c2ef3478c8d55206e932f"
 
 [[topic]]
 id = "architecture-runtime"
@@ -169,7 +169,7 @@ id = "architecture-authority"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-filler/src/*.rs", "crates/hwpx-desktop/src/slot_configuration_*.rs", "crates/hwpx-desktop/src/work_configuration_store.rs", "crates/hwpx-desktop/src/slot_token.rs", "crates/hwpx-desktop/src/seal_execution_service.rs", "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-desktop/src/action_registry.json"]
 tests = ["crates/hwpx-artifact/tests/architecture.rs", "crates/hwpx-desktop/src/action_registry.rs", "crates/hwpx-filler/src/canonical_execution_encoding.rs", "crates/hwpx-desktop/src/slot_configuration_product.rs", "crates/hwpx-filler/src/execution_composition.rs", "crates/hwpx-filler/src/execution_contract_set.rs"]
-source_sha256 = "cf02b77bb6e4a6e9915699b1dd3193adda04b88380bee1efd89ef991503e89a4"
+source_sha256 = "6b4deb71f6d1a24f63768f3b753e315e20a84708ec4c07f97f26ef38659b8ef7"
 body_sha256 = "15274c7d47244e6e0538b3f66c15f6df2fa241c3a003b2208094f82c94449056"
 
 [[topic]]
@@ -233,7 +233,7 @@ id = "ui-copy"
 document = "docs/ui-style.md"
 sources = ["scripts/ui_copy_census.mjs", "crates/hwpx-artifact/examples/ui_copy_literals.rs", "tests/contracts/ui-copy-census.toml"]
 tests = ["tests/js/ui_copy_census.test.js"]
-source_sha256 = "2fa053b9778fd2f36eb3ee7792f07215c4b7daeac47d9daffd19f8f51803f980"
+source_sha256 = "b17b55de9e71af6aee6049d7abdef29dff6aa977b809a002b6ae81ab93cd6a8f"
 body_sha256 = "fdbc4edebdd5edbdb5bd52af907a46f4adb8527f0346b3c84271fde0b0111358"
 
 [[topic]]

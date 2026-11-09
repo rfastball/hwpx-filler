@@ -13,6 +13,9 @@
 | `crates/hwpx-artifact` | 웹 산출물 봉인·identity 대조 | 제품 판정 |
 | `frontend/` | React 렌더·포커스·모달·표시 상태 | 의미·권한·최신성·실행 가능 여부의 독립 판정 |
 
+`hwpx-filler`의 엑셀·계약목록 읽기(calamine·rusqlite)는 기본 기능 `native-data`에 속한다.
+끈 빌드는 브라우저 확장용 wasm32 대상이며 두 데이터 소스는 성공 대신 오류로 답한다.
+
 crate 의존 방향과 형식 커널의 환경 효과 금지는 [architecture.rs](../crates/hwpx-artifact/tests/architecture.rs),
 프런트 vendor 봉쇄는 [architecture_contract.toml](../tests/architecture_contract.toml)이 소유한다. 예외 복제 금지.
 소스 실행과 네이티브 번들은 React·Tauri 2·WebView2를 사용하며 앱·CLI의 제품 처리는 모두 Rust가 맡는다.

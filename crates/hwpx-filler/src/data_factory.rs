@@ -342,7 +342,8 @@ pub fn fields_for_dataset_reference(
     source_from_pool_item(item)?.fields()
 }
 
-#[cfg(all(test, feature = "native-data"))]
+#[cfg(test)]
+#[cfg(feature = "native-data")]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
