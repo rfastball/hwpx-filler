@@ -8,8 +8,10 @@ pub mod canonical_execution_encoding;
 pub mod copy_name;
 pub mod data_contract;
 pub mod data_contract_check;
+#[cfg(feature = "native-data")]
 pub mod data_excel;
 pub mod data_factory;
+#[cfg(feature = "native-data")]
 pub mod data_pclm;
 pub mod data_pipeline;
 pub mod data_source;

@@ -2391,6 +2391,12 @@ file = "crates/hwpx-filler/src/data_excel_xml.rs"
 text = "워크시트 경로가 유효하지 않습니다"
 [[sentence]]
 file = "crates/hwpx-filler/src/data_factory.rs"
+text = "이 빌드에는 엑셀 읽기가 없습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/data_factory.rs"
+text = "이 빌드에는 계약목록 읽기가 없습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/data_factory.rs"
 text = "'{}' 데이터 결속은 파일로 복원할 수 없습니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/data_factory.rs"

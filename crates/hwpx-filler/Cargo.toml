@@ -18,11 +18,16 @@ serde_json = { version = "=1.0.151", features = ["arbitrary_precision", "preserv
 sha2 = "=0.11.0"
 sha1 = "=0.11.0"
 indexmap = "=2.14.0"
-calamine = { version = "=0.38.0", features = ["chrono"] }
-rusqlite = { version = "=0.41.1", features = ["bundled"] }
+calamine = { version = "=0.38.0", features = ["chrono"], optional = true }
+rusqlite = { version = "=0.41.1", features = ["bundled"], optional = true }
 zip = { version = "=9.3.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 quick-xml = "=0.42.0"
 
 [dev-dependencies]
 libz-sys = { version = "=1.1.30", features = ["static"] }
 
+[features]
+# 엑셀(calamine)·계약목록(rusqlite) 읽기. 끄면 wasm32-unknown-unknown 으로 지어진다 — 채우기만 쓰는
+# 브라우저 확장(계약목록의 문서 만들기 패널)이 그렇게 싣는다. 끈 빌드에서 이 둘을 부르면 오류로 답한다.
+default = ["native-data"]
+native-data = ["dep:rusqlite", "dep:calamine"]
