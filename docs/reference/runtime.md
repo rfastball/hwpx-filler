@@ -7,7 +7,7 @@
 
 | 항목 | 선언 | 원천 |
 |---|---|---|
-| 제품 버전 | `0.15.0` | [crates/hwpx-desktop/Cargo.toml](../../crates/hwpx-desktop/Cargo.toml) |
+| 제품 버전 | `0.16.0` | [crates/hwpx-desktop/Cargo.toml](../../crates/hwpx-desktop/Cargo.toml) |
 | Node pin | `24.18.1` | [.node-version](../../.node-version) |
 | Node engine | `24.18.1` | [package.json](../../package.json) |
 | npm engine | `11.16.0` | [package.json](../../package.json) |

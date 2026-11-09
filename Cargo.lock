@@ -1393,7 +1393,7 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "hwpx-artifact"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "proc-macro2",
  "regex",
@@ -1418,7 +1418,7 @@ dependencies = [
 
 [[package]]
 name = "hwpx-desktop"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1441,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "hwpx-filler"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "calamine",
  "chrono",

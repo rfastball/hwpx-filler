@@ -26,7 +26,7 @@ test('declared build plan controls native metadata and cannot be guessed from a 
     const metadata = generate(root, out, { kind: 'no-web', reason: 'cli-only build' });
     assert.deepEqual(metadata.web, { present: false, reason: 'cli-only build' });
     assert.equal(metadata.cargo_lock_sha256, digest(readFileSync(path.join(root, 'Cargo.lock'))));
-    assert.match(readFileSync(path.join(out, 'version.iss'), 'utf8'), /#define AppVersionInfo "0\.15\.0\.0"/);
+    assert.match(readFileSync(path.join(out, 'version.iss'), 'utf8'), /#define AppVersionInfo "0\.16\.0\.0"/);
     assert.deepEqual(JSON.parse(readFileSync(path.join(out, 'build-metadata.json'), 'utf8')), metadata);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
