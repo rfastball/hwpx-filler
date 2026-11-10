@@ -268,6 +268,14 @@ test('distribution and release consume the verified tree before native journey a
   assert.ok(order.every((at, index) => index === 0 || order[index - 1] < at));
 });
 
+test('packaged bundle checks call the artifact CLI in bundle mode, which rejects --verify', () => {
+  const callers = ['.github/workflows/release.yml', 'packaging/build_native.ps1', 'packaging/assemble_native.ps1'];
+  const calls = callers.flatMap(name => read(name).replace(/`\r?\n\s*/gu, ' ').split(/\r?\n/u)
+    .filter(line => /run_web_artifact\.ps1|\$artifact |\$checker /u.test(line) && line.includes('--bundle-root')));
+  assert.ok(calls.length >= 5, calls.join('\n'));
+  for (const call of calls) assert.ok(!/\s-Verify\b|\s--verify\b/u.test(call), call);
+});
+
 test('release reconciles installed and portable identities before cleanup and publishes complete evidence', () => {
   const reconcile = releaseStep('Reconcile web artifact identity').run;
   contains(reconcile, ['run_web_artifact.ps1 --reconcile', "--expect 'source,dist,installed,portable'",
