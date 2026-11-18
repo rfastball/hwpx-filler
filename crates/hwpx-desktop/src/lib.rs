@@ -37,6 +37,9 @@ pub mod library_observation;
 pub mod live_graph;
 pub mod locations;
 pub mod managed_generation_service;
+pub mod nara_secret_store;
+pub mod nara_source;
+pub mod nara_transport;
 pub mod native_methods;
 #[cfg(feature = "shell")]
 pub mod native_selftest;
@@ -46,9 +49,6 @@ pub mod onboarding_product;
 pub mod onboarding_state;
 pub mod owned_paths;
 pub mod packaged_selfcheck;
-#[cfg(test)]
-#[path = "../../hwpx-filler/tests/support/pclm_fixture.rs"]
-pub(crate) mod pclm_fixture;
 pub mod per_work_fence;
 pub mod pool_controller;
 pub mod preset_registry;

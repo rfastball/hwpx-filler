@@ -330,23 +330,8 @@ mod tests {
         EditorMappingModel::from_suggestions(&schema(fields), &strings(sources), &HashMap::new())
     }
 
-    fn coded_model() -> EditorMappingModel {
-        let labels: indexmap::IndexMap<String, String> = [
-            ("bidNtceNo", "입찰공고번호"),
-            ("bidNtceOrd", "입찰공고차수"),
-            ("bidNtceNm", "공고명"),
-            ("bidNtceDate", "공고일자"),
-            ("bidBeginDate", "입찰개시일자"),
-            ("bidBeginTm", "입찰개시시각"),
-            ("bidClseDate", "입찰마감일자"),
-            ("opengDate", "개찰일자"),
-            ("opengTm", "개찰시각"),
-            ("asignBdgtAmt", "배정예산"),
-            ("presmptPrce", "추정가격"),
-        ]
-        .into_iter()
-        .map(|(key, label)| (key.into(), label.into()))
-        .collect();
+    fn nara_model() -> EditorMappingModel {
+        let labels = crate::nara::default_field_labels();
         EditorMappingModel::from_suggestions(
             &schema(&[
                 ("입찰공고번호", "number"),
@@ -370,7 +355,7 @@ mod tests {
 
     #[test]
     fn suggestions_require_confirmation_and_keep_explicit_empty_declarations() {
-        let mut model = coded_model();
+        let mut model = nara_model();
         assert_eq!(
             model
                 .rows
@@ -395,11 +380,11 @@ mod tests {
                 .all(|row| row.suggestion_score > 0.6 && !row.confirmed)
         );
         assert_eq!(model.rows[4].suggestion_score, 0.0);
-        let fixture = serde_json::json!({
-            "bidNtceNo": "R26BK01561738", "bidNtceNm": "컨테이너 라운지 조성",
-            "presmptPrce": "65454545", "opengDate": "2026-06-15"
-        });
-        let record = fixture.as_object().unwrap();
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/nara_std_response.json"
+        ))
+        .unwrap();
+        let record = fixture["response"]["body"]["items"][0].as_object().unwrap();
         let rendered = model.preview(record, None).unwrap();
         assert_eq!(rendered["입찰공고번호"], "R26BK01561738");
         assert_eq!(rendered["추정가격"], "65,454,545원");
@@ -566,7 +551,7 @@ mod tests {
         assert_eq!(names(&carried.carry_profile("").unwrap()), ["품명", "규격"]);
         assert!(carried.carry_profile("").unwrap().mappings[1].is_declared_empty());
 
-        let mut confirmed = coded_model();
+        let mut confirmed = nara_model();
         confirmed.confirm_suggested();
         let active = confirmed
             .source_fields

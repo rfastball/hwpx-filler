@@ -9,13 +9,12 @@ use crate::generation_gate::GenerationGate;
 use crate::job_registry::{JobRegistry, StoreError};
 use crate::library_observation::read_template;
 use crate::library_observation::template_display_name;
+use crate::nara_source::source_from_pool_reference_live;
 use crate::template_inventory::discover_paths;
 use crate::template_root::TemplateRoot;
 use crate::workspace_switch::{GraphError, PushGate, ScreenController};
 use chrono::{Local, NaiveDateTime};
-use hwpx_filler::data_factory::{
-    binding_for_reference, source_for_binding, source_for_path, source_from_pool_item,
-};
+use hwpx_filler::data_factory::{binding_for_reference, source_for_binding, source_for_path};
 use hwpx_filler::dataset_pool::DatasetPoolRow;
 use hwpx_filler::dataset_reference::{
     excel_identity, pclm_identity, reference_for_sheet, reference_sheets,
@@ -40,10 +39,6 @@ mod facts;
 mod restore;
 mod save;
 mod session;
-#[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
-#[path = "../tests/support/editor_pclm.rs"]
-mod test_pclm;
 
 type Clock = dyn Fn() -> NaiveDateTime + Send + Sync;
 type BindingPending = dyn Fn(&str) -> Result<bool, GraphError> + Send + Sync;
@@ -63,7 +58,6 @@ struct LoadedEditorData {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod reconcile_tests {
-    use super::test_pclm::{mount_pclm, write_pclm};
     use super::*;
     use std::fs;
     use std::path::PathBuf;
@@ -73,17 +67,17 @@ mod reconcile_tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/editor-controller-tests")
             .join(format!("reconcile-{}", uuid::Uuid::new_v4()));
-        let (editor, _, pool, _graph) = tests::fixture(&root);
+        let (editor, _, _, _graph) = tests::fixture(&root);
         let template = root.join("text_templates/기안.txt");
         let other = root.join("text_templates/남의.txt");
-        let data = root.join("data.db");
+        let data = root.join("data.csv");
         fs::write(&template, "수신: {{수신}}\n").unwrap();
         fs::write(&other, "남의 {{필드}}\n").unwrap();
-        write_pclm(&data, &["수신"], &[&["홍길동"]]);
+        fs::write(&data, "수신\n홍길동\n").unwrap();
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
-        mount_pclm(&editor, &pool, &data, "자료");
+        editor.load_data_path(&data, None, 1).unwrap();
         editor
             .dispatch("goto_section", &json!({"section":"binding"}))
             .unwrap();
@@ -290,7 +284,6 @@ impl ScreenController for EditorController {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
-    use super::test_pclm::{mount_pclm, write_pclm};
     use super::*;
     use crate::locations::Locations;
     use crate::shell_settings::ShellSettings;
@@ -376,17 +369,17 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/editor-controller-tests")
             .join(format!("discard-{}", uuid::Uuid::new_v4()));
-        let (editor, _, pool, _graph) = fixture(&root);
+        let (editor, _, _, _graph) = fixture(&root);
         let template = root.join("text_templates/기안.txt");
-        let data = root.join("data.db");
-        let other = root.join("other.db");
+        let data = root.join("data.csv");
+        let other = root.join("other.csv");
         fs::write(&template, "{{이름}}\n").unwrap();
-        write_pclm(&data, &["이름"], &[&["홍길동"]]);
-        write_pclm(&other, &["이름"], &[&["김철수"]]);
+        fs::write(&data, "이름\n홍길동\n").unwrap();
+        fs::write(&other, "이름\n김철수\n").unwrap();
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
-        mount_pclm(&editor, &pool, &data, "원자료");
+        editor.load_data_path(&data, None, 1).unwrap();
         editor
             .dispatch("goto_section", &json!({"section":"binding"}))
             .unwrap();
@@ -416,7 +409,7 @@ mod tests {
             Job::default().filename_pattern
         );
         assert!(editor.has_unsaved_work().unwrap());
-        mount_pclm(&editor, &pool, &other, "다른자료");
+        editor.load_data_path(&other, None, 1).unwrap();
         assert_eq!(
             editor.snapshot().unwrap()["data_path"],
             other.to_string_lossy().as_ref()
@@ -458,15 +451,15 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/editor-controller-tests")
             .join(format!("landing-{}", uuid::Uuid::new_v4()));
-        let (editor, jobs, pool, _graph) = fixture(&root);
+        let (editor, jobs, _, _graph) = fixture(&root);
         let template = root.join("text_templates/기안.txt");
-        let data = root.join("data.db");
+        let data = root.join("data.csv");
         fs::write(&template, "{{이름}}\n").unwrap();
-        write_pclm(&data, &["이름"], &[&["홍길동"]]);
+        fs::write(&data, "이름\n홍길동\n").unwrap();
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
-        mount_pclm(&editor, &pool, &data, "사라질자료");
+        editor.load_data_path(&data, None, 1).unwrap();
         editor
             .dispatch("goto_section", &json!({"section":"binding"}))
             .unwrap();
@@ -510,9 +503,9 @@ mod tests {
         let nested = root.join("text_templates/온나라");
         fs::create_dir_all(&nested).unwrap();
         let template = nested.join("기안.txt");
-        let data = root.join("data.db");
+        let data = root.join("data.csv");
         fs::write(&template, "{{이름}}\n").unwrap();
-        write_pclm(&data, &["이름"], &[&["홍길동"]]);
+        fs::write(&data, "이름\n홍길동\n").unwrap();
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
@@ -524,11 +517,8 @@ mod tests {
         assert!(!editor.has_unsaved_work().unwrap());
         let item = DatasetReference::new(
             "7월 발주",
-            "pclm",
-            json!({"db":data,"view":"v_통합"})
-                .as_object()
-                .unwrap()
-                .clone(),
+            "excel",
+            json!({"path":data}).as_object().unwrap().clone(),
         )
         .unwrap();
         let key = pool.add(&item).unwrap();
@@ -578,17 +568,17 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/editor-controller-tests")
             .join(format!("resuggest-{}", uuid::Uuid::new_v4()));
-        let (editor, _, pool, _graph) = fixture(&root);
+        let (editor, _, _, _graph) = fixture(&root);
         let template = root.join("text_templates/기안.txt");
-        let first = root.join("first.db");
-        let second = root.join("second.db");
+        let first = root.join("first.csv");
+        let second = root.join("second.csv");
         fs::write(&template, "{{가}} {{나}}").unwrap();
-        write_pclm(&first, &["가", "나"], &[&["첫째", "둘째"]]);
-        write_pclm(&second, &["가", "나"], &[&["셋째", "넷째"]]);
+        fs::write(&first, "가,나\n첫째,둘째\n").unwrap();
+        fs::write(&second, "가,나\n셋째,넷째\n").unwrap();
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
-        mount_pclm(&editor, &pool, &first, "첫자료");
+        editor.load_data_path(&first, None, 1).unwrap();
         editor
             .dispatch("goto_section", &json!({"section":"binding"}))
             .unwrap();
@@ -612,7 +602,7 @@ mod tests {
         let stakes = editor.dispatch("mapping_reset_stakes", &json!({})).unwrap();
         assert_eq!(stakes["resuggest_manual"], 1);
         assert_eq!(stakes["confirmed"], 1);
-        mount_pclm(&editor, &pool, &second, "둘자료");
+        editor.load_data_path(&second, None, 1).unwrap();
         let carried = editor.snapshot().unwrap();
         assert_eq!(row(&carried, "가")["const"], "직접 입력한 값");
         assert_eq!(row(&carried, "가")["confirmed"], false);
@@ -646,7 +636,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/editor-controller-tests")
             .join(format!("contract-{}", uuid::Uuid::new_v4()));
-        let (editor, jobs, pool, _graph) = fixture(&root);
+        let (editor, jobs, _, _graph) = fixture(&root);
         let template = root.join("text_templates/공고.txt");
         fs::write(&template, "{{건명}} {{금액}} {{계약일}} {{담당}}").unwrap();
         let mapping = MappingProfile::new(
@@ -699,17 +689,13 @@ mod tests {
                 .unwrap()["human"],
             4
         );
-        let csv = root.join("received.db");
-        let headers = ["공고명", "추정가격", "계약일자"];
-        write_pclm(
+        let csv = root.join("received.csv");
+        fs::write(
             &csv,
-            &headers,
-            &[
-                &["청소용역", "5000000", "2026-09-01"],
-                &["경비", "700000원", "2026-10-02"],
-            ],
-        );
-        let received_key = mount_pclm(&editor, &pool, &csv, "받은자료");
+            "공고명,추정가격,계약일자\n청소용역,5000000,2026-09-01\n경비,700000원,2026-10-02\n",
+        )
+        .unwrap();
+        editor.load_data_path(&csv, None, 1).unwrap();
         let snap = editor.snapshot().unwrap();
         assert!(snap["is_complete"].as_bool().unwrap());
         assert_eq!(
@@ -757,26 +743,24 @@ mod tests {
                 .unwrap()["human"],
             2
         );
-        let other = root.join("other.db");
-        write_pclm(&other, &headers, &[&["시설공사", "9000000", "2026-11-11"]]);
-        let other_key = mount_pclm(&editor, &pool, &other, "다른자료");
+        let other = root.join("other.csv");
+        fs::write(
+            &other,
+            "공고명,추정가격,계약일자\n시설공사,9000000,2026-11-11\n",
+        )
+        .unwrap();
+        editor.load_data_path(&other, None, 1).unwrap();
         assert_eq!(
             row(&editor.snapshot().unwrap(), "계약일")["contract_reason"],
             "꾸러미와 연결이 다름"
         );
         editor.load_job("받은작업").unwrap();
-        write_pclm(
+        fs::write(
             &csv,
-            &headers,
-            &[
-                &["청소용역", "5000000", "2026-09-01"],
-                &["경비", "700000", "추후 협의"],
-            ],
-        );
-        let reread = editor
-            .dispatch("use_pool_data", &json!({"key":received_key}))
-            .unwrap();
-        assert_eq!(reread["ok"], true, "{reread}");
+            "공고명,추정가격,계약일자\n청소용역,5000000,2026-09-01\n경비,700000,추후 협의\n",
+        )
+        .unwrap();
+        editor.load_data_path(&csv, None, 1).unwrap();
         let snap = editor.snapshot().unwrap();
         assert_eq!(
             row(&snap, "계약일")["contract_reason"],
@@ -807,13 +791,9 @@ mod tests {
         assert_eq!(saved.data_path, csv.to_string_lossy());
         assert_eq!(saved.binding_revision, 1);
         editor.load_job("받은작업").unwrap();
-        let missing = root.join("missing.db");
-        write_pclm(
-            &missing,
-            &["공고명", "추정가격"],
-            &[&["청소용역", "5000000"]],
-        );
-        mount_pclm(&editor, &pool, &missing, "빠진자료");
+        let missing = root.join("missing.csv");
+        fs::write(&missing, "공고명,추정가격\n청소용역,5000000\n").unwrap();
+        editor.load_data_path(&missing, None, 1).unwrap();
         assert_eq!(
             row(&editor.snapshot().unwrap(), "계약일")["contract_reason"],
             "데이터에 없음"
@@ -825,10 +805,7 @@ mod tests {
                 .unwrap()["human"],
             4
         );
-        let reread = editor
-            .dispatch("use_pool_data", &json!({"key":other_key}))
-            .unwrap();
-        assert_eq!(reread["ok"], true, "{reread}");
+        editor.load_data_path(&other, None, 1).unwrap();
         let snap = editor.snapshot().unwrap();
         assert_eq!(snap["is_complete"], false);
         assert!(
@@ -990,31 +967,31 @@ mod tests {
                     .unwrap();
                 editor.refresh_panel().unwrap();
                 assert_eq!(editor.snapshot().unwrap()["data_sheet_tabs"], json!([]));
+                let records = editor.state().unwrap().records.clone();
+                fs::write(pool.slot_path(&key).unwrap(), "{broken json").unwrap();
+                editor.refresh_panel().unwrap();
+                let tabs = editor.snapshot().unwrap()["data_sheet_tabs"].clone();
+                assert_eq!(tabs.as_array().unwrap().len(), 1);
+                assert_eq!(tabs[0]["active"], true);
+                assert_eq!(tabs[0]["selectable"], false);
+                assert_eq!(tabs[0]["damaged"], true);
+                assert!(
+                    tabs[0]["reason"]
+                        .as_str()
+                        .unwrap()
+                        .contains("손상된 등록 데이터")
+                );
+                assert_eq!(
+                    editor
+                        .dispatch("use_pool_data", &json!({"key":key,"sheet":second}))
+                        .unwrap()["ok"],
+                    false
+                );
+                assert_eq!(editor.state().unwrap().records.clone(), records);
+                fs::remove_file(pool.slot_path(&key).unwrap()).unwrap();
+                editor.refresh_panel().unwrap();
+                assert_eq!(editor.snapshot().unwrap()["data_sheet_tabs"], json!([]));
             }
-            let records = editor.state().unwrap().records.clone();
-            fs::write(pool.slot_path(&key).unwrap(), "{broken json").unwrap();
-            editor.refresh_panel().unwrap();
-            let tabs = editor.snapshot().unwrap()["data_sheet_tabs"].clone();
-            assert_eq!(tabs.as_array().unwrap().len(), 1);
-            assert_eq!(tabs[0]["active"], true);
-            assert_eq!(tabs[0]["selectable"], false);
-            assert_eq!(tabs[0]["damaged"], true);
-            assert!(
-                tabs[0]["reason"]
-                    .as_str()
-                    .unwrap()
-                    .contains("손상된 등록 데이터")
-            );
-            assert_eq!(
-                editor
-                    .dispatch("use_pool_data", &json!({"key":key,"sheet":second}))
-                    .unwrap()["ok"],
-                false
-            );
-            assert_eq!(editor.state().unwrap().records.clone(), records);
-            fs::remove_file(pool.slot_path(&key).unwrap()).unwrap();
-            editor.refresh_panel().unwrap();
-            assert_eq!(editor.snapshot().unwrap()["data_sheet_tabs"], json!([]));
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -1120,6 +1097,7 @@ mod tests {
             ("unknown-kind", "", 0, "1행", "other"),
             ("hwpx", "", 0, "1행", "hwpx"),
             ("txt", "", 0, "1행", "txt"),
+            ("nara", "", 0, "1행", "nara"),
         ] {
             state.data_kind = kind.into();
             state.data_sheet = sheet.into();
@@ -1150,9 +1128,9 @@ mod tests {
         let templates_dir = root.join("templates");
         fs::create_dir_all(&templates_dir).unwrap();
         let template = templates_dir.join("기안.txt");
-        let csv = root.join("data.db");
+        let csv = root.join("data.csv");
         fs::write(&template, "{{이름}}\n").unwrap();
-        write_pclm(&csv, &["이름"], &[&["홍길동"]]);
+        fs::write(&csv, "이름\n홍길동\n").unwrap();
         let settings = Arc::new(ShellSettings::new(root.join("settings.json"), |_| {}));
         let templates = Arc::new(TemplateRoot::new(settings, templates_dir.clone()).unwrap());
         let jobs =
@@ -1224,7 +1202,7 @@ mod tests {
         screen
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
-        mount_pclm(&editor, &editor.datasets, &csv, "자료");
+        editor.load_data_path(&csv, None, 1).unwrap();
         let pairing = editor.snapshot().unwrap()["pairing"].clone();
         assert_eq!(pairing["auto_count"], 1);
         assert_eq!(pairing["confirm_count"], 0);
@@ -1360,7 +1338,7 @@ mod tests {
         assert!(
             editor
                 .new_draft_with_data(
-                    &json!({"path":csv,"sheet":"v_통합","kind":"pclm"}),
+                    &json!({"path":csv}),
                     &json!({"entry_reason":"schema_new_field"}),
                 )
                 .is_err()
@@ -1368,13 +1346,13 @@ mod tests {
         assert_eq!(editor.snapshot().unwrap(), before);
         editor
             .new_draft_with_data(
-                &json!({"path":csv,"sheet":"v_통합","kind":"pclm"}),
-                &json!({"entry_reason":"document_browser_new_work","evidence":{"데이터":"data.db"},
+                &json!({"path":csv,"header_row":1}),
+                &json!({"entry_reason":"document_browser_new_work","evidence":{"데이터":"data.csv"},
                 "return_context":{"surface":"data"}}),
             )
             .unwrap();
         assert_eq!(editor.snapshot().unwrap()["section"], "template");
-        assert_eq!(editor.snapshot().unwrap()["data_header_row"], 0);
+        assert_eq!(editor.snapshot().unwrap()["data_header_row"], 1);
         assert_eq!(editor.snapshot().unwrap()["source_fields"], json!(["이름"]));
         editor
             .dispatch("set_name", &json!({"name":"이전 초안 이름"}))
@@ -1384,14 +1362,14 @@ mod tests {
             .unwrap();
         let anchored = editor.snapshot().unwrap();
         assert_eq!(anchored["data_path"], csv.to_string_lossy().as_ref());
-        assert_eq!(anchored["data_header_row"], 0);
+        assert_eq!(anchored["data_header_row"], 1);
         assert_eq!(anchored["source_fields"], json!(["이름"]));
         assert_eq!(
             anchored["context"]["entry_reason"],
             "document_browser_new_work"
         );
-        assert_eq!(anchored["context"]["evidence"]["데이터"], "data.db");
-        assert_eq!(anchored["name"], "기안 · 자료");
+        assert_eq!(anchored["context"]["evidence"]["데이터"], "data.csv");
+        assert_eq!(anchored["name"], "기안 · data");
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
@@ -1408,7 +1386,7 @@ mod tests {
                 "원본",
                 &json!({"entry_reason":"run_failure","target":"binding/이름",
                 "return_context":{"surface":"result"}}),
-                Some(&json!({"path":csv,"sheet":"v_통합","kind":"pclm"})),
+                Some(&json!({"path":csv,"header_row":1})),
             )
             .unwrap();
         assert_eq!(
@@ -1510,9 +1488,8 @@ mod tests {
 
     fn assert_partial_gate_controls_navigation(editor: &EditorController, root: &Path) {
         use hwpx_core::package::{HwpxPackage, PackageEntry};
-        let csv = root.join("partial.db");
-        write_pclm(&csv, &["계약명"], &[&["값"]]);
-        let mut key = None;
+        let csv = root.join("partial.csv");
+        fs::write(&csv, "계약명\n값\n").unwrap();
         for structural in [false, true] {
             let extra = if structural { "{{#항목 특약}}" } else { "" };
             let xml = format!(
@@ -1537,15 +1514,7 @@ mod tests {
                 .join(format!("partial-{structural}.hwpx"));
             fs::write(&path, document.to_bytes().unwrap()).unwrap();
             editor.adopt_imported_template(&path).unwrap();
-            match &key {
-                None => key = Some(mount_pclm(editor, &editor.datasets, &csv, "부분")),
-                Some(key) => {
-                    let mounted = editor
-                        .dispatch("use_pool_data", &json!({"key":key}))
-                        .unwrap();
-                    assert_eq!(mounted["ok"], true, "{mounted}");
-                }
-            }
+            editor.load_data_path(&csv, None, 1).unwrap();
             let before = editor.snapshot().unwrap();
             assert_eq!(before["gate"]["unmet"], json!(["미결"]));
             assert_eq!(before["gate"]["acked"], false);
@@ -1630,17 +1599,23 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let headers = fields.iter().map(String::as_str).collect::<Vec<_>>();
-        let values = samples.iter().map(|sample| sample.2).collect::<Vec<_>>();
-        let first = root.join("first.db");
-        let second = root.join("second.db");
-        write_pclm(&first, &headers, &[values.as_slice()]);
-        write_pclm(&second, &headers, &[values.as_slice()]);
+        let csv = fields.join(",")
+            + "\n"
+            + &samples
+                .iter()
+                .map(|sample| sample.2)
+                .collect::<Vec<_>>()
+                .join(",")
+            + "\n";
+        let first = root.join("first.csv");
+        let second = root.join("second.csv");
+        fs::write(&first, &csv).unwrap();
+        fs::write(&second, &csv).unwrap();
         editor.dispatch("new_session", &json!({})).unwrap();
         editor
             .dispatch("use_library_template", &json!({"path":template}))
             .unwrap();
-        mount_pclm(editor, &editor.datasets, &first, "표시첫째");
+        editor.load_data_path(&first, None, 1).unwrap();
         editor
             .dispatch("goto_section", &json!({"section":"binding"}))
             .unwrap();
@@ -1660,7 +1635,7 @@ mod tests {
                 .unwrap();
             display_row(editor, field, kind, code);
         }
-        mount_pclm(editor, &editor.datasets, &second, "표시둘째");
+        editor.load_data_path(&second, None, 1).unwrap();
         for (field, (kind, code, _, expected)) in fields.iter().zip(samples) {
             let row = display_row(editor, field, kind, code);
             assert_eq!(row["preview"], expected, "{field}");

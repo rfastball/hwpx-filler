@@ -141,7 +141,7 @@ impl EditorController {
                 return Err("사용할 수 없는 등록 데이터입니다.".into());
             }
             let item = reference_for_sheet(&item, payload["sheet"].as_str())?;
-            let mut source = source_from_pool_item(&item)?;
+            let mut source = source_from_pool_reference_live(&item)?;
             let records = source.records()?;
             if records.is_empty() {
                 return Err("데이터에 행이 없습니다.".into());

@@ -459,13 +459,10 @@ mod tests {
             filename_pattern: "계약-{{없는필드}}".into(),
             ..Job::default()
         };
-        let db = root.join("source.pclm");
-        crate::pclm_fixture::PclmFixture::work("source-id")
-            .view("v_통합", &["사업명"], &[&["청사 교체"]])
-            .write(&db);
-        job.data_path = db.to_str().unwrap().into();
-        job.data_sheet = "v_통합".into();
-        job.data_kind = "pclm".into();
+        let csv = root.join("source.csv");
+        fs::write(&csv, "사업명\n청사 교체\n").unwrap();
+        job.data_path = csv.to_str().unwrap().into();
+        job.data_header_row = 1;
         jobs.save(&mut job, false).unwrap();
         let read = read_first_row(&job);
         assert_eq!(read.state, "ready");
@@ -515,7 +512,7 @@ mod tests {
             "문서 만들기에서 사용"
         );
         assert_eq!(selected["detail"]["data_path"], job.data_path);
-        assert_eq!(selected["detail"]["data_label"], "source.pclm · v_통합");
+        assert_eq!(selected["detail"]["data_label"], "source.csv");
         assert_eq!(
             selected["detail"]["health_causes"],
             serde_json::json!([

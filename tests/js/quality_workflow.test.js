@@ -187,7 +187,7 @@ test('Rust and product copy gates run locally and CI resource responsibilities d
 
 test('real Win32 axis runs exactly the ignored Rust tests in CI and locally, and counts them', () => {
   const ignored = ignoredRustTests();
-  assert.ok(ignored.length >= 2, ignored.join(', '));
+  assert.ok(ignored.length >= 3, ignored.join(', '));
   const native = Object.entries(jobs).filter(([, job]) => runsAxis(job, 'native'));
   assert.deepEqual(native.map(([name]) => name), ['windows-native']);
   const [command] = commands(native[0][1]).filter(item => item.includes('--ignored'));

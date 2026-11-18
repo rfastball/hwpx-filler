@@ -238,6 +238,9 @@ file = "crates/hwpx-desktop/src/authoring_projection.rs"
 text = "이 요소는 표시할 수 있지만 변경 후 보존을 확인할 수 없습니다. 원본을 유지한 채 확인하세요."
 [[sentence]]
 file = "crates/hwpx-desktop/src/authoring_proposal.rs"
+text = "나라장터 소스는 현재 웹에서 지원되지 않습니다. 파일 또는 엑셀 참조 등록 데이터를 사용하세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/authoring_proposal.rs"
 text = "데이터에 행이 없습니다."
 [[sentence]]
 file = "crates/hwpx-desktop/src/authoring_proposal.rs"
@@ -466,7 +469,7 @@ file = "crates/hwpx-desktop/src/bin/hwpxfiller.rs"
 text = "schema 에 HWPX 템플릿 경로가 필요합니다."
 [[sentence]]
 file = "crates/hwpx-desktop/src/bin/hwpxfiller.rs"
-text = "usage: hwpxfiller [-h] --template TEMPLATE [--source {excel,pclm}] [--data DATA] [--out OUT] [--pattern PATTERN] [--sheet SHEET] [--profile PROFILE] [--fields] [--overwrite] [--ack-empty] [--ledger] [--db DB] [--view VIEW] options: -h, --help show this help message and exit --template TEMPLATE HWPX 템플릿 경로 --source {excel,pclm} 데이터 소스 (기본: excel). pclm 은 계약 목록 DB 의 시트(뷰·표)이며 --view 가 필수입니다 --data DATA 엑셀/CSV 데이터 경로 (--source excel) --out OUT 결과 저장 폴더 --pattern PATTERN 파일명 패턴({{필드}}, 기본 공고서-{{date}}-{{seq:001}}). 토큰은 템플릿 필드 이름이며 연결된 값으로 채워집니다 — 풀 수 없는 토큰은 오류 --sheet SHEET 엑셀 시트명(기본: 첫 시트) --profile PROFILE 매핑 프로파일 JSON(소스 키→템플릿 필드). 작업(.job.json)의 mapping 과 같은 형식의 독립 JSON 입니다 --fields 템플릿 요구 필드만 출력 --overwrite 같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 파일이 하나라도 이미 있을 때 생성 전체를 차단하고 종료코드 1 --ack-empty 값이 비어 있는 필드를 확인했음을 표시(옵트인) — 빈 필드에 미입력 표식(〘미입력·필드명〙)을 넣고 진행. 없으면 빈 값 발견 시 생성 전체를 차단하고 종료코드 1 --ledger 생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — 소스 프로파일·dry-run 매니페스트·주입 되읽기 증거. 값은 텍스트이며 HWPX 렌더가 아님 --db DB pclm SQLite 경로 (필수, --source pclm) --view VIEW pclm 시트(뷰·표) 이름 (필수, --source pclm). 이름 목록은 미지정 시 안내 하위명령(자세한 도움말: hwpxfiller <하위명령> --help): schema TPL.hwpx 템플릿 스키마(필드·타입·표 영역)를 JSON 으로 추출 fieldize TPL.hwpx 평문 {{토큰}} → 누름틀 변환(--out 없으면 미리보기) lint TPL.hwpx 템플릿 위생 점검(--vocab 통제 어휘) — 이슈 있으면 exit 1 drift OLD.hwpx NEW.hwpx 판본 간 필드 드리프트(추가/삭제/개명) render TPL.txt --data D 텍스트 템플릿 치환(온나라 기안 등) diff 별도 제품·별도 저장소로 분리됨(hwpxdiff OLD.hwpx NEW.hwpx)"
+text = "usage: hwpxfiller [-h] --template TEMPLATE [--source {excel,nara,pclm}] [--data DATA] [--out OUT] [--pattern PATTERN] [--sheet SHEET] [--profile PROFILE] [--fields] [--overwrite] [--ack-empty] [--ledger] [--service-key SERVICE_KEY] [--service-key-file SERVICE_KEY_FILE] [--bgn BGN] [--end END] [--num-rows NUM_ROWS] [--page PAGE] [--db DB] [--view VIEW] options: -h, --help show this help message and exit --template TEMPLATE HWPX 템플릿 경로 --source {excel,nara,pclm} 데이터 소스 (기본: excel). pclm 은 계약 목록 DB 의 시트(뷰·표)이며 --view 가 필수입니다 --data DATA 엑셀/CSV 데이터 경로 (--source excel) --out OUT 결과 저장 폴더 --pattern PATTERN 파일명 패턴({{필드}}, 기본 공고서-{{date}}-{{seq:001}}). 토큰은 템플릿 필드 이름이며 연결된 값으로 채워집니다 — 풀 수 없는 토큰은 오류 --sheet SHEET 엑셀 시트명(기본: 첫 시트) --profile PROFILE 매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수). 작업(.job.json)의 mapping 과 같은 형식의 독립 JSON 입니다 --fields 템플릿 요구 필드만 출력 --overwrite 같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 파일이 하나라도 이미 있을 때 생성 전체를 차단하고 종료코드 1 --ack-empty 값이 비어 있는 필드를 확인했음을 표시(옵트인) — 빈 필드에 미입력 표식(〘미입력·필드명〙)을 넣고 진행. 없으면 빈 값 발견 시 생성 전체를 차단하고 종료코드 1 --ledger 생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — 소스 프로파일·dry-run 매니페스트·주입 되읽기 증거. 값은 텍스트이며 HWPX 렌더가 아님 --service-key SERVICE_KEY data.go.kr ServiceKey 인라인(비권장·노출 위험). --service-key- file/DATA_GO_KR_KEY/저장된 키를 우선 쓰세요 --service-key-file SERVICE_KEY_FILE ServiceKey 를 담은 파일 경로(권장 — 프로세스 목록/히스토리 미노출) --bgn BGN 공고 시작일시 YYYYMMDDHHMM (--source nara) --end END 공고 종료일시 YYYYMMDDHHMM (bgn 과 1개월 이내) --num-rows NUM_ROWS 나라장터 페이지당 건수(기본 100) --page PAGE 나라장터 페이지 번호(기본 1) --db DB pclm SQLite 경로 (필수, --source pclm) --view VIEW pclm 시트(뷰·표) 이름 (필수, --source pclm). 이름 목록은 미지정 시 안내 하위명령(자세한 도움말: hwpxfiller <하위명령> --help): schema TPL.hwpx 템플릿 스키마(필드·타입·표 영역)를 JSON 으로 추출 fieldize TPL.hwpx 평문 {{토큰}} → 누름틀 변환(--out 없으면 미리보기) lint TPL.hwpx 템플릿 위생 점검(--vocab 통제 어휘) — 이슈 있으면 exit 1 drift OLD.hwpx NEW.hwpx 판본 간 필드 드리프트(추가/삭제/개명) render TPL.txt --data D 텍스트 템플릿 치환(온나라 기안 등) diff 별도 제품·별도 저장소로 분리됨(hwpxdiff OLD.hwpx NEW.hwpx)"
 [[sentence]]
 file = "crates/hwpx-desktop/src/bin/hwpxfiller.rs"
 text = "{} {} 에 경로가 필요합니다."
@@ -493,10 +496,19 @@ file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
 text = "'{}' 에 시트가 여러 개입니다 — 조용히 첫 시트를 쓰지 않습니다. --sheet <이름> 으로 지정하세요: {}"
 [[sentence]]
 file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
-text = "--data 가 필요합니다 (또는 --fields, 또는 --source pclm)"
+text = "--data 가 필요합니다 (또는 --fields, 또는 --source nara/--source pclm)"
+[[sentence]]
+file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
+text = "--source nara 에는 {} 가 필요합니다"
 [[sentence]]
 file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
 text = "--source pclm 에는 --view <이름> 이 필요합니다 — 조용히 기본 뷰를 쓰지 않습니다: {}"
+[[sentence]]
+file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
+text = "[보안 경고] --service-key 로 키를 명령행에 직접 넘기면 프로세스 목록·셸 히스토리에 노출됩니다(비권장·향후 제거 예정). --service-key-file 또는 DATA_GO_KR_KEY 환경변수를 쓰세요."
+[[sentence]]
+file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
+text = "[주의] 나라장터 키는 영문 코드입니다. --profile 없이는 한글 템플릿 필드와 맞지 않아 대부분 빈 값으로 생성됩니다."
 [[sentence]]
 file = "crates/hwpx-desktop/src/bin/hwpxfiller/generate.rs"
 text = "값이 비어 있는 필드가 있습니다 — 표식 없이 조용히 생성하지 않습니다: {} 확인했으면 --ack-empty 를 지정하세요(빈 필드에 '{}' 표식을 넣고 진행)."
@@ -1414,6 +1426,9 @@ text = "행 표시 소재는 객체여야 합니다."
 file = "crates/hwpx-desktop/src/job_data_session.rs"
 text = "'{}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 없습니다. 엑셀·CSV 데이터를 고른 뒤 시작하세요."
 [[sentence]]
+file = "crates/hwpx-desktop/src/job_data_session.rs"
+text = "나라장터 소스는 현재 웹에서 지원되지 않습니다. 파일 또는 엑셀 참조 등록 데이터를 사용하세요."
+[[sentence]]
 file = "crates/hwpx-desktop/src/job_data_range.rs"
 text = "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. 지금 데이터에서 다시 고르세요."
 [[sentence]]
@@ -1714,6 +1729,39 @@ text = "실행 계획을 봉인할 수 없습니다."
 [[sentence]]
 file = "crates/hwpx-desktop/src/managed_generation_service.rs"
 text = "이 작업의 실행 권위를 확인할 수 없습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "Credential Manager가 빈 자격증명 포인터를 반환했습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "Windows Credential Manager가 필요합니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "Windows Credential Manager가 필요합니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "Windows Credential Manager가 필요합니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "자격증명 값이 너무 깁니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "자격증명 이름이 올바르지 않습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_secret_store.rs"
+text = "저장된 자격증명 인코딩이 올바르지 않습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_transport.rs"
+text = "Windows HTTPS transport가 필요합니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_transport.rs"
+text = "나라장터 HTTPS 제한 시간이 올바르지 않습니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_transport.rs"
+text = "나라장터 요청 주소가 허용된 API 경로가 아닙니다."
+[[sentence]]
+file = "crates/hwpx-desktop/src/nara_transport.rs"
+text = "나라장터 응답 크기가 허용 범위를 넘었습니다."
 [[sentence]]
 file = "crates/hwpx-desktop/src/native_methods.rs"
 text = "{}: {} 인자가 올바르지 않습니다."
@@ -2382,6 +2430,15 @@ file = "crates/hwpx-filler/src/data_factory.rs"
 text = "{} 는 문자열이어야 합니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/data_factory.rs"
+text = "{}는 1 이상 정수여야 합니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/data_factory.rs"
+text = "{}는 1 이상 정수여야 합니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/data_factory.rs"
+text = "나라장터 데이터셋을 복원하려면 서비스키가 필요합니다 — 풀 항목엔 키가 저장되지 않습니다. 먼저 키를 등록하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/data_factory.rs"
 text = "데이터 참조에 경로가 없습니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/data_factory.rs"
@@ -2428,6 +2485,12 @@ text = "{} 참조라 작업 데이터로 연결할 수 없습니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/dataset_pool.rs"
 text = "고정한 데이터가 없습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/dataset_pool.rs"
+text = "데이터셋 이름을 입력하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/dataset_pool.rs"
+text = "조회 기간(시작·종료)을 입력하세요."
 [[sentence]]
 file = "crates/hwpx-filler/src/dataset_pool.rs"
 text = "등록 데이터 참조 형식이 올바르지 않습니다."
@@ -3321,6 +3384,75 @@ text = "열을 고르세요"
 [[sentence]]
 file = "crates/hwpx-filler/src/materialization_runner.rs"
 text = "값 정책 {} 의 escaping 책임 {} 는 {} 소유가 아니다"
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "items 목록에 레코드 객체가 아닌 값이 있습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "items.item 봉투에 미등록 형제 키가 있습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "response.body.items.item은 레코드 객체 또는 목록이어야 합니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "response.body가 객체가 아닙니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "response가 객체가 아닙니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "totalCount 도달 전 중간 페이지 {}가 비어 있습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "totalCount 범위 밖 페이지가 레코드를 반환했습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "{}이 정수가 아닙니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "응답 루트가 객체가 아닙니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "응답 루트가 객체가 아닙니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "조회 조건 오류: num_rows는 1 이상 정수여야 합니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "조회 조건 오류: page_no는 1 이상 정수여야 합니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "종료 일시가 시작 일시보다 빠릅니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "페이지 {}에 이전 페이지와 중복·겹침 레코드가 있습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara.rs"
+text = "페이지 번호가 범위를 벗어났습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "나라장터 비밀 이름이 비어 있습니다."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "나라장터 서비스 응답을 가져오지 못했습니다. 잠시 후 다시 시도하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "서비스키가 등록되어 있지 않습니다. 먼저 키를 등록하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "서비스키가 등록되어 있지 않습니다. 먼저 키를 등록하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "서비스키가 등록되어 있지 않습니다. 먼저 키를 등록하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "서비스키가 등록되어 있지 않습니다. 먼저 키를 등록하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "서비스키가 비어 있습니다. 값을 입력하세요."
+[[sentence]]
+file = "crates/hwpx-filler/src/nara_acquire.rs"
+text = "연결 성공 — 키가 유효합니다."
 [[sentence]]
 file = "crates/hwpx-filler/src/output_folder_default.rs"
 text = "설정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다."

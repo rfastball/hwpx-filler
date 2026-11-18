@@ -1,0 +1,21 @@
+{
+  "_comment": "data.go.kr 실제 변형: response.body.items.item이 단건 dict인 봉투",
+  "response": {
+    "header": {
+      "resultCode": "00",
+      "resultMsg": "정상"
+    },
+    "body": {
+      "pageNo": "1",
+      "numOfRows": "10",
+      "totalCount": "1",
+      "items": {
+        "item": {
+          "bidNtceNo": "R26BK09990001",
+          "bidNtceOrd": "000",
+          "bidNtceNm": "봉투 단건"
+        }
+      }
+    }
+  }
+}

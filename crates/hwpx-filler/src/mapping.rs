@@ -594,22 +594,8 @@ mod tests {
     }
 
     #[test]
-    fn coded_aliases_and_record_values_keep_source_ownership() {
-        let aliases: HashMap<String, String> = [
-            ("bidNtceNo", "입찰공고번호"),
-            ("bidNtceOrd", "입찰공고차수"),
-            ("bidNtceNm", "공고명"),
-            ("bidNtceDate", "공고일자"),
-            ("bidBeginDate", "입찰개시일자"),
-            ("bidBeginTm", "입찰개시시각"),
-            ("bidClseDate", "입찰마감일자"),
-            ("opengDate", "개찰일자"),
-            ("asignBdgtAmt", "배정예산"),
-            ("presmptPrce", "추정가격"),
-        ]
-        .into_iter()
-        .map(|(key, label)| (key.into(), label.into()))
-        .collect();
+    fn nara_aliases_and_record_values_keep_source_ownership() {
+        let aliases: HashMap<_, _> = crate::nara::default_field_labels().into_iter().collect();
         let source_keys: Vec<_> = aliases.keys().cloned().collect();
         let requested = ["입찰공고번호", "공고명", "추정가격", "입찰개시일자"];
         let suggestions = suggest_mappings(
@@ -636,13 +622,17 @@ mod tests {
             .is_empty()
         );
 
-        let record = json!({
-            "bidNtceNo": "R26BK01561738", "cntrctCnclsMthdNm": "제한경쟁",
-            "presmptPrce": "65454545", "opengDate": "2026-06-15", "opengTm": "18:00"
-        });
-        let record = record.as_object().unwrap();
+        let envelope: Value = serde_json::from_slice(include_bytes!(
+            "../../../tests/fixtures/nara_std_response.json"
+        ))
+        .unwrap();
+        let record = envelope
+            .pointer("/response/body/items/0")
+            .unwrap()
+            .as_object()
+            .unwrap();
         let profile = MappingProfile::new(
-            "영문 코드",
+            "나라장터",
             vec![
                 FieldMapping::new("입찰공고번호", "bidNtceNo", "text", "", "", None).unwrap(),
                 FieldMapping::new("계약방법", "cntrctCnclsMthdNm", "text", "", "", None).unwrap(),

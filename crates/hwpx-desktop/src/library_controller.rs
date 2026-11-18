@@ -440,32 +440,14 @@ mod tests {
 
     type PackageGraph = crate::live_graph::LiveGraph<crate::workspace_runtime::RuntimeResources>;
 
-    /// `v_통합` 의 `사업명` 열에 `values` 를 한 줄씩 담은 작업자료를 (다시) 쓴다.
-    fn write_live_db(path: &Path, values: &[&str]) {
-        let cells = values.iter().map(|value| [*value]).collect::<Vec<_>>();
-        let rows = cells.iter().map(|cell| cell.as_slice()).collect::<Vec<_>>();
-        crate::pclm_fixture::PclmFixture::work("live-id")
-            .view("v_통합", &["사업명"], &rows)
-            .write(path);
-    }
-
-    /// 한 쪽(4KB)을 넘기는 행 수로 파일 길이를 바꿔 수정 시각 해상도에 기대지 않게 한다.
-    fn bigger_than_a_page(first: &str) -> Vec<&str> {
-        std::iter::once(first)
-            .chain(std::iter::repeat_n("채움", 600))
-            .collect()
-    }
-
     fn assert_first_row_cache_correlation(template: &Path) {
         use super::{BindingKey, LibraryState};
         use hwpx_filler::library_detail::FirstRowRead;
-        let path = template.with_file_name("cache-data.pclm");
-        write_live_db(&path, &["처음"]);
+        let path = template.with_file_name("cache-data.csv");
+        fs::write(&path, "사업명\n처음\n").unwrap();
         let mut job = Job {
             name: "계약".into(),
             data_path: path.to_str().unwrap().into(),
-            data_sheet: "v_통합".into(),
-            data_kind: "pclm".into(),
             ..Job::default()
         };
         assert!(BindingKey::of(&Job::default()).is_none());
@@ -517,7 +499,7 @@ mod tests {
             "explicit selection retries a failed read"
         );
         assert!(state.complete_first_row(second.clone(), result("ready")));
-        write_live_db(&path, &bigger_than_a_page("외부에서 바뀐 값"));
+        fs::write(&path, "사업명\n외부에서 바뀐 값\n").unwrap();
         let changed = BindingKey::of(&job).unwrap();
         assert!(changed != second);
         assert!(state.begin_first_row(&changed));
@@ -531,7 +513,7 @@ mod tests {
                 ..job.clone()
             },
             Job {
-                data_kind: String::new(),
+                data_kind: "pclm".into(),
                 ..job.clone()
             },
         ] {
@@ -548,12 +530,11 @@ mod tests {
         snapshots: &mpsc::Receiver<Value>,
     ) {
         use hwpx_filler::mapping::FieldMapping;
-        let data = template.with_file_name("live-data.pclm");
-        write_live_db(&data, &["처음", "둘째"]);
+        let data = template.with_file_name("live-data.csv");
+        fs::write(&data, "사업명\n처음\n둘째\n").unwrap();
         let mut job = jobs.load("계약").unwrap();
         job.data_path = data.to_str().unwrap().into();
-        job.data_sheet = "v_통합".into();
-        job.data_kind = "pclm".into();
+        job.data_header_row = 1;
         job.mapping.mappings =
             vec![FieldMapping::new("계약명", "사업명", "text", "", "", None).unwrap()];
         jobs.save(&mut job, true).unwrap();
@@ -589,7 +570,7 @@ mod tests {
         assert_eq!(detail["card"]["data_name"], "live-data");
         assert_eq!(detail["card"]["counted"], true);
         assert_eq!(ready["detail"]["health_causes"], json!([]));
-        write_live_db(&data, &bigger_than_a_page("외부에서 바뀐 값"));
+        fs::write(&data, "사업명\n외부에서 바뀐 값\n").unwrap();
         let pending = controller.initial().unwrap();
         assert_eq!(
             pending["detail"]["pairing_detail"]["first_row"]["state"],
@@ -616,7 +597,7 @@ mod tests {
                 break;
             }
         }
-        write_live_db(&data, &["복구한 값"]);
+        fs::write(&data, "사업명\n복구한 값\n").unwrap();
         controller
             .dispatch("select_work", &json!({"name":"계약"}))
             .unwrap();
@@ -1000,11 +981,12 @@ mod tests {
         graph
             .dispatch("editor", "use_library_template", &json!({"path":template}))
             .unwrap();
-        let key = register_package_data(graph, data, "보낸 데이터");
-        let used = graph
-            .dispatch("editor", "use_pool_data", &json!({"key":key}))
+        graph
+            .active_resources()
+            .unwrap()
+            .editor
+            .load_data_path(data, None, 0)
             .unwrap();
-        assert_eq!(used["ok"], true, "{used}");
         graph
             .dispatch("editor", "goto_section", &json!({"section":"binding"}))
             .unwrap();
@@ -1113,8 +1095,8 @@ mod tests {
         let sender_home = root.join("sender");
         let sender = package_graph(&sender_home);
         let assets = workspace.join("examples/onboarding");
-        let data = root.join("sender.pclm");
-        package_work_db(&assets.join("data/계약목록.csv"), &data, None);
+        let data = root.join("sender.csv");
+        fs::copy(assets.join("data/계약목록.csv"), &data).unwrap();
         let template = sender
             .active_resources()
             .unwrap()
@@ -1158,9 +1140,18 @@ mod tests {
             json!({"ok":true,"path":archive,"jobs":2,"templates":1,"skipped":[],"without_contract":[]})
         );
         let receiver = package_graph(&root.join("receiver"));
-        let receiver_data = root.join("받은데이터.pclm");
+        let receiver_data = root.join("받은데이터.csv");
         fs::copy(&data, &receiver_data).unwrap();
-        register_package_data(&receiver, &receiver_data, "우리 계약");
+        assert_eq!(
+            receiver
+                .dispatch(
+                    "pool",
+                    "register_excel",
+                    &json!({"name":"우리 계약","path":receiver_data})
+                )
+                .unwrap()["ok"],
+            true
+        );
         let before_editor = receiver.initial("editor").unwrap();
         let inspected = inspect_package(&receiver, &archive);
         assert_eq!(inspected["view"]["title"], "작업 2개를 불러옵니다");
@@ -1182,7 +1173,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 job.data_binding(),
-                (receiver_data.to_str().unwrap(), "v_통합", 0, "pclm")
+                (receiver_data.to_str().unwrap(), "", 0, "")
             );
             assert_eq!((job.template_revision, job.binding_revision), (1, 1));
             assert!(job.authority_id.is_empty() && job.reviewed_rules.is_empty());
@@ -1249,38 +1240,9 @@ mod tests {
         assert_eq!(fs::read_dir(configured).unwrap().count(), 1);
     }
 
-    /// 온보딩 예제 CSV 의 열·행을 계약목록 작업자료의 `v_통합` 뷰로 옮겨 쓴다. `amount` 가 있으면 계약금액 열을 모두 그 값으로 바꾼다.
-    fn package_work_db(csv: &Path, db: &Path, amount: Option<&str>) {
-        let text = fs::read_to_string(csv).unwrap();
-        let mut lines = text.trim_start_matches('\u{feff}').lines();
-        let header = lines.next().unwrap().split(',').collect::<Vec<_>>();
-        let slot = header.iter().position(|name| *name == "계약금액").unwrap();
-        let rows = lines
-            .map(|line| {
-                let mut cells = line.split(',').collect::<Vec<_>>();
-                if let Some(value) = amount {
-                    cells[slot] = value;
-                }
-                cells
-            })
-            .collect::<Vec<_>>();
-        let rows = rows.iter().map(Vec::as_slice).collect::<Vec<_>>();
-        crate::pclm_fixture::PclmFixture::work("package-id")
-            .view("v_통합", &header, &rows)
-            .write(db);
-    }
-
-    fn workspace_csv() -> std::path::PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/onboarding/data/계약목록.csv")
-    }
-
     fn register_package_data(graph: &PackageGraph, path: &Path, name: &str) -> String {
         let result = graph
-            .dispatch(
-                "pool",
-                "register_pclm",
-                &json!({"name":name,"db":path,"view":"v_통합"}),
-            )
+            .dispatch("pool", "register_excel", &json!({"name":name,"path":path}))
             .unwrap();
         assert_eq!(result["ok"], true, "{result}");
         graph
@@ -1296,11 +1258,13 @@ mod tests {
     }
 
     fn assert_bound_data_switch(graph: &PackageGraph, data: &Path, root: &Path) {
-        let other = root.join("다른데이터.pclm");
+        let other = root.join("다른데이터.csv");
         fs::copy(data, &other).unwrap();
-        let key = register_package_data(graph, &other, "다른 데이터");
         graph
-            .dispatch("job", "load_pool", &json!({"key":key}))
+            .active_resources()
+            .unwrap()
+            .job
+            .load_data_path(&other, None, 0)
             .unwrap();
         graph.dispatch("job", "set_all", &json!({})).unwrap();
         graph
@@ -1310,7 +1274,7 @@ mod tests {
         assert_eq!(snapshot["selected_count"], 0);
         assert_eq!(
             snapshot["data_notice"]["text"],
-            "이 작업에 연결된 데이터 '받은데이터.pclm · v_통합' 을(를) 불러왔습니다. 항목 선택은 초기화됐습니다."
+            "이 작업에 연결된 데이터 '받은데이터.csv' 을(를) 불러왔습니다. 항목 선택은 초기화됐습니다."
         );
     }
 
@@ -1340,8 +1304,21 @@ mod tests {
                 "message":"데이터 연결이 필요합니다."
             })
         );
-        let bad = root.join("미정.pclm");
-        package_work_db(&workspace_csv(), &bad, Some("미정"));
+        let bad = root.join("미정.csv");
+        let text = fs::read_to_string(data).unwrap();
+        let mut lines = text.lines();
+        let header = lines.next().unwrap();
+        let amount = header
+            .split(',')
+            .position(|column| column == "계약금액")
+            .unwrap();
+        let mut invalid = format!("{header}\n");
+        for line in lines {
+            let mut columns = line.split(',').collect::<Vec<_>>();
+            columns[amount] = "미정";
+            invalid.push_str(&format!("{}\n", columns.join(",")));
+        }
+        fs::write(&bad, invalid).unwrap();
         let key = register_package_data(&graph, &bad, "미정");
         assert_eq!(
             graph
@@ -1392,17 +1369,13 @@ mod tests {
         let jobs = &graph.active_resources().unwrap().jobs;
         assert_eq!(
             jobs.load("계약A").unwrap().data_binding(),
-            (data.to_str().unwrap(), "v_통합", 0, "pclm")
+            (data.to_str().unwrap(), "", 0, "")
         );
         assert!(jobs.load("계약B").unwrap().data_path.is_empty());
         assert_eq!(graph.initial("editor").unwrap(), before_editor);
         let editor = &graph.active_resources().unwrap().editor;
         editor.load_job("계약B").unwrap();
-        let key = register_package_data(&graph, data, "나중 데이터");
-        let used = graph
-            .dispatch("editor", "use_pool_data", &json!({"key":key}))
-            .unwrap();
-        assert_eq!(used["ok"], true, "{used}");
+        editor.load_data_path(data, None, 0).unwrap();
         let snapshot = graph.initial("editor").unwrap();
         let rows = snapshot["rows"].as_array().unwrap();
         assert!(!rows.is_empty());
@@ -1443,19 +1416,15 @@ mod tests {
             "template_revision",
             data.to_str().unwrap(),
             root.to_str().unwrap(),
-            "sender.pclm",
+            "sender.csv",
         ] {
             assert!(!manifest.contains(forbidden), "leaked {forbidden}");
         }
-        let records = hwpx_filler::data_factory::source_for_binding(
-            data.to_str().unwrap(),
-            "v_통합",
-            Some(0),
-            "pclm",
-        )
-        .unwrap()
-        .records()
-        .unwrap();
+        let records =
+            hwpx_filler::data_factory::source_for_binding(data.to_str().unwrap(), "", Some(0), "")
+                .unwrap()
+                .records()
+                .unwrap();
         for record in records {
             for value in record.values().filter(|value| {
                 value.chars().count() > 1 && !value.chars().all(|letter| letter.is_ascii_digit())

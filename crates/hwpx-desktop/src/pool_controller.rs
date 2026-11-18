@@ -96,7 +96,7 @@ impl PoolController {
         Ok(DatasetDetail::from_item(
             &row,
             &item,
-            hwpx_filler::data_factory::source_from_pool_item(&item)
+            crate::nara_source::source_from_pool_reference_live(&item)
                 .and_then(|mut source| source.fields())
                 .map_err(|error| error.to_string()),
         )?)
@@ -402,7 +402,17 @@ mod tests {
             .join(format!("sheets-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let db = root.join("registered.pclm");
-        crate::pclm_fixture::PclmFixture::work("source-id").write(&db);
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE pclm_file(singleton INTEGER, role TEXT, dataset_id TEXT);
+             INSERT INTO pclm_file VALUES(1,'work','source-id');
+             CREATE VIEW v_통합 AS SELECT 1 AS 항목;
+             CREATE VIEW v_접수 AS SELECT 1 AS 항목;
+             CREATE VIEW v_공고 AS SELECT 1 AS 항목;
+             CREATE VIEW v_계약 AS SELECT 1 AS 항목;",
+            )
+            .unwrap();
         let registry = Arc::new(DatasetPoolRegistry::new(root.join("datasets")).unwrap());
         let located = (db.to_string_lossy().into_owned(), "source-id".to_owned());
         let descriptor = registered_data_source(&registry, Some(located.clone()))

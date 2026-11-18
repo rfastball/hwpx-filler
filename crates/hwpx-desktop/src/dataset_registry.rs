@@ -680,27 +680,69 @@ mod tests {
         registry.delete("7월 공고").unwrap();
         registry.delete("공고 최신").unwrap();
 
-        // A slot written before the Nara source was removed still loads and saves unchanged.
-        let mut stored = DatasetReference::new(
-            "6월 공고",
-            "nara",
+        for (name, bgn, end, expected) in [
+            (" \t", "202606010000", "202606302359", "이름"),
+            ("공고", "", "202606302359", "조회 기간"),
+            ("공고", "202606010000", "", "조회 기간"),
+            ("공고", "202601010000", "202607010000", "1개월"),
+            ("공고", "2026-06-01 00", "202606302359", ""),
+        ] {
+            assert!(
+                registry
+                    .commands()
+                    .register_nara(name, bgn, end, None, None, "")
+                    .unwrap_err()
+                    .to_string()
+                    .contains(expected)
+            );
+            assert!(registry.list_entries(None).unwrap().is_empty());
+        }
+        let mut nara = registry
+            .commands()
+            .register_nara(
+                "  6월 공고  ",
+                "202606010000",
+                "202606302359",
+                Some(100),
+                Some(0),
+                "6월분",
+            )
+            .unwrap();
+        assert_eq!(nara.name, "6월 공고");
+        assert_eq!(nara.note, "6월분");
+        assert_eq!(
+            nara.opts,
             json!({"bgn_dt":"202606010000","end_dt":"202606302359","num_rows":100})
                 .as_object()
                 .unwrap()
-                .clone(),
-        )
-        .unwrap();
-        stored.note = "6월분".into();
-        let stored_key = registry.add(&stored).unwrap();
-        stored.created_at = "2026-07-12T09:00:00".into();
-        registry.save_at(&stored_key, &stored).unwrap();
-        assert_eq!(registry.load(&stored_key).unwrap(), stored);
-        let saved = fs::read_to_string(registry.slot_path(&stored_key).unwrap()).unwrap();
+                .clone()
+        );
+        let nara_key = registry.list_entries(None).unwrap()[0].0.clone();
+        nara.created_at = "2026-07-12T09:00:00".into();
+        registry.save_at(&nara_key, &nara).unwrap();
+        assert_eq!(registry.load(&nara_key).unwrap(), nara);
+        let saved = fs::read_to_string(registry.slot_path(&nara_key).unwrap()).unwrap();
         assert_eq!(
             saved,
-            serde_json::to_string_pretty(&stored.to_dict()).unwrap()
+            serde_json::to_string_pretty(&nara.to_dict()).unwrap()
         );
-        registry.delete(&stored_key).unwrap();
+        assert!(!saved.contains("ServiceKey") && !saved.contains("service_key"));
+        registry.delete(&nara_key).unwrap();
+        let defaults = registry
+            .commands()
+            .register_nara("기본", "202606010000", "202606302359", None, None, "")
+            .unwrap();
+        assert_eq!(defaults.opts.len(), 2);
+        let key = registry.list_entries(None).unwrap()[0].0.clone();
+        registry.delete(&key).unwrap();
+        let paged = registry
+            .commands()
+            .register_nara("둘째", "202606010000", "202606302359", Some(0), Some(2), "")
+            .unwrap();
+        assert!(!paged.opts.contains_key("num_rows"));
+        assert_eq!(paged.opts["page_no"], 2);
+        let key = registry.list_entries(None).unwrap()[0].0.clone();
+        registry.delete(&key).unwrap();
 
         let first = DatasetReference::new(
             "매출",
@@ -761,7 +803,7 @@ mod tests {
         registry.commands().relabel(&again, "A", "").unwrap();
         registry.commands().relabel(&key, "B", "").unwrap();
         let mut attempts = 0;
-        let exhausted = super::add_with_key(&registry, &stored, || {
+        let exhausted = super::add_with_key(&registry, &nara, || {
             attempts += 1;
             key.clone()
         })
@@ -770,7 +812,7 @@ mod tests {
         assert!(exhausted.to_string().contains("발급하지"));
         assert_eq!(registry.load(&key).unwrap().name, "B");
         let mut attempts = 0;
-        let allocated = super::add_with_key(&registry, &stored, || {
+        let allocated = super::add_with_key(&registry, &nara, || {
             attempts += 1;
             if attempts == 1 {
                 key.clone()
@@ -780,7 +822,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(attempts, 2);
-        assert_eq!(registry.load(&allocated).unwrap(), stored);
+        assert_eq!(registry.load(&allocated).unwrap(), nara);
         registry.delete(&allocated).unwrap();
         assert_eq!(
             registry
@@ -1253,25 +1295,17 @@ mod tests {
         registry: &DatasetPoolRegistry,
         sandbox: &Path,
     ) {
-        use crate::pclm_fixture::PclmFixture;
         use hwpx_filler::data_factory::source_from_pool_item;
         use serde_json::json;
-        let a = sandbox.join("a.pclm");
-        let b = sandbox.join("b.pclm");
-        PclmFixture::work("a-id")
-            .view("v_통합", &["id", "name"], &[&["1", "A"], &["2", "B"]])
-            .write(&a);
-        let write_b = |second: &str| {
-            PclmFixture::work("b-id")
-                .view("v_통합", &["id", "city"], &[&["1", "서울"], &["2", second]])
-                .write(&b)
-        };
-        write_b("부산");
+        let a = sandbox.join("a.csv");
+        let b = sandbox.join("b.csv");
+        fs::write(&a, "\u{feff}id,name\n1,A\n2,B\n").unwrap();
+        fs::write(&b, "\u{feff}id,city\n1,서울\n2,부산\n").unwrap();
         let item = DatasetReference::new(
             "6월/조립",
             "pipeline",
             serde_json::from_value(json!({
-                "sources":[{"kind":"pclm","opts":{"db":a,"view":"v_통합"}},{"kind":"pclm","opts":{"db":b,"view":"v_통합"}}],
+                "sources":[{"kind":"excel","opts":{"path":a}},{"kind":"excel","opts":{"path":b}}],
                 "steps":[{"op":"merge","source":1,"on":"id","how":"inner"}]
             }))
             .unwrap(),
@@ -1280,7 +1314,7 @@ mod tests {
         let key = registry.add(&item).unwrap();
         let saved = fs::read_to_string(registry.slot_path(&key).unwrap()).unwrap();
         assert!(!saved.contains("서울") && !saved.contains("부산"));
-        assert!(saved.contains("a.pclm") && saved.contains("merge"));
+        assert!(saved.contains("a.csv") && saved.contains("merge"));
         let restored = registry.load(&key).unwrap();
         assert_eq!(restored.to_dict(), item.to_dict());
         let mut source = source_from_pool_item(&restored).unwrap();
@@ -1289,7 +1323,7 @@ mod tests {
         assert_eq!(records[0]["name"], "A");
         assert_eq!(records[0]["city"], "서울");
         assert_eq!(records[1]["city"], "부산");
-        write_b("대전");
+        fs::write(&b, "id,city\n1,서울\n2,대전\n").unwrap();
         assert_eq!(source.records().unwrap(), records);
         assert_eq!(
             source_from_pool_item(&restored).unwrap().records().unwrap()[1]["city"],

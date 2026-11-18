@@ -228,7 +228,7 @@ fn sheet_source(
     {
         let reference = hwpx_filler::dataset_reference::reference_for_sheet(item, Some(name))
             .map_err(|e| e.to_string())?;
-        return hwpx_filler::data_factory::source_from_pool_item(&reference)
+        return crate::nara_source::source_from_pool_reference_live(&reference)
             .map_err(|e| e.to_string());
     }
     hwpx_filler::data_factory::source_for_path(

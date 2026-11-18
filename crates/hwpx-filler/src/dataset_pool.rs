@@ -5,15 +5,49 @@ use crate::dataset_reference::{
     reference_sheets,
 };
 use crate::job::sorted_json;
-use crate::text_render::python_str;
+use crate::text_render::{python_str, python_truthy};
 use serde_json::{Map, Value};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Frozen registration seam: keep query metadata, never credentials or fetched records.
+pub fn nara_reference(
+    name: &str,
+    bgn_dt: &str,
+    end_dt: &str,
+    num_rows: Option<i64>,
+    page_no: Option<i64>,
+    note: &str,
+) -> Result<DatasetReference, DatasetReferenceError> {
+    let name = crate::structure_scan::python_trim(name);
+    if name.is_empty() {
+        return Err(DatasetReferenceError("데이터셋 이름을 입력하세요.".into()));
+    }
+    if bgn_dt.is_empty() || end_dt.is_empty() {
+        return Err(DatasetReferenceError(
+            "조회 기간(시작·종료)을 입력하세요.".into(),
+        ));
+    }
+    if let Some(error) = crate::nara::validate_range(bgn_dt, end_dt) {
+        return Err(DatasetReferenceError(error));
+    }
+    let mut opts = Map::new();
+    opts.insert("bgn_dt".into(), Value::String(bgn_dt.into()));
+    opts.insert("end_dt".into(), Value::String(end_dt.into()));
+    for (key, value) in [("num_rows", num_rows), ("page_no", page_no)] {
+        if let Some(value) = value.filter(|value| *value != 0) {
+            opts.insert(key.into(), Value::from(value));
+        }
+    }
+    let mut item = DatasetReference::new(name, "nara", opts)?;
+    item.note = note.into();
+    Ok(item)
+}
+
 pub fn pool_icon_for_kind(kind: &str) -> &str {
     match kind {
-        "hwpx" | "txt" | "excel" | "pclm" => kind,
+        "hwpx" | "txt" | "excel" | "pclm" | "nara" => kind,
         _ => "other",
     }
 }
@@ -95,7 +129,6 @@ pub fn available_actions(status: &str) -> Vec<PoolAction> {
 fn kind_label(kind: &str) -> &str {
     match kind {
         "excel" => "엑셀/CSV",
-        // Removed source kind: a stored item still names itself in its refusal reason.
         "nara" => "나라장터",
         "pclm" => "계약 목록",
         "pipeline" => "파이프라인",
@@ -131,6 +164,25 @@ fn file_reference_summary(label: &str, path: &str, sheets: &str) -> String {
     }
     text
 }
+fn nara_reference_summary(item: &DatasetReference) -> String {
+    let bgn = item
+        .opts
+        .get("bgn_dt")
+        .map_or_else(|| "?".into(), python_str);
+    let end = item
+        .opts
+        .get("end_dt")
+        .map_or_else(|| "?".into(), python_str);
+    let mut text = format!("기간 {bgn}~{end}");
+    if let Some(rows) = item
+        .opts
+        .get("num_rows")
+        .filter(|value| python_truthy(value))
+    {
+        text.push_str(&format!(" · {}건", python_str(rows)));
+    }
+    text
+}
 fn pipeline_reference_summary(item: &DatasetReference) -> Result<String, DatasetReferenceError> {
     let sources = item
         .opts
@@ -159,6 +211,7 @@ pub fn reference_summary(item: &DatasetReference) -> Result<String, DatasetRefer
     Ok(match item.kind.as_str() {
         "excel" => file_reference_summary("파일", &option_string(item, "path"), &sheets),
         "pclm" => file_reference_summary("DB", &option_string(item, "db"), &sheets),
+        "nara" => nara_reference_summary(item),
         "pipeline" => return pipeline_reference_summary(item),
         _ => "(알 수 없는 소스)".into(),
     })
@@ -483,6 +536,13 @@ mod tests {
         assert_eq!(value["column_summary"], "열 목록을 읽지 못했습니다");
         assert_eq!(value["column_count"], json!(0));
         assert_eq!(value["error"], "파일 없음");
+        let nara = DatasetReference::new(
+            "period",
+            "nara",
+            serde_json::from_value(json!({"bgn_dt":null})).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(reference_summary(&nara).unwrap(), "기간 None~?");
         let pipeline = DatasetReference::new(
             "broken",
             "pipeline",
@@ -497,10 +557,9 @@ mod tests {
         assert_eq!(empty.empty_hint(), "고정한 데이터가 없습니다.");
         assert_eq!(empty.count_label(), "");
         assert!(available_actions("typo").is_empty());
-        for kind in ["hwpx", "txt", "excel", "pclm"] {
+        for kind in ["hwpx", "txt", "excel", "pclm", "nara"] {
             assert_eq!(pool_icon_for_kind(kind), kind);
         }
-        assert_eq!(pool_icon_for_kind("nara"), "other");
         assert_eq!(pool_icon_for_kind("pipeline"), "other");
         assert_eq!(pool_icon_for_kind(""), "other");
         for (kind, opts, label, summary, path, sheet, verb) in [
@@ -619,7 +678,7 @@ mod tests {
                 "미래소스",
                 "(알 수 없는 소스)",
             ),
-            ("nara", json!({}), "나라장터", "(알 수 없는 소스)"),
+            ("nara", json!({}), "나라장터", "기간 ?~?"),
             (
                 "pipeline",
                 json!({"sources":[{"kind":"excel"},{"kind":"excel"}],"steps":[{"op":"merge"}]}),
@@ -641,27 +700,5 @@ mod tests {
                 );
             }
         }
-        // A stored item of the removed Nara kind stays listed, refused, and deletable.
-        let stored = DatasetReference::new(
-            "6월 공고",
-            "nara",
-            json!({"bgn_dt":"202606010000","end_dt":"202606302359","num_rows":100})
-                .as_object()
-                .unwrap()
-                .clone(),
-        )
-        .unwrap();
-        let row = DatasetPoolRow::from_item("slot", &stored, false).unwrap();
-        assert_eq!(
-            row.select_block_reason(),
-            "나라장터 참조라 작업 데이터로 연결할 수 없습니다."
-        );
-        assert_eq!(
-            row.actions()
-                .iter()
-                .map(|a| a.key.as_str())
-                .collect::<Vec<_>>(),
-            ["archive", "delete"]
-        );
     }
 }

@@ -7,10 +7,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[path = "../../hwpx-filler/tests/support/pclm_fixture.rs"]
-mod pclm_fixture;
-use pclm_fixture::PclmFixture;
-
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -31,26 +27,8 @@ impl Cli {
         fs::create_dir_all(root.join("temp")).unwrap();
         fs::create_dir_all(root.join("home/jobs")).unwrap();
         fs::write(root.join("home/jobs/user.job.json"), "user-owned").unwrap();
-        let data = root.join("자료.pclm");
-        write_rows(
-            &data,
-            &[
-                "입찰공고번호",
-                "공고명",
-                "계약방법",
-                "추정가격",
-                "개찰일시",
-                "관리번호",
-            ],
-            &[&[
-                "R-1",
-                "관급자재 구매",
-                "일반경쟁",
-                "12000000",
-                "2026-08-01 10:00",
-                "K-1",
-            ]],
-        );
+        let data = root.join("자료.csv");
+        fs::write(&data, "입찰공고번호,공고명,계약방법,추정가격,개찰일시,관리번호\nR-1,관급자재 구매,일반경쟁,12000000,2026-08-01 10:00,K-1\n").unwrap();
         Self {
             template: repo().join("tests/corpus/real/bid_notice_limited_under100m.hwpx"),
             data,
@@ -89,24 +67,12 @@ impl Cli {
         );
         (stdout, stderr)
     }
-    /// `self.data` 의 `v_통합` 에서 만든다.
     fn generate(&self, extra: &[&str], code: i32) -> (String, String) {
-        let mut args = vec![
-            "--source",
-            "pclm",
-            "--db",
-            text(&self.data),
-            "--view",
-            "v_통합",
-        ];
-        args.extend_from_slice(extra);
-        self.generate_from(&args, code)
-    }
-    /// 자료 인자를 `extra` 가 고른다.
-    fn generate_from(&self, extra: &[&str], code: i32) -> (String, String) {
         let mut args = vec![
             "--template",
             text(&self.template),
+            "--data",
+            text(&self.data),
             "--out",
             text(&self.out),
             "--pattern",
@@ -133,11 +99,6 @@ impl Drop for Cli {
         assert!(self.root.starts_with(repo().join("target/cli-process")));
         let _ = fs::remove_dir_all(&self.root);
     }
-}
-fn write_rows(db: &Path, headers: &[&str], rows: &[&[&str]]) {
-    PclmFixture::work("cli")
-        .view("v_통합", headers, rows)
-        .write(db);
 }
 fn package(path: &Path) -> HwpxPackage {
     HwpxPackage::from_bytes(&fs::read(path).unwrap(), Default::default()).unwrap()
@@ -225,10 +186,7 @@ fn generation_requires_overwrite_and_keeps_ledger_evidence_for_each_run() {
             let value: Value = serde_json::from_slice(&fs::read(ledger).unwrap()).unwrap();
             assert_eq!(value["ledger_kind"], "managed-delivery/v1");
             assert_eq!(value["outcome"], "DeliveryCompleted");
-            assert_eq!(
-                value["source"],
-                format!("sqlite:{}#v_통합", cli.data.display())
-            );
+            assert_eq!(value["source"], format!("file:{}", cli.data.display()));
             for key in ["execution_basis_digest", "plan_semantic_digest"] {
                 assert!(value[key].as_str().unwrap().starts_with("sha256:"));
             }
@@ -275,11 +233,7 @@ fn generation_refuses_unsafe_names_and_drift_and_acknowledges_empty_values() {
             .contains("[오류]")
     );
     assert_eq!(fs::read(&blocked).unwrap(), b"existing");
-    write_rows(
-        &cli.data,
-        &["입찰공고번호", "공고명"],
-        &[&["", "관급자재 구매"]],
-    );
+    fs::write(&cli.data, "입찰공고번호,공고명\n,관급자재 구매\n").unwrap();
     let err = cli.generate(&["--pattern", "公고-{{공고명}}"], 1).1;
     assert!(err.contains("입찰공고번호") && err.contains("--ack-empty"));
     assert!(cli.files("hwpx").is_empty());
@@ -305,11 +259,7 @@ fn generation_refuses_unsafe_names_and_drift_and_acknowledges_empty_values() {
     assert!(values.contains(&("입찰공고번호".into(), "〘미입력·입찰공고번호〙".into())));
     assert!(values.contains(&("공고명".into(), "관급자재 구매".into())));
     cli.out = cli.root.join("case-twins");
-    write_rows(
-        &cli.data,
-        &["입찰공고번호", "공고명"],
-        &[&["Report", "공고"], &["report", "공고"]],
-    );
+    fs::write(&cli.data, "입찰공고번호,공고명\nReport,공고\nreport,공고\n").unwrap();
     cli.generate(&["--pattern", "{{입찰공고번호}}"], 0);
     let names: Vec<_> = cli
         .files("hwpx")
@@ -327,20 +277,20 @@ fn pclm_requires_explicit_database_and_sheet_and_reports_source_pointer() {
         vec!["--source", "pclm", "--view", "v_통합_v2"],
     ] {
         assert!(
-            cli.generate_from(&extra, 2)
+            cli.generate(&extra, 2)
                 .1
                 .contains("[오류] 데이터 참조에 경로가 없습니다.")
         );
     }
     let db = cli.root.join("계약.db");
     assert!(
-        cli.generate_from(&["--source", "pclm", "--db", text(&db)], 2)
+        cli.generate(&["--source", "pclm", "--db", text(&db)], 2)
             .1
             .starts_with("[오류]")
     );
     fs::write(&db, b"not a database").unwrap();
     assert!(
-        cli.generate_from(&["--source", "pclm", "--db", text(&db)], 2)
+        cli.generate(&["--source", "pclm", "--db", text(&db)], 2)
             .1
             .contains("열지 못했습니다")
     );
@@ -348,13 +298,11 @@ fn pclm_requires_explicit_database_and_sheet_and_reports_source_pointer() {
     let connection = rusqlite::Connection::open(&db).unwrap();
     connection.execute_batch("CREATE TABLE 계약 (입찰공고번호 TEXT, 공고명 TEXT); INSERT INTO 계약 VALUES ('R-DB', '계약 자료'); CREATE VIEW v_통합_v2 AS SELECT * FROM 계약;").unwrap();
     drop(connection);
-    let err = cli
-        .generate_from(&["--source", "pclm", "--db", text(&db)], 2)
-        .1;
+    let err = cli.generate(&["--source", "pclm", "--db", text(&db)], 2).1;
     assert!(err.contains("--view") && err.contains("  v_통합_v2\n  계약"));
     assert!(!err.contains("v_통합_v1"));
     let err = cli
-        .generate_from(
+        .generate(
             &["--source", "pclm", "--db", text(&db), "--view", "v_없음"],
             2,
         )
@@ -366,7 +314,7 @@ fn pclm_requires_explicit_database_and_sheet_and_reports_source_pointer() {
     for view in ["계약", "v_통합_v2"] {
         cli.out = cli.root.join(view);
         let err = cli
-            .generate_from(
+            .generate(
                 &[
                     "--source",
                     "pclm",
@@ -394,9 +342,6 @@ fn pclm_requires_explicit_database_and_sheet_and_reports_source_pointer() {
 fn workbook_selection_and_text_structure_are_checked_before_output() {
     let mut cli = Cli::new();
     let workbook = repo().join("tests/fixtures/multi_sheet.xlsx");
-    // render 는 엑셀·CSV 만 읽는다.
-    let rows = cli.root.join("자료.csv");
-    fs::write(&rows, "입찰공고번호,공고명,계약방법,추정가격,개찰일시,관리번호\nR-1,관급자재 구매,일반경쟁,12000000,2026-08-01 10:00,K-1\n").unwrap();
     let template = cli.root.join("plain.txt");
     fs::write(&template, "업체: {{업체명}}\r\n").unwrap();
     for args in [
@@ -431,7 +376,7 @@ fn workbook_selection_and_text_structure_are_checked_before_output() {
         0,
     );
     assert_eq!(fs::read(&rendered).unwrap(), "업체: 가나상사\n".as_bytes());
-    cli.generate_from(
+    cli.generate(
         &[
             "--data",
             text(&workbook),
@@ -448,7 +393,7 @@ fn workbook_selection_and_text_structure_are_checked_before_output() {
     );
     let single = repo().join("tests/corpus/scenario/data/조달_한글.xlsx");
     cli.out = cli.root.join("single");
-    cli.generate_from(&["--data", text(&single)], 0);
+    cli.generate(&["--data", text(&single)], 0);
     assert_eq!(
         cli.files("hwpx"),
         ["2026-001", "2026-002", "2026-003"].map(|id| cli.out.join(format!("공고-{id}.hwpx")))
@@ -479,7 +424,7 @@ fn workbook_selection_and_text_structure_are_checked_before_output() {
             "render",
             text(&template),
             "--data",
-            text(&rows),
+            text(&cli.data),
             "--out",
             text(&rendered),
         ],
@@ -495,7 +440,7 @@ fn workbook_selection_and_text_structure_are_checked_before_output() {
             "render",
             text(&template),
             "--data",
-            text(&rows),
+            text(&cli.data),
             "--out",
             text(&rendered),
         ],
@@ -527,14 +472,11 @@ fn fill_notes_are_emitted_once_for_the_whole_batch() {
     };
     cli.template = cli.root.join("notes.hwpx");
     fs::write(&cli.template, package.to_bytes().unwrap()).unwrap();
-    write_rows(
+    fs::write(
         &cli.data,
-        &["계약명", "공고번호"],
-        &[
-            &["정보시스템 구축", "2026-001"],
-            &["정보시스템 구축", "2026-002"],
-        ],
-    );
+        "계약명,공고번호\n정보시스템 구축,2026-001\n정보시스템 구축,2026-002\n",
+    )
+    .unwrap();
     let err = cli.generate(&["--pattern", "doc-{{공고번호}}"], 0).1;
     for message in [
         "빈 누름틀 '계약명'",

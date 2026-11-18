@@ -1,8 +1,10 @@
 //! One immutable HWPX run diagnosis. The host supplies freshly read template fields.
 
-use crate::data_source::Record;
+use crate::data_source::{DataSource, Record};
+use crate::dataset_reference::DatasetReference;
 use crate::home_state::StructureDrift;
 use crate::job::Job;
+use crate::nara_acquire::AcquireResult;
 use crate::output_name::pattern_field_tokens;
 use crate::output_name_audit::{OutputNameAudit, audit_output_names};
 use crate::run_request::RunRequest;
@@ -10,6 +12,24 @@ use crate::validation::ValidationReport;
 use chrono::NaiveDateTime;
 use serde_json::{Map, Value};
 use std::collections::HashSet;
+
+/// Frozen acquisition boundary: Nara resolves once to a keyless snapshot; file adapters stay live.
+pub fn resolve_pool_source(
+    item: &DatasetReference,
+    source_factory: impl FnOnce(&DatasetReference) -> Result<Box<dyn DataSource>, String>,
+    acquire_nara: impl FnOnce(&DatasetReference) -> Result<AcquireResult, String>,
+) -> Result<(Box<dyn DataSource>, Vec<Record>), String> {
+    if item.kind == "nara" {
+        let result = acquire_nara(item)?;
+        if !result.ok {
+            return Err(format!("나라장터 데이터 취득 실패: {}", result.error));
+        }
+        return Ok((Box::new(result.as_datasource()), result.records));
+    }
+    let mut source = source_factory(item)?;
+    let records = source.records().map_err(|error| error.to_string())?;
+    Ok((source, records))
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PreflightResult {

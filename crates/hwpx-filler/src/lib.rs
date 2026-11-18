@@ -72,13 +72,12 @@ pub mod mapping;
 pub mod mapping_state;
 pub mod materialization_conformance;
 pub mod materialization_runner;
+pub mod nara;
+pub mod nara_acquire;
 pub mod output_folder_default;
 pub mod output_name;
 pub mod output_name_audit;
 pub mod partial_gate;
-#[cfg(all(test, feature = "native-data"))]
-#[path = "../tests/support/pclm_fixture.rs"]
-pub(crate) mod pclm_fixture;
 pub mod prepare_orchestration;
 pub mod prepare_template_change;
 pub mod preset;

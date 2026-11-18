@@ -597,23 +597,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    /// Flat string records of a captured `response.body.items[]` corpus file.
-    fn corpus_items(path: &Path) -> Vec<Record> {
-        let envelope: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-        envelope["response"]["body"]["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| {
-                row.as_object()
-                    .unwrap()
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
-                    .collect()
-            })
-            .collect()
-    }
-
     fn corpus_run(
         root: &Path,
         template: &Path,
@@ -761,7 +744,9 @@ mod tests {
                 .mappings
                 .push(FieldMapping::new(field, "", "const", "", "", None).unwrap());
         }
-        let all = corpus_items(&corpus.join("nara_mulpum/mulpum.json"));
+        let all =
+            hwpx_filler::nara::parse(&fs::read(corpus.join("nara_mulpum/mulpum.json")).unwrap())
+                .unwrap();
         let records = ["R26BK01621756", "R26BK01610529"].map(|number| {
             all.iter()
                 .find(|record| record["bidNtceNo"] == number)
@@ -836,7 +821,10 @@ mod tests {
                 .iter()
                 .all(|doc| doc.collision_disposition == WRITE_OVERWRITE)
         );
-        let records = corpus_items(&corpus.join("scenario/data/나라장터_응답.json"));
+        let records = hwpx_filler::nara::parse(
+            &fs::read(corpus.join("scenario/data/나라장터_응답.json")).unwrap(),
+        )
+        .unwrap();
         let delivered = completed(corpus_run(
             &root.join("formatted"),
             &template,
@@ -878,126 +866,11 @@ mod tests {
             .join(".cache")
             .join(format!("headless-procurement-{}", uuid::Uuid::new_v4()));
         let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/scenario");
-        let headers = [
-            "입찰공고번호",
-            "수요기관",
-            "공고명",
-            "계약방법",
-            "세부품명",
-            "사업예산",
-            "추정가격",
-            "수량",
-            "분할납품",
-            "입찰방법",
-            "낙찰자결정방법",
-            "납품기한",
-            "인도조건",
-            "하자담보기간",
-            "입찰개시일자",
-            "입찰개시시각",
-            "입찰마감일자",
-            "입찰마감시각",
-            "개찰일자",
-            "개찰시각",
-            "등록마감일시",
-            "담당부서",
-            "담당자",
-            "담당자 전화번호",
-            "세부품명번호",
-        ];
-        let rows = [
-            [
-                "2026-001",
-                "해양수산부",
-                "친환경 선박용 소화장비 구매",
-                "일반경쟁입찰",
-                "선박용 소화기",
-                "50000000",
-                "45000000",
-                "20",
-                "불가",
-                "전자입찰",
-                "적격심사",
-                "2026-09-30",
-                "수요기관 인도",
-                "1년",
-                "2026-07-15",
-                "09:00",
-                "2026-07-21",
-                "17:00",
-                "2026-07-22",
-                "10:00",
-                "2026-07-21 17:00",
-                "장비구매팀",
-                "김담당",
-                "044-200-1234",
-                "1234567890",
-            ],
-            [
-                "2026-002",
-                "국립수산과학원",
-                "수산자원조사용 수중드론 구매",
-                "제한경쟁입찰",
-                "수중드론",
-                "80000000",
-                "72000000",
-                "5",
-                "가능",
-                "전자입찰",
-                "협상에의한계약",
-                "2026-10-31",
-                "수요기관 인도",
-                "2년",
-                "2026-07-16",
-                "09:00",
-                "2026-07-22",
-                "17:00",
-                "2026-07-23",
-                "10:00",
-                "2026-07-22 17:00",
-                "연구지원팀",
-                "박담당",
-                "051-720-5678",
-                "9876543210",
-            ],
-            [
-                "2026-003",
-                "부산지방해양수산청",
-                "항만 CCTV 통합관제 장비 구매",
-                "일반경쟁입찰",
-                "네트워크 카메라",
-                "120000000",
-                "108000000",
-                "40",
-                "불가",
-                "전자입찰",
-                "적격심사",
-                "2026-11-30",
-                "현장 인도",
-                "3년",
-                "2026-07-18",
-                "09:00",
-                "2026-07-25",
-                "17:00",
-                "2026-07-26",
-                "10:00",
-                "2026-07-25 17:00",
-                "정보화담당관",
-                "이담당",
-                "051-609-8765",
-                "5555512345",
-            ],
-        ];
-        let records: Vec<Record> = rows
-            .iter()
-            .map(|row| {
-                headers
-                    .iter()
-                    .zip(row)
-                    .map(|(key, value)| ((*key).into(), (*value).into()))
-                    .collect()
-            })
-            .collect();
+        let records =
+            hwpx_filler::data_factory::source_for_path(&corpus.join("data/조달_한글.csv"), None, 1)
+                .unwrap()
+                .records()
+                .unwrap();
         assert_eq!(records.len(), 3);
         for (name, count, pattern) in [
             ("입찰공고서", 25, "입찰공고서-{{입찰공고번호}}"),

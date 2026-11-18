@@ -10,6 +10,7 @@ use crate::data_source::{
     SUPPORTED_DATA_FILE_EXTENSIONS,
 };
 use crate::dataset_reference::DatasetReference;
+use crate::nara::{NaraFetcher, NaraStdDataSource};
 use crate::text_render::python_repr;
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -184,6 +185,7 @@ fn source_from_parts(
     kind: &str,
     opts: &Map<String, Value>,
     depth: usize,
+    nara_access: Option<(&str, &NaraFetcher)>,
 ) -> Result<Box<dyn DataSource>, DataSourceError> {
     if depth > 32 {
         return Err(fail("파이프라인 소스 중첩이 너무 깊습니다."));
@@ -192,7 +194,8 @@ fn source_from_parts(
         "excel" => excel_source(opts),
         "pclm" => pclm_source(opts),
         "inline" => inline_source(opts),
-        "pipeline" => pipeline_source(opts, depth),
+        "pipeline" => pipeline_source(opts, depth, nara_access),
+        "nara" => nara_source(opts, nara_access),
         _ => Err(fail(format!(
             "알 수 없는 데이터 소스 종류입니다: {}",
             python_repr(&Value::String(kind.into()))
@@ -221,6 +224,7 @@ fn pclm_source(opts: &Map<String, Value>) -> Result<Box<dyn DataSource>, DataSou
 fn pipeline_source(
     opts: &Map<String, Value>,
     depth: usize,
+    nara_access: Option<(&str, &NaraFetcher)>,
 ) -> Result<Box<dyn DataSource>, DataSourceError> {
     only_keys(opts, &["sources", "steps"])?;
     let sources: &[Value] = match opts.get("sources") {
@@ -239,7 +243,7 @@ fn pipeline_source(
             .get("opts")
             .and_then(Value::as_object)
             .unwrap_or(&empty);
-        resolved.push(source_from_parts(kind, opts, depth + 1)?);
+        resolved.push(source_from_parts(kind, opts, depth + 1, nara_access)?);
     }
     let steps: &[Value] = match opts.get("steps") {
         None => &[],
@@ -257,11 +261,79 @@ fn pipeline_source(
     Ok(Box::new(PipelineSource::new(resolved, steps)))
 }
 
+fn nara_source(
+    opts: &Map<String, Value>,
+    nara_access: Option<(&str, &NaraFetcher)>,
+) -> Result<Box<dyn DataSource>, DataSourceError> {
+    let Some((service_key, fetcher)) = nara_access.filter(|(key, _)| !key.is_empty()) else {
+        return Err(fail(
+            "나라장터 데이터셋을 복원하려면 서비스키가 필요합니다 — 풀 항목엔 키가 저장되지 않습니다. 먼저 키를 등록하세요.",
+        ));
+    };
+    only_keys(opts, &["bgn_dt", "end_dt", "num_rows", "page_no"])?;
+    let positive = |name: &str, default: u64| -> Result<u64, DataSourceError> {
+        match opts.get(name) {
+            None => Ok(default),
+            Some(value) if !value.is_boolean() => value
+                .as_u64()
+                .filter(|number| *number > 0)
+                .ok_or_else(|| fail(format!("{name}는 1 이상 정수여야 합니다."))),
+            _ => Err(fail(format!("{name}는 1 이상 정수여야 합니다."))),
+        }
+    };
+    Ok(Box::new(NaraStdDataSource::new(
+        service_key,
+        text(opts, "bgn_dt", None)?,
+        text(opts, "end_dt", None)?,
+        positive("num_rows", 100)?,
+        positive("page_no", 1)?,
+        fetcher.clone(),
+    )))
+}
 pub fn source_from_pool_item(
     item: &DatasetReference,
 ) -> Result<Box<dyn DataSource>, DataSourceError> {
     item.validate().map_err(|error| fail(error.to_string()))?;
-    source_from_parts(&item.kind, &item.opts, 0)
+    source_from_parts(&item.kind, &item.opts, 0, None)
+}
+/// Whether restoring this reference (including pipeline children) needs the runtime secret.
+pub fn requires_nara_key(item: &DatasetReference) -> bool {
+    fn contains(kind: &str, opts: &Map<String, Value>, depth: usize) -> bool {
+        if kind == "nara" {
+            return true;
+        }
+        if kind != "pipeline" || depth > 32 {
+            return false;
+        }
+        opts.get("sources")
+            .and_then(Value::as_array)
+            .is_some_and(|sources| {
+                sources.iter().any(|source| {
+                    let Some(source) = source.as_object() else {
+                        return false;
+                    };
+                    let Some(child) = source.get("opts").and_then(Value::as_object) else {
+                        return false;
+                    };
+                    contains(
+                        source.get("kind").and_then(Value::as_str).unwrap_or(""),
+                        child,
+                        depth + 1,
+                    )
+                })
+            })
+    }
+    contains(&item.kind, &item.opts, 0)
+}
+/// Reopen a durable Nara reference (including nested pipeline references) with a key supplied
+/// only for this invocation. Neither the key nor fetched records enter DatasetReference.
+pub fn source_from_pool_item_with_nara(
+    item: &DatasetReference,
+    service_key: &str,
+    fetcher: &NaraFetcher,
+) -> Result<Box<dyn DataSource>, DataSourceError> {
+    item.validate().map_err(|error| fail(error.to_string()))?;
+    source_from_parts(&item.kind, &item.opts, 0, Some((service_key, fetcher)))
 }
 /// Reopen the referenced source once and surface the real schema or its read failure.
 pub fn fields_for_dataset_reference(
@@ -381,26 +453,59 @@ mod tests {
         let mut returned = inline_source.records().unwrap();
         returned[0].insert("공고명".into(), "변조".into());
         assert_eq!(inline_source.records().unwrap()[0]["공고명"], "전산장비");
-        // A stored reference of the removed Nara kind is refused, never read as a success.
         let nara = DatasetReference::new(
             "나라",
             "nara",
-            serde_json::from_value(json!({"bgn_dt":"202606010000", "end_dt":"202606302359"}))
-                .unwrap(),
+            serde_json::from_value(json!({
+                "bgn_dt":"202606010000", "end_dt":"202606302359", "num_rows":50
+            }))
+            .unwrap(),
         )
         .unwrap();
+        assert!(source_from_pool_item(&nara).is_err());
+        let live = include_bytes!("../../../tests/fixtures/nara_std_response.json").to_vec();
+        let fetcher: NaraFetcher = std::sync::Arc::new(move |url| {
+            assert!(url.contains("ServiceKey=DUMMY"), "{url}");
+            assert!(url.contains("numOfRows=50"), "{url}");
+            Ok(live.clone())
+        });
+        assert_eq!(
+            source_from_pool_item_with_nara(&nara, "DUMMY", &fetcher)
+                .unwrap()
+                .records()
+                .unwrap()
+                .len(),
+            2
+        );
         let nested = DatasetReference::new(
             "조립",
             "pipeline",
-            serde_json::from_value(json!({"sources":[{"kind":"nara","opts":nara.opts}]})).unwrap(),
+            serde_json::from_value(json!({
+                "sources":[{"kind":"nara","opts":nara.opts}]
+            }))
+            .unwrap(),
         )
         .unwrap();
-        for stored in [&nara, &nested] {
-            assert_eq!(
-                source_from_pool_item(stored).err().unwrap().0,
-                "알 수 없는 데이터 소스 종류입니다: 'nara'"
-            );
-        }
+        assert_eq!(
+            source_from_pool_item_with_nara(&nested, "DUMMY", &fetcher)
+                .unwrap()
+                .records()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(requires_nara_key(&nested));
+        assert!(!requires_nara_key(&pipeline));
+        assert!(
+            source_from_pool_item(&nested)
+                .err()
+                .unwrap()
+                .0
+                .contains("서비스키")
+        );
+        let restored = source_from_pool_item_with_nara(&nested, "DUMMY", &fetcher).unwrap();
+        assert_eq!(restored.field_labels()["bidNtceNm"], "공고명");
+        assert_eq!(restored.field_labels()["presmptPrce"], "추정가격");
         assert!(source_for_path(Path::new("bad.pdf"), None, 1).is_err());
         assert_eq!(
             source_for_binding("", "", Some(1), "")
@@ -481,5 +586,6 @@ mod tests {
                 .0
                 .contains("중첩이 너무 깊습니다")
         );
+        assert!(!requires_nara_key(&item));
     }
 }

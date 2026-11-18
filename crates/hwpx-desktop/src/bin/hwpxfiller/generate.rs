@@ -4,13 +4,17 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use chrono::Local;
+use hwpx_desktop::nara_secret_store::NaraSecretStore;
+use hwpx_desktop::nara_transport::nara_fetcher;
 use hwpx_filler::data_excel::{ExcelDataSource, ambiguous_sheets};
 use hwpx_filler::data_pclm::{PclmDataSource, list_sqlite_sheets};
 use hwpx_filler::data_source::{DataSource, Record};
 use hwpx_filler::home_state::StructureDrift;
 use hwpx_filler::job::{DEFAULT_FILENAME_PATTERN, Job, MISSING_MARKER};
 use hwpx_filler::mapping::{FieldMapping, MappingProfile};
+use hwpx_filler::nara::{NARA_SERVICE_KEY_NAME, NaraFetcher, NaraStdDataSource};
 use hwpx_filler::output_name::pattern_field_tokens;
+use hwpx_filler::structure_scan::python_trim;
 use hwpx_filler::text_render::python_repr;
 use hwpx_filler::validation::validate;
 use serde_json::{Map, Value};
@@ -29,6 +33,12 @@ pub struct GenerateArgs {
     pub overwrite: bool,
     pub ack_empty: bool,
     pub ledger: bool,
+    pub service_key: Option<String>,
+    pub service_key_file: Option<PathBuf>,
+    pub bgn: Option<String>,
+    pub end: Option<String>,
+    pub num_rows: i64,
+    pub page: i64,
     pub db: Option<PathBuf>,
     pub view: Option<String>,
 }
@@ -36,6 +46,7 @@ pub struct GenerateArgs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Excel,
+    Nara,
     Pclm,
 }
 
@@ -64,7 +75,7 @@ pub struct SourceFailure {
     pub argparse: bool,
 }
 
-pub const GENERATION_ARGPARSE_USAGE: &str = "usage: hwpxfiller [-h] --template TEMPLATE [--source {excel,pclm}]\n                  [--data DATA] [--out OUT] [--pattern PATTERN]\n                  [--sheet SHEET] [--profile PROFILE] [--fields] [--overwrite]\n                  [--ack-empty] [--ledger] [--db DB] [--view VIEW]";
+pub const GENERATION_ARGPARSE_USAGE: &str = "usage: hwpxfiller [-h] --template TEMPLATE [--source {excel,nara,pclm}]\n                  [--data DATA] [--out OUT] [--pattern PATTERN]\n                  [--sheet SHEET] [--profile PROFILE] [--fields] [--overwrite]\n                  [--ack-empty] [--ledger] [--service-key SERVICE_KEY]\n                  [--service-key-file SERVICE_KEY_FILE] [--bgn BGN]\n                  [--end END] [--num-rows NUM_ROWS] [--page PAGE] [--db DB]\n                  [--view VIEW]";
 
 pub fn failure(exit_code: u8, message: impl Into<String>) -> SourceFailure {
     SourceFailure {
@@ -100,6 +111,84 @@ fn source_keys(records: &[Record]) -> Vec<String> {
     ordered
 }
 
+fn service_key(
+    args: &GenerateArgs,
+    notices: &mut Vec<String>,
+    environment: impl FnOnce() -> Option<String>,
+    stored: impl FnOnce() -> Result<Option<String>, String>,
+) -> Result<Option<String>, SourceFailure> {
+    if let Some(path) = args
+        .service_key_file
+        .as_ref()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        let contents = fs::read_to_string(path)
+            .map_err(|err| failure(2, format!("--service-key-file 읽기 실패: {err}")).argparse())?;
+        return Ok(Some(python_trim(&contents).to_owned()));
+    }
+    if let Some(value) = environment()
+        && !python_trim(&value).is_empty()
+    {
+        return Ok(Some(python_trim(&value).to_owned()));
+    }
+    if let Some(value) = args.service_key.as_ref().filter(|value| !value.is_empty()) {
+        notices.push("[보안 경고] --service-key 로 키를 명령행에 직접 넘기면 프로세스 목록·셸 히스토리에 노출됩니다(비권장·향후 제거 예정). --service-key-file 또는 DATA_GO_KR_KEY 환경변수를 쓰세요.".into());
+        return Ok(Some(value.clone()));
+    }
+    stored().map_err(|err| failure(2, err))
+}
+
+fn load_nara_records(
+    args: &GenerateArgs,
+    key: Option<String>,
+    mut notices: Vec<String>,
+    fetcher: NaraFetcher,
+) -> Result<LoadedRecords, SourceFailure> {
+    let mut missing = Vec::new();
+    if args.bgn.as_deref().is_none_or(str::is_empty) {
+        missing.push("--bgn");
+    }
+    if args.end.as_deref().is_none_or(str::is_empty) {
+        missing.push("--end");
+    }
+    if key.as_deref().is_none_or(str::is_empty) {
+        missing.push("서비스키(--service-key-file/--service-key/DATA_GO_KR_KEY/저장된 키)");
+    }
+    if !missing.is_empty() {
+        return Err(failure(
+            2,
+            format!("--source nara 에는 {} 가 필요합니다", missing.join(", ")),
+        )
+        .argparse());
+    }
+    let bgn = args.bgn.as_deref().unwrap_or_default();
+    let end = args.end.as_deref().unwrap_or_default();
+    let source = NaraStdDataSource::new(
+        key.unwrap_or_default(),
+        bgn,
+        end,
+        u64::try_from(args.num_rows).unwrap_or(0),
+        u64::try_from(args.page).unwrap_or(0),
+        fetcher,
+    );
+    let records = source
+        .records_checked()
+        .map_err(|err| failure(1, format!("나라장터 취득 실패: {err}")).with_notices(&notices))?;
+    notices.push(format!(
+        "[나라장터] {}건 취득 (기간 {bgn}~{end})",
+        records.len()
+    ));
+    if args.profile.is_none() {
+        notices.push("[주의] 나라장터 키는 영문 코드입니다. --profile 없이는 한글 템플릿 필드와 맞지 않아 대부분 빈 값으로 생성됩니다.".into());
+    }
+    Ok(LoadedRecords {
+        source_keys: source_keys(&records),
+        records,
+        source_pointer: format!("nara:표준입찰공고 {bgn}~{end}"),
+        notices,
+    })
+}
+
 pub fn load_records(args: &GenerateArgs) -> Result<LoadedRecords, SourceFailure> {
     let mut notices = Vec::new();
     let (records, source_pointer) = match args.source {
@@ -107,7 +196,7 @@ pub fn load_records(args: &GenerateArgs) -> Result<LoadedRecords, SourceFailure>
             let path = args.data.as_deref().ok_or_else(|| {
                 failure(
                     2,
-                    "--data 가 필요합니다 (또는 --fields, 또는 --source pclm)",
+                    "--data 가 필요합니다 (또는 --fields, 또는 --source nara/--source pclm)",
                 )
                 .argparse()
             })?;
@@ -167,6 +256,15 @@ pub fn load_records(args: &GenerateArgs) -> Result<LoadedRecords, SourceFailure>
             ));
             let pointer = source.source_pointer().unwrap_or_default();
             (records, pointer)
+        }
+        Source::Nara => {
+            let key = service_key(
+                args,
+                &mut notices,
+                || std::env::var("DATA_GO_KR_KEY").ok(),
+                || NaraSecretStore.get(NARA_SERVICE_KEY_NAME),
+            )?;
+            return load_nara_records(args, key, notices, nara_fetcher(20_000));
         }
     };
     let source_keys = source_keys(&records);
@@ -359,6 +457,12 @@ pub fn parse(args: &[OsString]) -> Result<Parsed, String> {
     let mut overwrite = false;
     let mut ack_empty = false;
     let mut ledger = false;
+    let mut service_key = None;
+    let mut service_key_file = None;
+    let mut bgn = None;
+    let mut end = None;
+    let mut num_rows = 100;
+    let mut page = 1;
     let mut db = None;
     let mut view = None;
     let mut iter = args.iter();
@@ -375,7 +479,8 @@ pub fn parse(args: &[OsString]) -> Result<Parsed, String> {
             "--ack-empty" if inline.is_none() => ack_empty = true,
             "--ledger" if inline.is_none() => ledger = true,
             "--template" | "--data" | "--out" | "--pattern" | "--sheet" | "--profile"
-            | "--source" | "--db" | "--view" => {
+            | "--source" | "--service-key" | "--service-key-file" | "--bgn" | "--end"
+            | "--num-rows" | "--page" | "--db" | "--view" => {
                 let value = match inline {
                     Some(value) => value.to_owned(),
                     None => iter
@@ -384,7 +489,11 @@ pub fn parse(args: &[OsString]) -> Result<Parsed, String> {
                         .to_string_lossy()
                         .into_owned(),
                 };
-                if inline.is_none() && value.starts_with('-') && value != "-" {
+                if inline.is_none()
+                    && value.starts_with('-')
+                    && value != "-"
+                    && (value.starts_with("--") || !matches!(key, "--num-rows" | "--page"))
+                {
                     return Err(format!("argument {key}: expected one argument"));
                 }
                 match key {
@@ -397,14 +506,35 @@ pub fn parse(args: &[OsString]) -> Result<Parsed, String> {
                     "--source" => {
                         source = match value.as_str() {
                             "excel" => Source::Excel,
+                            "nara" => Source::Nara,
                             "pclm" => Source::Pclm,
                             _ => {
                                 return Err(format!(
-                                    "argument --source: invalid choice: {} (choose from 'excel', 'pclm')",
+                                    "argument --source: invalid choice: {} (choose from 'excel', 'nara', 'pclm')",
                                     python_repr(&Value::String(value))
                                 ));
                             }
                         }
+                    }
+                    "--service-key" => service_key = Some(value),
+                    "--service-key-file" => service_key_file = Some(PathBuf::from(value)),
+                    "--bgn" => bgn = Some(value),
+                    "--end" => end = Some(value),
+                    "--num-rows" => {
+                        num_rows = value.parse().map_err(|_| {
+                            format!(
+                                "argument --num-rows: invalid int value: {}",
+                                python_repr(&Value::String(value.clone()))
+                            )
+                        })?;
+                    }
+                    "--page" => {
+                        page = value.parse().map_err(|_| {
+                            format!(
+                                "argument --page: invalid int value: {}",
+                                python_repr(&Value::String(value.clone()))
+                            )
+                        })?;
                     }
                     "--db" => db = Some(PathBuf::from(value)),
                     "--view" => view = Some(value),
@@ -429,6 +559,12 @@ pub fn parse(args: &[OsString]) -> Result<Parsed, String> {
         overwrite,
         ack_empty,
         ledger,
+        service_key,
+        service_key_file,
+        bgn,
+        end,
+        num_rows,
+        page,
         db,
         view,
     })))
@@ -439,6 +575,114 @@ pub fn parse(args: &[OsString]) -> Result<Parsed, String> {
 mod tests {
     use super::super::tests::test_directory;
     use super::*;
+    use std::sync::Arc;
+
+    fn nara_args() -> GenerateArgs {
+        let Parsed::Generate(args) = parse(&[
+            "--template".into(),
+            "a.hwpx".into(),
+            "--source".into(),
+            "nara".into(),
+            "--service-key".into(),
+            "fixture-key".into(),
+            "--bgn".into(),
+            "202606010000".into(),
+            "--end".into(),
+            "202606302359".into(),
+        ])
+        .unwrap() else {
+            panic!("generation arguments")
+        };
+        *args
+    }
+
+    #[test]
+    fn service_key_priority_is_lazy_and_empty_inline_falls_back_to_storage() {
+        let root = test_directory();
+        let key_file = root.join("key.txt");
+        fs::write(&key_file, " \u{1c}FILEKEY\n").unwrap();
+        let mut args = nara_args();
+        args.service_key_file = Some(key_file.clone());
+        let mut notices = Vec::new();
+        assert_eq!(
+            service_key(
+                &args,
+                &mut notices,
+                || panic!("file must precede environment"),
+                || panic!("file must precede credential store")
+            )
+            .ok()
+            .flatten()
+            .as_deref(),
+            Some("FILEKEY")
+        );
+        assert!(notices.is_empty());
+        args.service_key_file = Some(PathBuf::new());
+        for (environment, inline, stored, expected, warned) in [
+            (
+                Some(" ENVKEY "),
+                Some("INLINE"),
+                Some("STORED"),
+                Some("ENVKEY"),
+                false,
+            ),
+            (
+                Some("\u{1c} "),
+                Some("INLINE"),
+                Some("STORED"),
+                Some("INLINE"),
+                true,
+            ),
+            (None, None, Some("STORED"), Some("STORED"), false),
+            (None, Some(""), Some("STORED"), Some("STORED"), false),
+            (None, None, None, None, false),
+        ] {
+            notices.clear();
+            args.service_key = inline.map(str::to_owned);
+            let result = service_key(
+                &args,
+                &mut notices,
+                || environment.map(str::to_owned),
+                || {
+                    assert!(environment.is_none() && inline.is_none_or(str::is_empty));
+                    Ok(stored.map(str::to_owned))
+                },
+            )
+            .unwrap_or_else(|error| panic!("{}", error.message));
+            assert_eq!(result.as_deref(), expected, "{environment:?}/{inline:?}");
+            assert_eq!(notices.len(), usize::from(warned));
+            assert!(
+                notices.iter().all(
+                    |message| message.starts_with("[보안 경고]") && !message.contains("INLINE")
+                )
+            );
+        }
+        let error = service_key(
+            &args,
+            &mut notices,
+            || None,
+            || Err("credential failure".into()),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            (error.exit_code, error.message.as_str()),
+            (2, "credential failure")
+        );
+        args.service_key_file = Some(key_file.clone());
+        fs::remove_file(&key_file).unwrap();
+        let error = service_key(
+            &args,
+            &mut notices,
+            || panic!("no fallback"),
+            || panic!("no fallback"),
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error.exit_code, 2);
+        assert!(error.argparse && error.message.contains("--service-key-file 읽기 실패"));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn generation_preflight_requires_explicit_empty_ack_and_nonempty_records() {
@@ -512,12 +756,95 @@ mod tests {
     }
 
     #[test]
-    fn coded_records_reach_profiled_and_unprofiled_document_generation() {
-        let root = test_directory();
-        let Parsed::Generate(args) = parse(&["--template".into(), "a.hwpx".into()]).unwrap() else {
-            panic!("generation arguments")
+    fn negative_nara_paging_is_refused_before_fetch_without_losing_security_notice() {
+        let Parsed::Generate(args) = parse(&[
+            "--template".into(),
+            "a.hwpx".into(),
+            "--source".into(),
+            "nara".into(),
+            "--service-key".into(),
+            "fixture-key".into(),
+            "--bgn".into(),
+            "202601010000".into(),
+            "--end".into(),
+            "202601020000".into(),
+            "--num-rows".into(),
+            "-1".into(),
+        ])
+        .expect("signed argparse integer") else {
+            panic!("generation arguments");
         };
-        let mut args = *args;
+        let mut notices = Vec::new();
+        let key = service_key(
+            &args,
+            &mut notices,
+            || None,
+            || panic!("inline key supplied"),
+        )
+        .ok()
+        .flatten();
+        let refusal = load_nara_records(
+            &args,
+            key,
+            notices,
+            Arc::new(|_| panic!("invalid range must not fetch")),
+        )
+        .err()
+        .expect("invalid range before fetch");
+        assert_eq!(refusal.exit_code, 1);
+        assert_eq!(
+            refusal.message,
+            "나라장터 취득 실패: 조회 조건 오류: num_rows는 1 이상 정수여야 합니다."
+        );
+        assert_eq!(refusal.notices.len(), 1);
+        assert!(refusal.notices[0].starts_with("[보안 경고]"));
+        let mut args = nara_args();
+        for (key, bgn, end, code, message) in [
+            (None, "202606010000", "202606302359", 2, "서비스키"),
+            (Some("fixture-key"), "", "", 2, "--bgn, --end"),
+            (
+                Some("fixture-key"),
+                "202601010000",
+                "202607010000",
+                1,
+                "1개월",
+            ),
+        ] {
+            args.bgn = Some(bgn.into());
+            args.end = Some(end.into());
+            let error = load_nara_records(
+                &args,
+                key.map(str::to_owned),
+                Vec::new(),
+                Arc::new(|_| panic!("invalid request must not fetch")),
+            )
+            .err()
+            .unwrap();
+            assert_eq!(error.exit_code, code);
+            assert_eq!(error.argparse, code == 2);
+            assert!(error.message.contains(message), "{}", error.message);
+        }
+        let args = nara_args();
+        for (response, expected) in [
+            (Ok(br#"{"response":{"header":{"resultCode":"07","resultMsg":"INVALID_REQUEST_PARAMETER_ERROR"},"body":{}}}"#.to_vec()), "[07]"),
+            (Err("connection timed out: fixture-key".into()), "connection timed out"),
+        ] {
+            let error = load_nara_records(&args, Some("fixture-key".into()), vec!["security notice".into()],
+                Arc::new(move |_| response.clone())).err().unwrap();
+            assert_eq!(error.exit_code, 1);
+            assert!(!error.argparse);
+            assert!(error.message.starts_with("나라장터 취득 실패:"));
+            assert!(error.message.contains(expected));
+            assert!(!error.message.contains("fixture-key"));
+            assert_eq!(error.notices, ["security notice"]);
+            assert!(!error.message.contains("Traceback"));
+        }
+    }
+
+    #[test]
+    fn nara_fixture_records_reach_profiled_and_unprofiled_document_generation() {
+        let root = test_directory();
+        let mut args = nara_args();
         args.template = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/real/bid_notice_limited_under100m.hwpx");
         args.out = root.join("profiled");
@@ -536,7 +863,7 @@ mod tests {
                 FieldMapping::new(field, key, kind, "", "", None).unwrap()
             })
             .collect();
-        let profile = MappingProfile::new("영문 코드", mappings, Map::new()).unwrap();
+        let profile = MappingProfile::new("나라", mappings, Map::new()).unwrap();
         let profile_path = root.join("profile.json");
         fs::write(
             &profile_path,
@@ -544,34 +871,25 @@ mod tests {
         )
         .unwrap();
         args.profile = Some(profile_path);
-        let coded = || {
-            let records = [
-                [
-                    ("bidNtceNo", "R26BK01561738"),
-                    ("bidNtceNm", "2026 대구치맥페스티벌 컨테이너 라운지 조성"),
-                    ("presmptPrce", "65454545"),
-                    ("opengDate", "2026-06-15"),
-                ],
-                [
-                    ("bidNtceNo", "R26BK01568286"),
-                    (
-                        "bidNtceNm",
-                        "2026년 국립청주박물관 상설전시실 전시환경 개선",
-                    ),
-                    ("presmptPrce", "901818182"),
-                    ("opengDate", "2026-06-24"),
-                ],
-            ]
-            .map(|row| Record::from_iter(row.map(|(key, value)| (key.into(), value.into()))))
-            .to_vec();
-            LoadedRecords {
-                source_keys: source_keys(&records),
-                records,
-                source_pointer: "file:coded.json".into(),
-                notices: Vec::new(),
-            }
-        };
-        let loaded = coded();
+        let fixture: NaraFetcher = Arc::new(|_| {
+            Ok(include_bytes!("../../../../../tests/fixtures/nara_std_response.json").to_vec())
+        });
+        let loaded = load_nara_records(
+            &args,
+            Some("fixture-key".into()),
+            Vec::new(),
+            fixture.clone(),
+        )
+        .unwrap_or_else(|error| panic!("{}", error.message));
+        assert_eq!(loaded.records.len(), 2);
+        assert_eq!(
+            loaded.notices,
+            ["[나라장터] 2건 취득 (기간 202606010000~202606302359)"]
+        );
+        assert_eq!(
+            loaded.source_pointer,
+            "nara:표준입찰공고 202606010000~202606302359"
+        );
         assert_eq!(
             super::super::generate_run::execute_loaded(args.clone(), loaded),
             0
@@ -592,7 +910,14 @@ mod tests {
         args.profile = None;
         args.pattern = DEFAULT_FILENAME_PATTERN.into();
         args.out = root.join("unprofiled");
-        let loaded = coded();
+        let loaded = load_nara_records(&args, Some("fixture-key".into()), Vec::new(), fixture)
+            .unwrap_or_else(|error| panic!("{}", error.message));
+        assert!(
+            loaded
+                .notices
+                .iter()
+                .any(|message| message.contains("--profile 없이는"))
+        );
         args.pattern = "공고서-{{ID}}".into();
         let error = prepare_generation(&args, &loaded, Ok(required))
             .err()

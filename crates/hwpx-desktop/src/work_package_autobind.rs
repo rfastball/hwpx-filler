@@ -188,13 +188,8 @@ mod tests {
         assert!(root.canonicalize().unwrap().starts_with(&workspace));
         let template = root.join("template.txt");
         fs::write(&template, "{{건명}}").unwrap();
-        let write_db = |path: &std::path::Path, value: &str| {
-            crate::pclm_fixture::PclmFixture::work("autobind-id")
-                .view("v_통합", &["열"], &[&[value]])
-                .write(path);
-        };
-        let data = root.join("data.pclm");
-        write_db(&data, "1000");
+        let data = root.join("data.csv");
+        fs::write(&data, "열\n1000\n").unwrap();
         let jobs = JobRegistry::new(root.join("jobs"), {
             let root = root.clone();
             move || root.clone()
@@ -218,21 +213,21 @@ mod tests {
         jobs.save(&mut job, false).unwrap();
         let item = DatasetReference::new(
             "원본",
-            "pclm",
-            serde_json::from_value(json!({"db":data,"view":"v_통합"})).unwrap(),
+            "excel",
+            serde_json::from_value(json!({"path":data,"sheet":"","header_row":1})).unwrap(),
         )
         .unwrap();
         let names = vec!["가져옴".into()];
         let before = fs::read(jobs.path_for("가져옴")).unwrap();
         assert_eq!(bind_imported(&jobs, &pool, &names)[0].status, "no_match");
         let first_key = pool.add(&item).unwrap();
-        let other = root.join("other.pclm");
-        write_db(&other, "2000");
+        let other = root.join("other.csv");
+        fs::write(&other, "열\n2000\n").unwrap();
         pool.add(
             &DatasetReference::new(
                 "다른 원본",
-                "pclm",
-                json!({"db":other,"view":"v_통합"})
+                "excel",
+                json!({"path":other,"sheet":"","header_row":1})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -242,18 +237,18 @@ mod tests {
         .unwrap();
         assert_eq!(registered_bindings(&pool).unwrap().len(), 2);
         assert_eq!(bind_imported(&jobs, &pool, &names)[0].status, "ambiguous");
-        write_db(&other, "미정");
+        fs::write(&other, "열\n미정\n").unwrap();
         pool.delete(&first_key).unwrap();
         assert_eq!(bind_imported(&jobs, &pool, &names)[0].status, "no_match");
         pool.add(&item).unwrap();
-        let broken = root.join("broken.pclm");
-        fs::write(&broken, b"not a database").unwrap();
+        let broken = root.join("broken.xlsx");
+        fs::write(&broken, b"not a workbook").unwrap();
         let broken_key = pool
             .add(
                 &DatasetReference::new(
                     "읽을 수 없음",
-                    "pclm",
-                    json!({"db":broken,"view":"v_통합"})
+                    "excel",
+                    json!({"path":broken,"sheet":"","header_row":1})
                         .as_object()
                         .unwrap()
                         .clone(),
@@ -266,10 +261,7 @@ mod tests {
         pool.delete(&broken_key).unwrap();
         assert_eq!(bind_imported(&jobs, &pool, &names)[0].status, "bound");
         let bound = jobs.load("가져옴").unwrap();
-        assert_eq!(
-            bound.data_binding(),
-            (data.to_str().unwrap(), "v_통합", 0, "pclm")
-        );
+        assert_eq!(bound.data_binding(), (data.to_str().unwrap(), "", 1, ""));
         assert_eq!(
             (
                 bound.template_revision,

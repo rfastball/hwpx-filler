@@ -23,6 +23,22 @@ pub struct DatasetPoolCommands<'a> {
 }
 
 impl DatasetPoolCommands<'_> {
+    pub fn register_nara(
+        &self,
+        name: &str,
+        bgn_dt: &str,
+        end_dt: &str,
+        num_rows: Option<i64>,
+        page_no: Option<i64>,
+        note: &str,
+    ) -> Result<DatasetReference, PoolError> {
+        let item = hwpx_filler::dataset_pool::nara_reference(
+            name, bgn_dt, end_dt, num_rows, page_no, note,
+        )?;
+        self.registry.add(&item)?;
+        Ok(item)
+    }
+
     pub fn archive(&self, key: &str) -> Result<DatasetReference, PoolError> {
         self.registry.mutate(key, |item| {
             item.archive();

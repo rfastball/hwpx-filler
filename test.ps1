@@ -14,7 +14,7 @@
 
   자원 없는 로컬만 환경 변수로 명시 옵트아웃한다. CI(CI·GITHUB_ACTIONS)에서는 셋 다 거절한다.
     HWPX_SKIP_MOTION_TESTS  설치 Chrome 렌더·rhwp 왕복(tests/browser)
-    HWPX_SKIP_NATIVE_TESTS  실 Win32 대화상자·클립보드·창 초점
+    HWPX_SKIP_NATIVE_TESTS  실 Win32 대화상자·클립보드·창 초점·자격 증명 저장소
     HWPX_SKIP_GUI_TESTS     네이티브 WebView2 실창
 
 .EXAMPLE
@@ -143,18 +143,19 @@ try {
         }
     }
 
-    # 실 Win32 — 데스크톱 세션·OLE 아파트·클립보드가 있어야 도는 ignored Rust 테스트.
+    # 실 Win32 — 데스크톱 세션·OLE 아파트·클립보드·자격 증명 저장소가 있어야 도는 ignored Rust 테스트.
     # 이름 목록은 CI windows-native 와 같고 tests/js/quality_workflow.test.js 가 소스의 #[ignore] 집합과 대조한다.
     if ($skipNative) {
-        Write-Warning 'HWPX_SKIP_NATIVE_TESTS: 실 Win32 대화상자·클립보드·창 초점 검사를 실행하지 않았습니다.'
+        Write-Warning 'HWPX_SKIP_NATIVE_TESTS: 실 Win32 대화상자·클립보드·창 초점·자격 증명 검사를 실행하지 않았습니다.'
     } else {
         $code = Invoke-Cargo (('test -p hwpx-desktop --lib --locked -- --ignored --exact' -split ' ') + @(
             'dialogs::win::positive_tests::windows_sta_dialog_result_and_pidl_allocator_round_trip',
-            'single_instance::tests::windows_clipboard_and_visible_focus_round_trip'))
+            'single_instance::tests::windows_clipboard_and_visible_focus_round_trip',
+            'nara_secret_store::tests::windows_credential_store_round_trip'))
         if ($code -ne 0) { exit $code }
         # 이름이 어긋나면 libtest 는 0개를 돌리고 성공한다 — 실행 수를 직접 확인한다.
-        if (-not ($script:cargoOutput -match '^test result: ok\. 2 passed;')) {
-            throw '실 Win32 ignored 테스트 2개가 모두 실행되지 않았습니다.'
+        if (-not ($script:cargoOutput -match '^test result: ok\. 3 passed;')) {
+            throw '실 Win32 ignored 테스트 3개가 모두 실행되지 않았습니다.'
         }
     }
 } finally {
