@@ -1916,18 +1916,7 @@ mod tests {
             .join(format!("hwpx-registered-{}", uuid::Uuid::new_v4().simple()));
         fs::create_dir_all(&sandbox).unwrap();
         let db = sandbox.join("registered.pclm");
-        let connection = rusqlite::Connection::open(&db).unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE pclm_file(singleton INTEGER, role TEXT, dataset_id TEXT);
-                INSERT INTO pclm_file VALUES(1,'work','source-id');
-                CREATE VIEW v_통합 AS SELECT 1 AS 항목;
-                CREATE VIEW v_접수 AS SELECT 1 AS 항목;
-                CREATE VIEW v_공고 AS SELECT 1 AS 항목;
-                CREATE VIEW v_계약 AS SELECT 1 AS 항목;",
-            )
-            .unwrap();
-        drop(connection);
+        crate::pclm_fixture::PclmFixture::work("source-id").write(&db);
         let located = crate::registered_contract_data::tests::assert_registered_workfile_pointer(
             &sandbox, &db,
         );
