@@ -41,6 +41,7 @@ mod save;
 mod session;
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
+#[path = "../tests/support/editor_pclm.rs"]
 mod test_pclm;
 
 type Clock = dyn Fn() -> NaiveDateTime + Send + Sync;
