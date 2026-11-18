@@ -297,8 +297,6 @@ pub fn toast_many(count: usize) -> String {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use crate::data_excel::ExcelDataSource;
-    use crate::data_source::DataSource;
     use crate::field_induction_proposal::Spot;
     use crate::field_induction_proposal::propose;
     use crate::field_proposal_reading::read_hwpx;
@@ -354,10 +352,69 @@ mod tests {
         writer.into_inner()
     }
 
+    /// 예제 공고목록 첫 행(엑셀이 글자로 내던 그대로).
+    const TUTORIAL_ROW: [(&str, &str); 28] = [
+        ("입찰공고번호", "R26BK99000001-000"),
+        ("조달요구번호", "MBKXZA26900011"),
+        ("공고명", "26년 육군 전동드릴 구매"),
+        ("게시일시", "2026/10/12 09:00:00"),
+        ("계약방법", "제한경쟁"),
+        ("입찰방법", "제한(총액)"),
+        ("낙찰방법", "적격심사제"),
+        ("낙찰하한율", "86.245"),
+        ("사업예산", "53,350,000"),
+        ("추정가격", "48,500,000"),
+        ("분할납품", "불가"),
+        ("하자담보기간", "1년"),
+        ("입찰개시일시", "2026/10/19 10:00:00"),
+        ("입찰마감일시", "2026/10/21 10:00:00"),
+        ("개찰일시", "2026/10/21 11:00:00"),
+        ("등록마감일시", "2026/10/20 18:00:00"),
+        ("수요기관", "육군 한빛보급부대"),
+        ("세부품명", "전동드릴"),
+        ("세부품명번호", "9901000101"),
+        ("군품명", "드릴,전동식,휴대용"),
+        ("수량", "40"),
+        ("단위", "대"),
+        ("납품기한", "계약 후 60일 이내"),
+        ("인도조건", "납품장소 입고도"),
+        ("담당부서", "물자관리과"),
+        ("담당자", "홍길동"),
+        ("담당자전화", "042-000-1001"),
+        ("메모", "포함할 내용: 소기업·소상공인 / 고시 미만"),
+    ];
+    /// 조달 시나리오 첫 행(엑셀이 글자로 내던 그대로).
+    const PROCUREMENT_ROW: [(&str, &str); 25] = [
+        ("입찰공고번호", "2026-001"),
+        ("수요기관", "해양수산부"),
+        ("공고명", "친환경 선박용 소화장비 구매"),
+        ("계약방법", "일반경쟁입찰"),
+        ("세부품명", "선박용 소화기"),
+        ("사업예산", "50000000"),
+        ("추정가격", "45000000"),
+        ("수량", "20"),
+        ("분할납품", "불가"),
+        ("입찰방법", "전자입찰"),
+        ("낙찰자결정방법", "적격심사"),
+        ("납품기한", "2026-09-30"),
+        ("인도조건", "수요기관 인도"),
+        ("하자담보기간", "1년"),
+        ("입찰개시일자", "2026-07-15"),
+        ("입찰개시시각", "09:00"),
+        ("입찰마감일자", "2026-07-21"),
+        ("입찰마감시각", "17:00"),
+        ("개찰일자", "2026-07-22"),
+        ("개찰시각", "10:00"),
+        ("등록마감일시", "2026-07-21 17:00"),
+        ("담당부서", "장비구매팀"),
+        ("담당자", "김담당"),
+        ("담당자 전화번호", "044-200-1234"),
+        ("세부품명번호", "1234567890"),
+    ];
+
     fn recall_case(
         template: &Path,
-        data: &Path,
-        sheet: &str,
+        data: &[(&str, &str)],
     ) -> (Vec<String>, Vec<String>, Vec<String>) {
         let raw = std::fs::read(template).unwrap();
         let package = HwpxPackage::from_bytes(&raw, PackageLimits::default()).unwrap();
@@ -408,19 +465,11 @@ mod tests {
             })
             .collect();
         let profile = MappingProfile::new("", mappings, Map::new()).unwrap();
-        let mut data = ExcelDataSource::new(data, Some(sheet.into()), 1).unwrap();
-        let columns = data.fields().unwrap();
-        let record = data
-            .records()
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| {
-                panic!(
-                    "no rows from {} sheet {sheet}; columns {columns:?}",
-                    data.path.display()
-                )
-            });
+        let columns: Vec<String> = data.iter().map(|(name, _)| (*name).into()).collect();
+        let record: Vec<(String, String)> = data
+            .iter()
+            .map(|(name, value)| ((*name).into(), (*value).into()))
+            .collect();
         let record_map = record
             .iter()
             .map(|(key, value)| (key.clone(), Value::String(value.clone())))
@@ -513,18 +562,14 @@ mod tests {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let tutorial = repo.join("examples/tutorial");
         let scenario = repo.join("tests/corpus/scenario");
-        let (gold, missed, false_positive) = recall_case(
-            &tutorial.join("물품 구매입찰 공고.hwpx"),
-            &tutorial.join("공고목록.xlsx"),
-            "공고",
-        );
+        let (gold, missed, false_positive) =
+            recall_case(&tutorial.join("물품 구매입찰 공고.hwpx"), &TUTORIAL_ROW);
         assert_eq!(gold.len(), 39);
         assert_eq!(missed, ["홍길동", "042-000-0000", "0505-000-0000"]);
         assert_eq!(false_positive, ["86.245"]);
         let (gold, mut missed, false_positive) = recall_case(
             &scenario.join("templates/입찰공고서.hwpx"),
-            &scenario.join("data/조달_한글.xlsx"),
-            "Sheet",
+            &PROCUREMENT_ROW,
         );
         missed.sort();
         assert_eq!(gold.len(), 25);
@@ -532,8 +577,7 @@ mod tests {
         assert!(false_positive.is_empty());
         let (gold, missed, false_positive) = recall_case(
             &repo.join("tests/corpus/real/bid_notice_limited_under100m.hwpx"),
-            &scenario.join("data/조달_한글.xlsx"),
-            "Sheet",
+            &PROCUREMENT_ROW,
         );
         assert_eq!(gold.len(), 27);
         assert_eq!(missed, ["", "", "", "", ""]);

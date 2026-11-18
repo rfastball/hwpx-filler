@@ -350,13 +350,19 @@ mod tests {
         let root = super::super::tests::test_directory();
         let template = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests/corpus/real/bid_notice_limited_under100m.hwpx");
-        let data = root.join("data.csv");
-        fs::write(&data, "입찰공고번호,공고명\nR-1,공고\n").unwrap();
+        let data = root.join("자료.pclm");
+        crate::pclm_fixture::PclmFixture::work("source-id")
+            .view("v_통합", &["입찰공고번호", "공고명"], &[&["R-1", "공고"]])
+            .write(&data);
         let Parsed::Generate(args) = parse(&[
             "--template".into(),
             template.into_os_string(),
-            "--data".into(),
+            "--source".into(),
+            "pclm".into(),
+            "--db".into(),
             data.into_os_string(),
+            "--view".into(),
+            "v_통합".into(),
             "--out".into(),
             root.join("out").into_os_string(),
             "--ledger".into(),

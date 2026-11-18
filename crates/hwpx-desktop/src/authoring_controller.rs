@@ -810,13 +810,16 @@ mod tests {
         let jobs =
             Arc::new(JobRegistry::new(root.join("jobs"), move || template_root.clone()).unwrap());
         let locations = Locations::new(&root, None);
-        let csv = root.join("proposal.csv");
-        fs::write(&csv, "이름,마감일\n김다온,2026-09-15\n").unwrap();
+        let db = root.join("proposal.pclm");
+        crate::pclm_fixture::PclmFixture::work("proposal-id")
+            .view("v_통합", &["이름", "마감일"], &[&["김다온", "2026-09-15"]])
+            .write(&db);
         let pool = Arc::new(DatasetPoolRegistry::new(root.join("pool")).unwrap());
         let mut opts = Map::new();
-        opts.insert("path".into(), json!(csv.to_str().unwrap()));
+        opts.insert("db".into(), json!(db.to_str().unwrap()));
+        opts.insert("view".into(), json!("v_통합"));
         let key = pool
-            .add(&DatasetReference::new("자료", "excel", opts).unwrap())
+            .add(&DatasetReference::new("자료", "pclm", opts).unwrap())
             .unwrap();
         let builder_locations = locations.clone();
         let mutations = Arc::new(Mutex::new(Vec::new()));

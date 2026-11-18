@@ -376,6 +376,46 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
+    #[test]
+    fn shared_fixture_writes_a_registered_workfile_shape() {
+        use crate::pclm_fixture::{APPLICATION_ID, PclmFixture, WORK_VIEWS};
+        let path = std::env::temp_dir().join(format!(
+            "hwpx-filler-pclm-fixture-{}.pclm",
+            std::process::id()
+        ));
+        PclmFixture::work("source-id")
+            .view(
+                "v_통합",
+                &["공고명", "금\"액"],
+                &[&["가", "1,000"], &["나", ""]],
+            )
+            .view("u_추가", &["항목"], &[])
+            .write(&path);
+        assert_eq!(
+            registered_workfile_sheets(&path, "source-id").unwrap(),
+            WORK_VIEWS
+        );
+        assert!(registered_workfile_sheets(&path, "other-id").is_err());
+        let sheets = list_sqlite_sheets(&path).unwrap();
+        assert_eq!(
+            sheets[..5],
+            ["v_통합", "v_접수", "v_공고", "v_계약", "u_추가"]
+        );
+        let mut source = PclmDataSource::new(&path, "v_통합").unwrap();
+        assert_eq!(source.fields().unwrap(), ["공고명", "금\"액"]);
+        let records = source.records().unwrap();
+        assert_eq!(records[0]["금\"액"], "1,000");
+        assert_eq!(records[1]["금\"액"], "");
+        let mut default = PclmDataSource::new(&path, "v_계약").unwrap();
+        assert_eq!(default.records().unwrap()[0]["항목"], "1");
+        let id: u32 = connect(&path)
+            .unwrap()
+            .query_row("PRAGMA application_id", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(id, APPLICATION_ID);
+        std::fs::remove_file(path).unwrap();
+    }
+
     fn assert_factory_restore(path: &Path) {
         use crate::data_factory::{source_for_binding, source_from_pool_item};
         use crate::dataset_reference::DatasetReference;

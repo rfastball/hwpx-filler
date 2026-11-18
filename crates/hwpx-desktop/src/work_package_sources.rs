@@ -257,10 +257,13 @@ mod tests {
         assert_eq!(source.declared_selection(&job).unwrap(), None);
         job.authority_id = "bad/id".into();
         assert!(source.declared_selection(&job).is_err());
-        let data = root.join("records.csv");
-        fs::write(&data, "공고명\n전산장비\n").unwrap();
+        let data = root.join("records.pclm");
+        crate::pclm_fixture::PclmFixture::work("records-id")
+            .view("v_통합", &["공고명"], &[&["전산장비"]])
+            .write(&data);
         job.data_path = data.to_str().unwrap().into();
-        job.data_header_row = 1;
+        job.data_sheet = "v_통합".into();
+        job.data_kind = "pclm".into();
         assert_eq!(
             source.records(&job).unwrap(),
             vec![
@@ -270,7 +273,7 @@ mod tests {
                 .unwrap()
             ]
         );
-        job.data_path = root.join("unreadable.csv").to_str().unwrap().into();
+        job.data_path = root.join("unreadable.pclm").to_str().unwrap().into();
         assert_eq!(source.records(&job).unwrap_err(), "가");
     }
 

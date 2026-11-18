@@ -49,6 +49,9 @@ pub mod onboarding_product;
 pub mod onboarding_state;
 pub mod owned_paths;
 pub mod packaged_selfcheck;
+#[cfg(test)]
+#[path = "../../hwpx-filler/tests/support/pclm_fixture.rs"]
+pub(crate) mod pclm_fixture;
 pub mod per_work_fence;
 pub mod pool_controller;
 pub mod preset_registry;
