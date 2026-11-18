@@ -1,8 +1,8 @@
 ---
 # Managed by tiered-delegation. Re-run the bootstrapper to update.
-name: luna
+name: haiku
 description: "Search, inventory, extract, or perform a mechanical transform."
-model: claude-haiku-4-5-20251001
+model: haiku
 disallowedTools: Agent
 ---
 
