@@ -680,69 +680,27 @@ mod tests {
         registry.delete("7월 공고").unwrap();
         registry.delete("공고 최신").unwrap();
 
-        for (name, bgn, end, expected) in [
-            (" \t", "202606010000", "202606302359", "이름"),
-            ("공고", "", "202606302359", "조회 기간"),
-            ("공고", "202606010000", "", "조회 기간"),
-            ("공고", "202601010000", "202607010000", "1개월"),
-            ("공고", "2026-06-01 00", "202606302359", ""),
-        ] {
-            assert!(
-                registry
-                    .commands()
-                    .register_nara(name, bgn, end, None, None, "")
-                    .unwrap_err()
-                    .to_string()
-                    .contains(expected)
-            );
-            assert!(registry.list_entries(None).unwrap().is_empty());
-        }
-        let mut nara = registry
-            .commands()
-            .register_nara(
-                "  6월 공고  ",
-                "202606010000",
-                "202606302359",
-                Some(100),
-                Some(0),
-                "6월분",
-            )
-            .unwrap();
-        assert_eq!(nara.name, "6월 공고");
-        assert_eq!(nara.note, "6월분");
-        assert_eq!(
-            nara.opts,
+        // A slot written before the Nara source was removed still loads and saves unchanged.
+        let mut stored = DatasetReference::new(
+            "6월 공고",
+            "nara",
             json!({"bgn_dt":"202606010000","end_dt":"202606302359","num_rows":100})
                 .as_object()
                 .unwrap()
-                .clone()
-        );
-        let nara_key = registry.list_entries(None).unwrap()[0].0.clone();
-        nara.created_at = "2026-07-12T09:00:00".into();
-        registry.save_at(&nara_key, &nara).unwrap();
-        assert_eq!(registry.load(&nara_key).unwrap(), nara);
-        let saved = fs::read_to_string(registry.slot_path(&nara_key).unwrap()).unwrap();
+                .clone(),
+        )
+        .unwrap();
+        stored.note = "6월분".into();
+        let stored_key = registry.add(&stored).unwrap();
+        stored.created_at = "2026-07-12T09:00:00".into();
+        registry.save_at(&stored_key, &stored).unwrap();
+        assert_eq!(registry.load(&stored_key).unwrap(), stored);
+        let saved = fs::read_to_string(registry.slot_path(&stored_key).unwrap()).unwrap();
         assert_eq!(
             saved,
-            serde_json::to_string_pretty(&nara.to_dict()).unwrap()
+            serde_json::to_string_pretty(&stored.to_dict()).unwrap()
         );
-        assert!(!saved.contains("ServiceKey") && !saved.contains("service_key"));
-        registry.delete(&nara_key).unwrap();
-        let defaults = registry
-            .commands()
-            .register_nara("기본", "202606010000", "202606302359", None, None, "")
-            .unwrap();
-        assert_eq!(defaults.opts.len(), 2);
-        let key = registry.list_entries(None).unwrap()[0].0.clone();
-        registry.delete(&key).unwrap();
-        let paged = registry
-            .commands()
-            .register_nara("둘째", "202606010000", "202606302359", Some(0), Some(2), "")
-            .unwrap();
-        assert!(!paged.opts.contains_key("num_rows"));
-        assert_eq!(paged.opts["page_no"], 2);
-        let key = registry.list_entries(None).unwrap()[0].0.clone();
-        registry.delete(&key).unwrap();
+        registry.delete(&stored_key).unwrap();
 
         let first = DatasetReference::new(
             "매출",
@@ -803,7 +761,7 @@ mod tests {
         registry.commands().relabel(&again, "A", "").unwrap();
         registry.commands().relabel(&key, "B", "").unwrap();
         let mut attempts = 0;
-        let exhausted = super::add_with_key(&registry, &nara, || {
+        let exhausted = super::add_with_key(&registry, &stored, || {
             attempts += 1;
             key.clone()
         })
@@ -812,7 +770,7 @@ mod tests {
         assert!(exhausted.to_string().contains("발급하지"));
         assert_eq!(registry.load(&key).unwrap().name, "B");
         let mut attempts = 0;
-        let allocated = super::add_with_key(&registry, &nara, || {
+        let allocated = super::add_with_key(&registry, &stored, || {
             attempts += 1;
             if attempts == 1 {
                 key.clone()
@@ -822,7 +780,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(attempts, 2);
-        assert_eq!(registry.load(&allocated).unwrap(), nara);
+        assert_eq!(registry.load(&allocated).unwrap(), stored);
         registry.delete(&allocated).unwrap();
         assert_eq!(
             registry

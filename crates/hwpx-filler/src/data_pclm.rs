@@ -455,4 +455,184 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn directory_in_place_of_a_database_is_refused_as_unopenable() {
+        let dir = std::env::temp_dir().join(format!("hwpx-filler-pclm-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let opened = format!("pclm 자료를 열지 못했습니다: {} (", dir.display());
+        let listed = list_sqlite_sheets(&dir).unwrap_err().0;
+        assert!(listed.starts_with(&opened), "{listed}");
+        let read = PclmDataSource::new(&dir, "계약")
+            .unwrap()
+            .records()
+            .unwrap_err()
+            .0;
+        assert!(read.starts_with(&opened), "{read}");
+        std::fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn blob_values_read_as_python_bytes_literals() {
+        let path =
+            std::env::temp_dir().join(format!("hwpx-filler-pclm-blob-{}.pclm", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let writable = Connection::open(&path).unwrap();
+        writable
+            .execute_batch(
+                "CREATE TABLE 첨부 (번호 INTEGER, 값 BLOB);
+            INSERT INTO 첨부 VALUES (1, X'5C0A0D09FF41'), (2, X'2722'), (3, X'22'), (4, X'');",
+            )
+            .unwrap();
+        drop(writable);
+        let values: Vec<String> = PclmDataSource::new(&path, "첨부")
+            .unwrap()
+            .records()
+            .unwrap()
+            .into_iter()
+            .map(|record| record["값"].clone())
+            .collect();
+        assert_eq!(values, [r"b'\\\n\r\t\xffA'", r#"b'\'"'"#, r#"b'"'"#, "b''"]);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn real_values_read_as_python_floats_including_infinities() {
+        let path =
+            std::env::temp_dir().join(format!("hwpx-filler-pclm-real-{}.pclm", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let writable = Connection::open(&path).unwrap();
+        writable.execute_batch("CREATE VIEW 금액 AS SELECT 1.5 AS 가, 2.0 AS 나, 1e20 AS 다, 9e999 AS 라, -9e999 AS 마;").unwrap();
+        drop(writable);
+        let record = PclmDataSource::new(&path, "금액")
+            .unwrap()
+            .records()
+            .unwrap()
+            .remove(0);
+        assert_eq!(
+            record.values().map(String::as_str).collect::<Vec<_>>(),
+            ["1.5", "2.0", "1e+20", "inf", "-inf"]
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    const WORKFILE_VIEWS: &str = "CREATE TABLE 원본 (번호 TEXT);
+        CREATE VIEW v_계약 AS SELECT * FROM 원본; CREATE VIEW v_공고 AS SELECT * FROM 원본;
+        CREATE VIEW v_접수 AS SELECT * FROM 원본; CREATE VIEW v_기타 AS SELECT * FROM 원본;";
+
+    #[test]
+    fn workfile_with_its_identity_and_four_views_lists_them_in_fixed_order() {
+        let path =
+            std::env::temp_dir().join(format!("hwpx-filler-pclm-work-{}.pclm", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let writable = Connection::open(&path).unwrap();
+        writable.execute_batch(WORKFILE_VIEWS).unwrap();
+        writable
+            .execute_batch(
+                "CREATE TABLE pclm_file (singleton INTEGER, role TEXT, dataset_id TEXT);
+            INSERT INTO pclm_file VALUES (1, 'work', 'ds-1');
+            CREATE VIEW v_통합 AS SELECT * FROM 원본;",
+            )
+            .unwrap();
+        drop(writable);
+        assert_eq!(
+            registered_workfile_sheets(&path, "ds-1").unwrap(),
+            ["v_통합", "v_접수", "v_공고", "v_계약"]
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn workfile_missing_a_required_view_is_refused() {
+        let path = std::env::temp_dir().join(format!(
+            "hwpx-filler-pclm-noview-{}.pclm",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let writable = Connection::open(&path).unwrap();
+        writable.execute_batch(WORKFILE_VIEWS).unwrap();
+        writable
+            .execute_batch(
+                "CREATE TABLE pclm_file (singleton INTEGER, role TEXT, dataset_id TEXT);
+            INSERT INTO pclm_file VALUES (1, 'work', 'ds-1');",
+            )
+            .unwrap();
+        drop(writable);
+        assert_eq!(
+            registered_workfile_sheets(&path, "ds-1").unwrap_err().0,
+            format!("pclm 자료를 열지 못했습니다: {}", path.display())
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn workfile_identity_of_another_dataset_or_role_is_refused() {
+        let path = std::env::temp_dir().join(format!(
+            "hwpx-filler-pclm-other-{}.pclm",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let writable = Connection::open(&path).unwrap();
+        writable.execute_batch(WORKFILE_VIEWS).unwrap();
+        writable
+            .execute_batch(
+                "CREATE TABLE pclm_file (singleton INTEGER, role TEXT, dataset_id TEXT);
+            INSERT INTO pclm_file VALUES (1, 'work', 'ds-1');
+            CREATE VIEW v_통합 AS SELECT * FROM 원본;",
+            )
+            .unwrap();
+        let refused = format!("pclm 자료를 열지 못했습니다: {}", path.display());
+        assert_eq!(
+            registered_workfile_sheets(&path, "ds-2").unwrap_err().0,
+            refused
+        );
+        writable
+            .execute("UPDATE pclm_file SET role = 'list'", [])
+            .unwrap();
+        drop(writable);
+        assert_eq!(
+            registered_workfile_sheets(&path, "ds-1").unwrap_err().0,
+            refused
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn workfile_without_a_readable_identity_row_is_refused() {
+        let path =
+            std::env::temp_dir().join(format!("hwpx-filler-pclm-noid-{}.pclm", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let writable = Connection::open(&path).unwrap();
+        writable.execute_batch(WORKFILE_VIEWS).unwrap();
+        writable
+            .execute_batch("CREATE VIEW v_통합 AS SELECT * FROM 원본;")
+            .unwrap();
+        let opened = format!("pclm 자료를 열지 못했습니다: {} (", path.display());
+        for setup in [
+            "",
+            "CREATE TABLE pclm_file (singleton INTEGER, role TEXT, dataset_id TEXT);",
+            "INSERT INTO pclm_file VALUES (1, 'work', NULL);",
+        ] {
+            writable.execute_batch(setup).unwrap();
+            let refused = registered_workfile_sheets(&path, "ds-1").unwrap_err().0;
+            assert!(refused.starts_with(&opened), "{refused}");
+        }
+        drop(writable);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn workfile_lookup_without_a_file_is_refused() {
+        let path =
+            std::env::temp_dir().join(format!("hwpx-filler-pclm-gone-{}.pclm", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(
+            registered_workfile_sheets("", "ds-1").unwrap_err().0,
+            "데이터 참조에 경로가 없습니다."
+        );
+        assert_eq!(
+            registered_workfile_sheets(&path, "ds-1").unwrap_err().0,
+            format!("pclm 자료를 찾지 못했습니다: {}", path.display())
+        );
+    }
 }

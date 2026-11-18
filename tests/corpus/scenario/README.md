@@ -85,7 +85,7 @@ $env:HWPXFILLER_HOME = "$PWD\tests\corpus\scenario"   # txt 트랙이 이 폴더
     --data tests/corpus/scenario/data/조달_한글.csv `
     --out ./out --pattern "입찰공고서-{{입찰공고번호}}"
 
-# 매핑 경로(나라장터 응답 JSON 은 소스 어댑터/픽스처 경유 — 라이브 API 대신)
+# 매핑 경로(나라장터 응답 JSON 은 CLI 소스가 아니며 자동 회귀가 직접 읽는다)
 #   프로파일: tests/corpus/scenario/data/나라장터_매핑.json
 ```
 

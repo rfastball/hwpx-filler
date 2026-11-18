@@ -350,14 +350,14 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let records = crate::nara::parse(include_bytes!(
+        let envelope: Value = serde_json::from_slice(include_bytes!(
             "../../../tests/corpus/scenario/data/나라장터_응답.json"
         ))
         .unwrap();
-        let raw = records[0]
-            .iter()
-            .map(|(key, value)| (key.clone(), Value::String(value.clone())))
-            .collect();
+        let raw = envelope["response"]["body"]["items"][0]
+            .as_object()
+            .unwrap()
+            .clone();
         let mapped = profile.apply(&raw, None).unwrap().into_iter().collect();
         let (text, report) = render_record(draft, &mapped);
         assert!(report.missing_fields.is_empty());

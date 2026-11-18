@@ -3,8 +3,7 @@
 use crate::dataset_registry::{DatasetPoolRegistry, PoolError};
 use hwpx_filler::data_excel::ambiguous_sheet_error;
 use hwpx_filler::data_factory::{
-    binding_for_reference, requires_nara_key, source_for_binding, source_for_path,
-    source_from_pool_item,
+    binding_for_reference, source_for_binding, source_for_path, source_from_pool_item,
 };
 use hwpx_filler::data_source::{DataSource, Record};
 use hwpx_filler::dataset_reference::{excel_identity, pclm_identity, reference_for_sheet};
@@ -284,11 +283,6 @@ impl MountedData {
             }
             other => fail(other.to_string()),
         })?;
-        if requires_nara_key(&item) {
-            return Err(fail(
-                "나라장터 소스는 현재 웹에서 지원되지 않습니다. 파일 또는 엑셀 참조 등록 데이터를 사용하세요.",
-            ));
-        }
         if item.kind == "excel"
             && item
                 .opts
