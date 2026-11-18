@@ -430,7 +430,7 @@ mod tests {
         controller: &Arc<JobController>,
         registry: &JobRegistry,
         sandbox: &Path,
-        csv: &Path,
+        db: &Path,
         now: &Mutex<chrono::NaiveDateTime>,
     ) -> (PathBuf, PathBuf) {
         let managed_template = sandbox.join("managed.hwpx");
@@ -454,8 +454,9 @@ mod tests {
         let mut managed = Job {
             name: "Managed".into(),
             template_path: managed_template.to_string_lossy().into_owned(),
-            data_path: csv.to_string_lossy().into_owned(),
-            data_header_row: 0,
+            data_path: db.to_string_lossy().into_owned(),
+            data_sheet: "v_통합".into(),
+            data_kind: "pclm".into(),
             filename_pattern: "{{date:%Y%m%d}}-doc-{{seq:001}}".into(),
             mapping: MappingProfile::new(
                 "",
@@ -1353,7 +1354,7 @@ mod tests {
         fs::remove_dir(conflict).unwrap();
     }
 
-    fn assert_restart_observation(controller: &JobController, csv: &Path, managed_template: &Path) {
+    fn assert_restart_observation(controller: &JobController, db: &Path, managed_template: &Path) {
         let registry = controller.registry.clone();
         let pool = controller.pool.clone();
         let change = controller.change.clone();
@@ -1374,12 +1375,22 @@ mod tests {
             restarted.snapshot().unwrap()["output_folder"],
             controller.snapshot().unwrap()["output_folder"]
         );
-        let tutorial_data =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/tutorial/공고목록.xlsx");
+        let tutorial_data = db.with_file_name("notices.pclm");
+        data_transitions::write_pclm_view(
+            &tutorial_data,
+            "v_공고",
+            &["공고명", "사업예산", "메모"],
+            &[
+                &["가", "50000000", "소상공인 우대"],
+                &["나", "80000000", "소상공인"],
+                &["다", "120000000", "일반"],
+                &["라", "90000000", "소상공인 제한"],
+            ],
+        );
         let mut reference = DatasetReference::new(
             "Saved filters",
-            "excel",
-            json!({"path":tutorial_data.to_string_lossy(),"sheet":"공고"})
+            "pclm",
+            json!({"db":tutorial_data.to_string_lossy(),"view":"v_공고","sheets":["v_공고"]})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -1397,8 +1408,8 @@ mod tests {
             name: "Preset Hints".into(),
             template_path: managed_template.to_string_lossy().into_owned(),
             data_path: tutorial_data.to_string_lossy().into_owned(),
-            data_sheet: "공고".into(),
-            data_header_row: 1,
+            data_sheet: "v_공고".into(),
+            data_kind: "pclm".into(),
             mapping: MappingProfile::new(
                 "",
                 vec![FieldMapping::new("Name", "사업예산", "text", "", "", None).unwrap()],
@@ -1423,7 +1434,7 @@ mod tests {
             controller.dispatch("set_all", &json!({})).unwrap(),
             json!({"added":3})
         );
-        fs::remove_file(csv).unwrap();
+        fs::remove_file(db).unwrap();
         let missing = JobController::new(
             registry,
             pool,
@@ -1438,7 +1449,7 @@ mod tests {
             failed["data_notice"]["text"]
                 .as_str()
                 .unwrap()
-                .contains(&csv.to_string_lossy().to_string())
+                .contains(&db.to_string_lossy().to_string())
         );
         settings_store::mutate(&missing.settings_path, |settings| {
             settings.insert("last_output_directory".into(), json!(7));
@@ -1500,15 +1511,18 @@ mod tests {
             ));
         let templates = sandbox.join("templates");
         fs::create_dir_all(&templates).unwrap();
-        let csv = sandbox.join("records.csv");
-        fs::write(&csv, "name\nfirst\nsecond\n").unwrap();
+        // 고른 작업이 다른 자료(bound)에 묶여 있어야 작업 선택이 그 자료를 새로 마운트한다.
+        let [db, bound] = ["records.pclm", "bound.pclm"]
+            .map(|name| data_transitions::write_records(&sandbox, name));
         let registry =
             Arc::new(JobRegistry::new(sandbox.join("jobs"), move || templates.clone()).unwrap());
         let mut job = Job {
             name: "Bound".into(),
             template_path: "C:/outside/unsupported.bin".into(),
-            data_path: csv.to_string_lossy().into_owned(),
-            data_header_row: 1,
+            // 다른 자료에 묶어 둬야 작업 선택이 그 자료를 새로 마운트한다.
+            data_path: bound.to_string_lossy().into_owned(),
+            data_sheet: "v_통합".into(),
+            data_kind: "pclm".into(),
             ..Job::default()
         };
         registry.save(&mut job, false).unwrap();
@@ -1571,7 +1585,7 @@ mod tests {
                 .message,
             "현재 데이터 확인 결과가 없습니다. 다시 확인해 주세요."
         );
-        controller.load_data_path(&csv, None, 0).unwrap();
+        data_transitions::load_pclm(&controller, &db, "v_통합");
         assert_eq!(controller.data().unwrap().header_row, 0);
         let panel = controller.refresh_panel().unwrap();
         assert_eq!(panel["job_name"], "");
@@ -1715,7 +1729,7 @@ mod tests {
         assert_eq!(controller.data().unwrap().records.len(), 2);
         artifact::tests::assert_artifact_observation(&controller, &sandbox, &pushes);
         let (managed_template, output) =
-            assert_managed_delivery(&controller, &registry, &sandbox, &csv, &now);
+            assert_managed_delivery(&controller, &registry, &sandbox, &db, &now);
         assert_eq!(
             controller.rename_job("Managed", "Managed Renamed").unwrap()["ok"],
             true
@@ -1730,7 +1744,7 @@ mod tests {
             controller.remount_data(false).unwrap()["needs_confirm"],
             true
         );
-        fs::write(&csv, "name\n123\n456\n").unwrap();
+        data_transitions::write_pclm(&db, &["name"], &[&["123"], &["456"]]);
         assert_eq!(controller.remount_data(true).unwrap()["ok"], true);
         assert_eq!(
             controller
@@ -1757,17 +1771,18 @@ mod tests {
             delivered_before
         );
         let remembered: Value = serde_json::from_slice(&fs::read(&settings_path).unwrap()).unwrap();
+        assert_eq!(remembered["last_data_source"]["source"], "pclm");
         assert_eq!(remembered["last_data_source"]["header_row"], 0);
         assert_eq!(
             remembered["last_data_source"]["path"],
-            csv.to_string_lossy().as_ref()
+            db.to_string_lossy().as_ref()
         );
         assert_remembered_mount_preserves_settings_and_reports_write_failure(&controller);
         assert_damaged_binding_keeps_recovery_visible(&controller, &registry, "Managed Renamed");
-        assert_restart_observation(&controller, &csv, &managed_template);
+        assert_restart_observation(&controller, &db, &managed_template);
         assert_refresh_preserves_unreadable_selection(&controller, &registry);
-        fs::write(&csv, "name\nfirst\nsecond\n").unwrap();
-        data_transitions::assert_mount_contracts(&controller, &registry, &sandbox, &csv);
+        data_transitions::write_pclm(&db, &["name"], &[&["first"], &["second"]]);
+        data_transitions::assert_mount_contracts(&controller, &registry, &sandbox, &db);
         fs::remove_dir_all(sandbox).unwrap();
     }
 
@@ -2018,24 +2033,76 @@ mod data_transitions {
     use hwpx_filler::mapping::{FieldMapping, MappingProfile};
     use std::fs;
 
+    /// 시험용 계약목록 파일 하나(뷰 `v_통합`)를 쓴다. 다시 부르면 제자리에서 다시 쓴다.
+    pub(super) fn write_pclm(db: &Path, headers: &[&str], rows: &[&[&str]]) {
+        write_pclm_view(db, "v_통합", headers, rows);
+    }
+
+    /// 두 행(first·second)짜리 `name` 자료 파일을 `dir` 아래에 쓴다.
+    pub(super) fn write_records(dir: &Path, file: &str) -> PathBuf {
+        let path = dir.join(file);
+        write_pclm(&path, &["name"], &[&["first"], &["second"]]);
+        path
+    }
+
+    pub(super) fn write_pclm_view(db: &Path, view: &str, headers: &[&str], rows: &[&[&str]]) {
+        crate::pclm_fixture::PclmFixture::work("source-id")
+            .view(view, headers, rows)
+            .write(db);
+    }
+
+    /// 계약목록 파일을 등록 자료로 한 번만 놓고(같은 파일이면 재사용) 그 뷰를 마운트한다.
+    pub(super) fn load_pclm(controller: &JobController, db: &Path, view: &str) {
+        let db_text = db.to_string_lossy();
+        let found = controller
+            .pool
+            .list_entries(None)
+            .unwrap()
+            .into_iter()
+            .find(|(_, item)| {
+                item.kind == "pclm" && item.opts.get("db").and_then(Value::as_str) == Some(&db_text)
+            });
+        let key = match found {
+            Some((key, _)) => key,
+            None => controller
+                .pool
+                .add(
+                    &hwpx_filler::dataset_reference::DatasetReference::new(
+                        db.file_name().unwrap().to_string_lossy(),
+                        "pclm",
+                        json!({"db":db_text,"view":view,"sheets":[view]})
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+        };
+        controller.load_pool(&key, Some(view)).unwrap();
+    }
+
     pub(super) fn assert_mount_contracts(
         controller: &JobController,
         registry: &JobRegistry,
         sandbox: &Path,
-        csv: &Path,
+        db: &Path,
     ) {
-        assert_data_remount_keeps_only_the_exact_seated_work(controller, registry, csv);
-        assert_preferred_work_is_restated_once_after_mount(controller, registry, sandbox, csv);
-        assert_candidates_and_browse_share_the_bound_work_set(controller, registry, sandbox, csv);
+        assert_data_remount_keeps_only_the_exact_seated_work(controller, registry, db);
+        assert_preferred_work_is_restated_once_after_mount(controller, registry, sandbox, db);
+        assert_candidates_and_browse_share_the_bound_work_set(controller, registry, sandbox, db);
     }
 
     fn assert_candidates_and_browse_share_the_bound_work_set(
         controller: &JobController,
         registry: &JobRegistry,
         sandbox: &Path,
-        csv: &Path,
+        db: &Path,
     ) {
-        controller.load_data_path(csv, None, 1).unwrap();
+        // Managed 작업이 묶인 자료와 구분되는 자료에서만 Available 이 첫 후보가 된다.
+        let db = &db.with_file_name("candidates.pclm");
+        write_pclm(db, &["name"], &[&["first"], &["second"]]);
+        load_pclm(controller, db, "v_통합");
         assert_eq!(controller.snapshot().unwrap()["candidates"]["txt_note"], "");
         let template = sandbox.join("templates/onboarding.txt");
         fs::write(&template, "{{name}}\n").unwrap();
@@ -2048,8 +2115,9 @@ mod data_transitions {
         let mut available = Job {
             name: "Available".into(),
             template_path: template.to_string_lossy().into_owned(),
-            data_path: csv.to_string_lossy().into_owned(),
-            data_header_row: 1,
+            data_path: db.to_string_lossy().into_owned(),
+            data_sheet: "v_통합".into(),
+            data_kind: "pclm".into(),
             mapping: MappingProfile::new(
                 "",
                 vec![FieldMapping::new("name", "name", "text", "", "", None).unwrap()],
@@ -2063,7 +2131,7 @@ mod data_transitions {
         needs.name = "Needs".into();
         needs.mapping.mappings[0].source = "없는열".into();
         registry.save(&mut needs, false).unwrap();
-        controller.load_data_path(csv, None, 1).unwrap();
+        load_pclm(controller, db, "v_통합");
         let snapshot = controller.snapshot().unwrap();
         assert_eq!(snapshot["candidates"]["txt_note"], "");
         assert_eq!(snapshot["candidates"]["top"][0]["name"], "Available");
@@ -2081,10 +2149,10 @@ mod data_transitions {
     fn assert_data_remount_keeps_only_the_exact_seated_work(
         controller: &JobController,
         registry: &JobRegistry,
-        csv: &Path,
+        db: &Path,
     ) {
         controller.select_job("Managed Renamed").unwrap();
-        controller.load_data_path(csv, None, 0).unwrap();
+        load_pclm(controller, db, "v_통합");
         assert_eq!(controller.selected_job_name().unwrap(), "Managed Renamed");
         controller
             .state()
@@ -2093,7 +2161,7 @@ mod data_transitions {
             .as_mut()
             .unwrap()
             .application_id = Some("stale".into());
-        controller.load_data_path(csv, None, 0).unwrap();
+        load_pclm(controller, db, "v_통합");
         assert_eq!(controller.selected_job_name().unwrap(), "");
         assert!(
             controller.snapshot().unwrap()["data_notice"]["text"]
@@ -2107,7 +2175,7 @@ mod data_transitions {
                 job.filename_pattern = "외부-{{seq:001}}".into();
             })
             .unwrap();
-        controller.load_data_path(csv, None, 0).unwrap();
+        load_pclm(controller, db, "v_통합");
         assert_eq!(controller.selected_job_name().unwrap(), "");
         assert!(
             controller.snapshot().unwrap()["data_notice"]["text"]
@@ -2121,7 +2189,7 @@ mod data_transitions {
         controller: &JobController,
         registry: &JobRegistry,
         sandbox: &Path,
-        csv: &Path,
+        db: &Path,
     ) {
         let template = sandbox.join("legacy.txt");
         fs::write(&template, "{{name}}\n").unwrap();
@@ -2143,7 +2211,7 @@ mod data_transitions {
             controller.prefer_work("Legacy").unwrap()["reason"],
             "no_binding"
         );
-        controller.load_data_path(csv, None, 1).unwrap();
+        load_pclm(controller, db, "v_통합");
         let usable = controller.snapshot().unwrap();
         assert_eq!(usable["job_name"], "");
         assert_eq!(usable["data_notice"]["level"], "ok");
@@ -2164,7 +2232,7 @@ mod data_transitions {
             controller.prefer_work("Legacy").unwrap()["reason"],
             "incompatible"
         );
-        controller.load_data_path(csv, None, 1).unwrap();
+        load_pclm(controller, db, "v_통합");
         let incompatible = controller.snapshot().unwrap();
         assert_eq!(incompatible["job_name"], "");
         assert_eq!(incompatible["data_notice"]["level"], "warn");
@@ -2181,9 +2249,9 @@ mod data_transitions {
             controller.prefer_work("Legacy").unwrap()["reason"],
             "incompatible"
         );
-        let matching = sandbox.join("matching.csv");
-        fs::write(&matching, "없는열\n맞는 데이터\n").unwrap();
-        controller.load_data_path(&matching, None, 1).unwrap();
+        let matching = sandbox.join("matching.pclm");
+        write_pclm(&matching, &["없는열"], &[&["맞는 데이터"]]);
+        load_pclm(controller, &matching, "v_통합");
         let combined = controller.snapshot().unwrap();
         assert_eq!(combined["job_name"], "");
         let text = combined["data_notice"]["text"].as_str().unwrap();
@@ -2200,7 +2268,7 @@ mod data_transitions {
         let backup = sandbox.join("jobs-held");
         fs::rename(registry.directory(), &backup).unwrap();
         fs::write(registry.directory(), b"not a directory").unwrap();
-        controller.load_data_path(csv, None, 1).unwrap();
+        load_pclm(controller, db, "v_통합");
         let unreadable = controller.snapshot().unwrap();
         assert_eq!(unreadable["record_count"], 2);
         assert_eq!(unreadable["data_notice"]["level"], "warn");
@@ -2226,7 +2294,7 @@ mod data_transitions {
 
         controller.prefer_work("Legacy").unwrap();
         registry.delete("Legacy").unwrap();
-        controller.load_data_path(csv, None, 1).unwrap();
+        load_pclm(controller, db, "v_통합");
         let removed = controller.snapshot().unwrap();
         assert_eq!(removed["job_name"], "");
         assert!(

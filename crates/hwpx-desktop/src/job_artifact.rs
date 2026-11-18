@@ -344,21 +344,10 @@ pub(super) mod tests {
                 );
             }
             if swap_data {
-                let data = controller.data().unwrap();
-                assert!(
-                    controller
-                        .load_data_path(&sandbox.join("absent.csv"), None, 0)
-                        .is_err()
-                );
+                assert!(controller.load_pool("absent-slot", None).is_err());
                 assert_eq!(controller.state().unwrap().delivered, documents);
                 assert_eq!(controller.state().unwrap().artifact_view["open"], true);
-                controller
-                    .load_data_path(
-                        Path::new(&data.path),
-                        None,
-                        data.header_row.try_into().unwrap(),
-                    )
-                    .unwrap();
+                assert_eq!(controller.remount_data(true).unwrap()["ok"], true);
             } else {
                 controller.select_job("").unwrap();
             }

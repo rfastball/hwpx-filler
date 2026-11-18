@@ -758,15 +758,27 @@ mod tests {
         previous: &MountedData,
         directory: &Path,
     ) {
+        // 직접 파일 마운트는 엑셀·CSV 동작이라 csv 로 두고, 묶음·등록 경로는 계약목록 자료로 시험한다.
         let csv = directory.join("new.csv");
-        std::fs::write(&csv, "name\nthird\nfourth\n").unwrap();
+        std::fs::write(
+            &csv,
+            "name
+third
+fourth
+",
+        )
+        .unwrap();
+        let db = directory.join("new.pclm");
+        crate::pclm_fixture::PclmFixture::work("source-id")
+            .view("v_통합", &["name"], &[&["third"], &["fourth"]])
+            .write(&db);
         let registry_root = directory.join("unreadable-registry");
         let registry = DatasetPoolRegistry::new(registry_root.clone()).unwrap();
         std::fs::write(&registry_root, b"not a directory").unwrap();
         for binding in [false, true] {
             let mut session = previous.clone();
             let result = if binding {
-                session.mount_binding(&registry, csv.to_str().unwrap(), "", 0, "")
+                session.mount_binding(&registry, db.to_str().unwrap(), "v_통합", 0, "pclm")
             } else {
                 session.mount_file_registered(&registry, &csv, None, 0)
             };
@@ -778,23 +790,42 @@ mod tests {
         }
         std::fs::remove_file(&registry_root).unwrap();
         std::fs::create_dir(&registry_root).unwrap();
-        let mut reference = DatasetReference::new(
+        let preset = || FilterPreset {
+            name: "third".into(),
+            state: json!({"search":"third"}).as_object().unwrap().clone(),
+        };
+        let mut excel = DatasetReference::new(
             "New data",
             "excel",
             json!({"path":csv,"sheet":""}).as_object().unwrap().clone(),
         )
         .unwrap();
-        reference.filters.push(FilterPreset {
-            name: "third".into(),
-            state: json!({"search":"third"}).as_object().unwrap().clone(),
-        });
-        let key = registry.add(&reference).unwrap();
+        excel.filters.push(preset());
+        let excel_key = registry.add(&excel).unwrap();
+        let mut pclm = DatasetReference::new(
+            "New contracts",
+            "pclm",
+            json!({"db":db,"view":"v_통합","sheets":["v_통합"]})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        pclm.filters.push(preset());
+        let pclm_key = registry.add(&pclm).unwrap();
         for route in ["file", "binding", "pool"] {
             let mut session = previous.clone();
+            let key = if route == "file" {
+                &excel_key
+            } else {
+                &pclm_key
+            };
             match route {
                 "file" => session.mount_file_registered(&registry, &csv, None, 0),
-                "binding" => session.mount_binding(&registry, csv.to_str().unwrap(), "", 0, ""),
-                _ => session.mount_pool(&registry, &key, None),
+                "binding" => {
+                    session.mount_binding(&registry, db.to_str().unwrap(), "v_통합", 0, "pclm")
+                }
+                _ => session.mount_pool(&registry, &pclm_key, None),
             }
             .unwrap();
             assert_eq!(session.records[0]["name"], "third");
@@ -808,7 +839,7 @@ mod tests {
                 session.filter.as_ref().unwrap().presets()[0]["name"],
                 "third"
             );
-            assert_eq!(session.preset_key, key);
+            assert_eq!(&session.preset_key, key);
         }
     }
 }

@@ -7,6 +7,9 @@ mod cli_support;
 mod generate;
 #[path = "hwpxfiller/generate_run.rs"]
 mod generate_run;
+#[cfg(test)]
+#[path = "../../../hwpx-filler/tests/support/pclm_fixture.rs"]
+mod pclm_fixture;
 
 use hwpx_core::package::{HwpxPackage, PackageError, PackageLimits};
 use hwpx_filler::data_excel::{ExcelDataSource, ambiguous_sheets};
@@ -822,7 +825,7 @@ mod tests {
             HwpxPackage::from_bytes(&fs::read(&template).unwrap(), PackageLimits::default())
                 .unwrap();
         let fields = required_fields(&package).unwrap();
-        let data = root.join("data.csv");
+        let data = root.join("자료.pclm");
         let profile = root.join("map.json");
         let samples = [
             ("수요기관", "text", "", "대한상사", "대한상사"),
@@ -838,17 +841,15 @@ mod tests {
             ("계약방법", "amount", "", "24750000", "24,750,000원"),
             ("추정가격", "amount", "{:,.2f}", "24750000", "24,750,000.00"),
         ];
-        let headers = samples
-            .iter()
-            .map(|sample| sample.0)
-            .collect::<Vec<_>>()
-            .join(",");
-        let values = samples
-            .iter()
-            .map(|sample| sample.3)
-            .collect::<Vec<_>>()
-            .join(",");
-        fs::write(&data, format!("\u{feff}번호,{headers}\nR-1,{values}\n")).unwrap();
+        let headers: Vec<&str> = std::iter::once("번호")
+            .chain(samples.iter().map(|sample| sample.0))
+            .collect();
+        let values: Vec<&str> = std::iter::once("R-1")
+            .chain(samples.iter().map(|sample| sample.3))
+            .collect();
+        crate::pclm_fixture::PclmFixture::work("source-id")
+            .view("v_통합", &headers, &[&values])
+            .write(&data);
         let mappings = fields
             .iter()
             .map(|field| {
@@ -870,8 +871,12 @@ mod tests {
         let command = parse_args([
             OsString::from("--template"),
             template.as_os_str().to_owned(),
-            OsString::from("--data"),
+            OsString::from("--source"),
+            OsString::from("pclm"),
+            OsString::from("--db"),
             data.as_os_str().to_owned(),
+            OsString::from("--view"),
+            OsString::from("v_통합"),
             OsString::from("--profile"),
             profile.as_os_str().to_owned(),
             OsString::from("--out"),
