@@ -1,5 +1,5 @@
 # Managed by tiered-delegation. Re-run the bootstrapper to update.
-name = "luna"
+name = "haiku"
 description = "Search, inventory, extract, or perform a mechanical transform."
 model = "gpt-6-luna"
 model_reasoning_effort = "low"
