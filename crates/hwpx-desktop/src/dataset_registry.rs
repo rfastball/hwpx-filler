@@ -1295,17 +1295,25 @@ mod tests {
         registry: &DatasetPoolRegistry,
         sandbox: &Path,
     ) {
+        use crate::pclm_fixture::PclmFixture;
         use hwpx_filler::data_factory::source_from_pool_item;
         use serde_json::json;
-        let a = sandbox.join("a.csv");
-        let b = sandbox.join("b.csv");
-        fs::write(&a, "\u{feff}id,name\n1,A\n2,B\n").unwrap();
-        fs::write(&b, "\u{feff}id,city\n1,서울\n2,부산\n").unwrap();
+        let a = sandbox.join("a.pclm");
+        let b = sandbox.join("b.pclm");
+        PclmFixture::work("a-id")
+            .view("v_통합", &["id", "name"], &[&["1", "A"], &["2", "B"]])
+            .write(&a);
+        let write_b = |second: &str| {
+            PclmFixture::work("b-id")
+                .view("v_통합", &["id", "city"], &[&["1", "서울"], &["2", second]])
+                .write(&b)
+        };
+        write_b("부산");
         let item = DatasetReference::new(
             "6월/조립",
             "pipeline",
             serde_json::from_value(json!({
-                "sources":[{"kind":"excel","opts":{"path":a}},{"kind":"excel","opts":{"path":b}}],
+                "sources":[{"kind":"pclm","opts":{"db":a,"view":"v_통합"}},{"kind":"pclm","opts":{"db":b,"view":"v_통합"}}],
                 "steps":[{"op":"merge","source":1,"on":"id","how":"inner"}]
             }))
             .unwrap(),
@@ -1314,7 +1322,7 @@ mod tests {
         let key = registry.add(&item).unwrap();
         let saved = fs::read_to_string(registry.slot_path(&key).unwrap()).unwrap();
         assert!(!saved.contains("서울") && !saved.contains("부산"));
-        assert!(saved.contains("a.csv") && saved.contains("merge"));
+        assert!(saved.contains("a.pclm") && saved.contains("merge"));
         let restored = registry.load(&key).unwrap();
         assert_eq!(restored.to_dict(), item.to_dict());
         let mut source = source_from_pool_item(&restored).unwrap();
@@ -1323,7 +1331,7 @@ mod tests {
         assert_eq!(records[0]["name"], "A");
         assert_eq!(records[0]["city"], "서울");
         assert_eq!(records[1]["city"], "부산");
-        fs::write(&b, "id,city\n1,서울\n2,대전\n").unwrap();
+        write_b("대전");
         assert_eq!(source.records().unwrap(), records);
         assert_eq!(
             source_from_pool_item(&restored).unwrap().records().unwrap()[1]["city"],
