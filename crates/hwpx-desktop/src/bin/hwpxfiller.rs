@@ -29,18 +29,15 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const GENERATION_HELP: &str = r#"usage: hwpxfiller [-h] --template TEMPLATE [--source {excel,nara,pclm}]
+const GENERATION_HELP: &str = r#"usage: hwpxfiller [-h] --template TEMPLATE [--source {excel,pclm}]
                   [--data DATA] [--out OUT] [--pattern PATTERN]
                   [--sheet SHEET] [--profile PROFILE] [--fields] [--overwrite]
-                  [--ack-empty] [--ledger] [--service-key SERVICE_KEY]
-                  [--service-key-file SERVICE_KEY_FILE] [--bgn BGN]
-                  [--end END] [--num-rows NUM_ROWS] [--page PAGE] [--db DB]
-                  [--view VIEW]
+                  [--ack-empty] [--ledger] [--db DB] [--view VIEW]
 
 options:
   -h, --help            show this help message and exit
   --template TEMPLATE   HWPX 템플릿 경로
-  --source {excel,nara,pclm}
+  --source {excel,pclm}
                         데이터 소스 (기본: excel). pclm 은 계약 목록 DB 의 시트(뷰·표)이며 --view
                         가 필수입니다
   --data DATA           엑셀/CSV 데이터 경로 (--source excel)
@@ -48,8 +45,8 @@ options:
   --pattern PATTERN     파일명 패턴({{필드}}, 기본 공고서-{{date}}-{{seq:001}}). 토큰은 템플릿
                         필드 이름이며 연결된 값으로 채워집니다 — 풀 수 없는 토큰은 오류
   --sheet SHEET         엑셀 시트명(기본: 첫 시트)
-  --profile PROFILE     매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수).
-                        작업(.job.json)의 mapping 과 같은 형식의 독립 JSON 입니다
+  --profile PROFILE     매핑 프로파일 JSON(소스 키→템플릿 필드). 작업(.job.json)의 mapping 과 같은
+                        형식의 독립 JSON 입니다
   --fields              템플릿 요구 필드만 출력
   --overwrite           같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 파일이 하나라도 이미 있을 때 생성
                         전체를 차단하고 종료코드 1
@@ -57,15 +54,6 @@ options:
                         넣고 진행. 없으면 빈 값 발견 시 생성 전체를 차단하고 종료코드 1
   --ledger              생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — 소스 프로파일·dry-run
                         매니페스트·주입 되읽기 증거. 값은 텍스트이며 HWPX 렌더가 아님
-  --service-key SERVICE_KEY
-                        data.go.kr ServiceKey 인라인(비권장·노출 위험). --service-key-
-                        file/DATA_GO_KR_KEY/저장된 키를 우선 쓰세요
-  --service-key-file SERVICE_KEY_FILE
-                        ServiceKey 를 담은 파일 경로(권장 — 프로세스 목록/히스토리 미노출)
-  --bgn BGN             공고 시작일시 YYYYMMDDHHMM (--source nara)
-  --end END             공고 종료일시 YYYYMMDDHHMM (bgn 과 1개월 이내)
-  --num-rows NUM_ROWS   나라장터 페이지당 건수(기본 100)
-  --page PAGE           나라장터 페이지 번호(기본 1)
   --db DB               pclm SQLite 경로 (필수, --source pclm)
   --view VIEW           pclm 시트(뷰·표) 이름 (필수, --source pclm). 이름 목록은 미지정 시 안내
 

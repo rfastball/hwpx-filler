@@ -1,5 +1,5 @@
 {
-  "_comment": "실 나라장터 표준서비스 물품 공고 다양성 표본(2026-07-01~14 취득). PII 마스킹: 담당자명→'담당자', 전화 숫자→0, 이메일→official@example.go.kr. 각 레코드의 선택 목적은 README.md 참조. NaraStdDataSource.parse() 가 소비.",
+  "_comment": "실 나라장터 표준서비스 물품 공고 다양성 표본(2026-07-01~14 취득). PII 마스킹: 담당자명→'담당자', 전화 숫자→0, 이메일→official@example.go.kr. 각 레코드의 선택 목적은 README.md 참조. 테스트가 response.body.items[] 를 평면 레코드로 읽는다.",
   "response": {
     "header": {
       "resultCode": "00",

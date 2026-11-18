@@ -597,6 +597,23 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// Flat string records of a captured `response.body.items[]` corpus file.
+    fn corpus_items(path: &Path) -> Vec<Record> {
+        let envelope: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        envelope["response"]["body"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                row.as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                    .collect()
+            })
+            .collect()
+    }
+
     fn corpus_run(
         root: &Path,
         template: &Path,
@@ -744,9 +761,7 @@ mod tests {
                 .mappings
                 .push(FieldMapping::new(field, "", "const", "", "", None).unwrap());
         }
-        let all =
-            hwpx_filler::nara::parse(&fs::read(corpus.join("nara_mulpum/mulpum.json")).unwrap())
-                .unwrap();
+        let all = corpus_items(&corpus.join("nara_mulpum/mulpum.json"));
         let records = ["R26BK01621756", "R26BK01610529"].map(|number| {
             all.iter()
                 .find(|record| record["bidNtceNo"] == number)
@@ -821,10 +836,7 @@ mod tests {
                 .iter()
                 .all(|doc| doc.collision_disposition == WRITE_OVERWRITE)
         );
-        let records = hwpx_filler::nara::parse(
-            &fs::read(corpus.join("scenario/data/나라장터_응답.json")).unwrap(),
-        )
-        .unwrap();
+        let records = corpus_items(&corpus.join("scenario/data/나라장터_응답.json"));
         let delivered = completed(corpus_run(
             &root.join("formatted"),
             &template,

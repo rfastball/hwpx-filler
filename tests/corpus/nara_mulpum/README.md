@@ -8,8 +8,8 @@
 
 - **출처**: 조달청 공공데이터개방표준서비스(15058815) `getDataSetOpnStdBidPblancInfo`,
   2026-07-01~14 취득분 100건 중 `bsnsDivNm=="물품"` 50건에서 목적별로 12건 선별.
-- **형식**: `response.body.items[]` 봉투 — `NaraStdDataSource.parse()` 가 그대로 소비
-  (얼릴 때 parse 왕복 검증 통과). 라이브 호출 없이 결정적으로 리플레이된다.
+- **형식**: `response.body.items[]` 봉투 — [Rust 생성 검사](../../../crates/hwpx-desktop/src/headless_generation.rs)가
+  평면 문자열 레코드로 그대로 읽는다. 라이브 호출 없이 결정적으로 리플레이된다.
 - **PII 마스킹**(공개 데이터이나 공무원 개인정보는 중립화):
   - `*OfclNm`(담당자명) → `담당자`
   - `*Tel`(전화) → 숫자 전부 `0`(형식·길이 보존)
@@ -63,7 +63,5 @@
 
 ## 재수확
 
-`.secrets/nara_service_key` 로 다시 긁으려면 저장소 루트에서
-`cargo run -p hwpx-desktop --example nara_fixture --no-default-features --locked --`
-(`--dry-run` 으로 미리보기). **라이브 취득이라 비결정적** — 재실행은 그 시점 공고로 새
-세트를 만든다(이 `mulpum.json` 이 동결본). 취득 창은 최대 1개월. 갱신 시 위 매니페스트도 손본다.
+수확기는 나라장터 API 원천과 함께 제거됐다. 이 `mulpum.json` 이 유일한 동결본이며 다시
+긁지 않는다.

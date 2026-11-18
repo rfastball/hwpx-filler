@@ -96,7 +96,7 @@ impl PoolController {
         Ok(DatasetDetail::from_item(
             &row,
             &item,
-            crate::nara_source::source_from_pool_reference_live(&item)
+            hwpx_filler::data_factory::source_from_pool_item(&item)
                 .and_then(|mut source| source.fields())
                 .map_err(|error| error.to_string()),
         )?)

@@ -160,7 +160,7 @@ body_sha256 = "22e834a31b9bcf0c719f549072dc70eccd352fdbda9c2ef3478c8d55206e932f"
 id = "architecture-runtime"
 document = "docs/architecture.md"
 sources = ["crates/hwpx-desktop/src/*.rs", "crates/hwpx-desktop/src/action_registry.json", "crates/hwpx-desktop/src/host_contract.json", "crates/hwpx-desktop/tauri.conf.json", "frontend/src/bootstrap.js", "frontend/src/state/*", "frontend/src/shell/*", "frontend/src/tutorial/*", "frontend/src/overlay/*", "frontend/src/screens/ports.ts", "frontend/src/screens/runtime.ts", "frontend/src/screens/product_screen_executor.ts", "tests/architecture_contract.toml", "vendor/rhwp/studio-runtime.json"]
-tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs", "crates/hwpx-desktop/src/nara_secret_store.rs"]
+tests = ["crates/hwpx-artifact/tests/architecture.rs", "tests/js/bridge_contract.test.js", "tests/js/frontend_build_graph.test.js", "tests/js/state_store.test.js", "tests/js/product_screen_executor.test.js", "crates/hwpx-desktop/src/onboarding_controller.rs", "crates/hwpx-desktop/src/tutorial_workspace.rs", "crates/hwpx-desktop/src/dialogs.rs", "crates/hwpx-desktop/src/single_instance.rs"]
 source_sha256 = "fbb974ef3bfa87c6756cd9743425b9e4f957ec3b53d4ec2b47de80ded3c1c457"
 body_sha256 = "caaf3066b39d3fbc6e4e8f399ba9e3dcb75b4fd20c0fd9d96bd5d6e8a5eb0986"
 
@@ -233,7 +233,7 @@ id = "ui-copy"
 document = "docs/ui-style.md"
 sources = ["scripts/ui_copy_census.mjs", "crates/hwpx-artifact/examples/ui_copy_literals.rs", "tests/contracts/ui-copy-census.toml"]
 tests = ["tests/js/ui_copy_census.test.js"]
-source_sha256 = "b17b55de9e71af6aee6049d7abdef29dff6aa977b809a002b6ae81ab93cd6a8f"
+source_sha256 = "e1214a912307c2cfe52a49c0f59499ca201ec96aabce0786c723e54f5c56479e"
 body_sha256 = "fdbc4edebdd5edbdb5bd52af907a46f4adb8527f0346b3c84271fde0b0111358"
 
 [[topic]]
@@ -257,7 +257,7 @@ id = "changes"
 document = "CONTRIBUTING.md"
 sources = ["AGENTS.md", "test.ps1", "scripts/complexity_budget.mjs"]
 tests = ["tests/js/quality_workflow.test.js", "tests/js/complexity_budget.test.js"]
-source_sha256 = "17d62dc02143826f88a9d5442ed5131b202395a1f3d1c2811e99cf31af2c02ca"
+source_sha256 = "168926c4f0b66a8df37a750bcc97f88a710ce6aa6269c978caa3ce1d0b9acf91"
 body_sha256 = "95ba4d996ed1af877ffa543cf594ff07d4e1f2d9a97fc16244cfec376f35945f"
 
 [[topic]]
@@ -265,7 +265,7 @@ id = "documentation"
 document = "CONTRIBUTING.md"
 sources = ["scripts/docs_contract*.mjs", "scripts/docs_runtime.mjs", "scripts/read_toml.mjs", "crates/hwpx-artifact/examples/read_toml.rs", ".github/workflows/quality.yml"]
 tests = ["tests/js/documentation_contract.test.js"]
-source_sha256 = "22ff2e7adb534827520a5874575e087297309ee89a0fd6324bfa3d673e033f3c"
+source_sha256 = "3f1764b7fe1684f252f356407d0fee0dfde7c6aaee58e8c86e2b7ef2b291af18"
 body_sha256 = "8d0d0c03147a674b2a6cafebc529214202a7eb7d048bebe0c98ce5d6a445f70f"
 
 [[support]]

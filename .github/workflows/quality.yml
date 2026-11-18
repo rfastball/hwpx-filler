@@ -218,7 +218,7 @@ jobs:
     name: windows-native (real Win32)
     runs-on: windows-latest
     timeout-minutes: 20
-    # 웹 산출물도 Node 도 쓰지 않는다(실 OLE 아파트·클립보드·최상위 창·자격 증명 저장소).
+    # 웹 산출물도 Node 도 쓰지 않는다(실 OLE 아파트·클립보드·최상위 창).
     # 생산자를 기다리지 않는다. 이름 목록은 test.ps1 과 같고, 소스의 #[ignore] 집합 전체다
     # (tests/js/quality_workflow.test.js 가 대조한다).
     steps:
@@ -229,18 +229,17 @@ jobs:
           shared-key: debug
           cache-bin: false
           save-if: false
-      - name: Real Win32 dialog, clipboard, focus and credential round trips
+      - name: Real Win32 dialog, clipboard and focus round trips
         shell: pwsh
         # 이름이 하나라도 어긋나면 libtest 는 0개를 돌리고 성공한다 — 실행 수를 직접 확인한다.
         run: |
           $output = cargo test -p hwpx-desktop --lib --no-default-features --locked -- --ignored --exact `
             dialogs::win::positive_tests::windows_sta_dialog_result_and_pidl_allocator_round_trip `
-            single_instance::tests::windows_clipboard_and_visible_focus_round_trip `
-            nara_secret_store::tests::windows_credential_store_round_trip
+            single_instance::tests::windows_clipboard_and_visible_focus_round_trip
           $code = $LASTEXITCODE
           $output
           if ($code -ne 0) { exit $code }
-          if (-not ($output -match '^test result: ok\. 3 passed;')) { throw '실 Win32 ignored 테스트 3개가 모두 실행되지 않았습니다.' }
+          if (-not ($output -match '^test result: ok\. 2 passed;')) { throw '실 Win32 ignored 테스트 2개가 모두 실행되지 않았습니다.' }
 
   browser-render:
     name: browser-render (installed Chrome)

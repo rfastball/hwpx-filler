@@ -9,12 +9,13 @@ use crate::generation_gate::GenerationGate;
 use crate::job_registry::{JobRegistry, StoreError};
 use crate::library_observation::read_template;
 use crate::library_observation::template_display_name;
-use crate::nara_source::source_from_pool_reference_live;
 use crate::template_inventory::discover_paths;
 use crate::template_root::TemplateRoot;
 use crate::workspace_switch::{GraphError, PushGate, ScreenController};
 use chrono::{Local, NaiveDateTime};
-use hwpx_filler::data_factory::{binding_for_reference, source_for_binding, source_for_path};
+use hwpx_filler::data_factory::{
+    binding_for_reference, source_for_binding, source_for_path, source_from_pool_item,
+};
 use hwpx_filler::dataset_pool::DatasetPoolRow;
 use hwpx_filler::dataset_reference::{
     excel_identity, pclm_identity, reference_for_sheet, reference_sheets,
@@ -1119,7 +1120,6 @@ mod tests {
             ("unknown-kind", "", 0, "1행", "other"),
             ("hwpx", "", 0, "1행", "hwpx"),
             ("txt", "", 0, "1행", "txt"),
-            ("nara", "", 0, "1행", "nara"),
         ] {
             state.data_kind = kind.into();
             state.data_sheet = sheet.into();
